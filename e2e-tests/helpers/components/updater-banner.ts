@@ -1,12 +1,12 @@
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
-export type UpdateState =
-	| 'available'
-	| 'downloading'
-	| 'ready'
-	| 'error'
-	| 'hidden';
+/** The banner states `window.__test.simulateUpdate` can force ('check', which
+ *  runs the real update check instead, goes through [`UpdaterBanner.checkForUpdate`]). */
+export type UpdateState = Exclude<
+	Parameters<Window['__test']['simulateUpdate']>[0],
+	'check'
+>;
 
 export class UpdaterBanner extends TestHelper {
 	banner = this.el(tid('updater-banner'));
@@ -25,8 +25,9 @@ export class UpdaterBanner extends TestHelper {
 		);
 	}
 
-	/** Run the banner's real update check (plugin check → banner), which
-	 *  mounting skips in e2e builds (their frontend is DEV-flagged). */
+	/** Run the banner's real update check (plugin check → banner). Mounting
+	 *  skips it in e2e builds: wdio's CLI exports NODE_ENV=test, so the
+	 *  harness's frontend build compiles with import.meta.env.DEV set. */
 	async checkForUpdate(): Promise<void> {
 		await this.agent.execute(() => window.__test.simulateUpdate('check'));
 	}

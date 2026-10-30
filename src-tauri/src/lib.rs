@@ -109,12 +109,11 @@ pub fn run() {
         if std::env::var("E2E_UPDATER_URL").is_ok() || believed_version.is_ok() {
             let mut updater = tauri_plugin_updater::Builder::new();
             if let Ok(version) = believed_version {
-                updater = updater.default_version_comparator(move |_, update| {
-                    let believed = version
-                        .parse()
-                        .expect("E2E_UPDATER_CURRENT_VERSION is not a semver version");
-                    update.version > believed
-                });
+                let believed = version
+                    .parse()
+                    .expect("E2E_UPDATER_CURRENT_VERSION is not a semver version");
+                updater =
+                    updater.default_version_comparator(move |_, update| update.version > believed);
             }
             builder = builder.plugin(updater.build());
         }

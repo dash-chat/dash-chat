@@ -53,8 +53,10 @@ describe('UpdaterBanner', () => {
 });
 
 /** What the mock endpoint advertises: far enough ahead to stay newer than any
- *  real build version, so the plugin's own comparison finds an update. */
+ *  real build version, so the plugin's own comparison finds an update — and,
+ *  for the negative case, far enough behind any. */
 const ADVERTISED_VERSION = '999.0.0';
+const OLDER_VERSION = '0.0.1';
 
 describe('UpdaterBanner real check against a mock endpoint', () => {
 	let agent: Agent;
@@ -70,7 +72,19 @@ describe('UpdaterBanner real check against a mock endpoint', () => {
 		await server?.close();
 	});
 
+	// The following test's leading no-banner assertion doubles as this one's
+	// proof: a banner the older version wrongly produced would fail it.
+	it('keeps the banner hidden when the endpoint advertises an older version', async () => {
+		server.setVersion(OLDER_VERSION);
+		await agent.updaterBanner.checkForUpdate();
+		// Let the check against localhost land before asserting nothing showed.
+		await agent.pause(1_000);
+		await expect(agent.updaterBanner.banner).not.toExist();
+	});
+
 	it('shows the available banner when the endpoint advertises a newer version', async () => {
+		await expect(agent.updaterBanner.banner).not.toExist();
+		server.setVersion(ADVERTISED_VERSION);
 		await agent.updaterBanner.checkForUpdate();
 		await agent.updaterBanner.banner.waitForExist();
 		expect(await agent.updaterBanner.title.getText()).toBe(
@@ -87,7 +101,12 @@ describe('UpdaterBanner real check against the production endpoint', () => {
 	let agent: Agent;
 
 	before(async function () {
-		if (!(await productionEndpointReachable())) this.skip();
+		if (!(await productionEndpointReachable())) {
+			console.log(
+				'[updater-banner] production update endpoint unreachable — skipping',
+			);
+			this.skip();
+		}
 		agent = await setupDesktopAgentWithEnv({
 			E2E_UPDATER_CURRENT_VERSION: BELIEVED_VERSION,
 		});
@@ -95,8 +114,15 @@ describe('UpdaterBanner real check against the production endpoint', () => {
 	});
 
 	it('shows the available banner for the latest published release', async () => {
+		await expect(agent.updaterBanner.banner).not.toExist();
 		await agent.updaterBanner.checkForUpdate();
-		await agent.updaterBanner.banner.waitForExist();
+		// The harness could reach the endpoint (the skip probe above), so a
+		// miss here means the app's own fetch of it failed or its manifest
+		// no longer parses.
+		await agent.updaterBanner.banner.waitForExist({
+			timeoutMsg:
+				'no update banner: the app could not fetch or accept the production latest.json',
+		});
 		expect(await agent.updaterBanner.title.getText()).toBe(
 			await agent.tr('updateAvailable'),
 		);

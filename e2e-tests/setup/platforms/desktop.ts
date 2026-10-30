@@ -283,6 +283,7 @@ export async function discardDesktopAgent(slot: number): Promise<void> {
 export async function stopDesktopAgents(): Promise<void> {
 	await Promise.all([...launched.values()].map(app => killAndWait(app)));
 	launched.clear();
+	agentEnv.clear();
 	killAllE2EProcesses();
 	for (const logger of loggers.values()) logger.kill();
 	loggers.clear();
