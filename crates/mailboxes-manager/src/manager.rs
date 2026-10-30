@@ -9,7 +9,7 @@ use mailbox_client::sync_scheduler::RequestOutcome;
 use mailbox_client::topic_registry::TopicRegistry;
 use mailbox_client::{
     BlobReader, MailboxClient, MailboxId, MailboxItem, MailboxesConfig, OptionalItemTraits,
-    SyncStatus, UnfetchedBlobTracker,
+    SyncStatus,
 };
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::time::Instant;
@@ -33,12 +33,19 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
+    /// Wakes the blob followup loop out-of-band: mailbox connected, network
+    /// changed, new blob available — anything that makes a reconcile pass
+    /// likely to have new work before the next interval tick.
+    blob_followup: Arc<Notify>,
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
     persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     /// The poll loop's handle, taken by `close()` to stop the loop before the
     /// persistence pool is released.
     poll_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// The blob followup loop's handle, taken by `close()`. `None` until
+    /// `start_blob_followup` installs it.
+    blob_followup_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     store: Store,
 }
 
@@ -61,9 +68,11 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
+            blob_followup: Arc::new(Notify::new()),
             store,
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
+            blob_followup_loop: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -159,6 +168,10 @@ where
             self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
         }
+
+        // Registration is reachability evidence: the blob followup might now
+        // have a mailbox it can push to. Coalesces onto the loop's next wake.
+        self.blob_followup.notify_one();
     }
 
     /// Returns `true` if a mailbox with the given id was removed.
@@ -239,9 +252,63 @@ where
         &self,
         source: Arc<dyn BlobSource>,
         reader: Arc<dyn BlobReader>,
-        tracker: Arc<dyn UnfetchedBlobTracker>,
     ) {
-        reconcile_unfetched_blobs(self, source, reader, tracker).await;
+        reconcile_unfetched_blobs(self, source, reader, self.blob_tracker.clone()).await;
+    }
+
+    /// Wake the blob followup loop out-of-band: unpause, a new blob landed —
+    /// anything that means a reconcile pass is due before the next interval
+    /// tick. No-op until `start_blob_followup` runs. Network changes should
+    /// go through [`Self::handle_network_change`], which additionally resets
+    /// upload backoffs and probes every mailbox.
+    pub fn notify_unfetched_blobs(&self) {
+        self.blob_followup.notify_one();
+    }
+
+    /// React to the OS reporting a network change. Every mailbox is probed
+    /// for immediate re-judgement (backed-off mailboxes would otherwise wait
+    /// out their poll backoff), upload backoffs are cleared so transfers
+    /// resume on the new network, and the blob followup loop is woken.
+    pub async fn handle_network_change(&self) {
+        self.probe_all().await;
+        self.reset_uploads();
+        self.notify_unfetched_blobs();
+    }
+
+    /// Spawn the loop that reconciles unfetched blobs across mailboxes: on
+    /// `interval`, and immediately whenever a reconcile is due (startup,
+    /// mailbox connected, `notify_unfetched_blobs`). The caller supplies the
+    /// node-side capabilities: `source` refreshes our dialing address with a
+    /// mailbox before push attempts, `reader` serves blob bytes we hold.
+    /// Stopped by `close()`. `source` and `reader` must cheaply clonable
+    /// handles — the loop forwards them by value.
+    pub fn start_blob_followup(
+        &self,
+        source: Arc<dyn BlobSource>,
+        reader: Arc<dyn BlobReader>,
+        interval: Duration,
+    ) {
+        let this = self.clone();
+        let trigger = self.blob_followup.clone();
+        let handle = tokio::spawn(
+            async move {
+                // Fire once at startup.
+                this.reconcile_unfetched_blobs(source.clone(), reader.clone())
+                    .await;
+                let mut ticker = tokio::time::interval(interval);
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {
+                        _ = ticker.tick() => {}
+                        _ = trigger.notified() => {}
+                    }
+                    this.reconcile_unfetched_blobs(source.clone(), reader.clone())
+                        .await;
+                }
+            }
+            .instrument(tracing::info_span!("unfetched-blob followup")),
+        );
+        *self.blob_followup_loop.lock().unwrap() = Some(handle);
     }
 
     /// Nudge the poll loop to check for the next mailbox to poll.
@@ -497,6 +564,11 @@ where
         if let Some(handle) = handle {
             handle.abort();
             // JoinError::Cancelled; the loop is now definitely stopped.
+            let _ = handle.await;
+        }
+        let handle = self.blob_followup_loop.lock().unwrap().take();
+        if let Some(handle) = handle {
+            handle.abort();
             let _ = handle.await;
         }
         if let Some(persistence) = &self.persistence {

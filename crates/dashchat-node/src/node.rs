@@ -46,6 +46,7 @@ use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
+use crate::unfetched_blobs::NodeBlobSource;
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
@@ -268,8 +269,6 @@ pub struct Node {
     /// once nothing needs the endpoint (see [`Self::init`]).
     endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
-    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
@@ -482,8 +481,6 @@ impl Node {
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
-            unfetched_blob_trigger: Default::default(),
-            unfetched_blob_followup_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
@@ -507,11 +504,8 @@ impl Node {
 
         // === network change notifier === //
 
-        let network_change_handle = crate::network_change_notifier::spawn(
-            node.endpoint.clone(),
-            node.mailboxes.clone(),
-            node.unfetched_blob_trigger.clone(),
-        );
+        let network_change_handle =
+            crate::network_change_notifier::spawn(node.endpoint.clone(), node.mailboxes.clone());
         node.network_change_handle
             .lock()
             .await
@@ -519,15 +513,11 @@ impl Node {
 
         // === unfetched blob followup loop === //
 
-        let followup_handle = crate::spawn_unfetched_blob_followup_task(
-            node.clone(),
+        node.mailboxes.start_blob_followup(
+            NodeBlobSource::new(node.clone()),
+            node.blob_reader(),
             node.config.unfetched_blob_followup_interval,
-            node.unfetched_blob_trigger.clone(),
         );
-        node.unfetched_blob_followup_handle
-            .lock()
-            .await
-            .replace(followup_handle);
 
         // === message ack writer === //
 
@@ -651,10 +641,10 @@ impl Node {
         })
     }
 
-    /// Wake the unfetched-blob followup task to run a reconciliation pass now
-    /// (e.g. on unpause / network change).
+    /// Wake the manager's blob followup loop to run a reconciliation pass now
+    /// (e.g. on publish, unpause, network change).
     pub fn notify_unfetched_blob_followup(&self) {
-        self.unfetched_blob_trigger.notify_one();
+        self.mailboxes.notify_unfetched_blobs();
     }
 
     /// Catch up after the process was suspended as after a network change: a
@@ -663,7 +653,6 @@ impl Node {
         crate::network_change_notifier::handle_network_change(
             self.endpoint.as_ref(),
             &self.mailboxes,
-            &self.unfetched_blob_trigger,
         )
         .await;
     }
@@ -1657,10 +1646,6 @@ impl Node {
         }
 
         if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
             handle.abort();
         }
 
