@@ -100,11 +100,10 @@ pub fn run() {
     #[cfg(all(not(mobile), feature = "e2e-tests"))]
     {
         builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
-        // The updater specs opt back into the real updater plugin: against a
-        // mock endpoint (E2E_UPDATER_URL, see the context mutation below), or
-        // against the production endpoint while believing it runs
-        // E2E_UPDATER_CURRENT_VERSION, so the latest published release counts
-        // as an update.
+
+        // The updater specs include a test against the real updater plugin,
+        // with a hand-picked version number.
+        // This allows fudging the app's declared version for that test.
         let believed_version = std::env::var("E2E_UPDATER_CURRENT_VERSION");
         if std::env::var("E2E_UPDATER_URL").is_ok() || believed_version.is_ok() {
             let mut updater = tauri_plugin_updater::Builder::new();
