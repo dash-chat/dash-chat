@@ -83,6 +83,9 @@ describe('UpdaterBanner real check against a mock endpoint', () => {
 	});
 
 	it('shows the available banner when the endpoint advertises a newer version', async () => {
+		// Attributes the banner to the explicit check below — and fails loudly
+		// if e2e builds ever start checking on mount, at which point the 'check'
+		// trigger chain is dead code (see UpdaterBanner.checkForUpdate).
 		await expect(agent.updaterBanner.banner).not.toExist();
 		server.setVersion(ADVERTISED_VERSION);
 		await agent.updaterBanner.checkForUpdate();

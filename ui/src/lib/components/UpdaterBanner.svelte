@@ -29,8 +29,10 @@
 		checkForUpdate();
 	});
 
-	// Allow E2E tests and dev tools to trigger banner states, or ('check')
-	// the real update check that mounting skips in dev and e2e builds
+	// Allow E2E tests and dev tools to trigger banner states, or ('check') run
+	// the real update check. The e2e specs need that trigger: wdio exports
+	// NODE_ENV=test, so the harness's frontend build compiles as DEV and the
+	// onMount guard above compiles the check away.
 	$effect(() => {
 		const handler = (event: CustomEvent<BannerState | 'check'>) => {
 			if (event.detail === 'check') {
