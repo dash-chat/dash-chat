@@ -66,10 +66,14 @@
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
+	// Most of each row's DOM, so only mounted once the bubble is pressed; a
+	// finger resting on it mounts it early, so the long-press opens it animated.
+	let actionsMounted = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
+		actionsMounted = true;
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
@@ -127,7 +131,6 @@
 			<DeletedMessage {message} {position} {myDeviceId} />
 		{:else}
 			<Card
-				raised
 				contentWrapPadding="p-2"
 				colors={{
 					bgIos: 'bg-brand-primary',
@@ -164,7 +167,13 @@
 {/snippet}
 
 {#snippet row()}
-	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+	<div
+		class="group flex justify-end"
+		use:longpress={{
+			onLongPress,
+			onPressStart: () => (actionsMounted = true),
+		}}
+	>
 		{@render bubble()}
 	</div>
 {/snippet}
@@ -176,21 +185,23 @@
 {:else}
 	{@render row()}
 {/if}
-{#if isMobile}
-	<MessageActionsOverlay
-		{message}
-		{myDeviceId}
-		{onEdit}
-		{onReply}
-		bind:opened={reactionsOpened}
-		target={messageEl}
-	/>
-{:else}
-	<MessageContextMenu
-		{message}
-		{myDeviceId}
-		{onEdit}
-		{onReply}
-		bind:point={contextMenuPoint}
-	/>
+{#if actionsMounted}
+	{#if isMobile}
+		<MessageActionsOverlay
+			{message}
+			{myDeviceId}
+			{onEdit}
+			{onReply}
+			bind:opened={reactionsOpened}
+			target={messageEl}
+		/>
+	{:else}
+		<MessageContextMenu
+			{message}
+			{myDeviceId}
+			{onEdit}
+			{onReply}
+			bind:point={contextMenuPoint}
+		/>
+	{/if}
 {/if}

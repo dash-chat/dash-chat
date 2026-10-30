@@ -191,6 +191,10 @@ export type MessageContentV1 = {
 	 * `EditMessage` in the same chat, any author's log). Absent on the wire
 	 * for non-replies. */
 	reply?: Hash;
+	/** Lamport counter assigned by the sender's node; the primary display
+	 * ordering criterion (timestamp and author tie-break). Absent on messages
+	 * from clients that predate the field. */
+	lamport?: number;
 };
 export type MessageContent = MessageContentV1;
 

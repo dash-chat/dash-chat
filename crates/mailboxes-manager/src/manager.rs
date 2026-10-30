@@ -9,14 +9,14 @@ use mailbox_client::sync_scheduler::RequestOutcome;
 use mailbox_client::topic_registry::TopicRegistry;
 use mailbox_client::{
     BlobReader, MailboxClient, MailboxId, MailboxItem, MailboxesConfig, OptionalItemTraits,
-    SyncStatus, UnfetchedBlobTracker,
+    SyncStatus,
 };
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::time::Instant;
 use tracing::Instrument;
 
 use crate::blobs::blob_sync_tracker::BlobSyncTracker;
-use crate::blobs::unfetched_blobs::{BlobSource, reconcile_unfetched_blobs};
+use crate::blobs::sync::{BlobSource, sync_blobs_to_mailboxes};
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::mailbox_registry::MailboxRegistry;
 use crate::operations::operation_sync_tracker::OperationSyncTracker;
@@ -29,16 +29,23 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     mailbox_registry: Arc<MailboxRegistry<Item, Store>>,
     topic_registry: Arc<TopicRegistry<Item>>,
     op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
-    blob_tracker: Arc<BlobSyncTracker>,
+    blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Author>>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
+    /// Wakes the blob followup loop out-of-band: mailbox connected, network
+    /// changed, new blob available — anything that makes a reconcile pass
+    /// likely to have new work before the next interval tick.
+    blob_sync_trigger: Arc<Notify>,
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
     persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     /// The poll loop's handle, taken by `close()` to stop the loop before the
     /// persistence pool is released.
     poll_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// The blob followup loop's handle, taken by `close()`. `None` until
+    /// `start_blob_sync` installs it.
+    blob_sync_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     store: Store,
 }
 
@@ -49,7 +56,7 @@ where
     fn new(
         store: Store,
         op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
-        blob_tracker: Arc<BlobSyncTracker>,
+        blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
         persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
@@ -61,9 +68,11 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
+            blob_sync_trigger: Arc::new(Notify::new()),
             store,
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
+            blob_sync_loop: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -79,8 +88,14 @@ where
 
     /// The blob delivery tracker: what each mailbox still lacks. Node code
     /// records through this; the reconcile pass reads from it.
-    pub fn blob_tracker(&self) -> &Arc<BlobSyncTracker> {
+    pub fn blob_tracker(&self) -> &Arc<BlobSyncTracker<Item::Topic, Item::Author>> {
         &self.blob_tracker
+    }
+
+    /// Crate-internal access to the op log store, for the blob reconcile
+    /// pass's per-log candidate walk.
+    pub(crate) fn store(&self) -> &Store {
+        &self.store
     }
 
     pub async fn is_tracked(&self, id: &MailboxId) -> bool {
@@ -159,6 +174,10 @@ where
             self.persist_status_change(&id, &tm, |tm| tm.wakeup()).await;
             self.nudge_poll_loop();
         }
+
+        // Registration is reachability evidence: the blob followup might now
+        // have a mailbox it can push to. Coalesces onto the loop's next wake.
+        self.blob_sync_trigger.notify_one();
     }
 
     /// Returns `true` if a mailbox with the given id was removed.
@@ -200,7 +219,9 @@ where
     }
 
     /// Whether an upload of `hash` to the given registered mailbox would start
-    /// now: not in flight and not backing off.
+    /// now: not in flight and not backing off. Test-only accessor for the
+    /// upload tracker's wiring; production paths go through `claim_upload`.
+    #[doc(hidden)]
     pub async fn upload_due(&self, mailbox_id: &MailboxId, hash: iroh_blobs::Hash) -> bool {
         let Some(tracked) = self.tracked_mailbox(mailbox_id).await else {
             return false;
@@ -212,8 +233,9 @@ where
     }
 
     /// Whether an upload of `hash` to the mailbox at `url` would start now,
-    /// without re-resolving the mailbox. For callers that already hold the
-    /// mailbox URL.
+    /// without re-resolving the mailbox. Test-only backing for
+    /// [`Self::upload_due`]; production paths go through `claim_upload`.
+    #[doc(hidden)]
     pub fn upload_due_at(&self, url: &str, hash: iroh_blobs::Hash) -> bool {
         self.upload_tracker.upload_due(url, hash)
     }
@@ -230,18 +252,69 @@ where
         self.upload_tracker.restart_uploads();
     }
 
-    /// Reconcile unfetched blobs across all registered mailboxes.
-    ///
-    /// For every mailbox that still has unfetched blobs recorded by `source`,
-    /// re-announce the hashes the node currently holds and push any bytes the
-    /// mailbox lacks.
-    pub async fn reconcile_unfetched_blobs(
+    /// Sync blobs to every registered mailbox: announce every hash the
+    /// mailbox might be missing (op-log-height candidates plus outstanding
+    /// tracker rows) and upload the bytes it reports it lacks. Advances
+    /// per-log blob heights off the mailbox's announce response.
+    pub async fn sync_blobs(&self, source: Arc<dyn BlobSource>, reader: Arc<dyn BlobReader>) {
+        sync_blobs_to_mailboxes(self, source, reader).await;
+    }
+
+    /// Wake the blob sync loop out-of-band: unpause, a new blob landed —
+    /// anything that means a pass is due before the next interval tick.
+    /// No-op until `start_blob_sync` runs. Network changes should go
+    /// through [`Self::handle_network_change`], which additionally resets
+    /// upload backoffs and probes every mailbox.
+    pub fn notify_blobs_changed(&self) {
+        self.blob_sync_trigger.notify_one();
+    }
+
+    /// React to the OS reporting a network change. Every mailbox is probed
+    /// for immediate re-judgement (backed-off mailboxes would otherwise wait
+    /// out their poll backoff), upload backoffs are cleared so transfers
+    /// resume on the new network, and the blob sync loop is woken.
+    pub async fn handle_network_change(&self) {
+        self.probe_all().await;
+        self.reset_uploads();
+        self.notify_blobs_changed();
+    }
+
+    /// Spawn the loop that syncs blobs to mailboxes: on `interval`, and
+    /// immediately whenever a pass is due (startup, mailbox connected,
+    /// `notify_blobs_changed`). The caller supplies the node-side
+    /// capabilities: `source` refreshes our dialing address with a mailbox
+    /// before push attempts, `reader` serves blob bytes we hold. Stopped by
+    /// `close()`. `source` and `reader` must be cheaply clonable handles —
+    /// the loop forwards them by value.
+    pub fn start_blob_sync(
         &self,
         source: Arc<dyn BlobSource>,
         reader: Arc<dyn BlobReader>,
-        tracker: Arc<dyn UnfetchedBlobTracker>,
+        interval: Duration,
     ) {
-        reconcile_unfetched_blobs(self, source, reader, tracker).await;
+        let this = self.clone();
+        let trigger = self.blob_sync_trigger.clone();
+        let handle = tokio::spawn(
+            async move {
+                // Fire once at startup.
+                this.sync_blobs(source.clone(), reader.clone()).await;
+                let mut ticker = tokio::time::interval(interval);
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {
+                        _ = ticker.tick() => {}
+                        _ = trigger.notified() => {}
+                    }
+                    this.sync_blobs(source.clone(), reader.clone()).await;
+                }
+            }
+            .instrument(tracing::info_span!("blob sync")),
+        );
+        // A second install aborts any prior loop; without this, a re-started
+        // manager leaks the first loop forever.
+        if let Some(old) = self.blob_sync_loop.lock().unwrap().replace(handle) {
+            old.abort();
+        }
     }
 
     /// Nudge the poll loop to check for the next mailbox to poll.
@@ -422,9 +495,13 @@ where
         op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
     ) -> Self {
-        let blob_tracker = Arc::new(BlobSyncTracker::new(Arc::new(
-            crate::persistence::mem::MemBlobStore::default(),
-        )));
+        use crate::persistence::Persistence as _;
+        let persistence =
+            crate::persistence::mem::MemPersistence::<Item::Topic, Item::Author>::new();
+        let blob_tracker = Arc::new(BlobSyncTracker::new(
+            persistence.blob_store(),
+            persistence.sync_store(),
+        ));
         Self::spawn_internal(store, op_tracker, blob_tracker, config, None)
     }
 
@@ -444,7 +521,10 @@ where
             persistence.mailbox_store(),
             initial_ids,
         ));
-        let blob_tracker = Arc::new(BlobSyncTracker::new(persistence.blob_store()));
+        let blob_tracker = Arc::new(BlobSyncTracker::new(
+            persistence.blob_store(),
+            persistence.sync_store(),
+        ));
         Ok(Self::spawn_internal(
             store,
             sync_tracker,
@@ -457,7 +537,7 @@ where
     fn spawn_internal(
         store: Store,
         op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
-        blob_tracker: Arc<BlobSyncTracker>,
+        blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Author>>,
         config: MailboxesConfig,
         persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
     ) -> Self {
@@ -497,6 +577,11 @@ where
         if let Some(handle) = handle {
             handle.abort();
             // JoinError::Cancelled; the loop is now definitely stopped.
+            let _ = handle.await;
+        }
+        let handle = self.blob_sync_loop.lock().unwrap().take();
+        if let Some(handle) = handle {
+            handle.abort();
             let _ = handle.await;
         }
         if let Some(persistence) = &self.persistence {
@@ -555,6 +640,7 @@ where
             let result = manager
                 .sync_topics(topics.into_iter(), &id, &tracked_mailbox)
                 .await;
+            let sync_succeeded = result.is_ok();
             manager
                 .persist_status_change(&id, &tracked_mailbox, |tracked_mailbox| match result {
                     Ok(()) => tracked_mailbox.record_success(),
@@ -579,6 +665,12 @@ where
                     }
                 })
                 .await;
+            if sync_succeeded {
+                // Op watermarks just moved and/or this mailbox just flipped
+                // Active from backoff: blob candidates may now exist that
+                // didn't before the op sync. Wake the blob sync loop.
+                manager.blob_sync_trigger.notify_one();
+            }
             guard.complete();
         });
         Some(task)
@@ -623,7 +715,7 @@ mod tests {
 
     use mailbox_client::{
         BlobReader, FetchRequest, FetchResponse, FetchTopicResponse, NoopUnfetchedBlobTracker,
-        PublishResponse, SeqNum,
+        PublishResponse, SeqNum, UnfetchedBlobTracker,
         backends::{mem::MemMailbox, toy::ToyMailboxClient},
         testing::{DummyStore, MemStore, Msg},
     };
@@ -767,10 +859,13 @@ mod tests {
         }
     }
 
-    fn test_blob_tracker() -> Arc<BlobSyncTracker> {
-        Arc::new(BlobSyncTracker::new(Arc::new(
-            crate::persistence::mem::MemBlobStore::default(),
-        )))
+    fn test_blob_tracker() -> Arc<BlobSyncTracker<u8, char>> {
+        use crate::persistence::Persistence as _;
+        let persistence = crate::persistence::mem::MemPersistence::<u8, char>::new();
+        Arc::new(BlobSyncTracker::new(
+            persistence.blob_store(),
+            persistence.sync_store(),
+        ))
     }
 
     fn test_sync_tracker() -> Arc<OperationSyncTracker<u8, char>> {
@@ -892,6 +987,818 @@ mod tests {
         assert!(
             !mailboxes.upload_due(&id, hash).await,
             "a failed upload via the engine must land on the manager's tracker"
+        );
+    }
+
+    // -- blob followup loop tests --
+
+    /// A client with a url (so the reconcile pass doesn't skip it) whose
+    /// announce reports nothing already stored, leaving the tracker row in
+    /// place across passes; the call counter is the observable signal that
+    /// a pass reached this mailbox.
+    struct BlobTrackClient {
+        id: MailboxId,
+        announces: Arc<AtomicU32>,
+    }
+
+    impl BlobTrackClient {
+        fn new(id: &str) -> (Self, Arc<AtomicU32>) {
+            let announces = Arc::new(AtomicU32::new(0));
+            (
+                Self {
+                    id: id.into(),
+                    announces: announces.clone(),
+                },
+                announces,
+            )
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for BlobTrackClient {
+        fn id(&self) -> MailboxId {
+            self.id.clone()
+        }
+
+        fn url(&self) -> Option<String> {
+            Some(format!("http://{}", self.id))
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(FetchResponse(BTreeMap::new()))
+        }
+
+        async fn announce_blob_hashes(
+            &self,
+            _hashes: Vec<iroh_blobs::Hash>,
+            _expect_upload: bool,
+        ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+            self.announces.fetch_add(1, Ordering::Relaxed);
+            Ok(Vec::new()) // nothing stored yet, so the tracker row persists
+        }
+    }
+
+    struct NoopBlobSource;
+
+    #[async_trait::async_trait]
+    impl BlobSource for NoopBlobSource {
+        async fn prepare_upload_to(&self, _url: &str) {}
+    }
+
+    // -- blob-height reconcile tests --
+
+    /// A `MailboxItem` whose ops each reference one deterministic blob —
+    /// `Hash::new(seq as bytes)` — so the reconcile walk can be exercised
+    /// without extending `Msg`.
+    #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct BlobMsg {
+        topic: u8,
+        author: char,
+        seq: SeqNum,
+        blob: Option<iroh_blobs::Hash>,
+    }
+
+    impl mailbox_client::MailboxItem for BlobMsg {
+        type Author = char;
+        type Hash = (char, SeqNum);
+        type Topic = u8;
+
+        fn hash(&self) -> Self::Hash {
+            (self.author, self.seq)
+        }
+        fn author(&self) -> Self::Author {
+            self.author
+        }
+        fn seq_num(&self) -> SeqNum {
+            self.seq
+        }
+        fn topic(&self) -> Self::Topic {
+            self.topic
+        }
+        fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
+            self.blob.into_iter().collect()
+        }
+    }
+
+    /// An op store whose every op at `seq` carries the blob
+    /// `Hash::from(seq: u32 as bytes)` — deterministic so tests know which
+    /// blobs should be announced for which seq windows.
+    #[derive(Clone, Default)]
+    struct BlobStoreStub {
+        logs:
+            std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<(u8, char), Vec<BlobMsg>>>>,
+    }
+
+    impl BlobStoreStub {
+        fn append(&self, topic: u8, author: char, seq: SeqNum) -> iroh_blobs::Hash {
+            let blob = iroh_blobs::Hash::from_bytes({
+                let mut b = [0u8; 32];
+                b[..8].copy_from_slice(&(seq as u64).to_le_bytes());
+                b
+            });
+            self.logs
+                .lock()
+                .unwrap()
+                .entry((topic, author))
+                .or_default()
+                .push(BlobMsg {
+                    topic,
+                    author,
+                    seq,
+                    blob: Some(blob),
+                });
+            blob
+        }
+
+        /// Append a text-like op carrying no blob.
+        fn append_blobless(&self, topic: u8, author: char, seq: SeqNum) {
+            self.logs
+                .lock()
+                .unwrap()
+                .entry((topic, author))
+                .or_default()
+                .push(BlobMsg {
+                    topic,
+                    author,
+                    seq,
+                    blob: None,
+                });
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl mailbox_client::store::MailboxStore<BlobMsg> for BlobStoreStub {
+        async fn get_log(
+            &self,
+            author: &char,
+            topic: &u8,
+            from: SeqNum,
+        ) -> Result<Option<Vec<BlobMsg>>, anyhow::Error> {
+            let logs = self.logs.lock().unwrap();
+            Ok(logs
+                .get(&(*topic, *author))
+                .map(|ops| ops.iter().filter(|op| op.seq >= from).cloned().collect()))
+        }
+        async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
+            let logs = self.logs.lock().unwrap();
+            Ok(logs
+                .iter()
+                .filter(|((t, _), _)| t == topic)
+                .map(|((_, a), ops)| (*a, ops.last().map(|op| op.seq).unwrap_or(0)))
+                .collect())
+        }
+    }
+
+    /// A blob reader that holds every blob the stub op store produced (keyed
+    /// off the same deterministic hash pattern).
+    struct StubHoldingReader;
+
+    #[async_trait::async_trait]
+    impl BlobReader for StubHoldingReader {
+        async fn read_blob(&self, hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+            let _ = hash;
+            Ok(bytes::Bytes::from_static(b"stub"))
+        }
+        async fn has_blob(&self, _hash: iroh_blobs::Hash) -> bool {
+            true
+        }
+    }
+
+    /// After a successful announce the reconcile pass bumps the per-(topic,
+    /// A successful announce closes the log's walk window at the op watermark,
+    /// even when some candidates weren't confirmed — they're re-announced
+    /// each pass through the outstanding tracker.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_advances_blob_height_past_partially_confirmed_candidates() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        let blob1 = op_store.append(topic, author, 1);
+        let blob2 = op_store.append(topic, author, 2);
+        let blob3 = op_store.append(topic, author, 3);
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store.clone(),
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-by-height".into();
+
+        // The mailbox has the ops up to seq 3 but no blobs yet.
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 3)])
+            .await
+            .unwrap();
+
+        // Announce reports blobs 1 and 2 as stored but not 3 — so the height
+        // bump reaches seq 2, not seq 3.
+        struct PartialClient {
+            id: MailboxId,
+            stored: Vec<iroh_blobs::Hash>,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<BlobMsg> for PartialClient {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+            fn url(&self) -> Option<String> {
+                Some(format!("http://{}", self.id))
+            }
+            async fn publish(
+                &self,
+                _: Vec<BlobMsg>,
+            ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                Ok(PublishResponse::default())
+            }
+            async fn fetch(
+                &self,
+                _: FetchRequest<BlobMsg>,
+            ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
+            async fn announce_blob_hashes(
+                &self,
+                hashes: Vec<iroh_blobs::Hash>,
+                _: bool,
+            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                Ok(hashes
+                    .into_iter()
+                    .filter(|h| self.stored.contains(h))
+                    .collect())
+            }
+        }
+
+        mgr.register(PartialClient {
+            id: mailbox_id.clone(),
+            stored: vec![blob1, blob2],
+        })
+        .await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+
+        let state = mgr
+            .blob_tracker()
+            .get_all_blob_heights_for_mailbox(&mailbox_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&topic).and_then(|m| m.get(&author)).copied(),
+            Some(3),
+            "blob height lands at the op watermark: the unconfirmed blob at seq 3 stays in the unfetched tracker and is re-announced by hash"
+        );
+        let _ = blob3;
+    }
+
+    /// When the op poll succeeds, the blob sync loop wakes — covering the
+    /// case where a mailbox's first poll lands fresh op watermarks and its
+    /// blob followup would otherwise wait for the next interval tick.
+    #[tokio::test(start_paused = true)]
+    async fn poll_success_wakes_blob_sync_pass() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        op_store.append(topic, author, 1);
+
+        // spawn_internal wires the poll loop, `start_blob_sync` wires the
+        // blob sync loop.
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> =
+            Mailboxes::spawn(op_store.clone(), test_sync_tracker(), test_config());
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.start_blob_sync(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
+
+        let mailbox_id: MailboxId = "mbx-blob-wake".into();
+        let announces = Arc::new(AtomicU32::new(0));
+        let (client, _) = {
+            let announces = announces.clone();
+            struct C {
+                id: MailboxId,
+                announces: Arc<AtomicU32>,
+            }
+            #[async_trait::async_trait]
+            impl MailboxClient<BlobMsg> for C {
+                fn id(&self) -> MailboxId {
+                    self.id.clone()
+                }
+                fn url(&self) -> Option<String> {
+                    Some(format!("http://{}", self.id))
+                }
+                async fn publish(
+                    &self,
+                    _: Vec<BlobMsg>,
+                ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                    Ok(PublishResponse::default())
+                }
+                async fn fetch(
+                    &self,
+                    _: FetchRequest<BlobMsg>,
+                ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                    // The op sync calls fetch; returning nothing means the
+                    // publish is a no-op but the poll succeeds (mailbox is
+                    // healthy, no local ops required of it).
+                    Ok(FetchResponse(BTreeMap::new()))
+                }
+                async fn announce_blob_hashes(
+                    &self,
+                    _: Vec<iroh_blobs::Hash>,
+                    _: bool,
+                ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                    self.announces.fetch_add(1, Ordering::Relaxed);
+                    Ok(Vec::new())
+                }
+            }
+            (
+                C {
+                    id: mailbox_id.clone(),
+                    announces,
+                },
+                (),
+            )
+        };
+
+        // Before register: nothing has been announced.
+        mgr.register(client).await;
+        // The register-triggered blob pass sees no op watermarks yet, so no
+        // candidates, so no announce. Wait a beat for it to have fired.
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        let after_register = announces.load(Ordering::Relaxed);
+
+        // Mark the topic as subscribed so the op poll actually runs, and
+        // advance op watermarks out-of-band so the blob pass that fires
+        // afterwards has a by-height candidate.
+        let _rx = mgr.subscribe(topic).await.unwrap();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 1)])
+            .await
+            .unwrap();
+
+        // The poll loop should run an op sync shortly (its `active_interval`
+        // in test_config is 5s). Yield a lot of times to let it wake and
+        // complete; with paused time, `tokio::time::advance` drives the
+        // interval tick deterministically.
+        tokio::time::advance(Duration::from_secs(10)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        let after_poll = announces.load(Ordering::Relaxed);
+        assert!(
+            after_poll > after_register,
+            "an op-sync success should wake the blob sync pass (register={after_register}, poll={after_poll})"
+        );
+    }
+
+    /// A mailbox in backoff (`Degraded` or `Stopped` health) is skipped by
+    /// the blob sync pass — there's no point announcing to an endpoint
+    /// the poll loop has judged unreachable. An Active mailbox is announced
+    /// normally. Mirrors the op side's `request_sync_if_active` gate.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_skips_backed_off_mailboxes() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        op_store.append(topic, author, 1);
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-degraded".into();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 1)])
+            .await
+            .unwrap();
+
+        let announces = Arc::new(AtomicU32::new(0));
+        let (client, _) = {
+            let announces = announces.clone();
+            struct C {
+                id: MailboxId,
+                announces: Arc<AtomicU32>,
+            }
+            #[async_trait::async_trait]
+            impl MailboxClient<BlobMsg> for C {
+                fn id(&self) -> MailboxId {
+                    self.id.clone()
+                }
+                fn url(&self) -> Option<String> {
+                    Some(format!("http://{}", self.id))
+                }
+                async fn publish(
+                    &self,
+                    _: Vec<BlobMsg>,
+                ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                    Ok(PublishResponse::default())
+                }
+                async fn fetch(
+                    &self,
+                    _: FetchRequest<BlobMsg>,
+                ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                    Ok(FetchResponse(BTreeMap::new()))
+                }
+                async fn announce_blob_hashes(
+                    &self,
+                    _: Vec<iroh_blobs::Hash>,
+                    _: bool,
+                ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                    self.announces.fetch_add(1, Ordering::Relaxed);
+                    Ok(Vec::new())
+                }
+            }
+            (
+                C {
+                    id: mailbox_id.clone(),
+                    announces,
+                },
+                (),
+            )
+        };
+        mgr.register(client).await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+
+        // Active: announced.
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader.clone())
+            .await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "an Active mailbox is announced"
+        );
+
+        // Drive health down: two errors → Degraded, three → Stopped (per test_config).
+        let tracked = mgr.tracked_mailbox(&mailbox_id).await.unwrap();
+        tracked.record_error("err".into());
+        tracked.record_error("err".into());
+        assert_eq!(
+            tracked.health().borrow().status,
+            mailbox_client::SyncStatus::Degraded
+        );
+
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "a Degraded mailbox is skipped by the blob sync pass"
+        );
+
+        tracked.record_error("err".into());
+        assert_eq!(
+            tracked.health().borrow().status,
+            mailbox_client::SyncStatus::Stopped
+        );
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "a Stopped mailbox is skipped by the blob sync pass"
+        );
+    }
+
+    /// An announce that confirms nothing bumps the log's blob height just
+    /// An announce that confirms nothing still closes the log's walk window
+    /// at the op watermark; unconfirmed candidates live on in the unfetched
+    /// tracker and are re-offered by hash on subsequent passes.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_closes_window_when_nothing_confirmed() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        op_store.append(topic, author, 1);
+        op_store.append(topic, author, 2);
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-blocked".into();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 2)])
+            .await
+            .unwrap();
+
+        struct NothingStored {
+            id: MailboxId,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<BlobMsg> for NothingStored {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+            fn url(&self) -> Option<String> {
+                Some(format!("http://{}", self.id))
+            }
+            async fn publish(
+                &self,
+                _: Vec<BlobMsg>,
+            ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                Ok(PublishResponse::default())
+            }
+            async fn fetch(
+                &self,
+                _: FetchRequest<BlobMsg>,
+            ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
+            async fn announce_blob_hashes(
+                &self,
+                _: Vec<iroh_blobs::Hash>,
+                _: bool,
+            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                Ok(Vec::new())
+            }
+        }
+
+        mgr.register(NothingStored {
+            id: mailbox_id.clone(),
+        })
+        .await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+
+        let state = mgr
+            .blob_tracker()
+            .get_all_blob_heights_for_mailbox(&mailbox_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&topic).and_then(|m| m.get(&author)).copied(),
+            Some(2),
+            "unconfirmed candidates don't pin the height: announce-by-hash still offers them"
+        );
+    }
+
+    /// A log whose only op is seq 0 with a blob — e.g. the first avatar on
+    /// profile creation — must be proposed as a candidate on a mailbox
+    /// that's never confirmed any blob for it.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_walks_seq_zero_on_a_never_confirmed_log() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        // The only op on the log is seq 0, and it carries a blob.
+        let blob0 = op_store.append(topic, author, 0);
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-seq-zero".into();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 0)])
+            .await
+            .unwrap();
+
+        struct ConfirmsEverything {
+            id: MailboxId,
+            announced: Arc<std::sync::Mutex<Vec<Vec<iroh_blobs::Hash>>>>,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<BlobMsg> for ConfirmsEverything {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+            fn url(&self) -> Option<String> {
+                Some(format!("http://{}", self.id))
+            }
+            async fn publish(
+                &self,
+                _: Vec<BlobMsg>,
+            ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                Ok(PublishResponse::default())
+            }
+            async fn fetch(
+                &self,
+                _: FetchRequest<BlobMsg>,
+            ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
+            async fn announce_blob_hashes(
+                &self,
+                hashes: Vec<iroh_blobs::Hash>,
+                _: bool,
+            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                self.announced.lock().unwrap().push(hashes.clone());
+                Ok(hashes)
+            }
+        }
+
+        let announced: Arc<std::sync::Mutex<Vec<Vec<iroh_blobs::Hash>>>> = Default::default();
+        mgr.register(ConfirmsEverything {
+            id: mailbox_id.clone(),
+            announced: announced.clone(),
+        })
+        .await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+
+        assert!(
+            announced
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|batch| batch.contains(&blob0)),
+            "the seq-0 blob should have been announced",
+        );
+        let state = mgr
+            .blob_tracker()
+            .get_all_blob_heights_for_mailbox(&mailbox_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&topic).and_then(|m| m.get(&author)).copied(),
+            Some(0),
+            "blob height should land at seq 0, not remain unrecorded"
+        );
+    }
+
+    /// After one pass that confirms the only blob in a log with a tail of
+    /// blob-less ops after it, the height advances to the op watermark;
+    /// a second pass over the same state announces nothing.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_advances_height_to_op_watermark_past_blobless_tail() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        let blob = op_store.append(topic, author, 0);
+        for tail in 1..=5 {
+            op_store.append_blobless(topic, author, tail);
+        }
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-blobless-tail".into();
+        // The mailbox holds all ops up to seq 5; the blob is the only
+        // candidate.
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 5)])
+            .await
+            .unwrap();
+
+        struct ConfirmsOnce {
+            id: MailboxId,
+            announces: Arc<AtomicU32>,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<BlobMsg> for ConfirmsOnce {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+            fn url(&self) -> Option<String> {
+                Some(format!("http://{}", self.id))
+            }
+            async fn publish(
+                &self,
+                _: Vec<BlobMsg>,
+            ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                Ok(PublishResponse::default())
+            }
+            async fn fetch(
+                &self,
+                _: FetchRequest<BlobMsg>,
+            ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
+            async fn announce_blob_hashes(
+                &self,
+                hashes: Vec<iroh_blobs::Hash>,
+                _: bool,
+            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                self.announces.fetch_add(1, Ordering::Relaxed);
+                Ok(hashes)
+            }
+        }
+
+        let announces = Arc::new(AtomicU32::new(0));
+        mgr.register(ConfirmsOnce {
+            id: mailbox_id.clone(),
+            announces: announces.clone(),
+        })
+        .await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+
+        let _ = blob;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "first pass announces the only blob"
+        );
+        let state = mgr
+            .blob_tracker()
+            .get_all_blob_heights_for_mailbox(&mailbox_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&topic).and_then(|m| m.get(&author)).copied(),
+            Some(5),
+            "height should advance to the op watermark past the blob-less tail, not stop at the blob op's seq"
+        );
+
+        // Second pass: nothing new to announce.
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "second pass must not re-announce — the window is now fully covered"
+        );
+    }
+
+    /// The loop spawned by `start_blob_sync` runs a pass at startup,
+    /// again whenever `notify_blobs_changed()` is called, and again when
+    /// `register()` gives a tracked-with-unfetched-blobs mailbox a live
+    /// client. Each pass reaches the mailbox's `announce_blob_hashes`
+    /// (awaited synchronously in the pass), so the announce count directly
+    /// measures passes-run.
+    #[tokio::test(start_paused = true)]
+    async fn blob_followup_runs_on_startup_notify_and_register() {
+        let mgr = test_mailboxes(test_config());
+        let id: MailboxId = "blob-mbx".into();
+        let hash = iroh_blobs::Hash::new(b"followup blob");
+
+        // Seed the manager's own tracker: this mailbox owes us a blob.
+        mgr.blob_tracker().record(&id, &[hash]).await.unwrap();
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubBlobReader {
+            hash,
+            bytes: bytes::Bytes::from_static(b"payload"),
+        });
+        // Long interval so the ticker never fires during the test; every
+        // pass is attributable to a named trigger.
+        mgr.start_blob_sync(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
+
+        // Startup pass: no mailboxes registered yet, nothing to announce.
+        tokio::task::yield_now().await;
+
+        let (client, announces) = BlobTrackClient::new(&id);
+        mgr.register(client).await;
+        // The register-triggered pass runs `announce_blob_hashes` inline inside
+        // the loop, whose spawn-and-wake spans a couple of schedulings; yield
+        // twice so it runs to completion before we read the counter.
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        let after_register = announces.load(Ordering::Relaxed);
+        assert!(
+            after_register >= 1,
+            "registering an unfetched-blobs mailbox should fire a followup pass"
+        );
+
+        // The upload spawned off the pass used the default `upload_blob`,
+        // which errors, leaving a 5s backoff; `reset_uploads` is exactly what
+        // `handle_network_change` does to make the next pass viable.
+        mgr.reset_uploads();
+        mgr.notify_blobs_changed();
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        let after_notify = announces.load(Ordering::Relaxed);
+        assert!(
+            after_notify > after_register,
+            "notify_blobs_changed should run another pass"
+        );
+
+        mgr.close().await;
+        let at_close = announces.load(Ordering::Relaxed);
+
+        mgr.notify_blobs_changed();
+        tokio::task::yield_now().await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            at_close,
+            "a closed manager runs no further followup passes"
         );
     }
 
