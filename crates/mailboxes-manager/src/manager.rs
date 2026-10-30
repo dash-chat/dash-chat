@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use tracing::Instrument;
 
 use crate::blobs::blob_sync_tracker::BlobSyncTracker;
-use crate::blobs::unfetched_blobs::{BlobSource, reconcile_unfetched_blobs};
+use crate::blobs::unfetched_blobs::{BlobSource, sync_blobs_to_mailboxes};
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::mailbox_registry::MailboxRegistry;
 use crate::operations::operation_sync_tracker::OperationSyncTracker;
@@ -249,45 +249,40 @@ where
         self.upload_tracker.restart_uploads();
     }
 
-    /// Reconcile unfetched blobs across all registered mailboxes.
-    ///
-    /// For every mailbox that still has unfetched blobs recorded by `source`,
-    /// re-announce the hashes the node currently holds and push any bytes the
-    /// mailbox lacks.
-    pub async fn reconcile_unfetched_blobs(
-        &self,
-        source: Arc<dyn BlobSource>,
-        reader: Arc<dyn BlobReader>,
-    ) {
-        reconcile_unfetched_blobs(self, source, reader, self.blob_tracker.clone()).await;
+    /// Sync blobs to every registered mailbox: announce every hash the
+    /// mailbox might be missing (op-log-height candidates plus outstanding
+    /// tracker rows) and upload the bytes it reports it lacks. Advances
+    /// per-log blob heights off the mailbox's announce response.
+    pub async fn sync_blobs(&self, source: Arc<dyn BlobSource>, reader: Arc<dyn BlobReader>) {
+        sync_blobs_to_mailboxes(self, source, reader, self.blob_tracker.clone()).await;
     }
 
-    /// Wake the blob followup loop out-of-band: unpause, a new blob landed —
-    /// anything that means a reconcile pass is due before the next interval
-    /// tick. No-op until `start_blob_followup` runs. Network changes should
-    /// go through [`Self::handle_network_change`], which additionally resets
+    /// Wake the blob sync loop out-of-band: unpause, a new blob landed —
+    /// anything that means a pass is due before the next interval tick.
+    /// No-op until `start_blob_followup` runs. Network changes should go
+    /// through [`Self::handle_network_change`], which additionally resets
     /// upload backoffs and probes every mailbox.
-    pub fn notify_unfetched_blobs(&self) {
+    pub fn notify_blobs_changed(&self) {
         self.blob_followup.notify_one();
     }
 
     /// React to the OS reporting a network change. Every mailbox is probed
     /// for immediate re-judgement (backed-off mailboxes would otherwise wait
     /// out their poll backoff), upload backoffs are cleared so transfers
-    /// resume on the new network, and the blob followup loop is woken.
+    /// resume on the new network, and the blob sync loop is woken.
     pub async fn handle_network_change(&self) {
         self.probe_all().await;
         self.reset_uploads();
-        self.notify_unfetched_blobs();
+        self.notify_blobs_changed();
     }
 
-    /// Spawn the loop that reconciles unfetched blobs across mailboxes: on
-    /// `interval`, and immediately whenever a reconcile is due (startup,
-    /// mailbox connected, `notify_unfetched_blobs`). The caller supplies the
-    /// node-side capabilities: `source` refreshes our dialing address with a
-    /// mailbox before push attempts, `reader` serves blob bytes we hold.
-    /// Stopped by `close()`. `source` and `reader` must cheaply clonable
-    /// handles — the loop forwards them by value.
+    /// Spawn the loop that syncs blobs to mailboxes: on `interval`, and
+    /// immediately whenever a pass is due (startup, mailbox connected,
+    /// `notify_blobs_changed`). The caller supplies the node-side
+    /// capabilities: `source` refreshes our dialing address with a mailbox
+    /// before push attempts, `reader` serves blob bytes we hold. Stopped by
+    /// `close()`. `source` and `reader` must be cheaply clonable handles —
+    /// the loop forwards them by value.
     pub fn start_blob_followup(
         &self,
         source: Arc<dyn BlobSource>,
@@ -299,8 +294,7 @@ where
         let handle = tokio::spawn(
             async move {
                 // Fire once at startup.
-                this.reconcile_unfetched_blobs(source.clone(), reader.clone())
-                    .await;
+                this.sync_blobs(source.clone(), reader.clone()).await;
                 let mut ticker = tokio::time::interval(interval);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
@@ -308,11 +302,10 @@ where
                         _ = ticker.tick() => {}
                         _ = trigger.notified() => {}
                     }
-                    this.reconcile_unfetched_blobs(source.clone(), reader.clone())
-                        .await;
+                    this.sync_blobs(source.clone(), reader.clone()).await;
                 }
             }
-            .instrument(tracing::info_span!("unfetched-blob followup")),
+            .instrument(tracing::info_span!("blob sync")),
         );
         *self.blob_followup_loop.lock().unwrap() = Some(handle);
     }
@@ -1223,8 +1216,7 @@ mod tests {
         .await;
 
         let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
-        mgr.reconcile_unfetched_blobs(Arc::new(NoopBlobSource), reader)
-            .await;
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
 
         let state = mgr
             .blob_tracker()
@@ -1302,8 +1294,7 @@ mod tests {
         .await;
 
         let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
-        mgr.reconcile_unfetched_blobs(Arc::new(NoopBlobSource), reader)
-            .await;
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
 
         let state = mgr
             .blob_tracker()
@@ -1317,10 +1308,10 @@ mod tests {
         );
     }
 
-    /// The followup loop spawned by `start_blob_followup` runs a pass at
-    /// startup, again whenever `notify_unfetched_blobs()` is called, and
-    /// again when `register()` gives a tracked-with-unfetched-blobs mailbox
-    /// a live client. Each pass reaches the mailbox's `announce_blob_hashes`
+    /// The loop spawned by `start_blob_followup` runs a pass at startup,
+    /// again whenever `notify_blobs_changed()` is called, and again when
+    /// `register()` gives a tracked-with-unfetched-blobs mailbox a live
+    /// client. Each pass reaches the mailbox's `announce_blob_hashes`
     /// (awaited synchronously in the pass), so the announce count directly
     /// measures passes-run.
     #[tokio::test(start_paused = true)]
@@ -1360,19 +1351,19 @@ mod tests {
         // which errors, leaving a 5s backoff; `reset_uploads` is exactly what
         // `handle_network_change` does to make the next pass viable.
         mgr.reset_uploads();
-        mgr.notify_unfetched_blobs();
+        mgr.notify_blobs_changed();
         tokio::task::yield_now().await;
         tokio::task::yield_now().await;
         let after_notify = announces.load(Ordering::Relaxed);
         assert!(
             after_notify > after_register,
-            "notify_unfetched_blobs should run another pass"
+            "notify_blobs_changed should run another pass"
         );
 
         mgr.close().await;
         let at_close = announces.load(Ordering::Relaxed);
 
-        mgr.notify_unfetched_blobs();
+        mgr.notify_blobs_changed();
         tokio::task::yield_now().await;
         assert_eq!(
             announces.load(Ordering::Relaxed),

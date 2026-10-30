@@ -106,9 +106,9 @@ pub struct NodeConfig {
     /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
-    /// How often the followup task re-announces still-unfetched blob hashes to
-    /// their mailboxes.
-    pub unfetched_blob_followup_interval: std::time::Duration,
+    /// How often the manager's blob sync loop wakes up on its own between
+    /// event-driven triggers (publish, connect, network change).
+    pub blob_sync_interval: std::time::Duration,
     /// How long the delivery-ack writer waits after new operations arrive
     /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
     /// operations is covered by a single ack.
@@ -182,7 +182,7 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
+            blob_sync_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -212,7 +212,7 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(4),
+            blob_sync_interval: std::time::Duration::from_secs(4),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
             stream_cursor_prefix: None,
@@ -516,7 +516,7 @@ impl Node {
         node.mailboxes.start_blob_followup(
             NodeBlobSource::new(node.clone()),
             node.blob_reader(),
-            node.config.unfetched_blob_followup_interval,
+            node.config.blob_sync_interval,
         );
 
         // === message ack writer === //
@@ -641,10 +641,11 @@ impl Node {
         })
     }
 
-    /// Wake the manager's blob followup loop to run a reconciliation pass now
-    /// (e.g. on publish, unpause, network change).
-    pub fn notify_unfetched_blob_followup(&self) {
-        self.mailboxes.notify_unfetched_blobs();
+    /// Tell the manager the set of things-that-might-be-owed-to-mailboxes has
+    /// changed (e.g. a publish just landed a new blob), so it should run a
+    /// sync pass now rather than wait out the next interval. Pure wake-up.
+    pub fn notify_blobs_changed(&self) {
+        self.mailboxes.notify_blobs_changed();
     }
 
     /// Catch up after the process was suspended as after a network change: a

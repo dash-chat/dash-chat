@@ -283,14 +283,14 @@ async fn advance_blob_heights<Item, Store>(
     }
 }
 
-/// One reconciliation pass: for every registered mailbox, announce the blob
+/// One sync pass over registered mailboxes: for each, announce the blob
 /// hashes it might be missing — outstanding tracker rows plus the blobs of
 /// every op between its blob-confirmed height and its op watermark — and
 /// push whatever the mailbox reports it still lacks.
 ///
 /// On success the pass advances per-log blob heights from the announce
 /// response; on failure the mailbox retry is left to the next pass.
-pub async fn reconcile_unfetched_blobs<Item, Store>(
+pub async fn sync_blobs_to_mailboxes<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     source: Arc<dyn BlobSource>,
     reader: Arc<dyn BlobReader>,
