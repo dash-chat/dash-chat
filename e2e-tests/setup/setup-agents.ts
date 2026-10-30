@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { ErrorPlaceholder } from '../helpers/components/error-placeholder';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
+import { TestBanner } from '../helpers/components/test-banner';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
 import { CreateProfilePage } from '../helpers/pages/create-profile-page';
@@ -122,6 +123,7 @@ export type Agent = WebdriverIO.Browser & {
 	peerProfileSheet: PeerProfileSheet;
 	profilePage: ProfilePage;
 	settingsPage: SettingsPage;
+	testBanner: TestBanner;
 	toast: Toast;
 	updaterBanner: UpdaterBanner;
 	welcomePage: WelcomePage;
@@ -290,6 +292,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.peerProfileSheet = new PeerProfileSheet(b);
 	agent.profilePage = new ProfilePage(b);
 	agent.settingsPage = new SettingsPage(b);
+	agent.testBanner = new TestBanner(b);
 	agent.toast = new Toast(b);
 	agent.updaterBanner = new UpdaterBanner(b);
 	agent.welcomePage = new WelcomePage(b);

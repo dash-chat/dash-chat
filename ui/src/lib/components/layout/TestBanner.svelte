@@ -22,6 +22,7 @@
 			disabled={isContactUsPage}
 			small
 			inline
+			data-testid="test-banner-feedback-btn"
 			class="ms-2 normal-case feedback-btn"
 			colors={{
 				fillBgIos: 'bg-white active:bg-gray-100',

@@ -90,7 +90,10 @@
 			rightClass={saveDisabled ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goBack(`/group-chat/${chatId}/info`)} />
+				<NavbarBackLink
+					data-testid="group-info-edit-back"
+					onClick={() => goBack(`/group-chat/${chatId}/info`)}
+				/>
 			{/snippet}
 			{#snippet right()}
 				{#if isIos}
