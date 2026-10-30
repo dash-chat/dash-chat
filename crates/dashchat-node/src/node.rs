@@ -1658,12 +1658,14 @@ impl Node {
             handle.abort();
         }
 
+        self.mailboxes.close().await;
+
         // File locks first, slow best-effort endpoint close last, each
         // time-bounded so a rebuild isn't held up by either.
 
-        // iroh-blobs redb store; fetch loop aborted above so nothing else is
-        // using it now. Absent when blob sync is disabled (the push extension),
-        // which never opens it.
+        // iroh-blobs redb store; all blob-touching loops are aborted above
+        // so nothing else is using it now. Absent when blob sync is disabled
+        // (the push extension), which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
@@ -1678,9 +1680,6 @@ impl Node {
         }
 
         // Close pools last.
-        // SqlitePool clones share state, so this drains every connection; the
-        // manager owns the mailbox sync tracker persistence pool.
-        self.mailboxes.close().await;
         self.local_store.close().await;
         self.op_store.close().await;
 
