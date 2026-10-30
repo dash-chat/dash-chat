@@ -1172,11 +1172,11 @@ mod tests {
     }
 
     /// After a successful announce the reconcile pass bumps the per-(topic,
-    /// author) blob height past every seq whose blobs the mailbox confirmed
-    /// holding; unconfirmed seqs stop the bump at the last covered one, so
-    /// the next pass re-emits from there.
+    /// A successful announce closes the log's walk window at the op watermark,
+    /// even when some candidates weren't confirmed — they're re-announced
+    /// each pass through the outstanding tracker.
     #[tokio::test(start_paused = true)]
-    async fn reconcile_advances_blob_height_to_last_confirmed_seq() {
+    async fn reconcile_advances_blob_height_past_partially_confirmed_candidates() {
         let op_store = BlobStoreStub::default();
         let topic = 1u8;
         let author = 'a';
@@ -1254,8 +1254,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             state.get(&topic).and_then(|m| m.get(&author)).copied(),
-            Some(2),
-            "blob height should stop at the last fully-confirmed seq"
+            Some(3),
+            "blob height lands at the op watermark: the unconfirmed blob at seq 3 stays in the unfetched tracker and is re-announced by hash"
         );
         let _ = blob3;
     }
@@ -1472,11 +1472,11 @@ mod tests {
     }
 
     /// An announce that confirms nothing bumps the log's blob height just
-    /// below the earliest unconfirmed seq, so future passes walk from there
-    /// rather than re-reading the same seq 0 window forever. The announced
-    /// hashes stay in the unfetched tracker and continue to be offered.
+    /// An announce that confirms nothing still closes the log's walk window
+    /// at the op watermark; unconfirmed candidates live on in the unfetched
+    /// tracker and are re-offered by hash on subsequent passes.
     #[tokio::test(start_paused = true)]
-    async fn reconcile_pins_height_below_earliest_unconfirmed() {
+    async fn reconcile_closes_window_when_nothing_confirmed() {
         let op_store = BlobStoreStub::default();
         let topic = 1u8;
         let author = 'a';
@@ -1544,8 +1544,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             state.get(&topic).and_then(|m| m.get(&author)).copied(),
-            Some(0),
-            "blocker at seq 1 pins the height at 0"
+            Some(2),
+            "unconfirmed candidates don't pin the height: announce-by-hash still offers them"
         );
     }
 

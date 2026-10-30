@@ -253,10 +253,8 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
     let url = server.url.clone();
     wait_for_mailbox_health(&url).await;
 
-    // Sender (alice) and a contact (bobbi). Bobbi only exists so alice has a
-    // direct chat to send media into; he stays offline for the whole media
-    // exchange and is never a blob source. Alice uses the REAL unfetched-blob
-    // tracker so the persisted `unfetched_blob_hashes` table is exercised.
+    // Alice starts with the mailbox so the contact handshake can use it;
+    // she's about to lose it.
     let alice = TestNode::new(config.clone(), "alice").await;
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
@@ -278,7 +276,7 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
         ))
         .await;
 
-    // Establish contact while both are online (no media yet), then bobbi leaves.
+    // Establish contact while both are online (no media yet).
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi)
@@ -286,10 +284,15 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
         .unwrap();
     let chat = alice.direct_chat_with(&bobbi);
 
+    // Bobbi goes offline before any media exists.
     bobbi.shutdown().await;
 
-    // Alice sends a photo. `publish` announces the blob to the mailbox and,
-    // because the mailbox does not have it yet, records an unfetched-blob row.
+    // Alice loses her mailbox client: the photo she's about to publish has
+    // no mailbox to go to. The publish path's fast-push announces to zero
+    // mailboxes; nothing happens.
+    alice.clear_mailboxes().await;
+
+    // Alice sends a photo; the blob stays local, the mailbox never sees it.
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
@@ -314,28 +317,19 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
         .expect("alice's message carries media metadata");
     let hash = meta.first().expect("at least one media item").hash();
 
-    // Alice's mailbox sync runs `publish` on a background task; `publish`
-    // announces the blob via `/blobs/store` and, because the mailbox does not
-    // yet have it, records the outstanding hash in the manager's blob tracker.
-    // The first sync pass depends on the mailbox becoming reachable, which can
-    // take longer than the default 10s window, so widen this specific wait.
-    PollConfig::seconds(30)
-        .wait_for(|| async {
-            alice
-                .unfetched_blob_tracker()
-                .unfetched(&mailbox_id)
-                .await
-                .unwrap()
-                .contains(&hash)
-                .then_some(())
-                .ok_or("alice has not recorded the unfetched blob yet")
-        })
-        .await
-        .unwrap();
-
-    // The mailbox has the blob by the time the publish's upload task lands:
-    // wait for alice's tracker row to clear as evidence the mailbox
-    // confirmed it to the upload, then confirm the blob bytes are served.
+    // Alice's mailbox comes back: on re-register the blob sync pass walks
+    // the chat log's new window, finds the photo's blob, announces and
+    // uploads it. The mailbox never has to pull anything from alice — the
+    // proactive sync covered it.
+    alice
+        .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
+            mailbox_id.clone(),
+            &url,
+            alice.endpoint_id(),
+            alice.unfetched_blob_tracker(),
+            alice.mailboxes.upload_tracker(),
+        ))
+        .await;
     poll.wait_for(|| async {
         relay
             .blobs()
@@ -343,12 +337,13 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
             .await
             .unwrap_or(false)
             .then_some(())
-            .ok_or("mailbox did not receive the blob from alice's upload")
+            .ok_or("mailbox did not receive the blob from alice's proactive sync")
     })
     .await
     .unwrap();
 
-    // Tracker row cleared when the mailbox confirmed the upload.
+    // The unfetched tracker row for the hash was recorded when the announce
+    // said the mailbox lacked it, and is cleared when the upload confirms.
     poll.wait_for(|| async {
         (!alice
             .unfetched_blob_tracker()

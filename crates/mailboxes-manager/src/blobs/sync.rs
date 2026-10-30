@@ -279,20 +279,17 @@ where
 }
 
 /// Advance each log's blob height from the announce response. The height
-/// lands at the earliest unconfirmed seq minus one — everything below that
-/// was announced this pass and either confirmed by `already_stored` or
-/// offered without confirmation — or at `op_height` when the window has
-/// no unconfirmed candidate, so a fully-accounted window is never re-walked.
-///
-/// The blocker is honoured unconditionally: an unconfirmed blob stays in
-/// the unfetched tracker and is announced by hash on each pass regardless
-/// of where the height sits, so pinning the height just below it keeps the
-/// bounded-window invariant without losing the chance to retry.
+/// lands at `op_height` whenever the window has been walked: every seq's
+/// emitted blob is either in `already_stored` (confirming it) or was
+/// offered this pass and now lives as an outstanding tracker row, which
+/// is announced by hash on subsequent passes regardless. Pinning the
+/// height below an unconfirmed seq offers nothing the tracker row doesn't
+/// already cover, and would leave the walk window open to grow with the
+/// op log.
 async fn advance_blob_heights<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     mailbox_id: &mailbox_client::MailboxId,
     logs: Vec<LogCandidates<Item>>,
-    already_stored: &[iroh_blobs::Hash],
     current_blob_heights: &std::collections::HashMap<
         Item::Topic,
         std::collections::HashMap<Item::Author, SeqNum>,
@@ -306,7 +303,6 @@ async fn advance_blob_heights<Item, Store>(
         mailboxes.blob_tracker().as_ref(),
         mailbox_id,
         logs,
-        already_stored,
         current_blob_heights,
     )
     .await
@@ -316,7 +312,6 @@ async fn advance_blob_heights_via<Item>(
     tracker: &crate::blobs::blob_sync_tracker::BlobSyncTracker<Item::Topic, Item::Author>,
     mailbox_id: &mailbox_client::MailboxId,
     logs: Vec<LogCandidates<Item>>,
-    already_stored: &[iroh_blobs::Hash],
     current_blob_heights: &std::collections::HashMap<
         Item::Topic,
         std::collections::HashMap<Item::Author, SeqNum>,
@@ -325,46 +320,22 @@ async fn advance_blob_heights_via<Item>(
     Item: MailboxItem,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
-    // Convert to a set once for O(1) lookups inside the per-candidate loops.
-    let already_stored: std::collections::HashSet<iroh_blobs::Hash> =
-        already_stored.iter().copied().collect();
-
     let mut bumps: Vec<(Item::Topic, Item::Author, SeqNum)> = Vec::new();
     for log in logs {
-        let blocked_at: Option<SeqNum> = log
-            .candidates
-            .iter()
-            .filter(|(_, hash)| !already_stored.contains(hash))
-            .map(|(seq, _)| *seq)
-            .min();
-
-        let new_height: Option<SeqNum> = match blocked_at {
-            None => Some(log.op_height),
-            Some(blocked) => match blocked.checked_sub(1) {
-                // The walk stops at `seq > op_height`, so this h is already
-                // bounded by `op_height`.
-                Some(h) => Some(h),
-                // Blocker at seq 0 has no representable lower height. Record
-                // 0 anyway: the unconfirmed blob stays tracked by hash and
-                // is still announced on each pass, so the height advancing
-                // to 0 loses nothing and stops the walk re-reading seq 0's
-                // whole window every pass.
-                None => Some(0),
-            },
+        // Any unconfirmed candidates are tracked by hash in the outstanding
+        // set and re-announced on each pass, so the height can move straight
+        // to `op_height` — the window is accounted for. Skip a no-op write.
+        let h = log.op_height;
+        let current: Option<SeqNum> = current_blob_heights
+            .get(&log.topic)
+            .and_then(|m| m.get(&log.author))
+            .copied();
+        let would_move = match current {
+            None => true,
+            Some(c) => h > c,
         };
-
-        if let Some(h) = new_height {
-            let current: Option<SeqNum> = current_blob_heights
-                .get(&log.topic)
-                .and_then(|m| m.get(&log.author))
-                .copied();
-            let would_move = match current {
-                None => true,
-                Some(c) => h > c,
-            };
-            if would_move {
-                bumps.push((log.topic, log.author, h));
-            }
+        if would_move {
+            bumps.push((log.topic, log.author, h));
         }
     }
 
@@ -405,9 +376,7 @@ pub async fn sync_blobs_to_mailboxes<Item, Store>(
 
         let candidates = blob_candidates_for(mailboxes, &mailbox_id, &reader).await;
 
-        let already_stored: Vec<iroh_blobs::Hash> = if candidates.is_nothing_to_announce() {
-            Vec::new()
-        } else {
+        if !candidates.is_nothing_to_announce() {
             // Refresh our dialing address so the mailbox can fetch from us
             // as a backstop if the upload below doesn't land.
             source.prepare_upload_to(&url).await;
@@ -418,20 +387,16 @@ pub async fn sync_blobs_to_mailboxes<Item, Store>(
                 mailboxes.blob_tracker().clone(),
                 mailboxes.upload_tracker(),
             );
-            match delivery.sync(candidates.all_hashes()).await {
-                Ok(stored) => stored,
-                Err(err) => {
-                    tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
-                    continue;
-                }
+            if let Err(err) = delivery.sync(candidates.all_hashes()).await {
+                tracing::warn!(?err, mailbox = %mailbox_id, "followup register_hashes failed");
+                continue;
             }
-        };
+        }
 
         advance_blob_heights(
             mailboxes,
             &mailbox_id,
             candidates.logs,
-            &already_stored,
             &candidates.blob_heights,
         )
         .await;
@@ -800,9 +765,7 @@ mod tests {
             op_height: 3,
             candidates: vec![(1, h(1)), (2, h(2)), (3, h(3))],
         }];
-        let already = vec![h(1), h(2), h(3)];
-        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &already, &HashMap::new())
-            .await;
+        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
         let state = tracker
             .get_all_blob_heights_for_mailbox(&"mbx".into())
             .await
@@ -810,8 +773,10 @@ mod tests {
         assert_eq!(state.get(&1u8).and_then(|m| m.get(&'a')).copied(), Some(3));
     }
 
+    /// Unconfirmed candidates don't pin the height: the unfetched tracker
+    /// covers their announce-by-hash retry on every pass.
     #[tokio::test]
-    async fn advance_stops_at_earliest_unconfirmed_seq() {
+    async fn advance_lands_at_op_height_even_with_unconfirmed_candidates() {
         let tracker = mem_blob_tracker();
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
@@ -819,18 +784,16 @@ mod tests {
             op_height: 5,
             candidates: vec![(1, h(1)), (2, h(2)), (3, h(3))],
         }];
-        let already = vec![h(1), h(2)]; // h(3) not confirmed
-        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &already, &HashMap::new())
-            .await;
+        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
         let state = tracker
             .get_all_blob_heights_for_mailbox(&"mbx".into())
             .await
             .unwrap();
-        assert_eq!(state.get(&1u8).and_then(|m| m.get(&'a')).copied(), Some(2));
+        assert_eq!(state.get(&1u8).and_then(|m| m.get(&'a')).copied(), Some(5));
     }
 
     #[tokio::test]
-    async fn advance_stops_at_earliest_unconfirmed_even_when_nothing_confirmed() {
+    async fn advance_closes_window_when_everything_unconfirmed() {
         let tracker = mem_blob_tracker();
         let logs = vec![LogCandidates::<Msg> {
             topic: 1,
@@ -838,50 +801,15 @@ mod tests {
             op_height: 2,
             candidates: vec![(1, h(1)), (2, h(2))],
         }];
-        advance_blob_heights_via::<Msg>(
-            &tracker,
-            &"mbx".into(),
-            logs,
-            &[], // nothing confirmed
-            &HashMap::new(),
-        )
-        .await;
+        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
         let state = tracker
             .get_all_blob_heights_for_mailbox(&"mbx".into())
             .await
             .unwrap();
         assert_eq!(
             state.get(&1u8).and_then(|m| m.get(&'a')).copied(),
-            Some(0),
-            "blocker at seq 1 pins the height at 0, so seqs 1..=2 aren't re-walked next pass"
-        );
-    }
-
-    #[tokio::test]
-    async fn advance_records_zero_for_a_seq_zero_blocker() {
-        let tracker = mem_blob_tracker();
-        let logs = vec![LogCandidates::<Msg> {
-            topic: 1,
-            author: 'a',
-            op_height: 3,
-            candidates: vec![(0, h(1)), (1, h(2))],
-        }];
-        advance_blob_heights_via::<Msg>(
-            &tracker,
-            &"mbx".into(),
-            logs,
-            &[h(2)], // seq-0 blob never confirmed; seq-1 is
-            &HashMap::new(),
-        )
-        .await;
-        let state = tracker
-            .get_all_blob_heights_for_mailbox(&"mbx".into())
-            .await
-            .unwrap();
-        assert_eq!(
-            state.get(&1u8).and_then(|m| m.get(&'a')).copied(),
-            Some(0),
-            "a blocker at seq 0 records height 0 rather than staying unbounded"
+            Some(2),
+            "unconfirmed candidates don't pin the height: the walk window closes"
         );
     }
 
@@ -894,7 +822,7 @@ mod tests {
             op_height: 5,
             candidates: vec![],
         }];
-        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &[], &HashMap::new()).await;
+        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &HashMap::new()).await;
         let state = tracker
             .get_all_blob_heights_for_mailbox(&"mbx".into())
             .await
@@ -921,7 +849,7 @@ mod tests {
         }];
         let mut current: HashMap<u8, HashMap<char, SeqNum>> = HashMap::new();
         current.entry(1u8).or_default().insert('a', 5);
-        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &[h(1)], &current).await;
+        advance_blob_heights_via::<Msg>(&tracker, &"mbx".into(), logs, &current).await;
         let state = tracker
             .get_all_blob_heights_for_mailbox(&"mbx".into())
             .await
@@ -930,6 +858,48 @@ mod tests {
             state.get(&1u8).and_then(|m| m.get(&'a')).copied(),
             Some(5),
             "a no-op bump is skipped"
+        );
+    }
+
+    /// Two passes over the same log whose `op_height` grew between them
+    /// walk only the new range on the second pass — the first pass's bump
+    /// must have closed the earlier window. Drives the candidate-side
+    /// logic the regression was about: a stuck blob must not make every
+    /// pass re-read the whole log.
+    #[tokio::test]
+    async fn second_pass_walks_only_what_new_ops_added() {
+        // Mailbox has ops up to 3; one carries a blob we announce but the
+        // mailbox never confirms. Pass 1 closes at 3.
+        let mut s = FakeBlobOpSource::new().with_op_height(1, 'a', 3);
+        s.push_op(1, 'a', 0, Some(h(1)));
+        s.push_op(1, 'a', 1, None);
+        s.push_op(1, 'a', 2, None);
+        s.push_op(1, 'a', 3, None);
+
+        let pass1 = blob_candidates_from::<BlobOp>(&s, &"mbx".into(), &holds_all()).await;
+        assert_eq!(pass1.logs.len(), 1);
+        assert_eq!(pass1.logs[0].candidates.len(), 1); // only seq 0's blob
+
+        // "Advance" the blob height by simulating what the manager does
+        // after `advance_blob_heights_via` writes on the real store.
+        s.blob_heights.entry(1).or_default().insert('a', 3);
+
+        // New ops land: op_height moves to 6, two new blob ops arrive.
+        s.push_op(1, 'a', 4, None);
+        s.push_op(1, 'a', 5, Some(h(2)));
+        s.push_op(1, 'a', 6, Some(h(3)));
+        s.op_heights.entry(1).or_default().insert('a', 6);
+
+        let pass2 = blob_candidates_from::<BlobOp>(&s, &"mbx".into(), &holds_all()).await;
+        assert_eq!(pass2.logs.len(), 1);
+        assert_eq!(
+            pass2.logs[0]
+                .candidates
+                .iter()
+                .map(|(seq, _)| *seq)
+                .collect::<Vec<_>>(),
+            vec![5, 6],
+            "the second pass walks only (3, 6], not the whole log from 0"
         );
     }
 }
