@@ -1231,7 +1231,8 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone(), reply);
+        let lamport = self.next_lamport(chat_id).await?;
+        let message = ChatMessageContent::new(message, meta.clone(), reply, lamport);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
@@ -1261,6 +1262,20 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// One greater than the highest message `lamport` processed in this topic
+    /// (see `ChatMessageContent::lamport`), read from the projection's
+    /// `chat_lamports` table, which `OpProjection::reduce` keeps as a
+    /// monotonic per-topic maximum over every processed message — own and
+    /// received alike — so the counter survives restarts and absorbs peers'
+    /// counters without a log scan.
+    async fn next_lamport(&self, topic: ChatId) -> anyhow::Result<u64> {
+        Ok(self
+            .projection
+            .max_chat_lamport(topic.into())
+            .await?
+            .saturating_add(1))
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]

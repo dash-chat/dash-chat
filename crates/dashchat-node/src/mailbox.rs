@@ -137,6 +137,7 @@ mod tests {
                 hash: media_hash,
             }]),
             None,
+            0,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
         let body = payload.try_into_body().unwrap();

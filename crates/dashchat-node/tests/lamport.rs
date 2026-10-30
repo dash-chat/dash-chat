@@ -1,0 +1,133 @@
+use std::collections::HashMap;
+
+use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
+use mailbox_client::backends::mem::MemMailbox;
+
+/// Messages are displayed in lamport order, with the wall-clock header
+/// timestamp only tie-breaking, so a reply must carry a higher lamport than
+/// every message its author had already seen — however the two peers' clocks
+/// relate. The lamport is computed from the sender's stored ops, so the
+/// property asserted here is purely causal and needs no clock control.
+#[tokio::test(flavor = "multi_thread")]
+async fn replies_carry_higher_lamports_than_the_messages_they_answer() {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::<MailboxOperation>::new();
+
+    let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat = alice.direct_chat_with(&bobbi);
+
+    alice.send_message(chat, "hello", None, None).await.unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    bobbi
+        .send_message(chat, "hi back", None, None)
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    alice
+        .send_message(chat, "how are you", None, None)
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        let lamports: HashMap<String, u64> = node
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.content.message().to_string(), m.content.lamport))
+            .collect();
+        assert_eq!(lamports["hello"], 1);
+        assert_eq!(lamports["hi back"], 2);
+        assert_eq!(lamports["how are you"], 3);
+    }
+}
+
+/// The UI compares lamports as JS numbers, so a peer must not be able to push a
+/// chat's counter to or past the largest one they represent exactly.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peers_u64_max_lamport_does_not_advance_the_counter() {
+    peers_out_of_range_lamport_does_not_advance_the_counter(u64::MAX).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_peers_max_safe_integer_lamport_does_not_advance_the_counter() {
+    peers_out_of_range_lamport_does_not_advance_the_counter((1 << 53) - 1).await;
+}
+
+async fn peers_out_of_range_lamport_does_not_advance_the_counter(lamport: u64) {
+    dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
+
+    let poll = PollConfig::default();
+    let mailbox = MemMailbox::<MailboxOperation>::new();
+
+    let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat = alice.direct_chat_with(&bobbi);
+
+    bobbi
+        .send_message_raw(chat, ChatMessageContent::new("huge", None, None, lamport))
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    alice.send_message(chat, "first", None, None).await.unwrap();
+    alice
+        .send_message(chat, "second", None, None)
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+
+    for node in [&alice, &bobbi] {
+        let lamports: HashMap<String, u64> = node
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.content.message().to_string(), m.content.lamport))
+            .collect();
+        assert_eq!(lamports["first"], 1);
+        assert_eq!(lamports["second"], 2);
+    }
+}
