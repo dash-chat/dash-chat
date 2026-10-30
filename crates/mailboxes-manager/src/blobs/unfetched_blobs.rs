@@ -364,6 +364,13 @@ pub async fn sync_blobs_to_mailboxes<Item, Store>(
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
     for (mailbox_id, tracked) in mailboxes.registered_mailboxes().await {
+        // Connection health gates the announce: a mailbox the poll loop has
+        // backed off shouldn't be pounded with HTTP by the blob loop either.
+        // Op sync honors the same signal (`request_sync_if_active`).
+        if tracked.health().borrow().status != mailbox_client::SyncStatus::Active {
+            continue;
+        }
+
         let client = tracked.client().await;
         let Some(url) = client.url() else {
             continue; // non-HTTP mailbox (e.g. in-memory test mailbox)

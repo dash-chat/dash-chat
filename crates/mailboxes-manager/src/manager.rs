@@ -219,7 +219,9 @@ where
     }
 
     /// Whether an upload of `hash` to the given registered mailbox would start
-    /// now: not in flight and not backing off.
+    /// now: not in flight and not backing off. Test-only accessor for the
+    /// upload tracker's wiring; production paths go through `claim_upload`.
+    #[doc(hidden)]
     pub async fn upload_due(&self, mailbox_id: &MailboxId, hash: iroh_blobs::Hash) -> bool {
         let Some(tracked) = self.tracked_mailbox(mailbox_id).await else {
             return false;
@@ -231,8 +233,9 @@ where
     }
 
     /// Whether an upload of `hash` to the mailbox at `url` would start now,
-    /// without re-resolving the mailbox. For callers that already hold the
-    /// mailbox URL.
+    /// without re-resolving the mailbox. Test-only backing for
+    /// [`Self::upload_due`]; production paths go through `claim_upload`.
+    #[doc(hidden)]
     pub fn upload_due_at(&self, url: &str, hash: iroh_blobs::Hash) -> bool {
         self.upload_tracker.upload_due(url, hash)
     }
@@ -1244,6 +1247,117 @@ mod tests {
             "blob height should stop at the last fully-confirmed seq"
         );
         let _ = blob3;
+    }
+
+    /// A mailbox in backoff (`Degraded` or `Stopped` health) is skipped by
+    /// the blob sync pass — there's no point announcing to an endpoint
+    /// the poll loop has judged unreachable. An Active mailbox is announced
+    /// normally. Mirrors the op side's `request_sync_if_active` gate.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_skips_backed_off_mailboxes() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        op_store.append(topic, author, 1);
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-degraded".into();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 1)])
+            .await
+            .unwrap();
+
+        let announces = Arc::new(AtomicU32::new(0));
+        let (client, _) = {
+            let announces = announces.clone();
+            struct C {
+                id: MailboxId,
+                announces: Arc<AtomicU32>,
+            }
+            #[async_trait::async_trait]
+            impl MailboxClient<BlobMsg> for C {
+                fn id(&self) -> MailboxId {
+                    self.id.clone()
+                }
+                fn url(&self) -> Option<String> {
+                    Some(format!("http://{}", self.id))
+                }
+                async fn publish(
+                    &self,
+                    _: Vec<BlobMsg>,
+                ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                    Ok(PublishResponse::default())
+                }
+                async fn fetch(
+                    &self,
+                    _: FetchRequest<BlobMsg>,
+                ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                    Ok(FetchResponse(BTreeMap::new()))
+                }
+                async fn announce_blob_hashes(
+                    &self,
+                    _: Vec<iroh_blobs::Hash>,
+                    _: bool,
+                ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                    self.announces.fetch_add(1, Ordering::Relaxed);
+                    Ok(Vec::new())
+                }
+            }
+            (
+                C {
+                    id: mailbox_id.clone(),
+                    announces,
+                },
+                (),
+            )
+        };
+        mgr.register(client).await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+
+        // Active: announced.
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader.clone())
+            .await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "an Active mailbox is announced"
+        );
+
+        // Drive health down: two errors → Degraded, three → Stopped (per test_config).
+        let tracked = mgr.tracked_mailbox(&mailbox_id).await.unwrap();
+        tracked.record_error("err".into());
+        tracked.record_error("err".into());
+        assert_eq!(
+            tracked.health().borrow().status,
+            mailbox_client::SyncStatus::Degraded
+        );
+
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "a Degraded mailbox is skipped by the blob sync pass"
+        );
+
+        tracked.record_error("err".into());
+        assert_eq!(
+            tracked.health().borrow().status,
+            mailbox_client::SyncStatus::Stopped
+        );
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+        assert_eq!(
+            announces.load(Ordering::Relaxed),
+            1,
+            "a Stopped mailbox is skipped by the blob sync pass"
+        );
     }
 
     /// An announce that confirms nothing leaves the blob height at 0, so
