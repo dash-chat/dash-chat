@@ -1109,6 +1109,18 @@ export async function setupDesktopAgent(
 	}
 }
 
+/** Launch one more desktop agent whose app gets `env` on top of the harness's
+ *  environment, kept across `Agent.restart`. */
+export async function setupDesktopAgentWithEnv(
+	env: NodeJS.ProcessEnv,
+): Promise<Agent> {
+	const { agent } = await setupDesktopAgent(slot =>
+		launchDesktopAgent(slot, env),
+	);
+	specAgents.push(agent);
+	return agent;
+}
+
 export async function setupAgentWithoutLocalNetworkAccess(): Promise<Agent> {
 	const { agent } = await setupDesktopAgent(
 		launchDesktopAgentWithoutLocalNetworkAccess,
