@@ -36,6 +36,7 @@ use mailbox_client::MailboxesConfig;
 use mailboxes_manager::Mailboxes;
 use tokio::task::JoinHandle;
 
+use crate::NodeBlobSource;
 use crate::OnlinePeers;
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
@@ -46,7 +47,6 @@ use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
 use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
-use crate::unfetched_blobs::NodeBlobSource;
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
@@ -511,9 +511,9 @@ impl Node {
             .await
             .replace(network_change_handle);
 
-        // === unfetched blob followup loop === //
+        // === blob sync loop === //
 
-        node.mailboxes.start_blob_followup(
+        node.mailboxes.start_blob_sync(
             NodeBlobSource::new(node.clone()),
             node.blob_reader(),
             node.config.blob_sync_interval,

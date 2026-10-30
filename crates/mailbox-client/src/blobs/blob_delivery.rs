@@ -42,27 +42,27 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         }
     }
 
-    /// Announce blob hashes to the mailbox and reconcile the unfetched
-    /// tracker, then push the bytes the mailbox still needs in a detached
-    /// best-effort task.
-    ///
-    /// The announce goes first and is awaited: it is what atomically locks in
-    /// the delivery (the mailbox now knows to fetch these hashes as a
-    /// backstop). Only then do we stream the bytes the mailbox reported it
-    /// lacks — spawned, so a batch of large blobs never stalls the caller,
-    /// and scoped to `not_stored`, so we never re-upload blobs the mailbox
-    /// already holds.
+    /// Announce blob hashes to the mailbox and push the bytes it reports it
+    /// lacks. The publish path: the mailbox's announce lands *after* the op
+    /// that referenced these blobs, so the mailbox has them on the way.
+    /// Delegates to [`Self::sync`] — same mechanism, same return value.
     pub async fn publish(
         &self,
         hashes: Vec<iroh_blobs::Hash>,
     ) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
-        self.announce_and_upload(hashes, self.reader.clone()).await
+        self.sync(hashes).await
     }
 
-    /// Reconcile a known-outstanding set with the mailbox: re-announce the
-    /// hashes and push any bytes the mailbox still lacks. Uses the engine's
-    /// reader: a sync that can't serve bytes would announce hashes the
-    /// mailbox then fetches from a node that doesn't have them.
+    /// Announce blob hashes to the mailbox and reconcile the unfetched
+    /// tracker, then push the bytes it reports it lacks in a detached
+    /// best-effort task.
+    ///
+    /// The announce goes first and is awaited: it is what atomically locks in
+    /// the delivery (the mailbox now knows to fetch these hashes as a
+    /// backstop, and its reply is the ground truth for what follows). Only
+    /// then do we stream the bytes the mailbox reported it lacks — spawned,
+    /// so a batch of large blobs never stalls the caller, and scoped to
+    /// `not_stored`, so we never re-upload blobs the mailbox already holds.
     ///
     /// Returns the hashes the mailbox confirmed it already holds at announce
     /// time. The detached upload may land more after this returns — the

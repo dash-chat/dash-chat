@@ -45,14 +45,21 @@ impl<Item: MailboxItem> BlobCandidates<Item> {
         self.outstanding.is_empty() && self.logs.iter().all(|log| log.candidates.is_empty())
     }
 
-    /// Every hash to announce to the mailbox.
+    /// Every hash to announce to the mailbox, deduplicated: one blob can be
+    /// referenced by many ops and can also sit in the outstanding tracker.
     fn all_hashes(&self) -> Vec<iroh_blobs::Hash> {
-        let mut hashes: Vec<iroh_blobs::Hash> = self
+        let mut seen = std::collections::HashSet::new();
+        let mut hashes: Vec<iroh_blobs::Hash> = Vec::new();
+        for hash in self
             .logs
             .iter()
             .flat_map(|log| log.candidates.iter().map(|(_, hash)| *hash))
-            .collect();
-        hashes.extend(self.outstanding.iter().copied());
+            .chain(self.outstanding.iter().copied())
+        {
+            if seen.insert(hash) {
+                hashes.push(hash);
+            }
+        }
         hashes
     }
 }
@@ -310,6 +317,10 @@ async fn advance_blob_heights_via<Item>(
     Item: MailboxItem,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
+    // Convert to a set once for O(1) lookups inside the per-candidate loops.
+    let already_stored: std::collections::HashSet<iroh_blobs::Hash> =
+        already_stored.iter().copied().collect();
+
     let mut bumps: Vec<(Item::Topic, Item::Author, SeqNum)> = Vec::new();
     for log in logs {
         let blocked_at: Option<SeqNum> = log
@@ -359,7 +370,6 @@ pub async fn sync_blobs_to_mailboxes<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     source: Arc<dyn BlobSource>,
     reader: Arc<dyn BlobReader>,
-    tracker: Arc<dyn mailbox_client::UnfetchedBlobTracker>,
 ) where
     Item: MailboxItem,
     Store: MailboxStore<Item>,
@@ -390,7 +400,7 @@ pub async fn sync_blobs_to_mailboxes<Item, Store>(
             let delivery = BlobDelivery::new(
                 client.clone(),
                 Some(reader.clone()),
-                tracker.clone(),
+                mailboxes.blob_tracker().clone(),
                 mailboxes.upload_tracker(),
             );
             match delivery.sync(candidates.all_hashes()).await {

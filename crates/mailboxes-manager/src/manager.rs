@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use tracing::Instrument;
 
 use crate::blobs::blob_sync_tracker::BlobSyncTracker;
-use crate::blobs::unfetched_blobs::{BlobSource, sync_blobs_to_mailboxes};
+use crate::blobs::sync::{BlobSource, sync_blobs_to_mailboxes};
 use crate::blobs::upload_tracker::BlobUploadTracker;
 use crate::mailbox_registry::MailboxRegistry;
 use crate::operations::operation_sync_tracker::OperationSyncTracker;
@@ -36,7 +36,7 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     /// Wakes the blob followup loop out-of-band: mailbox connected, network
     /// changed, new blob available — anything that makes a reconcile pass
     /// likely to have new work before the next interval tick.
-    blob_followup: Arc<Notify>,
+    blob_sync_trigger: Arc<Notify>,
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
     persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
@@ -44,8 +44,8 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     /// persistence pool is released.
     poll_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// The blob followup loop's handle, taken by `close()`. `None` until
-    /// `start_blob_followup` installs it.
-    blob_followup_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// `start_blob_sync` installs it.
+    blob_sync_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     store: Store,
 }
 
@@ -68,11 +68,11 @@ where
             upload_tracker: Arc::new(BlobUploadTracker::new()),
             config,
             nudge: Arc::new(Notify::new()),
-            blob_followup: Arc::new(Notify::new()),
+            blob_sync_trigger: Arc::new(Notify::new()),
             store,
             persistence,
             poll_loop: Arc::new(std::sync::Mutex::new(None)),
-            blob_followup_loop: Arc::new(std::sync::Mutex::new(None)),
+            blob_sync_loop: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -177,7 +177,7 @@ where
 
         // Registration is reachability evidence: the blob followup might now
         // have a mailbox it can push to. Coalesces onto the loop's next wake.
-        self.blob_followup.notify_one();
+        self.blob_sync_trigger.notify_one();
     }
 
     /// Returns `true` if a mailbox with the given id was removed.
@@ -257,16 +257,16 @@ where
     /// tracker rows) and upload the bytes it reports it lacks. Advances
     /// per-log blob heights off the mailbox's announce response.
     pub async fn sync_blobs(&self, source: Arc<dyn BlobSource>, reader: Arc<dyn BlobReader>) {
-        sync_blobs_to_mailboxes(self, source, reader, self.blob_tracker.clone()).await;
+        sync_blobs_to_mailboxes(self, source, reader).await;
     }
 
     /// Wake the blob sync loop out-of-band: unpause, a new blob landed —
     /// anything that means a pass is due before the next interval tick.
-    /// No-op until `start_blob_followup` runs. Network changes should go
+    /// No-op until `start_blob_sync` runs. Network changes should go
     /// through [`Self::handle_network_change`], which additionally resets
     /// upload backoffs and probes every mailbox.
     pub fn notify_blobs_changed(&self) {
-        self.blob_followup.notify_one();
+        self.blob_sync_trigger.notify_one();
     }
 
     /// React to the OS reporting a network change. Every mailbox is probed
@@ -286,14 +286,14 @@ where
     /// before push attempts, `reader` serves blob bytes we hold. Stopped by
     /// `close()`. `source` and `reader` must be cheaply clonable handles —
     /// the loop forwards them by value.
-    pub fn start_blob_followup(
+    pub fn start_blob_sync(
         &self,
         source: Arc<dyn BlobSource>,
         reader: Arc<dyn BlobReader>,
         interval: Duration,
     ) {
         let this = self.clone();
-        let trigger = self.blob_followup.clone();
+        let trigger = self.blob_sync_trigger.clone();
         let handle = tokio::spawn(
             async move {
                 // Fire once at startup.
@@ -310,7 +310,11 @@ where
             }
             .instrument(tracing::info_span!("blob sync")),
         );
-        *self.blob_followup_loop.lock().unwrap() = Some(handle);
+        // A second install aborts any prior loop; without this, a re-started
+        // manager leaks the first loop forever.
+        if let Some(old) = self.blob_sync_loop.lock().unwrap().replace(handle) {
+            old.abort();
+        }
     }
 
     /// Nudge the poll loop to check for the next mailbox to poll.
@@ -575,7 +579,7 @@ where
             // JoinError::Cancelled; the loop is now definitely stopped.
             let _ = handle.await;
         }
-        let handle = self.blob_followup_loop.lock().unwrap().take();
+        let handle = self.blob_sync_loop.lock().unwrap().take();
         if let Some(handle) = handle {
             handle.abort();
             let _ = handle.await;
@@ -665,7 +669,7 @@ where
                 // Op watermarks just moved and/or this mailbox just flipped
                 // Active from backoff: blob candidates may now exist that
                 // didn't before the op sync. Wake the blob sync loop.
-                manager.blob_followup.notify_one();
+                manager.blob_sync_trigger.notify_one();
             }
             guard.complete();
         });
@@ -1266,12 +1270,12 @@ mod tests {
         let author = 'a';
         op_store.append(topic, author, 1);
 
-        // spawn_internal wires the poll loop, `start_blob_followup` wires the
+        // spawn_internal wires the poll loop, `start_blob_sync` wires the
         // blob sync loop.
         let mgr: Mailboxes<BlobMsg, BlobStoreStub> =
             Mailboxes::spawn(op_store.clone(), test_sync_tracker(), test_config());
         let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
-        mgr.start_blob_followup(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
+        mgr.start_blob_sync(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
 
         let mailbox_id: MailboxId = "mbx-blob-wake".into();
         let announces = Arc::new(AtomicU32::new(0));
@@ -1734,7 +1738,7 @@ mod tests {
         );
     }
 
-    /// The loop spawned by `start_blob_followup` runs a pass at startup,
+    /// The loop spawned by `start_blob_sync` runs a pass at startup,
     /// again whenever `notify_blobs_changed()` is called, and again when
     /// `register()` gives a tracked-with-unfetched-blobs mailbox a live
     /// client. Each pass reaches the mailbox's `announce_blob_hashes`
@@ -1755,7 +1759,7 @@ mod tests {
         });
         // Long interval so the ticker never fires during the test; every
         // pass is attributable to a named trigger.
-        mgr.start_blob_followup(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
+        mgr.start_blob_sync(Arc::new(NoopBlobSource), reader, Duration::from_secs(3600));
 
         // Startup pass: no mailboxes registered yet, nothing to announce.
         tokio::task::yield_now().await;
