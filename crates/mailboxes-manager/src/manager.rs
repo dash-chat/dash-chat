@@ -1308,6 +1308,97 @@ mod tests {
         );
     }
 
+    /// Regression for the off-by-one that skipped seq 0: with no blob
+    /// confirmed yet, "not-yet-confirmed" was collapsed into height 0 and
+    /// the walk started at seq 1. A log whose only op is seq 0 — e.g. an
+    /// avatar set at profile creation, the announcements log's first op —
+    /// was therefore never announced by the height path.
+    #[tokio::test(start_paused = true)]
+    async fn reconcile_walks_seq_zero_on_a_never_confirmed_log() {
+        let op_store = BlobStoreStub::default();
+        let topic = 1u8;
+        let author = 'a';
+        // The only op on the log is seq 0, and it carries a blob.
+        let blob0 = op_store.append(topic, author, 0);
+
+        let mgr: Mailboxes<BlobMsg, BlobStoreStub> = Mailboxes::new(
+            op_store,
+            test_sync_tracker(),
+            test_blob_tracker(),
+            test_config(),
+            None,
+        );
+        let mailbox_id: MailboxId = "mbx-seq-zero".into();
+        mgr.operation_tracker()
+            .record_synced(&mailbox_id, &[(topic, author, 0)])
+            .await
+            .unwrap();
+
+        struct ConfirmsEverything {
+            id: MailboxId,
+            announced: Arc<std::sync::Mutex<Vec<Vec<iroh_blobs::Hash>>>>,
+        }
+
+        #[async_trait::async_trait]
+        impl MailboxClient<BlobMsg> for ConfirmsEverything {
+            fn id(&self) -> MailboxId {
+                self.id.clone()
+            }
+            fn url(&self) -> Option<String> {
+                Some(format!("http://{}", self.id))
+            }
+            async fn publish(
+                &self,
+                _: Vec<BlobMsg>,
+            ) -> Result<PublishResponse<BlobMsg>, anyhow::Error> {
+                Ok(PublishResponse::default())
+            }
+            async fn fetch(
+                &self,
+                _: FetchRequest<BlobMsg>,
+            ) -> Result<FetchResponse<BlobMsg>, anyhow::Error> {
+                Ok(FetchResponse(BTreeMap::new()))
+            }
+            async fn announce_blob_hashes(
+                &self,
+                hashes: Vec<iroh_blobs::Hash>,
+                _: bool,
+            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+                self.announced.lock().unwrap().push(hashes.clone());
+                Ok(hashes)
+            }
+        }
+
+        let announced: Arc<std::sync::Mutex<Vec<Vec<iroh_blobs::Hash>>>> = Default::default();
+        mgr.register(ConfirmsEverything {
+            id: mailbox_id.clone(),
+            announced: announced.clone(),
+        })
+        .await;
+
+        let reader: Arc<dyn BlobReader> = Arc::new(StubHoldingReader);
+        mgr.sync_blobs(Arc::new(NoopBlobSource), reader).await;
+
+        assert!(
+            announced
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|batch| batch.contains(&blob0)),
+            "the seq-0 blob should have been announced",
+        );
+        let state = mgr
+            .blob_tracker()
+            .get_all_blob_heights_for_mailbox(&mailbox_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&topic).and_then(|m| m.get(&author)).copied(),
+            Some(0),
+            "blob height should land at seq 0, not remain unrecorded"
+        );
+    }
+
     /// The loop spawned by `start_blob_followup` runs a pass at startup,
     /// again whenever `notify_blobs_changed()` is called, and again when
     /// `register()` gives a tracked-with-unfetched-blobs mailbox a live

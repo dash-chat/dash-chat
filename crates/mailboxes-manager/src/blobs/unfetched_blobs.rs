@@ -124,12 +124,11 @@ where
     let mut by_height: Vec<HeightCandidate<Item>> = Vec::new();
     for (topic, authors) in op_state {
         for (author, op_height) in authors {
-            let blob_height = blob_state
-                .get(&topic)
-                .and_then(|m| m.get(&author))
-                .copied()
-                .unwrap_or(0);
-            if blob_height >= op_height {
+            // `None` means "no blob confirmed yet" (fresh mailbox, or a log
+            // whose blobs have never landed)
+            let blob_height: Option<SeqNum> =
+                blob_state.get(&topic).and_then(|m| m.get(&author)).copied();
+            if blob_height.is_some_and(|h| h >= op_height) {
                 continue;
             }
             let log_candidates = height_candidates_for_log(
@@ -152,18 +151,21 @@ where
     }
 }
 
-/// Per-log blob candidates: the blob hashes of every op in
+/// Per-log blob candidates: the blob hashes of every op in the seq window
 /// `(blob_height, op_watermark]` for one `(topic, author)`, each paired
 /// with its op's seq so confirmations can be translated into height bumps
-/// later. Blobs the reader doesn't hold are dropped — announcing them
-/// would send the mailbox to a peer that can't serve the bytes.
+/// later. `blob_height: None` means no blob has been confirmed yet, so the
+/// walk starts from seq 0 (matching the op-side `fast_push_ops`, which
+/// uses `synced.map_or(0, |n| n + 1)`). Blobs the reader doesn't hold are
+/// dropped — announcing them would send the mailbox to a peer that can't
+/// serve the bytes.
 async fn height_candidates_for_log<Item, Store>(
     mailboxes: &Mailboxes<Item, Store>,
     mailbox_id: &mailbox_client::MailboxId,
     reader: &Arc<dyn BlobReader>,
     topic: Item::Topic,
     author: Item::Author,
-    blob_height: SeqNum,
+    blob_height: Option<SeqNum>,
     op_height: SeqNum,
 ) -> Vec<HeightCandidate<Item>>
 where
@@ -171,11 +173,8 @@ where
     Store: MailboxStore<Item>,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
-    let ops = match mailboxes
-        .store()
-        .get_log(&author, &topic, blob_height + 1)
-        .await
-    {
+    let from = blob_height.map_or(0, |h| h + 1);
+    let ops = match mailboxes.store().get_log(&author, &topic, from).await {
         Ok(Some(ops)) => ops,
         Ok(None) => return Vec::new(),
         Err(err) => {
