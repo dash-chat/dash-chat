@@ -13,7 +13,6 @@ pub trait BlobStore: Send + Sync {
     async fn record(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
     async fn remove(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
     async fn unfetched(&self, id: &MailboxId) -> anyhow::Result<Vec<iroh_blobs::Hash>>;
-    async fn unfetched_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>>;
     /// Drop every row for these hashes across all mailboxes — the node
     /// deleted the blob locally and can no longer serve it.
     async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;

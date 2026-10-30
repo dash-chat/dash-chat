@@ -264,10 +264,6 @@ impl BlobStore for MemBlobStore {
             .unwrap_or_default())
     }
 
-    async fn unfetched_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
-        Ok(self.data.read().unwrap().keys().cloned().collect())
-    }
-
     async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
         let mut data = self.data.write().unwrap();
         for set in data.values_mut() {

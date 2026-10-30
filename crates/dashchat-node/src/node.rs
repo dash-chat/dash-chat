@@ -513,11 +513,18 @@ impl Node {
 
         // === blob sync loop === //
 
-        node.mailboxes.start_blob_sync(
-            NodeBlobSource::new(node.clone()),
-            node.blob_reader(),
-            node.config.blob_sync_interval,
-        );
+        // The push extension has no blob store (`enable_blob_sync = false`).
+        // Starting the sync there would poison the mailboxes'
+        // `mailbox_blob_sync_state` table — shared with the main app over the
+        // same filesystem path — by advancing every log's blob height past
+        // its op watermark without ever announcing a blob.
+        if node.blob_sync.is_some() {
+            node.mailboxes.start_blob_sync(
+                NodeBlobSource::new(node.clone()),
+                node.blob_reader(),
+                node.config.blob_sync_interval,
+            );
+        }
 
         // === message ack writer === //
 
@@ -1679,7 +1686,9 @@ impl Node {
             }
         }
 
-        // Close pools last.
+        // Close pools last. SqlitePool clones share state, so one `close()` on
+        // each store drains every connection that store ever handed out; the
+        // manager owns its own mailbox-pool close and already did it above.
         self.local_store.close().await;
         self.op_store.close().await;
 

@@ -438,14 +438,6 @@ impl crate::persistence::BlobStore for SqliteBlobStore {
             .collect()
     }
 
-    async fn unfetched_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>> {
-        let rows: Vec<(String,)> =
-            sqlx::query_as("SELECT DISTINCT mailbox_id FROM mailbox_unfetched_blobs")
-                .fetch_all(self.pool.pool())
-                .await?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
-    }
-
     async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
         if hashes.is_empty() {
             return Ok(());

@@ -179,11 +179,19 @@ where
             Default::default()
         }
     };
+    // A failed blob-heights read must not be substituted by an empty map:
+    // empty means "never confirmed anything" which would make this pass
+    // walk every log from seq 0 and announce the node's whole history.
+    // Better to skip the mailbox this round and retry next pass.
     let blob_state = match source.blob_heights(mailbox_id).await {
         Ok(state) => state,
         Err(err) => {
             tracing::error!(?err, mailbox = %mailbox_id, "failed to read blob heights");
-            Default::default()
+            return BlobCandidates {
+                logs: Vec::new(),
+                outstanding,
+                blob_heights: Default::default(),
+            };
         }
     };
 
@@ -333,8 +341,15 @@ async fn advance_blob_heights_via<Item>(
         let new_height: Option<SeqNum> = match blocked_at {
             None => Some(log.op_height),
             Some(blocked) => match blocked.checked_sub(1) {
-                Some(h) => Some(h.min(log.op_height)),
-                None => continue, // blocker at seq 0: nothing representable below
+                // The walk stops at `seq > op_height`, so this h is already
+                // bounded by `op_height`.
+                Some(h) => Some(h),
+                // Blocker at seq 0 has no representable lower height. Record
+                // 0 anyway: the unconfirmed blob stays tracked by hash and
+                // is still announced on each pass, so the height advancing
+                // to 0 loses nothing and stops the walk re-reading seq 0's
+                // whole window every pass.
+                None => Some(0),
             },
         };
 
@@ -435,8 +450,6 @@ mod tests {
         iroh_blobs::Hash::new([seed; 32])
     }
 
-    /// A `CandidateSource` that answers from pre-programmed state: one
-    /// (topic, author) log with fixed ops, one blob-height entry, and the
     /// A reader that claims every hash.
     struct HoldsAll;
     #[async_trait::async_trait]
@@ -503,11 +516,16 @@ mod tests {
         }
     }
 
+    /// A `CandidateSource` that answers from pre-programmed state: fixed
+    /// op logs, op heights, blob heights, and outstanding hashes.
     struct FakeBlobOpSource {
         ops: BTreeMap<(u8, char), Vec<BlobOp>>,
         op_heights: HashMap<u8, HashMap<char, SeqNum>>,
         blob_heights: HashMap<u8, HashMap<char, SeqNum>>,
         outstanding: Vec<iroh_blobs::Hash>,
+        /// When true, `blob_heights` reads error — to test that a transient
+        /// read failure cannot be replaced by an all-empty state.
+        fail_blob_heights: bool,
     }
 
     impl FakeBlobOpSource {
@@ -517,6 +535,7 @@ mod tests {
                 op_heights: HashMap::new(),
                 blob_heights: HashMap::new(),
                 outstanding: Vec::new(),
+                fail_blob_heights: false,
             }
         }
 
@@ -564,7 +583,11 @@ mod tests {
             &self,
             _: &mailbox_client::MailboxId,
         ) -> anyhow::Result<HashMap<u8, HashMap<char, SeqNum>>> {
-            Ok(self.blob_heights.clone())
+            if self.fail_blob_heights {
+                Err(anyhow::anyhow!("simulated read failure"))
+            } else {
+                Ok(self.blob_heights.clone())
+            }
         }
 
         async fn get_log(
@@ -736,6 +759,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_blob_heights_read_yields_no_candidates() {
+        let mut s = FakeBlobOpSource::new().with_op_height(1, 'a', 5);
+        s.push_op(1, 'a', 0, Some(h(1)));
+        s.push_op(1, 'a', 1, Some(h(2)));
+        s.fail_blob_heights = true;
+
+        let out = blob_candidates_from::<BlobOp>(&s, &"mbx".into(), &holds_all()).await;
+
+        assert!(
+            out.logs.is_empty(),
+            "a failed blob_heights read must not substitute the all-empty state"
+        );
+        assert!(
+            out.blob_heights.is_empty(),
+            "blob state snapshot is empty on failure so advance_blob_heights writes nothing"
+        );
+    }
+
+    #[tokio::test]
     async fn outstanding_hashes_come_through_regardless_of_logs() {
         let mut s = FakeBlobOpSource::new().with_op_height(1, 'a', 5);
         s.blob_heights.entry(1).or_default().insert('a', 5);
@@ -748,8 +790,6 @@ mod tests {
     }
 
     // -- advance_blob_heights_via --
-
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn advance_bumps_to_op_height_when_fully_confirmed() {
@@ -814,6 +854,34 @@ mod tests {
             state.get(&1u8).and_then(|m| m.get(&'a')).copied(),
             Some(0),
             "blocker at seq 1 pins the height at 0, so seqs 1..=2 aren't re-walked next pass"
+        );
+    }
+
+    #[tokio::test]
+    async fn advance_records_zero_for_a_seq_zero_blocker() {
+        let tracker = mem_blob_tracker();
+        let logs = vec![LogCandidates::<Msg> {
+            topic: 1,
+            author: 'a',
+            op_height: 3,
+            candidates: vec![(0, h(1)), (1, h(2))],
+        }];
+        advance_blob_heights_via::<Msg>(
+            &tracker,
+            &"mbx".into(),
+            logs,
+            &[h(2)], // seq-0 blob never confirmed; seq-1 is
+            &HashMap::new(),
+        )
+        .await;
+        let state = tracker
+            .get_all_blob_heights_for_mailbox(&"mbx".into())
+            .await
+            .unwrap();
+        assert_eq!(
+            state.get(&1u8).and_then(|m| m.get(&'a')).copied(),
+            Some(0),
+            "a blocker at seq 0 records height 0 rather than staying unbounded"
         );
     }
 
