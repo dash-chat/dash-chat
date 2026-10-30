@@ -5,6 +5,7 @@
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { goBack, replaceGoto } from '$lib/utils/navigation';
 	import {
 		fullName,
 		type ChatsStore,
@@ -183,7 +184,7 @@
 
 	onMount(() => {
 		if (page.url.searchParams.has('search')) {
-			goto(`/direct-chats/${chatId}`, { replaceState: true, keepFocus: true });
+			void replaceGoto(`/direct-chats/${chatId}`, { keepFocus: true });
 		}
 	});
 
@@ -320,7 +321,7 @@
 								{#snippet left()}
 									{#if !isWideScreen.value}
 										<NavbarBackLink
-											onClick={() => goto('/')}
+											onClick={() => goBack('/')}
 											data-testid="direct-chat-back"
 										/>
 									{/if}

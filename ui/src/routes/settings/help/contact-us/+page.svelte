@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import ScreenshotsInput from '$lib/components/ScreenshotsInput.svelte';
@@ -49,7 +49,7 @@
 				includeLogs: includeDebugLog,
 			});
 			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
-			goto('/settings/help');
+			goBack('/settings/help');
 		} catch (e) {
 			console.error('Error sending feedback', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -68,7 +68,7 @@
 	>
 		{#snippet left()}
 			<NavbarBackLink
-				onClick={() => goto('/settings/help')}
+				onClick={() => goBack('/settings/help')}
 				data-testid="contact-us-back"
 			/>
 		{/snippet}

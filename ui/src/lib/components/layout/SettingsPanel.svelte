@@ -6,7 +6,7 @@
 		type SettingsStore,
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
@@ -61,7 +61,7 @@
 <div class="settings-panel">
 	<Navbar title={m.settings()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')} data-testid="settings-back" />
+			<NavbarBackLink onClick={() => goBack('/')} data-testid="settings-back" />
 		{/snippet}
 	</Navbar>
 

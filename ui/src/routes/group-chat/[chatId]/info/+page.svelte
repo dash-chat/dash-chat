@@ -4,7 +4,7 @@
 
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
@@ -110,7 +110,7 @@
 			{#snippet left()}
 				<NavbarBackLink
 					data-testid="group-info-back"
-					onClick={() => goto(`/group-chat/${chatId}`)}
+					onClick={() => goBack(`/group-chat/${chatId}`)}
 				/>
 			{/snippet}
 

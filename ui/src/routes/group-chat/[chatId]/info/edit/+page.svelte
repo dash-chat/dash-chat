@@ -4,7 +4,7 @@
 
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { Page, Navbar, NavbarBackLink, Link } from 'konsta/svelte';
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
@@ -67,7 +67,7 @@
 				description: description.trim() || undefined,
 				image,
 			});
-			goto(`/group-chat/${chatId}/info`);
+			goBack(`/group-chat/${chatId}/info`);
 		} catch (e) {
 			console.error(e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
@@ -90,7 +90,7 @@
 			rightClass={saveDisabled ? 'ios-right-disabled' : ''}
 		>
 			{#snippet left()}
-				<NavbarBackLink onClick={() => goto(`/group-chat/${chatId}/info`)} />
+				<NavbarBackLink onClick={() => goBack(`/group-chat/${chatId}/info`)} />
 			{/snippet}
 			{#snippet right()}
 				{#if isIos}

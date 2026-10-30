@@ -8,7 +8,9 @@
 	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
 
+	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { goBack } from '$lib/utils/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { isMobile } from '$lib/utils/environment';
 	import {
@@ -180,7 +182,7 @@
 					<NavbarBackLink
 						data-testid="add-contact-back"
 						onClick={() => {
-							window.history.back();
+							goBack(page.url.pathname.replace(/\/add-contact$/, ''));
 						}}
 					/>
 				{/if}

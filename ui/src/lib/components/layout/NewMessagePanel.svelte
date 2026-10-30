@@ -15,7 +15,7 @@
 	import { longPressHandlers } from '$lib/actions/longpress';
 	import { isMobile } from '$lib/utils/environment';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
@@ -70,7 +70,7 @@
 					if (page.state.sidebarPanel === 'new-message') {
 						history.back();
 					} else {
-						goto('/');
+						goBack('/');
 					}
 				}}
 				data-testid="new-message-back"

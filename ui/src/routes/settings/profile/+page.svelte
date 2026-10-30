@@ -3,6 +3,7 @@
 	import type { ContactsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { mdiAccount, mdiInformationOutline, mdiQrcode } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -32,7 +33,7 @@
 		{#snippet left()}
 			{#if !isWideScreen.value}
 				<NavbarBackLink
-					onClick={() => goto('/settings')}
+					onClick={() => goBack('/settings')}
 					data-testid="profile-back"
 				/>
 			{/if}

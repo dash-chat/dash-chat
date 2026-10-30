@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { replaceGoto } from '$lib/utils/navigation';
 	import type {
 		ChatsStore,
 		ContactsStore,
@@ -29,7 +29,8 @@
 			description: undefined,
 			image: groupImage,
 		});
-		goto(`/group-chat/${groupStore.chatId}`);
+		// Replace so Back from the new group chat skips the finished wizard.
+		void replaceGoto(`/group-chat/${groupStore.chatId}`);
 	}
 </script>
 

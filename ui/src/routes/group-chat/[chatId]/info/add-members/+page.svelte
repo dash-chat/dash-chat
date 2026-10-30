@@ -6,7 +6,7 @@
 		VerifyingKey,
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/utils/navigation';
 	import { BlockTitle } from 'konsta/svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
@@ -47,7 +47,7 @@
 		try {
 			const store = chatsStore.groupChats(chatId);
 			await store.addMembers(selectedContacts);
-			goto(`/group-chat/${chatId}/info`);
+			goBack(`/group-chat/${chatId}/info`);
 		} finally {
 			addingMembers = false;
 		}
@@ -59,7 +59,7 @@
 	actionLabel={m.add()}
 	onAction={addMembers}
 	actionDisabled={selectedContacts.length === 0 || addingMembers}
-	onBack={() => goto(`/group-chat/${chatId}/info`)}
+	onBack={() => goBack(`/group-chat/${chatId}/info`)}
 	constrainedWidth
 	backTestId="add-members-back"
 	actionTestId="add-members-add-btn"
