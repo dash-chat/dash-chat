@@ -215,8 +215,17 @@ where
 }
 
 /// Per-log blob candidates: the blob hashes of every op in the seq window
-/// `(blob_height, op_watermark]`, each paired with its op's seq. Blobs the
-/// reader doesn't hold are dropped.
+/// `(blob_height, op_watermark]`, each paired with its op's seq.
+///
+/// Blobs the reader can't serve (`reader.has_blob` is false) are dropped:
+/// announcing them would send the mailbox to fetch bytes from a node that
+/// doesn't have them. Seq positions whose only blobs were dropped are
+/// stepped over by `advance_blob_heights` along with confirmed seqs — a
+/// blob we acquire later (e.g. via the p2p fetch loop catching up after
+/// the op landed) is not re-emitted by the height path, and is served to
+/// the mailbox by its own fetch retries against our now-held copy. This
+/// is intentional: late-arrival is the mailbox's pull problem, not our
+/// push gap.
 async fn height_candidates_for_log<Item>(
     source: &dyn CandidateSource<Item>,
     mailbox_id: &mailbox_client::MailboxId,
