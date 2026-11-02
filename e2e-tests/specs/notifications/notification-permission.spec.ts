@@ -12,6 +12,7 @@ describe('Notification permission', () => {
 	});
 
 	after(async () => {
+		if (agent === undefined) return;
 		await agent.stopApp();
 		await agent.resetNotificationPermission();
 	});
