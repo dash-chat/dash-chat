@@ -24,6 +24,8 @@
 	onMount(async () => {
 		// @ts-ignore missing type definition
 		const { Picker } = await import('emoji-picker-element');
+		// The page may have been left while the picker was loading.
+		if (!content) return;
 		const picker = new Picker({
 			// if not set the library will try and fetch online
 			// i18n requires having one of these per language
