@@ -1,19 +1,26 @@
 import { PermissionDialog } from '../../helpers/components/permission-dialog';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
-describe('Notifications after allowing them during profile creation', () => {
+describe('Notification permission', () => {
 	let agent: Agent;
 
 	before(async function () {
 		[agent] = await setupAgents(this, [{ platform: 'android' }]);
 		await agent.stopApp();
-		agent.resetNotificationPermission();
+		await agent.resetNotificationPermission();
 		await agent.startApp();
 	});
 
-	it('turns notifications on once the permission is allowed', async () => {
+	after(async () => {
+		await agent.stopApp();
+		await agent.resetNotificationPermission();
+	});
+
+	it('turns notifications on when creating a profile', async () => {
 		await agent.createProfilePage.createProfile('Nora');
-		await new PermissionDialog(agent).allow();
+		if (agent.asksNotificationPermission()) {
+			await new PermissionDialog(agent).allow();
+		}
 
 		await agent.homePage.settingsLink.click();
 		await agent.settingsPage.ready();
@@ -22,11 +29,11 @@ describe('Notifications after allowing them during profile creation', () => {
 		await expect(agent.notificationsPage.toggleInput).toBeSelected();
 	});
 
-	it('keeps the toggle off when the permission is refused', async () => {
+	it('keeps the toggle off when notifications are denied', async () => {
 		await agent.notificationsPage.toggleSwitch.click();
 		await expect(agent.notificationsPage.toggleInput).not.toBeSelected();
 		await agent.stopApp();
-		agent.denyNotificationPermission();
+		await agent.denyNotificationPermission();
 		await agent.startApp();
 
 		await agent.homePage.settingsLink.click();

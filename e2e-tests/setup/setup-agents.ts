@@ -46,6 +46,7 @@ import { sourceLogFile } from './agent-logger';
 import { convergeNetworks, forgetTestNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
+	androidAsksNotificationPermission,
 	androidHasInternet,
 	denyAndroidNotificationPermission,
 	isAndroidAppRunning,
@@ -249,14 +250,16 @@ export type Agent = WebdriverIO.Browser & {
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
 	killPushExtension(): Promise<void>;
+	/** Whether the OS has a notification permission to ask for. Android only. */
+	asksNotificationPermission(): boolean;
 	/** Take the notification permission back to never asked, so the app's next
 	 *  request shows the system dialog. Call it between [`stopApp`] and
 	 *  [`startApp`]. Android only. */
-	resetNotificationPermission(): void;
+	resetNotificationPermission(): Promise<void>;
 	/** Deny the notification permission for good, so the app's requests are
 	 *  refused without a dialog. Call it between [`stopApp`] and
 	 *  [`startApp`]. Android only. */
-	denyNotificationPermission(): void;
+	denyNotificationPermission(): Promise<void>;
 	/** What this agent's device has logged so far in the run, as the harness
 	 *  captured it. */
 	readLog(): string;
@@ -528,21 +531,29 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		}
 		pressAndroidBack(deviceUdid(b));
 	};
-	agent.resetNotificationPermission = () => {
+	agent.asksNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`asksNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		return androidAsksNotificationPermission(deviceUdid(b));
+	};
+	agent.resetNotificationPermission = async () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
 			throw new Error(
 				`resetNotificationPermission needs android, got ${agent.platform}`,
 			);
 		}
-		resetAndroidNotificationPermission(deviceUdid(b));
+		await resetAndroidNotificationPermission(b, deviceUdid(b));
 	};
-	agent.denyNotificationPermission = () => {
+	agent.denyNotificationPermission = async () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
 			throw new Error(
 				`denyNotificationPermission needs android, got ${agent.platform}`,
 			);
 		}
-		denyAndroidNotificationPermission(deviceUdid(b));
+		await denyAndroidNotificationPermission(b, deviceUdid(b));
 	};
 
 	return agent;
