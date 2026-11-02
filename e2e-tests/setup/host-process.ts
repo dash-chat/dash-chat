@@ -4,6 +4,7 @@
  * descendants, which is also what takes an agent's WebView2 processes with it.
  */
 import { execFileSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +18,28 @@ export const STUNNEL_BINARY = WINDOWS ? 'tstunnel' : 'stunnel';
 /** The file name of the executable called `name` on this host. */
 export function exe(name: string): string {
 	return WINDOWS ? `${name}.exe` : name;
+}
+
+const REMOVE_DIR_ATTEMPTS = 50;
+const REMOVE_DIR_RETRY_MS = 200;
+
+/** Delete `dir`, waiting out a just-killed process that still holds its files.
+ *  rmSync's own maxRetries doesn't cover the EPERM Windows reports for that. */
+export function removeDirWithRetries(dir: string): void {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			rmSync(dir, { recursive: true, force: true });
+			return;
+		} catch (err) {
+			if (attempt === REMOVE_DIR_ATTEMPTS) throw err;
+			Atomics.wait(
+				new Int32Array(new SharedArrayBuffer(4)),
+				0,
+				0,
+				REMOVE_DIR_RETRY_MS,
+			);
+		}
+	}
 }
 
 export function isOnPath(tool: string): boolean {

@@ -4,13 +4,7 @@ import {
 	execSync,
 	spawn,
 } from 'node:child_process';
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { remote } from 'webdriverio';
@@ -21,7 +15,7 @@ import { allocatePinnedPort } from '../allocate-port';
 import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
 import { killAllE2EProcesses, killAndWait, pidsNamedWithEnv } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
-import { WINDOWS, exe, forceKill } from '../host-process';
+import { WINDOWS, exe, forceKill, removeDirWithRetries } from '../host-process';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
 import {
@@ -218,12 +212,7 @@ function raiseMacApp(pid: number | undefined): void {
 export function clearAgentDir(slot: number): void {
 	const dataDir = agentDir(slot);
 	// A just-killed agent's WebKit helpers can still be writing into it.
-	rmSync(dataDir, {
-		recursive: true,
-		force: true,
-		maxRetries: 10,
-		retryDelay: 100,
-	});
+	removeDirWithRetries(dataDir);
 	mkdirSync(dataDir, { recursive: true });
 }
 
@@ -292,12 +281,7 @@ export async function discardDesktopAgent(slot: number): Promise<void> {
 	loggers.get(slot)?.kill();
 	loggers.delete(slot);
 	// A just-killed agent's WebView2 processes hold their files for a moment.
-	rmSync(agentDir(slot), {
-		recursive: true,
-		force: true,
-		maxRetries: 10,
-		retryDelay: 100,
-	});
+	removeDirWithRetries(agentDir(slot));
 }
 
 /** Kill every desktop agent this worker launched, and any app process still
