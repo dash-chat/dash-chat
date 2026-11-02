@@ -306,7 +306,13 @@ function blockedAt(history: BlockHistoryEvent[], timestamp: number): boolean {
 	return blocked;
 }
 
-function logsToMessages(
+export function opsInCausalOrder(
+	ops: SimplifiedOperation<Payload>[],
+): SimplifiedOperation<Payload>[] {
+	return ops;
+}
+
+export function logsToMessages(
 	opsOrdered: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
 	deviceAgents: Record<DeviceId, AgentId>,
