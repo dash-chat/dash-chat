@@ -14,7 +14,9 @@ const TEXT_EXTRA =
  *  a dump's last record runs on into sections that name other packages. */
 const RECORD_PACKAGE = /^0x[0-9a-f]+: pkg=(\S+) /;
 
-const RECORD_FLAGS = /\bflags=0x([0-9a-f]+)/;
+/** A record's flags: in hex on Android 12 (`0x40`), by name on Android 16
+ *  (`NO_CLEAR|FOREGROUND_SERVICE|SILENT`). */
+const RECORD_FLAGS = /\bflags=(\S+)/;
 
 const FLAG_FOREGROUND_SERVICE = 0x40;
 
@@ -81,10 +83,10 @@ function dashChatNotifications(dump: string): DeliveredNotification[] {
 }
 
 function isForegroundService(record: string): boolean {
-	const flags = RECORD_FLAGS.exec(record)?.[1];
-	return (
-		flags !== undefined && (parseInt(flags, 16) & FLAG_FOREGROUND_SERVICE) !== 0
-	);
+	const flags = RECORD_FLAGS.exec(record)?.[1] ?? '';
+	return flags.startsWith('0x')
+		? (parseInt(flags, 16) & FLAG_FOREGROUND_SERVICE) !== 0
+		: flags.split('|').includes('FOREGROUND_SERVICE');
 }
 
 /** The newest message of a chat notification's thread. Throws rather than
