@@ -23,6 +23,7 @@ import {
 	type ConnectionStatusTag,
 } from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
+import { discardPendingCrashReport } from '../src/lib/utils/error-report';
 
 const requestJoinOutcomes = new Map<string, string>();
 
@@ -269,8 +270,10 @@ function clearNotifications(): Promise<void> {
 	return invokeAfterSetup('plugin:notification|remove_active');
 }
 
-/** Reset the app to first-launch state: clear web storage and the app's
- * notifications, which the OS would otherwise keep, then run the real
+/** Reset the app to first-launch state: clear web storage, the app's
+ * notifications, which the OS would otherwise keep, and any held crash report,
+ * which lives outside the data dir and would cover every later spec's first
+ * screen with its sheet, then run the real
  * `delete_account` command — the same code path as Settings → Account →
  * Delete account — which shuts the node down, deletes the data dir, and (on
  * mobile) exits the app. The iOS e2e harness calls this before each spec
@@ -280,7 +283,10 @@ function clearNotifications(): Promise<void> {
 function resetToFirstLaunch(): void {
 	localStorage.clear();
 	sessionStorage.clear();
-	void clearNotifications().finally(() => invokeAfterSetup('delete_account'));
+	void Promise.allSettled([
+		clearNotifications(),
+		discardPendingCrashReport(),
+	]).finally(() => invokeAfterSetup('delete_account'));
 }
 
 /** Summon the Android soft keyboard for the currently focused input. A
