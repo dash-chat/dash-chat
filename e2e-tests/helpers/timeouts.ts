@@ -23,8 +23,10 @@ export const BACKGROUND_NETWORK_CUTOFF_MS = 15_000;
 /** What the app gets to tell the user the cloud mailbox stopped answering:
  *  the chip flips on the second consecutive failure, and each poll starts
  *  2.5 s after the previous one completed, so two intervals plus the time a
- *  refused request takes to fail (about 1 s on a phone over Wi-Fi). */
-export const MAILBOX_UNANSWERED_MS = 8_000;
+ *  refused request takes to fail (about 1 s on a phone over Wi-Fi, 2 s on
+ *  Windows, which retries a refused connect). */
+export const MAILBOX_UNANSWERED_MS =
+	process.platform === 'win32' ? 11_000 : 8_000;
 
 /** The same, for a mailbox that hangs rather than refuses: a request only
  *  counts as failed once it times out, 20 s, the chip flips on the second

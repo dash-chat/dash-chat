@@ -30,6 +30,7 @@ import {
 	failuresDir,
 	saveFailureScreenshot,
 } from './setup/failure-screenshots';
+import { signalGroup } from './setup/host-process';
 import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import { ensureLoopback } from './setup/loopback';
@@ -153,9 +154,8 @@ async function teardown() {
 		appium,
 	]) {
 		if (server?.pid) {
-			// Negative PID = signal the entire detached process group.
 			try {
-				process.kill(-server.pid, 'SIGTERM');
+				signalGroup(server.pid, 'SIGTERM');
 			} catch {
 				/* already gone */
 			}
@@ -165,6 +165,8 @@ async function teardown() {
 		await platform.onComplete();
 	}
 	killAllE2EProcesses();
+	// A mailbox a spec respawned isn't `mailboxServer`, and would outlive the run.
+	killLeftoverMailboxServers();
 	mailboxLogger?.kill();
 	pushLogger?.kill();
 	toxiproxyLogger?.kill();
@@ -264,7 +266,13 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			// Clean up leftover databases from previous interrupted runs
 			const dataDir = path.join(ROOT, '.dbs', 'e2e');
 			try {
-				rmSync(dataDir, { recursive: true, force: true });
+				// Windows holds a just-killed process's files for a moment.
+				rmSync(dataDir, {
+					recursive: true,
+					force: true,
+					maxRetries: 10,
+					retryDelay: 200,
+				});
 			} catch {
 				// ignore
 			}

@@ -32,9 +32,7 @@ describe('FirstChatTooltip', () => {
 	});
 
 	it('does not reappear after page reload', async () => {
-		await agent.execute(() => {
-			window.location.href = '/';
-		});
+		await agent.refresh();
 
 		await waitForTestUtils(agent);
 		await agent.homePage.ready();

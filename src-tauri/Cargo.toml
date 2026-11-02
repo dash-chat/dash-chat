@@ -139,7 +139,7 @@ objc2 = "0.6"
 # 0.13 is what compiles against Tauri 2.12 on Windows, and it does not build for
 # Android or iOS, where the bridge has never been used.
 tauri-plugin-mcp-bridge = "0.13"
-tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"

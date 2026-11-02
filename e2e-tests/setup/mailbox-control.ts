@@ -5,13 +5,12 @@
  * wdio.conf.ts spawns the mailbox server in its own process group (`detached:
  * true`) during `onPrepare` and writes its pid + port to a JSON file. These
  * helpers use that pid to signal the whole group.
- *
- * Unix-only — relies on POSIX signal semantics.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { signalGroup } from './host-process';
 import {
 	MAILBOX_LINK,
 	spawnMailboxServer,
@@ -138,10 +137,6 @@ export function mailboxBlobs(): string[] {
 	return readdirSync(dir)
 		.filter(f => f.endsWith('.data'))
 		.map(f => path.join(dir, f));
-}
-
-function signalGroup(pid: number, sig: NodeJS.Signals): void {
-	process.kill(-pid, sig);
 }
 
 /** Suspend the mailbox server so all HTTP traffic to it hangs/times out. */

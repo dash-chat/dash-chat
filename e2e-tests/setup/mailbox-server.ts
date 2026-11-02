@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort, allocatePreferredPort } from './allocate-port';
+import { exe } from './host-process';
 import { mailboxAnswers, startMailboxTls } from './mailbox-tls';
 import { E2E_NETWORK_ID, MAILBOX_PREFERRED_PORT } from './network-id';
 import { E2E_RELAY_URL } from './relay';
@@ -41,7 +42,14 @@ export function buildCargoPackages(packages: string[]): Promise<void> {
 		const proc = spawn('cargo', args, {
 			cwd: ROOT,
 			stdio: 'inherit',
-			env: { ...process.env, E2E_NETWORK_ID, E2E_RELAY_URL },
+			// The same debug level as the app build, which would otherwise rebuild
+			// what this one built, and the other way around, on every run.
+			env: {
+				...process.env,
+				CARGO_PROFILE_DEV_DEBUG: '0',
+				E2E_NETWORK_ID,
+				E2E_RELAY_URL,
+			},
 		});
 		proc.on('error', reject);
 		proc.on('exit', code => {
@@ -64,7 +72,7 @@ export function spawnMailboxServer(
 	// directly: `cargo run` here would rebuild with whatever toolchain is on
 	// PATH, which can mean recompiling the world and blowing the readiness
 	// timeout.
-	const bin = path.join(ROOT, 'target', 'debug', 'mailbox-server');
+	const bin = path.join(ROOT, 'target', 'debug', exe('mailbox-server'));
 	if (!existsSync(bin)) {
 		throw new Error(
 			`${bin} not found — run the suite via 'just e2e' (which builds ` +

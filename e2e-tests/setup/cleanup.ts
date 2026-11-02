@@ -9,6 +9,14 @@ import { type ChildProcess, execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+	STUNNEL_BINARY,
+	WINDOWS,
+	exe,
+	findWindowsProcesses,
+	forceKill,
+} from './host-process';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const DBS = path.join(ROOT, '.dbs') + path.sep;
@@ -28,7 +36,8 @@ export function killAndWait(
 			resolve();
 		});
 		try {
-			proc.kill('SIGKILL');
+			if (WINDOWS && proc.pid !== undefined) forceKill(proc.pid);
+			else proc.kill('SIGKILL');
 		} catch {
 			clearTimeout(timer);
 			resolve();
@@ -42,6 +51,9 @@ export function killAndWait(
  *  the environment of the user's own processes after the command. */
 export function pidsNamedWithEnv(name: string, marker: string): number[] {
 	try {
+		if (WINDOWS) {
+			return findWindowsProcesses(exe(name), { envMarker: marker });
+		}
 		if (process.platform === 'darwin') {
 			return execSync('ps -E -axo pid=,command=', { encoding: 'utf8' })
 				.split('\n')
@@ -76,17 +88,27 @@ export function pidsNamedWithEnv(name: string, marker: string): number[] {
  *  checkout's `.dbs`, whichever run launched it. */
 function killOursNamed(name: string) {
 	for (const pid of pidsNamedWithEnv(name, DBS)) {
-		try {
-			process.kill(pid, 'SIGKILL');
-		} catch {
-			/* already gone */
-		}
+		forceKillIfAlive(pid);
+	}
+}
+
+function forceKillIfAlive(pid: number) {
+	try {
+		forceKill(pid);
+	} catch {
+		/* already gone */
 	}
 }
 
 /** SIGKILL every process running this checkout's build of `binary`. */
 function killOursBuiltFrom(binary: string) {
 	try {
+		if (WINDOWS) {
+			findWindowsProcesses(exe(binary), {
+				executablePath: path.join(ROOT, 'target', 'debug', exe(binary)),
+			}).forEach(forceKillIfAlive);
+			return;
+		}
 		execSync(
 			`pkill -9 -f ${JSON.stringify(path.join(ROOT, 'target', 'debug', binary))}`,
 			{ stdio: 'ignore' },
@@ -110,7 +132,7 @@ export function killLeftoverMailboxServers() {
 	// Not built here: startToxiproxy and startMailboxTls stamp this checkout's
 	// `.dbs` into their environments instead.
 	killOursNamed('toxiproxy-server');
-	killOursNamed('stunnel');
+	killOursNamed(STUNNEL_BINARY);
 }
 
 /** Kill every local hub this checkout's specs started. Only specs start hubs,
@@ -120,11 +142,17 @@ export function killLeftoverMailboxServers() {
 export function killLeftoverLocalHubs() {
 	killOursBuiltFrom('mailbox-local-server');
 	// Each hub's log is echoed by a `tail -F` of its own, which outlives it.
+	const hubLogs = path.join(ROOT, '.dbs', 'e2e', 'hubs');
 	try {
-		execSync(
-			`pkill -f ${JSON.stringify(`tail -n 0 -F ${path.join(ROOT, '.dbs', 'e2e', 'hubs')}`)}`,
-			{ stdio: 'ignore' },
-		);
+		if (WINDOWS) {
+			findWindowsProcesses(exe('tail'), {
+				commandLineMarker: hubLogs,
+			}).forEach(forceKillIfAlive);
+			return;
+		}
+		execSync(`pkill -f ${JSON.stringify(`tail -n 0 -F ${hubLogs}`)}`, {
+			stdio: 'ignore',
+		});
 	} catch {
 		/* none running */
 	}
