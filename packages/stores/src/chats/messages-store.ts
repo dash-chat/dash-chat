@@ -74,27 +74,45 @@ export class MessagesStore {
 		public readOnly: () => ReactivePromise<boolean>,
 	) {}
 
-	messages = reactive(async () => {
+	/** The chat's visible ops, each after the ops it references. Reactions sit at
+	 * the end, so this is an order to apply them in, not to display them in. */
+	causalOps = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 
-		const opsOrdered = Object.values(logs)
+		const opsByTimestamp = Object.values(logs)
 			.flat()
 			.sort(
 				(a, b) =>
 					a.header.timestamp - b.header.timestamp ||
 					a.hash.localeCompare(b.hash),
 			);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		return opsInCausalOrder(
+			dropOpsAuthoredWhileNotAMember(
+				await this.dropOpsAuthoredWhileBlocked(opsByTimestamp, deviceAgents),
+				myDeviceId,
+			),
+		);
+	});
+
+	messages = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const causalOps = await this.causalOps();
 		const tombstones = await this.tombstoneStore.tombstones(this.chatId);
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
 		const deviceNames = await this.deviceNames();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const ops = dropOpsAuthoredWhileNotAMember(
-			await this.dropOpsAuthoredWhileBlocked(opsOrdered, deviceAgents),
-			myDeviceId,
+		const messages = logsToMessages(
+			causalOps,
+			tombstones,
+			deviceAgents,
+			deviceNames,
 		);
-		const messages = logsToMessages(ops, tombstones, deviceAgents, deviceNames);
 		for (const message of Object.values(messages)) {
 			if (message.author !== myDeviceId) continue;
 			message.deliveryStatus = await this.messageAckStore.deliveryStatus(
@@ -177,10 +195,12 @@ export class MessagesStore {
 		return await this.contactsStore.profilesForAgents(new Set(members));
 	});
 
-	lastMessage = reactive(async () => {
-		const messages = await this.messages();
+	orderedMessages = reactive(async () =>
+		orderEventsAscending(await this.messages()),
+	);
 
-		const orderedMessages = orderEventsAscending(messages);
+	lastMessage = reactive(async () => {
+		const orderedMessages = await this.orderedMessages();
 		return orderedMessages.length > 0
 			? orderedMessages[orderedMessages.length - 1][1]
 			: undefined;
@@ -288,7 +308,7 @@ export class MessagesStore {
 
 // Apply each log item to the set of messages incrementally.
 //
-// `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
+// `causalOps` is the interleaved list of all operations from all authors in the chat topic.
 // It must be ordered so that any partial ordering constraints are upheld, i.e. items
 // which reference prior items must appear after them.
 //
@@ -306,14 +326,37 @@ function blockedAt(history: BlockHistoryEvent[], timestamp: number): boolean {
 	return blocked;
 }
 
+/** Reactions go last because they carry no lamport to place them after their
+ * target when the authors' clocks disagree. */
 export function opsInCausalOrder(
 	ops: SimplifiedOperation<Payload>[],
 ): SimplifiedOperation<Payload>[] {
-	return ops;
+	const isReaction = (op: SimplifiedOperation<Payload>) =>
+		op.body?.type === 'Chat' && op.body.payload.type === 'Reaction';
+	const orderable = Object.fromEntries(
+		ops
+			.filter(op => !isReaction(op))
+			.map(op => [
+				op.hash,
+				{
+					op,
+					timestamp: op.header.timestamp,
+					lamport:
+						op.body?.type === 'Chat' && op.body.payload.type === 'Message'
+							? (op.body.payload.payload.lamport ?? 0)
+							: 0,
+					author: op.header.verifying_key,
+				},
+			]),
+	);
+	return [
+		...orderEventsAscending(orderable).map(([, { op }]) => op),
+		...ops.filter(isReaction),
+	];
 }
 
 export function logsToMessages(
-	opsOrdered: SimplifiedOperation<Payload>[],
+	causalOps: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
 	deviceAgents: Record<DeviceId, AgentId>,
 	deviceNames: Record<DeviceId, string>,
@@ -322,7 +365,7 @@ export function logsToMessages(
 	// Map of EditMessage -> the target they reference
 	const editTargets: Record<Hash, Hash> = {};
 
-	for (const op of opsOrdered) {
+	for (const op of causalOps) {
 		const author = op.header.verifying_key;
 		const body = op.body;
 
@@ -355,7 +398,7 @@ export function logsToMessages(
 					hasBody(replyTarget.content)
 				) {
 					// It's intended that the quoted text is the version of the message at the time of the reply.
-					// This works as is only because messages are ordered by timestamp and we set this quote while
+					// This works as is only because messages are ordered by lamport and we set this quote while
 					// traversing the partial conversation. If replies were resolved during a second pass over the
 					// conversation, we might pick up the current edited text instead, so be careful.
 					replyQuote = {
