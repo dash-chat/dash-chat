@@ -68,6 +68,10 @@
 					"host": "dashchat.org",
 					"pathPrefix": ["/add-contact"],
 					"appLink": true
+				},
+				{
+					"scheme": ["dash-chat"],
+					"appLink": false
 				}
 			],
 			"desktop": {

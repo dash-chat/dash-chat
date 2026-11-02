@@ -135,8 +135,7 @@ export type Agent = WebdriverIO.Browser & {
 	 *  back to [`injectDeepLink`]. */
 	handleDeepLink(url: string): Promise<void>;
 	/** Dispatch a URL through the app's deep link routing logic directly,
-	 *  bypassing OS delivery — for links the OS wouldn't route to the app
-	 *  (e.g. the dash-chat:// scheme is only registered on desktop). */
+	 *  bypassing OS delivery. */
 	injectDeepLink(url: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
 	tr(key: string, params?: Record<string, unknown>): Promise<string>;
