@@ -44,10 +44,10 @@ describe('Local hub stress', function () {
 		if (wifiNetworks().length === 0) this.skip();
 		// The mailbox must be killable, which a remote environment's is not.
 		if (isRemoteMailbox()) this.skip();
-		// Down before anything syncs, and for the chip to be on screen at all.
+		// Down before anything syncs, and so the chip reads hubs, not the cloud.
 		// Killed, not suspended: a network change wakes every mailbox poller,
 		// and a suspended cloud then counts as connected until its polls time
-		// out again, hiding the chip for any hub found meanwhile.
+		// out again, and the chip reads cloud over any hub found meanwhile.
 		await killMailbox();
 		// Only a physical phone can change network without losing its driver
 		// session, and an emulator is NAT'd off the host besides.

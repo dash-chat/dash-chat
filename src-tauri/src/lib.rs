@@ -74,33 +74,20 @@ pub fn run() {
     #[cfg(target_os = "ios")]
     {
         builder = builder.plugin(tauri_plugin_ios_photos::init());
-        // Quiesce the node (release SQLite locks) on background and rebuild it on
-        // foreground so iOS can suspend the app without a 0xdead10cc kill.
+        // Stop database writes on background so iOS can suspend the app with its
+        // node alive and without a 0xdead10cc kill.
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
                         app_node_manager.pause().await;
                     }
                 })
                 .on_resume(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
-                        if let Err(err) = app_node_manager.resume(&app).await {
-                            log::error!("Failed to rebuild node on foreground: {err:?}");
-                        }
-                        // Uploads cut off while we were away go out again now.
-                        if let Ok(node) = app_node_manager.get().await {
-                            node.mailboxes.reset_uploads();
-                            node.notify_unfetched_blob_followup();
-                        }
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
+                        app_node_manager.resume(&app).await;
                     }
                 })
                 .build(),
@@ -148,6 +135,7 @@ pub fn run() {
     }
 
     builder = builder
+        .plugin(tauri_plugin_subscriptions::init())
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
@@ -193,6 +181,9 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::online_peers::subscribe_to_online_peers,
+            #[cfg(not(mobile))]
+            commands::lan_multicast::subscribe_to_lan_multicast_blocked,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
             pending_navigations::take_pending_navigations,

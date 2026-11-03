@@ -27,6 +27,11 @@ function phone(name: string) {
 	return { name, mobile: true, notifications: TEXTS };
 }
 
+/** An iPhone, which posts each message on its own. */
+function iphone(name: string) {
+	return { ...phone(name), notifiesEachMessage: true };
+}
+
 /** A desktop, which posts none this way and so is read for none. */
 function desktop(name: string) {
 	return { name, mobile: false, notifications: null };
@@ -210,6 +215,32 @@ test('a stopped agent gains nothing until its app starts again', () => {
 	m.startApp(B);
 	assert.deepEqual([...(m.propagate().get(B) ?? [])], [chat]);
 	assert.equal(m.view(B, chat).messages.length, 1);
+});
+
+test('only an app started while the cloud was cut registers it late', () => {
+	const m = sameLan(A, B);
+	m.setCloudUsable(true);
+	m.stopApp(A);
+	m.stopApp(B);
+	m.startApp(A);
+	m.setCloudUsable(false);
+	m.startApp(B);
+	m.setCloudUsable(true);
+	assert.equal(m.awaitsCloudRegistration(A), false);
+	assert.equal(m.awaitsCloudRegistration(B), true);
+	m.registeredWithCloud(B);
+	assert.equal(m.awaitsCloudRegistration(B), false);
+});
+
+test('a later start with the cloud usable registers it at once', () => {
+	const m = sameLan(A);
+	m.stopApp(A);
+	m.startApp(A);
+	assert.equal(m.awaitsCloudRegistration(A), true);
+	m.stopApp(A);
+	m.setCloudUsable(true);
+	m.startApp(A);
+	assert.equal(m.awaitsCloudRegistration(A), false);
 });
 
 test('phones exchange only topics both subscribe to', () => {
@@ -692,6 +723,19 @@ test('a chat collapses into one notification, carrying one of its messages', () 
 	// One entry, and what it reads is whichever of them the device wrote
 	// into it last.
 	assert.deepEqual(showing(m, B), [`${A} | sm-1 or ${A} | sm-2`]);
+	m.openedChat(B, chat);
+	assert.deepEqual(showing(m, B), []);
+});
+
+test('an iPhone stacks a notification for each message of a chat', () => {
+	const m = new ExpectedModel([phone(A), iphone(B)], [], false);
+	contacts(m, A, B);
+	m.propagate();
+	const chat = m.directChat(A, B);
+	m.addMessage(chat, A, 'text', 'sm-1');
+	m.addMessage(chat, A, 'text', 'sm-2');
+	m.propagate();
+	assert.deepEqual(showing(m, B), [`${A} | sm-1`, `${A} | sm-2`]);
 	m.openedChat(B, chat);
 	assert.deepEqual(showing(m, B), []);
 });

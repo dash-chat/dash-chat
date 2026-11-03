@@ -1,6 +1,6 @@
 mod notified_operations_store;
 
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 pub mod push_notifications;
 
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
@@ -143,9 +143,6 @@ pub async fn build_notification_data(
     }
 
     // A blocked contact's operations are thrown away as they arrive
-    // (`enforce_blocklist`), so nothing they write may reach the shade
-    // either — a notification for a message the chat will never show is the
-    // one way a block leaks.
     match node.projection.is_author_blocked(&sender_device_id).await {
         Ok(false) => {}
         Ok(true) => return None,
@@ -460,8 +457,7 @@ async fn auth_control_op_notification(
 ) -> Option<NotificationData> {
     type GroupAction = p2panda_auth::group::GroupAction<p2panda_core::VerifyingKey>;
 
-    let args = header.extensions.group_args()?;
-    let action = &args.action;
+    let action = &dashchat_node::membership::membership_action(header)?;
 
     let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
         matches!(

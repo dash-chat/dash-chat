@@ -22,7 +22,6 @@ async fn lan_sync_with_empty_address_book() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs the p2panda `dashchat-lan-priority` sync patches, not yet ported to 0.7.1"]
 async fn lan_sync_with_crowded_address_book() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (_, alice, bobbi) = lan_contacts(unreachable_peers_from_env()).await;
@@ -32,7 +31,6 @@ async fn lan_sync_with_crowded_address_book() {
 
 /// Being on the same LAN must keep two contacts syncing, not just sync them once when they meet.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs the p2panda `dashchat-lan-priority` sync patches, not yet ported to 0.7.1"]
 async fn lan_sync_keeps_going_with_crowded_address_book() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (_, alice, bobbi) = lan_contacts(unreachable_peers_from_env()).await;
@@ -58,7 +56,6 @@ async fn lan_sync_keeps_going_with_crowded_address_book() {
 
 /// A contact leaving the LAN and coming back catches up on what it missed, and keeps syncing.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs the p2panda `dashchat-lan-priority` sync patches, not yet ported to 0.7.1"]
 async fn lan_sync_resumes_after_peer_leaves_and_returns() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let unreachable_peers = unreachable_peers_from_env();
@@ -87,7 +84,6 @@ async fn lan_sync_resumes_after_peer_leaves_and_returns() {
 
 /// Other contacts coming and going on the LAN don't interrupt the sync between those who stay.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs the p2panda `dashchat-lan-priority` sync patches, not yet ported to 0.7.1"]
 async fn lan_sync_keeps_going_while_other_peers_come_and_go() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let unreachable_peers = unreachable_peers_from_env();
@@ -121,7 +117,6 @@ async fn lan_sync_keeps_going_while_other_peers_come_and_go() {
 /// Contacts on the LAN who meet both and then go away for good must not slow down the sync between
 /// those who stay.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs the p2panda `dashchat-lan-priority` sync patches, not yet ported to 0.7.1"]
 async fn lan_sync_stays_fast_while_contacts_leave_for_good() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (config, alice, bobbi) = lan_contacts(0).await;

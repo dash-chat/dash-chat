@@ -1,3 +1,7 @@
+import type {
+	FilePickerRequest,
+	TestFileSpec,
+} from '../../../../../ui/tests/setup-utils';
 import { tid } from '../../../selectors';
 import { TestHelper } from '../../test-helper';
 
@@ -7,6 +11,10 @@ export class ContactUsPage extends TestHelper {
 	reasonSelect = this.el(tid('contact-us-reason-select'));
 	includeDebugLog = this.el(tid('contact-us-include-debug-log'));
 	sendButton = this.el(tid('contact-us-send-btn'));
+	addScreenshot = this.el(tid('contact-us-screenshots-add'));
+	screenshots = () => this.agent.$$(`${tid('contact-us-screenshots')} img`);
+	removeScreenshot = (index: number) =>
+		this.el(tid(`contact-us-screenshots-remove-${index}`));
 
 	async ready() {
 		await this.messageInput.waitForExist();
@@ -20,5 +28,10 @@ export class ContactUsPage extends TestHelper {
 
 	async enterMessage(message: string) {
 		await this.typeInto(`${tid('contact-us-message-input')} textarea`, message);
+	}
+
+	/** Pick `images` with the add-screenshot tile, reporting what it asked the OS for. */
+	pickScreenshots(images: TestFileSpec[]): Promise<FilePickerRequest> {
+		return this.answerFilePicker(this.addScreenshot, images);
 	}
 }

@@ -12,6 +12,7 @@
 import { asyncExitHook } from 'exit-hook';
 import { existsSync, readFileSync } from 'node:fs';
 
+import { ErrorPlaceholder } from '../helpers/components/error-placeholder';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
@@ -46,19 +47,15 @@ import { convergeNetworks, forgetTestNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
 	androidHasInternet,
-	androidWifiInfo,
 	denyAndroidNotificationPermission,
-	disableAndroidWifi,
-	enableAndroidWifi,
-	forgetAndroidWifi,
 	isAndroidAppRunning,
-	joinAndroidWifi,
-	leaveAndroidWifi,
+	pressAndroidBack,
 	pressAndroidHome,
 	resetAndroidNotificationPermission,
 	stopAndroidApp,
 	waitForAppLinksVerified,
 } from './platforms/android';
+import { androidWifi, androidWifiInfo } from './platforms/android/wifi';
 import {
 	clearAgentDir,
 	discardDesktopAgent,
@@ -76,14 +73,8 @@ import {
 	killIosPushExtension,
 	resetIosAppState,
 } from './platforms/ios';
-import {
-	disableIosWifi,
-	enableIosWifi,
-	forgetIosWifi,
-	iosWifiInfo,
-	joinIosWifi,
-	leaveIosWifi,
-} from './platforms/ios-wifi';
+import { iosWifi, iosWifiInfo } from './platforms/ios/wifi';
+import { launchDesktopAgentWithoutLocalNetworkAccess } from './platforms/macos';
 import {
 	type AgentPlatformName,
 	type PhonePlatformName,
@@ -91,8 +82,13 @@ import {
 	phonePlatforms,
 	testNetworkSsids,
 } from './test-env';
-import { deviceUdid, switchToWebview, waitForTestUtils } from './webview';
-import { WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
+import {
+	deviceUdid,
+	isOnWebview,
+	switchToWebview,
+	waitForTestUtils,
+} from './webview';
+import { type PhoneWifi, WIFI_REASSOCIATE_MS, type WifiInfo } from './wifi';
 
 export type Agent = WebdriverIO.Browser & {
 	/** The platform this agent was launched on. */
@@ -111,6 +107,7 @@ export type Agent = WebdriverIO.Browser & {
 	editAboutPage: EditAboutPage;
 	editNamePage: EditNamePage;
 	editPhotoPage: EditPhotoPage;
+	errorPlaceholder: ErrorPlaceholder;
 	eulaPage: EulaPage;
 	addMembersPage: AddMembersPage;
 	groupChatPage: GroupChatPage;
@@ -165,6 +162,11 @@ export type Agent = WebdriverIO.Browser & {
 	/** Send the app to the background (home button) without killing it.
 	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
+	/** Whether the app's process is alive, foreground or background. A phone
+	 *  app the OS killed while it was backgrounded reports false. */
+	isAppRunning(): Promise<boolean>;
+	/** Android only. */
+	pressSystemBack(): void;
 	/** Relaunch after [`stopApp`] or [`waitForAppExit`] and wait until the app
 	 *  is interactive again. Idempotent: a no-op when the app is already
 	 *  running (on mobile it foregrounds a backgrounded app). */
@@ -206,10 +208,12 @@ export type Agent = WebdriverIO.Browser & {
 	 *  network-interfaces plugin), with the app on screen throughout; Android
 	 *  through adb. */
 	joinWifi(ssid: string, passphrase: string): Promise<string>;
-	/** Get onto the host's LAN from wherever the device is: radio on, every
-	 *  test network forgotten, then every network it lands on that is clearly
-	 *  not the host's forgotten in turn (on Android, every other saved network
-	 *  too once it is surely on the host's). Resolves with where it settled. */
+	/** Get onto the host's LAN from wherever the device is, and resolve with
+	 *  where it settled. An Android phone joins the host's network by name
+	 *  when the host tells it (or E2E_HOST_WIFI does); otherwise, and on iOS,
+	 *  every test network is forgotten, then every network the device lands
+	 *  on that is clearly not the host's in turn (on Android, every other
+	 *  saved network too once it is surely on the host's). */
 	leaveWifi(): Promise<WifiInfo>;
 	/** Forget every test network without waiting for where the device lands:
 	 *  what a move that is about to turn the radio off does first, so nothing
@@ -271,6 +275,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.editAboutPage = new EditAboutPage(b);
 	agent.editNamePage = new EditNamePage(b);
 	agent.editPhotoPage = new EditPhotoPage(b);
+	agent.errorPlaceholder = new ErrorPlaceholder(b);
 	agent.eulaPage = new EulaPage(b);
 	agent.addMembersPage = new AddMembersPage(b);
 	agent.groupChatPage = new GroupChatPage(b);
@@ -406,7 +411,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await b.terminateApp(APP_PACKAGE);
 			return;
 		}
-		stopAndroidApp(deviceUdid(b));
+		await stopAndroidApp(deviceUdid(b));
 	};
 	agent.backgroundApp = async () => {
 		if (agent.platform === 'desktop') {
@@ -427,6 +432,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		// unrun and the "background" purely notional.
 		await b.pause(PROCESS_LIFECYCLE_DISPATCH_MS);
 	};
+	agent.isAppRunning = async () => {
+		if (agent.platform === 'desktop') {
+			return true;
+		}
+		return Number(await b.queryAppState(APP_PACKAGE)) > APP_STATE_NOT_RUNNING;
+	};
 	agent.startApp = async () => {
 		if (agent.platform === 'desktop') {
 			// A live session means the app is running and driveable, and there
@@ -441,9 +452,14 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			await launchAgentApp(slot);
 			await b.reloadSession();
 		} else {
+			const wasRunning =
+				Number(await b.queryAppState(APP_PACKAGE)) > APP_STATE_NOT_RUNNING;
 			// activateApp is itself idempotent: it launches a stopped app and
 			// merely foregrounds a running one.
 			await b.activateApp(APP_PACKAGE);
+			// A backgrounded app keeps its page and the session its webview
+			// context, so there is nothing to reattach.
+			if (wasRunning && (await isOnWebview(b))) return;
 			// A relaunch drops back to the native context; only the session's
 			// initial `autoWebview` does this for us.
 			await switchToWebview(b, agent.platform);
@@ -452,47 +468,20 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		attachPages(agent, b);
 		if (agent.platform === 'desktop') await agent.setWideScreen(false);
 	};
-	agent.disableWifi = async () => {
-		if (agent.platform === 'ios') {
-			await disableIosWifi(b);
-			return;
-		}
-		await disableAndroidWifi(wifiUdid(agent, b));
-	};
-	agent.enableWifi = async () =>
-		agent.platform === 'ios'
-			? await enableIosWifi(b)
-			: await enableAndroidWifi(wifiUdid(agent, b));
-	const joinWifiOnce = async (ssid: string, passphrase: string) =>
-		agent.platform === 'ios'
-			? await joinIosWifi(b, ssid, passphrase)
-			: await joinAndroidWifi(
-					wifiUdid(agent, b),
-					ssid,
-					passphrase,
-					testNetworkSsids(),
-				);
+	agent.disableWifi = async () => await phoneWifi(agent, b).radioOff();
+	agent.enableWifi = async () => await phoneWifi(agent, b).radioOn();
 	agent.joinWifi = async (ssid: string, passphrase: string) => {
 		// A phone sometimes fails to associate with an access point it was just
 		// on; one more try keeps that radio hiccup from failing the spec.
 		try {
-			return await joinWifiOnce(ssid, passphrase);
+			return await phoneWifi(agent, b).join({ ssid, passphrase });
 		} catch (err) {
 			console.warn(`failed to join ${ssid}, retrying: ${String(err)}`);
-			return await joinWifiOnce(ssid, passphrase);
+			return await phoneWifi(agent, b).join({ ssid, passphrase });
 		}
 	};
-	agent.leaveWifi = async () =>
-		agent.platform === 'ios'
-			? await leaveIosWifi(b, testNetworkSsids())
-			: await leaveAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
-	agent.forgetWifi = async () => {
-		if (agent.platform === 'ios') {
-			await forgetIosWifi(b);
-			return;
-		}
-		forgetAndroidWifi(wifiUdid(agent, b), testNetworkSsids());
-	};
+	agent.leaveWifi = async () => await phoneWifi(agent, b).goHome();
+	agent.forgetWifi = async () => await phoneWifi(agent, b).dropTestNetworks();
 	agent.cycleWifi = async (downMs: number) => {
 		await agent.disableWifi();
 		await b.pause(downMs);
@@ -533,6 +522,12 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		}
 		killIosPushExtension(deviceUdid(b));
 	};
+	agent.pressSystemBack = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(`pressSystemBack needs android, got ${agent.platform}`);
+		}
+		pressAndroidBack(deviceUdid(b));
+	};
 	agent.resetNotificationPermission = () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
 			throw new Error(
@@ -563,6 +558,12 @@ function wifiUdid(agent: Agent, b: WebdriverIO.Browser): string {
 		);
 	}
 	return deviceUdid(b);
+}
+
+function phoneWifi(agent: Agent, b: WebdriverIO.Browser): PhoneWifi {
+	return agent.platform === 'ios'
+		? iosWifi(b, testNetworkSsids())
+		: androidWifi(wifiUdid(agent, b), testNetworkSsids());
 }
 
 /** Comfortably past ProcessLifecycleOwner's 700ms background-dispatch delay, so
@@ -866,8 +867,7 @@ export function tapWebElementsAtTheirRect(
 		'click',
 		async function (this: WebdriverIO.Element, origClick) {
 			if (pointerType === 'touch') {
-				const context = await agent.getContext();
-				if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+				if (!(await isOnWebview(agent))) {
 					return await origClick();
 				}
 			}
@@ -905,8 +905,7 @@ function tapWebElementsWithTouch(agent: WebdriverIO.Browser): void {
 	agent.overwriteCommand(
 		'click',
 		async function (this: WebdriverIO.Element, origClick) {
-			const context = await agent.getContext();
-			if (typeof context !== 'string' || !context.startsWith('WEBVIEW')) {
+			if (!(await isOnWebview(agent))) {
 				return await origClick();
 			}
 			const { x, y } = await tapPoint(agent, this);
@@ -1092,24 +1091,30 @@ function assignPhones(
 let desktopsLaunched = 0;
 
 /** Launch one more desktop agent, on the next slot past every phone's. */
-export async function setupDesktopAgent(): Promise<{
+export async function setupDesktopAgent(
+	launch: (slot: number) => Promise<WebdriverIO.Browser> = launchDesktopAgent,
+): Promise<{
 	agent: Agent;
 	slot: number;
 }> {
 	desktopsLaunched += 1;
 	const slot = phonePlatforms().length + desktopsLaunched;
 	try {
-		const agent = await setupAgent(
-			await launchDesktopAgent(slot),
-			'desktop',
-			slot,
-		);
+		const agent = await setupAgent(await launch(slot), 'desktop', slot);
 		return { agent, slot };
 	} catch (e) {
 		// A leftover app would keep advertising over mDNS and skew the rest of the run.
 		await discardDesktopAgent(slot);
 		throw e;
 	}
+}
+
+export async function setupAgentWithoutLocalNetworkAccess(): Promise<Agent> {
+	const { agent } = await setupDesktopAgent(
+		launchDesktopAgentWithoutLocalNetworkAccess,
+	);
+	specAgents.push(agent);
+	return agent;
 }
 
 /** The agents `setupAgents` built for this spec file. */

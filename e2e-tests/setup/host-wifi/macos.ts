@@ -145,4 +145,8 @@ export const macos: HostWifi = {
 	},
 
 	leaveWifi,
+
+	currentNetwork() {
+		return null;
+	},
 };

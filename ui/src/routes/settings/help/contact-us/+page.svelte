@@ -2,11 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import ImageInput from '$lib/components/ImageInput.svelte';
-	import { compressImage } from '$lib/utils/compress';
+	import ScreenshotsInput from '$lib/components/ScreenshotsInput.svelte';
 	import { sendFeedback, type FeedbackReason } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 	import {
+		Block,
 		BlockTitle,
 		Checkbox,
 		Link,
@@ -25,30 +25,27 @@
 
 	// Without SENTRY_DSN there is nowhere for a submission to go.
 	const canSend = import.meta.env.VITE_SENTRY_ENABLED;
+	const MAX_SCREENSHOTS = 5;
+	const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 
 	let message = $state('');
 	let reason = $state<FeedbackReason | undefined>();
 	let includeDebugLog = $state(true);
-	let screenshot = $state<File | null>(null);
+	let screenshots = $state<File[]>([]);
+	let attachingScreenshots = $state(false);
 	let sending = $state(false);
-	const sendDisabled = $derived(!message || !reason || !canSend || sending);
-
-	const reasonLabels: Record<string, () => string> = {
-		bug: () => m.reasonBugReport(),
-		feature: () => m.reasonFeatureRequest(),
-		question: () => m.reasonQuestion(),
-		feedback: () => m.reasonGeneralFeedback(),
-		other: () => m.reasonOther(),
-	};
+	const sendDisabled = $derived(
+		!message || !reason || !canSend || sending || attachingScreenshots,
+	);
 
 	async function handleSubmit() {
-		if (!reason || sending) return;
+		if (!reason || sendDisabled) return;
 		sending = true;
 		try {
 			const outcome = await sendFeedback({
 				reason,
 				message,
-				screenshot: screenshot ? await compressImage(screenshot) : undefined,
+				screenshots,
 				includeLogs: includeDebugLog,
 			});
 			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
@@ -125,14 +122,24 @@
 				/>
 			</List>
 
-			<BlockTitle>{m.attachScreenshot()}</BlockTitle>
-			<List
+			<BlockTitle id="contact-us-screenshots-title"
+				>{m.attachScreenshots()}</BlockTitle
+			>
+			<Block
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
 				class="!mb-0"
 			>
-				<ImageInput bind:value={screenshot} />
-			</List>
+				<ScreenshotsInput
+					bind:value={screenshots}
+					bind:attaching={attachingScreenshots}
+					max={MAX_SCREENSHOTS}
+					maxBytes={MAX_SCREENSHOT_BYTES}
+					disabled={sending}
+					labelledBy="contact-us-screenshots-title"
+					testId="contact-us-screenshots"
+				/>
+			</Block>
 
 			<List
 				strongIos

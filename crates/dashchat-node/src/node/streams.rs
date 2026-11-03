@@ -13,11 +13,13 @@ use p2panda::node::{CreateSpaceError, CreateStreamError, SubscribeSpaceError};
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::spaces::SpaceSubscription;
 use p2panda::streams::{
-    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
-    StreamPublisher, StreamSubscription,
+    EphemeralStreamPublisher, EphemeralStreamSubscription, ImportError, ProcessedOperation,
+    PublishError, PublishFuture, Source, StreamEvent, StreamFrom, StreamPublisher,
+    StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_core::traits::Digest;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{RwLockReadGuard, mpsc, oneshot};
@@ -379,6 +381,19 @@ impl TopicStreams {
         hash.alias_numbered();
 
         Ok(ProcessFuture::new(hash, publish_fut, processed_rx))
+    }
+
+    /// Open an ephemeral (gossip-only) stream on a topic.
+    pub(crate) async fn ephemeral_stream<M>(
+        &self,
+        topic: Topic,
+    ) -> Result<(EphemeralStreamPublisher<M>, EphemeralStreamSubscription<M>), StreamsError>
+    where
+        M: Serialize + for<'a> Deserialize<'a>,
+    {
+        Ok(self
+            .with_node(async |node| node.ephemeral_stream(topic).await)
+            .await?)
     }
 
     pub(crate) async fn register_bootstrap(

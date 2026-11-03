@@ -34,6 +34,10 @@ export const MAILBOX_HUNG_MS = 50_000;
 /** What the app gets to tell the user the mailbox answers again. */
 export const MAILBOX_HEALED_MS = 4_000;
 
+/** The longest an app whose cold start could not reach the cloud waits before
+ *  trying to register it again: its retry backs off to 10 s. */
+export const CLOUD_REGISTRATION_RETRY_MS = 10_000;
+
 /** How long something already on screen must survive to count as untouched by
  *  an arriving message. One arrival re-renders a chat more than once: the
  *  message itself, then the read receipt its appearance publishes on a 500ms

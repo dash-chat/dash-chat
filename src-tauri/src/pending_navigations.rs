@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 const PENDING_NAVIGATIONS_EVENT: &str = "pending-navigations://new";
@@ -11,7 +11,6 @@ const PENDING_NAVIGATIONS_EVENT: &str = "pending-navigations://new";
 #[serde(tag = "kind", content = "target", rename_all = "camelCase")]
 pub enum PendingNavigation {
     DeepLink(String),
-    #[cfg_attr(not(mobile), allow(dead_code))]
     Route(String),
 }
 
@@ -116,7 +115,17 @@ pub fn setup(app: &AppHandle) {
     }
 }
 
-fn announce(app: &AppHandle) {
+pub fn push_route<R: Runtime>(app: &AppHandle<R>, route: String) {
+    let queued = app
+        .state::<PendingNavigations>()
+        .queue()
+        .push(PendingNavigation::Route(route));
+    if queued {
+        announce(app);
+    }
+}
+
+fn announce<R: Runtime>(app: &AppHandle<R>) {
     if let Err(err) = app.emit(PENDING_NAVIGATIONS_EVENT, ()) {
         log::error!("Failed to announce a pending navigation: {err:?}");
     }
@@ -131,13 +140,7 @@ fn push_tapped_route(
         return;
     }
     if let Some(route) = action.notification.route.filter(|r| !r.is_empty()) {
-        let queued = app
-            .state::<PendingNavigations>()
-            .queue()
-            .push(PendingNavigation::Route(route));
-        if queued {
-            announce(app);
-        }
+        push_route(app, route);
     }
 }
 

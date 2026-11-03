@@ -17,6 +17,7 @@ allowBuilds:
   tauri-plugin-network-interfaces-api@https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/3a8c5daa79c1890dcd3096363cbf9f969b7bac1d: true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d: true
   tauri-plugin-virtual-keyboard@https://codeload.github.com/dash-chat/tauri-plugin-virtual-keyboard/tar.gz/a86d8cf2ea998eba7f93dc6b53674fdb77d3def5: true
+  tauri-plugin-subscriptions@https://codeload.github.com/dash-chat/tauri-plugin-subscriptions/tar.gz/30d1a889a4d7fca0a28bc9d77a7662b6f95cec29: true
   appium: true
   sharp: true
   tauri-plugin-system-theme@https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/ce6e762f816bdffeaa0bd56078995bda21cdb68b: true

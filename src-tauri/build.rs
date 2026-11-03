@@ -2,6 +2,9 @@ use std::net::UdpSocket;
 
 fn main() {
     capture_git_commit();
+    // Tauri embeds the frontend file by file and tracks only those files, so a
+    // file added to the frontend would otherwise never reach the binary.
+    println!("cargo:rerun-if-changed=../ui/build");
 
     // An explicit MAILBOX_URL / PUSH_NOTIFICATIONS_SERVER_URL in the build env
     // is read directly by option_env! in the consumers, so build.rs only needs

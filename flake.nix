@@ -2,9 +2,7 @@
   description = "Dash Chat development flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.11";
-
-    nixpkgs-pnpm.url = "github:nixos/nixpkgs/nixos-26.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-26.05";
 
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -13,9 +11,11 @@
     tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
 
     # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
-    # devices' WebView majors (physical phones on 149-153, the emulator image
+    # devices' WebView majors (physical phones on 149-155, the emulator image
     # on 124). The harness materializes packages.e2e-chromedrivers via
     # `nix build --out-link` and Appium picks the right one per device.
+    nixpkgs-chromedriver-155.url = "github:nixos/nixpkgs/a3fd85e95837ce5d2e879357445c6eb5cd02d280";
+    nixpkgs-chromedriver-154.url = "github:nixos/nixpkgs/7f4b816584abd32222d85a4d7b2d48ead6a80ddd";
     nixpkgs-chromedriver-153.url = "github:nixos/nixpkgs/b7b88d606075b4c018385f7eccc7494d7f00cba5";
     nixpkgs-chromedriver-152.url = "github:nixos/nixpkgs/c495a327fd104a2828cce868079fdc8ce00bc8d1";
     nixpkgs-chromedriver-151.url = "github:nixos/nixpkgs/0e251e24a4f24e036a084b6b4b2d2491af4167f4";
@@ -68,7 +68,6 @@
         let
           overlays = [ (import inputs.rust-overlay) ];
           pkgs = import inputs.nixpkgs { inherit system overlays; };
-          pkgsPnpm = import inputs.nixpkgs-pnpm { inherit system; };
 
           # GStreamer so WebKitGTK can play voice-note audio: WAV from desktop
           # recorders (base/good) and AAC/M4A from mobile ones (bad).
@@ -121,9 +120,9 @@
           '';
           packages = [
             pkgs.mprocs
-            pkgsPnpm.just
+            pkgs.just
             pkgs."nodejs_${nodeVersion}"
-            pkgsPnpm.pnpm
+            pkgs.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
             pkgs.toxiproxy
@@ -183,8 +182,8 @@
               # targets. "0" is an explicit veto for cross probes.
               export PKG_CONFIG_ALLOW_CROSS=0
 
-              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.appium"
-              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.appium/chromedrivers"
+              mkdir -p "$(git rev-parse --show-toplevel)/e2e-tests/.cache"
+              ln -sfn ${self'.packages.e2e-chromedrivers} "$(git rev-parse --show-toplevel)/e2e-tests/.cache/chromedrivers"
             '';
           };
 

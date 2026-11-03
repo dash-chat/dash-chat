@@ -98,9 +98,9 @@ export interface ExpectedHub {
 	running: boolean;
 }
 
-/** The network every phone and the host are on when a run leaves them
- *  alone: whatever each device falls back to with no test network saved. The
- *  harness never learns its name, so the model carries it under this one. */
+/** The host's own network, which every phone and the host are on when a run
+ *  leaves them alone. Its real name is the platform's business — a phone may
+ *  join it by name or fall back to it — so the model carries it under this one. */
 export const HOME_NETWORK = 'home';
 
 /** A LAN available to a run, by its real network name — or [`HOME_NETWORK`]. */
@@ -182,6 +182,9 @@ export interface ExpectedAgent {
 	mobile: boolean;
 	p2p?: boolean;
 	notifications: NotificationTexts | null;
+	/** An iPhone posts each message as a notification of its own, stacked
+	 *  under its chat, where Android rewrites one per chat. */
+	notifiesEachMessage?: boolean;
 }
 
 /** A join or a departure: what a device folds into who is in a group. */
@@ -306,6 +309,10 @@ export class ExpectedModel {
 	 *  phones reach it — so what varies is only whether agents can reach it
 	 *  right now. */
 	readonly cloud: { usable: boolean };
+	/** An app only syncs with the cloud once it has registered it, which a cold
+	 *  start that fails retries with a backoff the link healing does not cut
+	 *  short. */
+	private readonly startedWithoutCloud = new Set<string>();
 	/** Whether the run can degrade the link to it, which keeps the cloud
 	 *  moves out of a run whose mailbox the proxy does not front. */
 	readonly cloudDegradable: boolean;
@@ -319,9 +326,9 @@ export class ExpectedModel {
 	/** Holder name → the ops it holds. */
 	private readonly knowledge = new Map<string, Set<OpId>>();
 	/** Agent name → the notifications its device is showing, by the id the OS
-	 * keeps them under: a chat's messages share one, so a later message
-	 * replaces the entry, while each request and each group invite gets its
-	 * own. */
+	 * keeps them under: on Android a chat's messages share one, so a later
+	 * message replaces the entry, while each request and each group invite
+	 * gets its own. */
 	private readonly posted = new Map<string, Map<string, NotificationView>>();
 	/** Agent name → chat route → the messages that landed there while its app
 	 * was not showing that chat: what the row's unread badge counts. Opening
@@ -498,6 +505,8 @@ export class ExpectedModel {
 	 *  was showing when it went away. */
 	startApp(name: string): void {
 		if (this.stopped.delete(name)) this.catchUp(name);
+		if (this.cloud.usable) this.startedWithoutCloud.delete(name);
+		else this.startedWithoutCloud.add(name);
 		this.wentHome(name);
 		this.converge();
 	}
@@ -557,6 +566,14 @@ export class ExpectedModel {
 	setCloudUsable(usable: boolean): void {
 		this.cloud.usable = usable;
 		this.converge();
+	}
+
+	awaitsCloudRegistration(name: string): boolean {
+		return this.startedWithoutCloud.has(name);
+	}
+
+	registeredWithCloud(name: string): void {
+		this.startedWithoutCloud.delete(name);
 	}
 
 	/** Whether every agent has a members-less group to read its connection
@@ -1605,7 +1622,7 @@ export class ExpectedModel {
 		if (viewing?.route === notification.route) return;
 		const posted = this.posted.get(holder);
 		if (posted === undefined) return;
-		// A chat's messages share an entry, and each arrival rewrites it — so
+		// Where a chat's messages share an entry, each arrival rewrites it — so
 		// what it reads is one of them, not necessarily the last to arrive.
 		const shown = posted.get(notification.id);
 		posted.set(notification.id, {
@@ -1663,9 +1680,9 @@ export class ExpectedModel {
 	}
 
 	/** The notification an op produces on `holder`'s device, or null for one
-	 *  the app shows nothing for. A chat's messages share an id, so a later
-	 *  one replaces the entry the way the device collapses a conversation;
-	 *  every other kind gets its own. */
+	 *  the app shows nothing for. Unless the device notifies each message,
+	 *  a chat's messages share an id, so a later one replaces the entry the
+	 *  way Android collapses a conversation; every other kind gets its own. */
 	private notificationFor(
 		holder: string,
 		op: Op,
@@ -1679,7 +1696,9 @@ export class ExpectedModel {
 			const conversations =
 				chat.kind === 'group' ? this.groupTitles(chat, texts) : [null];
 			return {
-				id: `chat:${chatTopic(chat)}`,
+				id: this.notifiesEachMessage(holder)
+					? op.id
+					: `chat:${chatTopic(chat)}`,
 				route: chatTopic(chat),
 				opens: chat,
 				tapText: title,
@@ -1815,6 +1834,10 @@ export class ExpectedModel {
 		}
 		for (const chat of this.knownChats(holder)) topics.add(chatTopic(chat));
 		return topics;
+	}
+
+	private notifiesEachMessage(name: string): boolean {
+		return this.agents.find(a => a.name === name)?.notifiesEachMessage === true;
 	}
 
 	private syncsDirectly(name: string): boolean {
@@ -2029,7 +2052,7 @@ export function newModel(real: {
 }): ExpectedModel {
 	if (real.networks.some(n => n.ssid === HOME_NETWORK)) {
 		throw new Error(
-			`a test network cannot be called "${HOME_NETWORK}": that is the name of the network the run never joins`,
+			`a test network cannot be called "${HOME_NETWORK}": that is the name the model gives the host's own network`,
 		);
 	}
 	return new ExpectedModel(
@@ -2038,6 +2061,7 @@ export function newModel(real: {
 			mobile: agent.platform !== 'desktop',
 			p2p: agent.p2p,
 			notifications: notificationTexts,
+			notifiesEachMessage: agent.platform === 'ios',
 		})),
 		real.networks.length === 0
 			? []

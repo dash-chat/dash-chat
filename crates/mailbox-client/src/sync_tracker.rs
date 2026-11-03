@@ -3,7 +3,6 @@ use std::{
     marker::PhantomData,
     path::Path,
     sync::Arc,
-    time::Duration,
 };
 
 use anyhow::Context;
@@ -16,7 +15,7 @@ use tokio::sync::{Mutex, watch};
 
 use crate::MailboxId;
 use crate::SeqNum;
-use crate::manager::SyncStatus;
+use crate::connection_health::SyncStatus;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mailbox_sync_state (
         mailbox_id TEXT NOT NULL,
@@ -52,7 +51,7 @@ pub struct MailboxSyncTracker<T, A> {
 
 #[derive(Clone)]
 enum SyncBackend {
-    Sqlite(SqlitePool),
+    Sqlite(sqlite_gate::GatedPool),
     /// In-memory variant for tests that run under `tokio::test(start_paused = true)`,
     /// where sqlx's pool internals deadlock with mock time.
     Mem(Arc<Mutex<MemRows>>),
@@ -73,16 +72,19 @@ where
     T: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
     A: Serialize + DeserializeOwned + Eq + std::hash::Hash + Clone + Send + Sync + 'static,
 {
-    pub async fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub async fn open(
+        path: impl AsRef<Path>,
+        gate: &sqlite_gate::SqliteGate,
+    ) -> anyhow::Result<Self> {
         let opts = SqliteConnectOptions::new()
             .filename(path.as_ref())
             .create_if_missing(true)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(30));
-        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
-        sqlx::query(SCHEMA).execute(&pool).await?;
+            .busy_timeout(sqlite_gate::BUSY_TIMEOUT);
+        let pool = gate.connect(SqlitePoolOptions::new(), opts).await?;
+        sqlx::query(SCHEMA).execute(pool.pool()).await?;
 
-        let initial_ids = load_all_ids_sqlite(&pool).await?;
+        let initial_ids = load_all_ids_sqlite(pool.pool()).await?;
         let (all_ids_tx, _) = watch::channel(initial_ids);
         Ok(Self {
             inner: SyncBackend::Sqlite(pool),
@@ -106,7 +108,7 @@ where
 
     pub async fn close(&self) {
         if let SyncBackend::Sqlite(pool) = &self.inner {
-            pool.close().await;
+            pool.pool().close().await;
         }
     }
 
@@ -153,6 +155,7 @@ where
         }
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 let now = chrono::Utc::now().timestamp_millis();
                 let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
                     "INSERT INTO mailbox_sync_state (mailbox_id, topic, author, seq_num, updated_at) ",
@@ -217,6 +220,7 @@ where
     pub async fn record_url(&self, mailbox: &MailboxId, url: &str) -> anyhow::Result<()> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 sqlx::query(
                     "INSERT INTO mailbox_url (mailbox_id, url) VALUES (?, ?)
                      ON CONFLICT (mailbox_id) DO UPDATE SET url = excluded.url",
@@ -246,6 +250,7 @@ where
     ) -> anyhow::Result<()> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 sqlx::query(
                     "INSERT INTO mailbox_status (mailbox_id, status, updated_at) VALUES (?, ?, ?)
                      ON CONFLICT (mailbox_id) DO UPDATE SET
@@ -269,6 +274,7 @@ where
     pub async fn get_status(&self, mailbox: &MailboxId) -> anyhow::Result<Option<SyncStatus>> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 let row: Option<(String,)> =
                     sqlx::query_as("SELECT status FROM mailbox_status WHERE mailbox_id = ?")
                         .bind(mailbox)
@@ -285,6 +291,7 @@ where
     pub async fn clear_status(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 sqlx::query("DELETE FROM mailbox_status WHERE mailbox_id = ?")
                     .bind(mailbox)
                     .execute(pool)
@@ -301,6 +308,7 @@ where
     pub async fn mailbox_id_for_url(&self, url: &str) -> anyhow::Result<Option<MailboxId>> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 let row: Option<(String,)> =
                     sqlx::query_as("SELECT mailbox_id FROM mailbox_url WHERE url = ? LIMIT 1")
                         .bind(url)
@@ -329,6 +337,7 @@ where
         let author_bytes = encode(author)?;
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 let row: Option<(i64,)> = sqlx::query_as(
                     "SELECT seq_num FROM mailbox_sync_state
                      WHERE mailbox_id = ? AND topic = ? AND author = ?",
@@ -360,6 +369,7 @@ where
         let author_bytes = encode(author)?;
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 let rows: Vec<(String, i64)> = sqlx::query_as(
                     "SELECT mailbox_id, seq_num FROM mailbox_sync_state
                      WHERE topic = ? AND author = ?",
@@ -391,6 +401,7 @@ where
     ) -> anyhow::Result<MailboxSyncState<T, A>> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 let rows: Vec<(Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
                     "SELECT topic, author, seq_num FROM mailbox_sync_state
                      WHERE mailbox_id = ?",
@@ -426,6 +437,7 @@ where
     pub async fn drop_mailbox(&self, mailbox: &MailboxId) -> anyhow::Result<()> {
         match &self.inner {
             SyncBackend::Sqlite(pool) => {
+                let pool = pool.pool();
                 sqlx::query("DELETE FROM mailbox_sync_state WHERE mailbox_id = ?")
                     .bind(mailbox)
                     .execute(pool)
@@ -484,7 +496,9 @@ mod tests {
             Backend::Sqlite => {
                 let dir = tempfile::tempdir().unwrap();
                 let path = dir.path().join("sync_state.db");
-                let store = MailboxSyncTracker::open(&path).await.unwrap();
+                let store = MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+                    .await
+                    .unwrap();
                 (Some(dir), store)
             }
             Backend::Mem => (None, MailboxSyncTracker::in_memory()),
@@ -630,7 +644,9 @@ mod tests {
 
         {
             let store: MailboxSyncTracker<u8, char> =
-                MailboxSyncTracker::open(&path).await.unwrap();
+                MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+                    .await
+                    .unwrap();
             store
                 .record_synced(&"mb1".into(), &[(7u8, 'a', 3)])
                 .await
@@ -646,7 +662,10 @@ mod tests {
             store.close().await;
         }
 
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
+        let store: MailboxSyncTracker<u8, char> =
+            MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+                .await
+                .unwrap();
         assert_eq!(
             store.get_synced(&"mb1".into(), &7u8, &'a').await.unwrap(),
             Some(3),
@@ -766,7 +785,9 @@ mod tests {
 
         {
             let store: MailboxSyncTracker<u8, char> =
-                MailboxSyncTracker::open(&path).await.unwrap();
+                MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+                    .await
+                    .unwrap();
             store
                 .record_status(&"mb1".into(), SyncStatus::Degraded)
                 .await
@@ -774,7 +795,10 @@ mod tests {
             store.close().await;
         }
 
-        let store: MailboxSyncTracker<u8, char> = MailboxSyncTracker::open(&path).await.unwrap();
+        let store: MailboxSyncTracker<u8, char> =
+            MailboxSyncTracker::open(&path, &sqlite_gate::SqliteGate::default())
+                .await
+                .unwrap();
         assert_eq!(
             store.get_status(&"mb1".into()).await.unwrap(),
             Some(SyncStatus::Degraded),

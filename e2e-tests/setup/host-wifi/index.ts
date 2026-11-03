@@ -7,6 +7,7 @@
  * macOS.
  */
 import { claimWhenFree, release } from '../claims';
+import { type WifiNetwork, hostWifiOverride } from '../test-env';
 import { linux } from './linux';
 import { macos } from './macos';
 
@@ -50,6 +51,29 @@ export async function leaveTestNetworks(ssids: string[]): Promise<void> {
 	// Hosts without test networks needn't have the platform's Wi-Fi tooling.
 	if (ssids.length === 0) return;
 	for (const ssid of driver.joinedTestNetworks(ssids)) await leaveWifi(ssid);
+}
+
+let knownHostNetwork: WifiNetwork | null = null;
+
+/** The host's own Wi-Fi network, with its passphrase: E2E_HOST_WIFI when
+ *  set, else the network the card is on while it is on none of
+ *  `testNetworks` — kept from the first reading, since a networked run
+ *  spends the card on test networks. null when neither tells: a host on a
+ *  wire or without the platform's Wi-Fi tooling, or on macOS, which keeps
+ *  both the SSID and its secret from a shell. */
+export function hostNetwork(testNetworks: string[]): WifiNetwork | null {
+	const override = hostWifiOverride();
+	if (override !== null) return override;
+	if (knownHostNetwork !== null) return knownHostNetwork;
+	try {
+		const device = wifiDevice();
+		if (device !== null) {
+			knownHostNetwork = driver.currentNetwork(device, testNetworks);
+		}
+	} catch {
+		/* no Wi-Fi tooling on this host */
+	}
+	return knownHostNetwork;
 }
 
 /** Give the card back at the end of the spec file. */

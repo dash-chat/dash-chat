@@ -221,7 +221,10 @@ export type ChatPayload =
 	| { type: 'Reaction'; payload: ChatReaction }
 	| { type: 'EditMessage'; payload: EditMessagePayload }
 	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
-	| { type: 'JoinGroup'; payload: { chat_id: string } }
+	| {
+			type: 'JoinGroup';
+			payload: { chat_id: string; add_member_operation_hash: Hash };
+	  }
 	| { type: 'GroupInfo'; payload: GroupInfo }
 	| { type: 'MessageAck'; payload: MessageAckPayload }
 	| { type: 'IntroduceAgents'; payload: { agents: Record<DeviceId, AgentId> } };

@@ -1,6 +1,13 @@
 @import 'tailwindcss';
 /* import Konsta UI theme */
 @import 'konsta/svelte/theme.css';
+/* Konsta's Material theme font, bundled so it renders offline */
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/400-italic.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/500-italic.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto/700-italic.css';
 
 @theme {
 	--color-brand-primary: #6e7bff;

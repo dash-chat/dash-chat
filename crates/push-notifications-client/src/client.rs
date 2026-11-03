@@ -23,10 +23,8 @@ async fn check_response(resp: reqwest::Response) -> anyhow::Result<()> {
 impl PushNotificationsClient {
     pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
         let http = reqwest::Client::builder()
-            // As the mailbox client's: setting up a connection on a loaded
-            // mobile network alone can take several seconds.
-            .connect_timeout(std::time::Duration::from_secs(15))
-            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(dashchat_utils::HTTP_CONNECT_TIMEOUT)
+            .timeout(dashchat_utils::HTTP_REQUEST_TIMEOUT)
             .build()?;
         Ok(Self { base_url, http })
     }

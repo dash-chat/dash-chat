@@ -31,7 +31,7 @@ async function checkCloudAll(
 	}
 }
 
-/** Slow the link down. The cloud stays usable, so the chip stays hidden. */
+/** Slow the link down. The cloud stays usable, so the chip keeps reading cloud. */
 class CloudSlowMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
 		return m.hasCloud() && m.cloudUsable();
@@ -82,7 +82,7 @@ class CloudDropMove extends Move {
 	}
 }
 
-/** Heal the link. Chips must hide again, and whatever the cloud held
+/** Heal the link. Chips must read cloud again, and whatever the cloud held
  *  reaches everyone. */
 class CloudHealMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
