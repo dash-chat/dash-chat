@@ -51,6 +51,7 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
@@ -320,6 +321,7 @@
 								{#snippet left()}
 									{#if !isWideScreen.value}
 										<NavbarBackLink
+											class="[&_svg]:size-[17px]"
 											onClick={() => goto('/')}
 											data-testid="direct-chat-back"
 										/>
@@ -327,7 +329,7 @@
 								{/snippet}
 								{#snippet title()}
 									<Link
-										class="flex w-full min-w-0 items-center justify-start"
+										class="flex w-full min-w-0 items-center justify-start ps-0"
 										href={`/direct-chats/${chatId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
@@ -342,10 +344,10 @@
 										{:else}
 											{#await $peerName then peerName}
 												<span
-													class="flex w-full min-w-0 flex-row items-center gap-2"
+													class="flex w-full min-w-0 flex-row items-center gap-4"
 												>
 													<span class="shrink-0">
-														<Avatar waitingForProfile size="2.5rem" />
+														<Avatar waitingForProfile size="2.25rem" />
 													</span>
 													<span
 														class="flex-1 min-w-0 truncate {peerName
@@ -499,7 +501,7 @@
 								{/if}
 
 								<div
-									class="column m-2 gap-1"
+									class="swipe-clip-boundary column my-2 gap-1 px-4"
 									data-testid="direct-chat-messages"
 								>
 									{#each visibleGroupsInDays as messageGroupsInDay (messageGroupsInDay.day.valueOf())}
@@ -511,9 +513,13 @@
 											{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
 												<div
 													class="column"
-													class:pt-px={i > 0}
-													class:pt-1={i === 0 &&
+													class:pt-[1.5px]={i > 0 && isMobile}
+													class:pt-px={i > 0 && !isMobile}
+													class:pt-3={i === 0 &&
 														messageGroup !== messageGroupsInDay.eventsGroups[0]}
+													class:pb-[3px]={i === messageGroup.length - 1 &&
+														item.kind === 'message' &&
+														item.message.author !== myDeviceId}
 													data-message-group={messageGroup[0][0]}
 												>
 													{#if unreadDivider.hash === hash}

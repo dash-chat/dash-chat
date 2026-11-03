@@ -24,6 +24,7 @@
 	import SwipeToReply from './SwipeToReply.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { connectedToCloudMailboxServer } from '$lib/components/connection/connection-status';
 	import { getContext } from 'svelte';
@@ -121,7 +122,15 @@
 {/snippet}
 
 {#snippet bubble()}
-	<div bind:this={messageEl} class="relative max-w-[85%]">
+	<div
+		bind:this={messageEl}
+		class={[
+			'relative',
+			isMobile && !isWideScreen.value
+				? 'max-w-[calc(100%-2rem)]'
+				: 'max-w-[85%]',
+		]}
+	>
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onReply} />
 		{/if}
@@ -131,10 +140,10 @@
 					<Avatar
 						image={sender?.avatar}
 						initials={sender?.name.slice(0, 2)}
-						size="2rem"
+						size="1.75rem"
 					/>
 				{:else}
-					<div class="shrink-0" style="width: 2rem"></div>
+					<div class="shrink-0" style="width: 1.75rem"></div>
 				{/if}
 			{/if}
 			<div bind:this={slideEl} class="column min-w-0">
@@ -147,21 +156,17 @@
 					/>
 				{:else}
 					<Card
-						contentWrapPadding="p-2"
+						contentWrapPadding="px-2 py-(--message-padding-y)"
 						class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 					>
-						<div class="flex flex-col gap-1">
-							<MessageContent
-								{message}
-								{searchQuery}
-								senderName={senderDisplayName}
-								{showSenderName}
-								{onNavigateToMessage}
-								metadata={isLast || editHistory.length > 0
-									? metadata
-									: undefined}
-							/>
-						</div>
+						<MessageContent
+							{message}
+							{searchQuery}
+							senderName={senderDisplayName}
+							{showSenderName}
+							{onNavigateToMessage}
+							metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+						/>
 					</Card>
 				{/if}
 				{#if Object.keys(reactions).length > 0}

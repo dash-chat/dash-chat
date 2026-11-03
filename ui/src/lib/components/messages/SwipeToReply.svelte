@@ -194,13 +194,16 @@
 </div>
 
 <style>
-	/* Clipped only while dragging, so the hover toolbar and reaction overlay are
-	   not cut off at rest. `clip` keeps the vertical axis visible; `hidden`
-	   would force it to scroll. */
 	.swipe-to-reply.moving {
 		position: relative;
+	}
+
+	/* Clipped only while dragging, so the hover toolbar and reaction overlay are
+	   not cut off at rest. A full-width ancestor clips rather than the row, so
+	   the bubble can slide past the row's edge. `clip` keeps the vertical axis
+	   visible; `hidden` would force it to scroll. */
+	:global(.swipe-clip-boundary:has(.swipe-to-reply.moving)) {
 		overflow-x: clip;
-		overflow-y: visible;
 	}
 
 	/* Signal's reply affordance: a 38px circular area, glyph centered,

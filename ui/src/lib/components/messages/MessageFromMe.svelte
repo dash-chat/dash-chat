@@ -22,6 +22,7 @@
 	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { connectedToCloudMailboxServer } from '$lib/components/connection/connection-status';
@@ -123,7 +124,15 @@
 {/snippet}
 
 {#snippet bubble()}
-	<div bind:this={messageEl} class="relative max-w-[85%]">
+	<div
+		bind:this={messageEl}
+		class={[
+			'relative',
+			isMobile && !isWideScreen.value
+				? 'max-w-[calc(100%-2rem)]'
+				: 'max-w-[85%]',
+		]}
+	>
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onReply} reverse />
 		{/if}
@@ -131,7 +140,7 @@
 			<DeletedMessage {message} {position} {myDeviceId} />
 		{:else}
 			<Card
-				contentWrapPadding="p-2"
+				contentWrapPadding="px-2 py-(--message-padding-y)"
 				colors={{
 					bgIos: 'bg-brand-primary',
 					bgMaterial: 'bg-brand-primary',
@@ -140,18 +149,16 @@
 				}}
 				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 			>
-				<div class="flex flex-col gap-1">
-					<MessageContent
-						{message}
-						{searchQuery}
-						senderName={m.you()}
-						mine
-						{onNavigateToMessage}
-						metadata={isLast || editHistory.length > 0 || showDeliveryStatus
-							? metadata
-							: undefined}
-					/>
-				</div>
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={m.you()}
+					mine
+					{onNavigateToMessage}
+					metadata={isLast || editHistory.length > 0 || showDeliveryStatus
+						? metadata
+						: undefined}
+				/>
 			</Card>
 		{/if}
 		{#if Object.keys(reactions).length > 0}

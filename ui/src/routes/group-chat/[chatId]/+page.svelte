@@ -21,6 +21,7 @@
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
@@ -137,6 +138,7 @@
 				{#snippet left()}
 					{#if !isWideScreen.value}
 						<NavbarBackLink
+							class="[&_svg]:size-[17px]"
 							onClick={() => goto('/')}
 							data-testid="group-chat-back"
 						/>
@@ -147,13 +149,13 @@
 						<Link
 							href={`/group-chat/${chatId}/info`}
 							data-testid="group-chat-info-link"
-							class="flex w-full min-w-0 items-center justify-start gap-2"
+							class="flex w-full min-w-0 items-center justify-start gap-4 ps-0"
 						>
 							<span class="shrink-0">
 								<Avatar
 									image={info.image}
 									initials={info.name.slice(0, 2)}
-									size="2.5rem"
+									size="2.25rem"
 								/>
 							</span>
 							<span class="flex-1 min-w-0 truncate">{info.name}</span>
@@ -209,7 +211,7 @@
 
 			<div
 				bind:this={messagesEl}
-				class="column m-2 gap-1"
+				class="swipe-clip-boundary column my-2 gap-1 ps-3 pe-4"
 				data-testid="group-chat-messages"
 			>
 				{#await $readMessageHashes then readHashes}
@@ -229,9 +231,13 @@
 								{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
 									<div
 										class="column"
-										class:pt-px={i > 0}
-										class:pt-1={i === 0 &&
+										class:pt-[1.5px]={i > 0 && isMobile}
+										class:pt-px={i > 0 && !isMobile}
+										class:pt-3={i === 0 &&
 											messageGroup !== messageGroupsInDay.eventsGroups[0]}
+										class:pb-[3px]={i === messageGroup.length - 1 &&
+											item.kind !== 'control' &&
+											item.message.author !== myDeviceId}
 										data-message-group={messageGroup[0][0]}
 									>
 										{#if unreadDivider.hash === hash}
