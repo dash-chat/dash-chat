@@ -4,10 +4,11 @@
  * a message can only cross over a direct iroh connection. One phone drops off
  * Wi-Fi for a while — on screen, in the background or killed — while either
  * side composes a message; once it holds its address again the message has to
- * cross within seconds, and so has one sent once it is back. The last case
- * walks both phones onto another Wi-Fi network with the app on screen, so it
- * needs a second network in E2E_WIFI_NETWORKS (see e2e-tests/.env.example)
- * and skips without one.
+ * cross within seconds, and so has one sent once it is back. The chat navbar
+ * chip reads "p2p" while both phones are online and "disconnected" while one
+ * is off Wi-Fi. The last case walks both phones onto another Wi-Fi network
+ * with the app on screen, so it needs a second network in E2E_WIFI_NETWORKS
+ * (see e2e-tests/.env.example) and skips without one.
  *
  * Skips itself unless E2E_STRESS=1. Either phone platform will do — both
  * drive their Wi-Fi through the harness:
@@ -16,6 +17,7 @@
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { stampedLog } from '../helpers/utils';
 import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -68,11 +70,26 @@ describe('Pure p2p sync across a network switch', function () {
 		await expectArrival(alice, 'hello before leaving', Date.now());
 	});
 
+	it('both chips read p2p on the LAN', async () => {
+		for (const agent of [alice, bob]) {
+			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
+				'p2p',
+				UI_TIMEOUT,
+				'the chip did not read p2p with the peer on the LAN',
+			);
+		}
+	});
+
 	it('receives a message the peer sent while it was off Wi-Fi, once back on the LAN', async () => {
 		const text = 'sent while you were away';
 		await alice.disableWifi();
 		stampedLog('Alice off Wi-Fi');
 		await bob.directChatPage.composer.sendMessage(text);
+		await bob.directChatPage.connectionStatusIndicator.waitForStatus(
+			'disconnected',
+			UI_TIMEOUT,
+			'the chip did not read disconnected with the peer off Wi-Fi',
+		);
 		await alice.pause(AWAY_MS);
 		expect(await bob.directChatPage.messageStatusFor(text)).not.toBe(
 			'delivered',
@@ -80,6 +97,11 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.enableWifi();
 		stampedLog('Alice holds her address again');
 		await expectArrival(alice, text, Date.now());
+		await bob.directChatPage.connectionStatusIndicator.waitForStatus(
+			'p2p',
+			UI_TIMEOUT,
+			'the chip did not read p2p once the peer was back on the LAN',
+		);
 	});
 
 	it('receives a message the peer sent during a long absence, once back on the LAN', async () => {

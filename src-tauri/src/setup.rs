@@ -110,7 +110,9 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         app_handle.on_menu_event(crate::menu::handle_menu_event);
         crate::menu::install_menu(&app_handle)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
-        crate::tray::setup_tray(&app_handle)?;
+        let lan_multicast_probe = lan_multicast_probe::LanMulticastProbe::spawn();
+        crate::tray::setup_tray(&app_handle, lan_multicast_probe.blocked())?;
+        app_handle.manage(lan_multicast_probe);
 
         #[cfg(target_os = "macos")]
         crate::macos::install_termination_guard();
@@ -123,8 +125,8 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    // Keep the node behind a swappable container so it can be torn down when the
-    // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
+    // Keep the node behind a swappable container so it can be torn down and
+    // rebuilt when p2p is switched on or off.
     // AppNodeManager::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
     let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;

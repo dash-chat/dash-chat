@@ -67,6 +67,7 @@ pub(crate) async fn cloud_mailbox_id(
 /// Poll the cloud mailbox now without presuming the result: one success
 /// restores Active, one failure only confirms an existing backoff. Falls back
 /// to nudging the poll loop when the cloud mailbox has never been reached.
+#[cfg(mobile)]
 pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
     match cloud_mailbox_id(node).await {
         Some(cloud_id) => node.mailboxes.probe(cloud_id).await,

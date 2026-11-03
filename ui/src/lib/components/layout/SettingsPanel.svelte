@@ -1,9 +1,13 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { fullName, type ContactsStore } from 'dash-chat-stores';
+	import {
+		fullName,
+		type ContactsStore,
+		type SettingsStore,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
 		mdiBellOutline,
@@ -28,6 +32,10 @@
 	import { isIos } from '$lib/utils/environment';
 	import type { Action } from 'svelte/action';
 	import Avatar from '../profiles/Avatar.svelte';
+	import WarningIcon from '../WarningIcon.svelte';
+
+	const settingsStore: SettingsStore = getContext('settings-store');
+	const localHubBlocked = useReactiveValue(settingsStore.localHubBlocked);
 
 	const stopPropagation: Action = node => {
 		const stop = (e: Event) => {
@@ -173,6 +181,15 @@
 							src={wrapPathInSvg(mdiServerOutline)}
 							style="font-size: 28px"
 						></wa-icon>
+					{/snippet}
+					{#snippet after()}
+						{#if $localHubBlocked === true}
+							<WarningIcon
+								size={24}
+								label={m.localHubCantBeFound()}
+								data-testid="settings-offline-hub-warning"
+							/>
+						{/if}
 					{/snippet}
 				</ListItem>
 			</List>

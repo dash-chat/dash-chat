@@ -17,6 +17,7 @@ import { AndroidNotifications } from './helpers/components/notifications/android
 import { IosNotifications } from './helpers/components/notifications/ios';
 import { notificationMatchers } from './helpers/components/notifications/matchers';
 import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { buildFrontend } from './setup/app-build';
 import { startAppium } from './setup/appium-server';
 import { claimAllWhenFreeSync, release } from './setup/claims';
 import {
@@ -89,6 +90,12 @@ const mailboxBuild =
 // Register a handler now so a build failure before onPrepare awaits the
 // promise doesn't crash node with an unhandled rejection.
 mailboxBuild?.catch(() => {});
+
+/** The e2e frontend build, overlapping the mailbox build; awaited before the
+ * platform builds that embed it. */
+const frontendBuild =
+	process.env.WDIO_WORKER_ID === undefined ? buildFrontend() : null;
+frontendBuild?.catch(() => {});
 
 /** The push-notifications-server build, only when a service-account key is
  * present and a mobile agent runs (the real-device push spec). */
@@ -301,6 +308,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				} = await startLocalMailboxServer(pushUrl));
 			}
 
+			await frontendBuild;
 			buildDesktopApp();
 
 			for (const platform of platforms) {

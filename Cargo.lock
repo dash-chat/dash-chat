@@ -548,6 +548,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-rx"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a82c1a761cd7b772912fd2500f2c0a850c0c72f5f66543038393ac6cfaa3659a"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "async-signal"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2072,12 +2082,15 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.20.11"
+version = "0.21.0"
 dependencies = [
  "android_logger",
  "anyhow",
  "app_dirs2",
+ "async-rx",
+ "async-stream",
  "async-trait",
+ "backon",
  "chrono",
  "dashchat-node",
  "dashchat-utils",
@@ -2090,6 +2103,7 @@ dependencies = [
  "image",
  "iroh",
  "jni 0.21.1",
+ "lan-multicast-probe",
  "libc",
  "local-hub-discovery",
  "log",
@@ -2109,12 +2123,14 @@ dependencies = [
  "p2panda-core",
  "panic-policy",
  "push-notifications-client",
+ "push-notifications-server",
  "regex",
  "rustls 0.23.46",
  "sentry-types 0.42.0",
  "serde",
  "serde_json",
  "sonix-i18n",
+ "sqlite-gate",
  "sqlx 0.9.0",
  "sysinfo",
  "tauri",
@@ -2142,6 +2158,7 @@ dependencies = [
  "tauri-plugin-sentry-reporting",
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
+ "tauri-plugin-subscriptions",
  "tauri-plugin-system-theme",
  "tauri-plugin-updater",
  "tauri-plugin-view",
@@ -2151,6 +2168,7 @@ dependencies = [
  "thiserror 2.0.21",
  "time",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "url2",
  "uuid",
@@ -2210,6 +2228,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "serde_repr",
+ "sqlite-gate",
  "sqlx 0.9.0",
  "tempfile",
  "thiserror 2.0.21",
@@ -4539,12 +4558,12 @@ dependencies = [
 
 [[package]]
 name = "ico"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e795dff5605e0f04bff85ca41b51a96b83e80b281e96231bcaaf1ac35103371"
+checksum = "d75e94d66081e4d8dcd098bd8dc5254800fea14a26389b298410158d834de167"
 dependencies = [
  "byteorder",
- "png 0.17.16",
+ "png",
 ]
 
 [[package]]
@@ -4710,7 +4729,7 @@ dependencies = [
  "image-webp",
  "moxcms",
  "num-traits",
- "png 0.18.1",
+ "png",
  "qoi",
  "ravif",
  "rayon",
@@ -4847,9 +4866,9 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "iroh"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a11e776f1bf36f140e465133ff4108e46bd37a3d10ecdf5b1ea8dfb3bd35a7d2"
+checksum = "e3689cab508af9bcef7816c1201b403595ec6aa20e7d15e1f9683bb4be4a5b17"
 dependencies = [
  "backon",
  "blake3",
@@ -4896,9 +4915,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-base"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b931226024503c916ff5b96f9d376933bc23314f0fecdbf1e03a52d8eacbb70b"
+checksum = "43b72366b16001af3a51574233df88ca6d62da0215807549a769e7de887da803"
 dependencies = [
  "curve25519-dalek 5.0.0",
  "data-encoding",
@@ -4955,9 +4974,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-dns"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6993b105283f0350770c06486c27b9283cdc5dc2846e49641cc57dd5dfb0b718"
+checksum = "7481d0792dde1035a2b06ec06ed3cf6d01fcb1a494e6931b489e32073382048d"
 dependencies = [
  "arc-swap",
  "cfg_aliases",
@@ -5064,9 +5083,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-relay"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99f1da3af46c3bca658076e47fea877f38108dae664507a1fb35d276314363c8"
+checksum = "7e5589e7c1475700686603a970275687f760df853bc6525c7eb1347aa31d7230"
 dependencies = [
  "blake3",
  "bytes",
@@ -5456,6 +5475,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lan-multicast-probe"
+version = "0.1.0"
+dependencies = [
+ "if-addrs",
+ "local-hub-discovery",
+ "log",
+ "socket2 0.6.5",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5770,6 +5801,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sqlite-gate",
  "sqlx 0.9.0",
  "tempfile",
  "tokio",
@@ -6030,7 +6062,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "once_cell",
- "png 0.18.1",
+ "png",
  "serde",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
@@ -6189,8 +6221,7 @@ dependencies = [
 [[package]]
 name = "ndk-context"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+source = "git+https://github.com/dash-chat/ndk-context?rev=4ed51f9e864f4b380fb4a495637543a785a9d115#4ed51f9e864f4b380fb4a495637543a785a9d115"
 
 [[package]]
 name = "ndk-sys"
@@ -7555,7 +7586,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7581,7 +7612,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7593,7 +7624,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7608,7 +7639,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7623,7 +7654,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7646,7 +7677,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7674,7 +7705,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7689,7 +7720,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7707,7 +7738,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7725,7 +7756,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=7ce4dd08#7ce4dd08b082db6993538c6e2705fbc711c72a86"
+source = "git+https://github.com/dash-chat/p2panda?rev=2159c616#2159c616ae5fb63adffc0e2cc374e73f6ada54e7"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -8039,28 +8070,15 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "plist"
-version = "1.10.2"
+version = "1.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65dca778f41c79ebbe8b2b2139fee86f01b766b67130d108c7c2b8ffbd949f77"
+checksum = "327a4cb2ad49dc48adfdc9da89e22c64d488b508c67a044d71ba729e4521a285"
 dependencies = [
  "base64 0.23.1",
  "indexmap 2.14.2",
  "quick-xml 0.42.0",
  "serde",
  "time",
-]
-
-[[package]]
-name = "png"
-version = "0.17.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
-dependencies = [
- "bitflags 1.3.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide 0.8.9",
 ]
 
 [[package]]
@@ -8449,6 +8467,7 @@ name = "push-notifications-client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dashchat-utils",
  "derive_more 2.1.1",
  "reqwest 0.12.28",
  "serde",
@@ -10282,6 +10301,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlite-gate"
+version = "0.1.0"
+dependencies = [
+ "sqlx 0.9.0",
+ "tokio",
+]
+
+[[package]]
 name = "sqlx"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10740,8 +10767,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "swarm-discovery"
-version = "0.6.3"
-source = "git+https://github.com/dash-chat/swarm-discovery?rev=1cf4c14c67b60bf8c020b5cc002fd7f438492199#1cf4c14c67b60bf8c020b5cc002fd7f438492199"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7e56b7e93eaffb9baba3e64936a5912540847516fc5f26d66ad18044b8d4a14"
 dependencies = [
  "acto",
  "hickory-proto",
@@ -11056,8 +11084,7 @@ dependencies = [
 [[package]]
 name = "tao"
 version = "0.37.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f37f381f4e048e6cdf038b5705f8cf14ad108279d46eb968140a7b291aba9400"
+source = "git+https://github.com/dash-chat/tao?rev=69ae7dba9271dc05e5746e2e7fff8997bd5c77b9#69ae7dba9271dc05e5746e2e7fff8997bd5c77b9"
 dependencies = [
  "bitflags 2.13.2",
  "block2 0.6.2",
@@ -11084,7 +11111,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "raw-window-handle",
- "tao-macros",
+ "tao-macros 0.1.4 (git+https://github.com/dash-chat/tao?rev=69ae7dba9271dc05e5746e2e7fff8997bd5c77b9)",
  "unicode-segmentation",
  "url",
  "windows 0.62.2",
@@ -11098,6 +11125,16 @@ name = "tao-macros"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f7eeb6d99155545da6150a1795945f16ac9c178deb2a5f2e74d776107bd5849"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "tao-macros"
+version = "0.1.4"
+source = "git+https://github.com/dash-chat/tao?rev=69ae7dba9271dc05e5746e2e7fff8997bd5c77b9#69ae7dba9271dc05e5746e2e7fff8997bd5c77b9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11129,9 +11166,9 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tauri"
-version = "2.12.4"
+version = "2.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f316751027fc2644221d1a448564d519efb07067fda584879d9cda966391d212"
+checksum = "5fb0244332cfb9cee7e2a568bf5da29a36ed8fdbd717f6f47a66b6b7b358c072"
 dependencies = [
  "anyhow",
  "bytes",
@@ -11181,9 +11218,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-build"
-version = "2.7.3"
+version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "641dd5fd297c99ab92717b0428cca5b9c6f960b2ac96ca131b3eebc9d70b8ddc"
+checksum = "adddb0e648752aaac5da9c3c3c6a68e1e87cab55e3b757b18a9441ef8c3ac614"
 dependencies = [
  "anyhow",
  "cargo_toml",
@@ -11204,16 +11241,16 @@ dependencies = [
 
 [[package]]
 name = "tauri-codegen"
-version = "2.7.3"
+version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6585c5b536c00f039d12ce70a9755172d5423bbcfd3969863baa70314c3e02f"
+checksum = "fb37631cf71dab5e8ab55e1bdd701e18a52653d90b78e71d0e5598b1e0a61316"
 dependencies = [
  "base64 0.23.1",
  "brotli",
  "ico",
  "json-patch",
  "plist",
- "png 0.18.1",
+ "png",
  "proc-macro2",
  "quote",
  "semver",
@@ -11231,9 +11268,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-macros"
-version = "2.7.3"
+version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e83a0cfa1bae376e8fbbdc0b1692707aed50cd6072ce85cae4789af5d6c19f"
+checksum = "0cc38db58854c10fb5f91a887ed8bf82d3239bb92b5d8db86eda09e96d9963d1"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -11445,12 +11482,13 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-lifecycle"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=27e2776#27e27760bd85288c4b13d2b92ffa3e2a630cb383"
+source = "git+https://github.com/dash-chat/tauri-plugin-lifecycle?rev=daf9678#daf9678ad40856b0e73043cc21704fca190f7c28"
 dependencies = [
  "jni 0.21.1",
  "serde",
  "tauri",
  "tauri-plugin",
+ "tokio",
 ]
 
 [[package]]
@@ -11640,6 +11678,7 @@ name = "tauri-plugin-sentry-reporting"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "dashchat-utils",
  "flate2",
  "log",
@@ -11695,6 +11734,30 @@ dependencies = [
  "tracing",
  "windows-sys 0.60.2",
  "zbus 5.19.0",
+]
+
+[[package]]
+name = "tauri-plugin-subscriptions"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-subscriptions?rev=30d1a889a4d7fca0a28bc9d77a7662b6f95cec29#30d1a889a4d7fca0a28bc9d77a7662b6f95cec29"
+dependencies = [
+ "futures",
+ "log",
+ "serde",
+ "tauri",
+ "tauri-plugin-subscriptions-macros",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "tauri-plugin-subscriptions-macros"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-subscriptions?rev=30d1a889a4d7fca0a28bc9d77a7662b6f95cec29#30d1a889a4d7fca0a28bc9d77a7662b6f95cec29"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -11827,9 +11890,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-runtime-wry"
-version = "2.12.2"
+version = "2.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d61892587aea2a85245bcaec98c6fe46268874c0a0deae5535fb71ca7b93eae"
+checksum = "e1aa9d8b7a120f879f44fdc1053f7b7dbf416bf0bbc6a72b714dec46b782b52f"
 dependencies = [
  "gtk",
  "http 1.5.0",
@@ -11837,7 +11900,6 @@ dependencies = [
  "log",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
- "once_cell",
  "percent-encoding",
  "raw-window-handle",
  "softbuffer",
@@ -12471,7 +12533,7 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation 0.3.2",
  "once_cell",
- "png 0.18.1",
+ "png",
  "serde",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
@@ -12624,9 +12686,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "3.4.2"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a7ac20be9b7726e0bbdbf974c059676d9acb1cd414961f570a4e8231cacd7fc"
+checksum = "cde93ff05758a36a851a398a772b0b79a82fbe3c186a46f2696baaeaf84c966b"
 dependencies = [
  "base64 0.23.1",
  "log",
@@ -13954,7 +14016,7 @@ dependencies = [
  "raw-window-handle",
  "sha2 0.10.9",
  "soup3",
- "tao-macros",
+ "tao-macros 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 2.0.21",
  "url",
  "webkit2gtk",

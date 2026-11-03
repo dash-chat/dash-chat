@@ -885,9 +885,14 @@ mod tests {
 
     async fn projection() -> OpProjection {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("op_projection.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("op_projection.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         // Keep the tempdir alive for the duration of the pool by leaking it; the
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
@@ -1120,9 +1125,14 @@ mod tests {
     #[tokio::test]
     async fn test_tombstones_per_topic() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_tombstones.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let db = OpProjection::new(pool.clone()).await.unwrap();
 
         let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
@@ -1192,9 +1202,14 @@ mod tests {
         drop(db);
         pool.close().await;
 
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_tombstones.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let db = OpProjection::new(pool).await.unwrap();
         assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
         assert_eq!(

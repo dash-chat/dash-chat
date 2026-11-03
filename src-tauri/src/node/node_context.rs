@@ -74,13 +74,12 @@ pub struct NodeContext {
     /// Channel for forwarding node notifications to the app (webview + system
     /// notifications). None when running outside the main app process.
     pub notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
-    /// Channel for tracking topic subscriptions for push notifications. None when
-    /// push setup is not available in this context.
-    pub topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
-    /// The Tauri app handle, available only when the Node is built for the main
-    /// app process (used to spawn app-lifetime tasks like local-mailbox mDNS
-    /// discovery).
+    /// The Tauri app handle; `None` in a push process, which runs without the
+    /// app. Used to spawn app-lifetime tasks like local-mailbox mDNS discovery
+    /// and to read the app's settings.
     pub app_handle: Option<AppHandle>,
+    /// Only the app ever suspends it.
+    pub sqlite_gate: sqlite_gate::SqliteGate,
 }
 
 impl NodeContext {
@@ -93,8 +92,8 @@ impl NodeContext {
         Self {
             role: NodeRole::PushNotification,
             notification_tx,
-            topic_subscribed_tx: None,
             app_handle: None,
+            sqlite_gate: Default::default(),
         }
     }
 
@@ -102,12 +101,12 @@ impl NodeContext {
     /// without the main app running: no P2P, no blob sync, and no app-lifetime
     /// channels.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-    pub fn for_background_task() -> Self {
+    pub fn for_background_task(app: &AppHandle) -> Self {
         Self {
             role: NodeRole::BackgroundTask,
             notification_tx: None,
-            topic_subscribed_tx: None,
-            app_handle: None,
+            app_handle: Some(app.clone()),
+            sqlite_gate: Default::default(),
         }
     }
 
@@ -116,13 +115,13 @@ impl NodeContext {
     pub fn for_app(
         app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
-        topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+        sqlite_gate: sqlite_gate::SqliteGate,
     ) -> Self {
         Self {
             role: NodeRole::App,
             notification_tx: Some(notification_tx),
-            topic_subscribed_tx,
             app_handle: Some(app.clone()),
+            sqlite_gate,
         }
     }
 
@@ -173,6 +172,7 @@ impl NodeContext {
         // The push extension's short-lived background node only reads
         // operations to build notifications; it must not author any.
         config.enable_message_acks = self.role == NodeRole::App;
+        config.sqlite_gate = self.sqlite_gate.clone();
 
         // The push extension shares the app's database. On p2panda's default
         // per-topic cursor, whichever process fetches an operation first stops
@@ -217,8 +217,8 @@ mod tests {
         NodeContext {
             role: NodeRole::App,
             notification_tx: None,
-            topic_subscribed_tx: None,
             app_handle: None,
+            sqlite_gate: Default::default(),
         }
     }
 

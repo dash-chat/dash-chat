@@ -1,17 +1,18 @@
 import { ReactivePromise, reactive } from 'signalium';
+import { subscribe } from 'tauri-plugin-subscriptions';
 
 import type { DeviceId, TopicId } from '../p2panda/types';
-import { subscribeChannel } from '../utils/tauri-channel';
 import {
 	type MailboxConnectionState,
 	type MailboxId,
 	type MailboxSyncState,
 } from './types';
 
-// Flip the UI to "disconnected" after this many consecutive errors. Intentionally
-// lower than the backend's degraded_threshold (5) so the UI reacts faster than
-// the connection state alone would suggest.
-const UI_DISCONNECTED_ERROR_THRESHOLD = 2;
+export interface AllMailboxesConnectionState {
+	/** Null while the cloud mailbox is not registered. */
+	cloudMailbox: MailboxConnectionState | null;
+	localMailboxes: MailboxConnectionState[];
+}
 
 export interface IMailboxTrackerStore {
 	activeMailboxIds(): ReactivePromise<MailboxId[]>;
@@ -19,6 +20,7 @@ export interface IMailboxTrackerStore {
 	connectionState(
 		mailboxId: MailboxId,
 	): ReactivePromise<MailboxConnectionState>;
+	connectionStatusForAllMailboxes(): ReactivePromise<AllMailboxesConnectionState>;
 	syncState(mailboxId: MailboxId): ReactivePromise<MailboxSyncState>;
 	syncStateForLog(
 		topicId: TopicId,
@@ -41,90 +43,46 @@ export interface IMailboxTrackerStore {
 
 export class MailboxTrackerStore implements IMailboxTrackerStore {
 	activeMailboxIds = reactive(() =>
-		subscribeChannel<MailboxId[]>('mailbox_subscribe_active_ids'),
+		subscribe<MailboxId[]>('mailbox_subscribe_active_ids'),
 	);
 
 	allMailboxIds = reactive(() =>
-		subscribeChannel<MailboxId[]>('mailbox_subscribe_all_ids'),
+		subscribe<MailboxId[]>('mailbox_subscribe_all_ids'),
 	);
 
 	connectionState = reactive((mailboxId: MailboxId) =>
-		subscribeChannel<MailboxConnectionState>(
-			'mailbox_subscribe_connection_state',
-			{ mailboxId },
-		),
+		subscribe<MailboxConnectionState>('mailbox_subscribe_connection_state', {
+			mailboxId,
+		}),
 	);
 
 	cloudMailboxId = reactive(() =>
-		subscribeChannel<MailboxId | null>('mailbox_subscribe_cloud_id'),
+		subscribe<MailboxId | null>('mailbox_subscribe_cloud_id'),
 	);
 
 	// Registration itself proves reachability: the cloud mailbox is only registered
 	// after a successful `/health` fetch, mDNS-discovered local ones after a port
 	// probe, and local ones are unregistered once their announcement goes away. So
-	// presence in `activeMailboxIds` plus a low error count is enough. Requiring a
-	// recorded success on top would report a freshly rebuilt node as disconnected
-	// until its first poll — iOS tears the node down on background and rebuilds it
-	// on foreground, so that is every single foreground.
-	//
-	// `cloudLastFailureAtMs` lets a consumer tell a failure it just watched happen
-	// from one inherited from a period it wasn't rendering. That distinction is
-	// the whole game: Android denies network to backgrounded apps, so those polls
-	// fail whatever is waiting on the other side, and reporting them on resume is
-	// how a verdict about a connection the user never had reaches the screen.
-	// Deciding what counts as recent needs to know when the UI resumed painting,
-	// which only the UI knows — so this reports the fact and leaves the judgement
-	// to the caller.
-	connectionStatus = reactive(async () => {
-		const activeMailboxIds = await this.activeMailboxIds();
-
-		const mailboxesConnectionStates = await ReactivePromise.all(
-			activeMailboxIds.map(mailboxId => this.connectionState(mailboxId)),
-		);
-
-		const cloudId = await this.cloudMailboxId();
-		const cloudMailboxIndex = activeMailboxIds.findIndex(
-			mailboxId => mailboxId === cloudId,
-		);
-
-		const cloudState =
-			cloudMailboxIndex >= 0
-				? mailboxesConnectionStates[cloudMailboxIndex]
-				: undefined;
-
-		const connectedToCloudMailboxServer =
-			cloudState !== undefined &&
-			cloudState.status === 'Active' &&
-			cloudState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD;
-
-		const cloudLastFailure = cloudState?.last_error?.at;
-		const cloudLastFailureAtMs =
-			cloudLastFailure === undefined || cloudLastFailure === null
-				? null
-				: Date.parse(cloudLastFailure);
-
-		let connectedLocalMailboxCount = 0;
-
-		for (let i = 0; i < activeMailboxIds.length; i++) {
-			if (i === cloudMailboxIndex) continue;
-
-			const connectionState = mailboxesConnectionStates[i];
-			if (
-				connectionState.status === 'Active' &&
-				connectionState.consecutive_errors < UI_DISCONNECTED_ERROR_THRESHOLD
-			)
-				connectedLocalMailboxCount++;
-		}
-
-		return {
-			connectedToCloudMailboxServer,
-			cloudLastFailureAtMs,
-			connectedLocalMailboxCount,
-		};
-	});
+	// what is listed here is what the app currently syncs through; judging how
+	// well each one is doing is left to the caller.
+	connectionStatusForAllMailboxes = reactive(
+		async (): Promise<AllMailboxesConnectionState> => {
+			const activeMailboxIds = await this.activeMailboxIds();
+			const states = await ReactivePromise.all(
+				activeMailboxIds.map(mailboxId => this.connectionState(mailboxId)),
+			);
+			const cloudId = await this.cloudMailboxId();
+			const cloudIndex =
+				cloudId === null ? -1 : activeMailboxIds.indexOf(cloudId);
+			return {
+				cloudMailbox: cloudIndex >= 0 ? states[cloudIndex] : null,
+				localMailboxes: states.filter((_, i) => i !== cloudIndex),
+			};
+		},
+	);
 
 	syncState = reactive((mailboxId: MailboxId) =>
-		subscribeChannel<MailboxSyncState>('mailbox_subscribe_sync_state', {
+		subscribe<MailboxSyncState>('mailbox_subscribe_sync_state', {
 			mailboxId,
 		}),
 	);

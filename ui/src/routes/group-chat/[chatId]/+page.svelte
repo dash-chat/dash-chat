@@ -147,21 +147,27 @@
 						<Link
 							href={`/group-chat/${chatId}/info`}
 							data-testid="group-chat-info-link"
-							class="gap-2"
-							style="display: flex; justify-content: start; align-items: center;"
+							class="flex w-full min-w-0 items-center justify-start gap-2"
 						>
-							<Avatar
-								image={info.image}
-								initials={info.name.slice(0, 2)}
-								size="2.5rem"
-							/>
-							<span>{info.name}</span>
+							<span class="shrink-0">
+								<Avatar
+									image={info.image}
+									initials={info.name.slice(0, 2)}
+									size="2.5rem"
+								/>
+							</span>
+							<span class="flex-1 min-w-0 truncate">{info.name}</span>
 						</Link>
 					{/await}
 				{/snippet}
 
-				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-					<ConnectionStatusIndicator />
+				<!-- The same 44px cell as the home navbar. -->
+				<div
+					class="grid size-11 shrink-0 place-items-center {theme === 'material'
+						? 'me-2'
+						: ''}"
+				>
+					<ConnectionStatusIndicator {chatId} />
 				</div>
 			</Navbar>
 		{/snippet}
@@ -171,7 +177,7 @@
 				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
-							class="outline-card"
+							class="outline-card max-w-full"
 							style="border-radius: 2rem; min-width: 250px"
 						>
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
@@ -181,7 +187,7 @@
 									size={80}
 								/>
 								<span
-									class="text-2xl font-semibold break-words text-center"
+									class="text-2xl font-semibold break-words text-center max-w-full"
 									data-testid="group-chat-header-name"
 								>
 									{info.name}

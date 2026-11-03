@@ -1,0 +1,11 @@
+[package]
+name = "sqlite-gate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

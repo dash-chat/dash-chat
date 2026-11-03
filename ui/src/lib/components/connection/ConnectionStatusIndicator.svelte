@@ -1,22 +1,79 @@
 <script lang="ts">
-	import type { MailboxTrackerStore } from 'dash-chat-stores';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import type {
+		AgentId,
+		ChatId,
+		IOnlinePeersStore,
+		MailboxTrackerStore,
+	} from 'dash-chat-stores';
+	import { reactive } from 'signalium';
+	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { connectionChipStatus } from './connection-chip';
+	import { connectionStatus, type ConnectionStatus } from './connection-status';
+	import type { ConnectionStatusTag } from './connection-status-tags';
 	import { mdiEmoticonPoop } from '@mdi/js';
-	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
+	import { Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
+	import { onActivate } from '$lib/utils/keyboard';
+	import cloudSvg from '$lib/assets/connection-status/cloud.svg?raw';
+	import localMailboxServerSvg from '$lib/assets/connection-status/localmailboxserver.svg?raw';
+	import p2pSvg from '$lib/assets/connection-status/p2p.svg?raw';
+
+	/** Without a `chatId` there is no peer to be directly connected to, so the
+	 * status never reads p2p. */
+	let { chatId }: { chatId?: ChatId } = $props();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
 	);
+	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
 
-	const connectionStatus = useReactivePromise(
-		mailboxTrackerStore.connectionStatus,
-	);
+	const noPeers = reactive(async (): Promise<AgentId[]> => []);
+
+	const inputs = useReactivePromises(() => [
+		mailboxTrackerStore.connectionStatusForAllMailboxes(),
+		chatId === undefined ? noPeers() : onlinePeersStore.onlinePeers(chatId),
+	]);
+
+	const icons: Record<ConnectionStatusTag, string> = {
+		cloud: cloudSvg,
+		pending: cloudSvg,
+		local: localMailboxServerSvg,
+		p2p: p2pSvg,
+		disconnected: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiEmoticonPoop}" /></svg>`,
+	};
+
+	const ariaLabels: Record<ConnectionStatusTag, () => string> = {
+		cloud: m.connectionStatusCloudAriaLabel,
+		pending: m.connectionStatusPendingAriaLabel,
+		local: m.connectionStatusLocalAriaLabel,
+		p2p: m.connectionStatusP2pAriaLabel,
+		disconnected: m.connectionStatusDisconnectedAriaLabel,
+	};
+
+	const titles: Record<ConnectionStatusTag, () => string> = {
+		cloud: m.connectionStatusCloudTitle,
+		pending: m.connectionStatusPendingTitle,
+		local: m.connectionStatusLocalTitle,
+		p2p: m.connectionStatusP2pTitle,
+		disconnected: m.connectionStatusDisconnectedTitle,
+	};
+
+	function description(status: ConnectionStatus): string {
+		switch (status.status) {
+			case 'cloud':
+				return m.connectionStatusCloudDescription();
+			case 'pending':
+				return m.connectionStatusPendingDescription();
+			case 'local':
+				return m.connectionStatusLocalDescription({ count: status.count });
+			case 'p2p':
+				return m.connectionStatusP2pDescription();
+			case 'disconnected':
+				return m.connectionStatusDisconnectedDescription();
+		}
+	}
 
 	let dialogOpened = $state(false);
 
@@ -25,64 +82,42 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $connectionStatus then connectionStatus}
-	{@const localCount = connectionStatus.connectedLocalMailboxCount}
-	{@const status = connectionChipStatus(
-		connectionStatus,
+{#await $inputs then [mailboxes, onlinePeers]}
+	{@const status = connectionStatus(
+		mailboxes,
+		onlinePeers.length > 0,
 		renderingResumedAt.value,
 	)}
-	{@const isLocal = status === 'local'}
-	{#if status !== null}
-		<Chip
+	<!-- Pending is not rendered until the designer decides how it should look. -->
+	{#if status.status !== 'pending'}
+		<span
 			data-testid="connection-status"
-			data-status={status}
-			class="p-1 cursor-pointer"
-			colors={{
-				fillBgIos: 'bg-black/10 dark:bg-brand-primary',
-				fillBgMaterial: 'bg-md-light-secondary-container dark:bg-brand-primary',
-			}}
+			data-status={status.status}
+			class="flex cursor-pointer"
 			role="button"
 			tabindex={0}
-			aria-label={isLocal
-				? m.connectionStatusLocalAriaLabel()
-				: m.connectionStatusDisconnectedAriaLabel()}
-			onClick={() => (dialogOpened = true)}
-			onkeydown={(e: KeyboardEvent) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					dialogOpened = true;
-				}
-			}}
+			aria-label={ariaLabels[status.status]()}
+			onclick={() => (dialogOpened = true)}
+			onkeydown={onActivate(() => (dialogOpened = true))}
 		>
-			{#if isLocal}
-				<wa-icon
-					class="connection-status connection-status-local"
-					src="/localmailboxserver.svg"
-					aria-hidden="true"
-				></wa-icon>
-			{:else}
-				<wa-icon
-					class="connection-status connection-status-disconnected"
-					src={wrapPathInSvg(mdiEmoticonPoop)}
-					aria-hidden="true"
-				></wa-icon>
-			{/if}
-		</Chip>
+			<span
+				class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
+				aria-hidden="true"
+			>
+				{@html icons[status.status]}
+			</span>
+		</span>
 
 		{#snippet titleSlot()}
 			<div class="flex flex-row items-center gap-2">
-				<wa-icon
-					class="connection-status-dialog-icon"
-					class:connection-status-dialog-icon-local={isLocal}
-					src={isLocal
-						? '/localmailboxserver.svg'
-						: wrapPathInSvg(mdiEmoticonPoop)}
+				<span
+					class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
 					aria-hidden="true"
-				></wa-icon>
+				>
+					{@html icons[status.status]}
+				</span>
 				<span data-testid="connection-status-dialog-title">
-					{isLocal
-						? m.connectionStatusLocalTitle()
-						: m.connectionStatusDisconnectedTitle()}
+					{titles[status.status]()}
 				</span>
 			</div>
 		{/snippet}
@@ -96,11 +131,7 @@
 					title={asTitle(titleSlot)}
 				>
 					<span data-testid="connection-status-dialog-description">
-						{#if isLocal}
-							{m.connectionStatusLocalDescription({ count: localCount })}
-						{:else}
-							{m.connectionStatusDisconnectedDescription()}
-						{/if}
+						{description(status)}
 					</span>
 
 					{#snippet buttons()}
@@ -119,21 +150,40 @@
 
 <style>
 	.connection-status {
-		color: var(--color-brand-primary);
 		font-size: 28px;
 		width: 35px;
 	}
-	.connection-status-local {
+	.connection-status-local,
+	.connection-status-p2p {
 		font-size: 22px;
+	}
+	.connection-status-cloud,
+	.connection-status-pending {
+		font-size: 16px;
+	}
+	.connection-status-pending {
+		animation: connection-pending 1.2s ease-in-out infinite;
+	}
+	@keyframes connection-pending {
+		50% {
+			opacity: 0.15;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.connection-status-pending {
+			animation: none;
+			opacity: 0.5;
+		}
 	}
 	.connection-status-dialog-icon {
 		font-size: 32px;
 	}
-	.connection-status-dialog-icon-local {
+	.connection-status-dialog-icon-local,
+	.connection-status-dialog-icon-p2p {
 		font-size: 26px;
 	}
-
-	:global(.dark) .connection-status {
-		color: white;
+	.connection-status-dialog-icon-cloud,
+	.connection-status-dialog-icon-pending {
+		font-size: 20px;
 	}
 </style>

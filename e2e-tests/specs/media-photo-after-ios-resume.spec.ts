@@ -1,10 +1,8 @@
 /**
  * A photo the iPhone already showed still shows after the app comes back from
  * the background (#607, reported as "the image stays black until I restart the
- * app", field log DASH-CHAT-3N). iOS tears the node down when the app leaves
- * the screen and rebuilds it on return. Coming straight back lands while the
- * teardown is still closing the node's endpoint (up to 3s), so the reopened
- * chat asks for its photos before the node is back.
+ * app", field log DASH-CHAT-3N): the reopened chat asks for its photos the
+ * moment the app is back.
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';

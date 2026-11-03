@@ -12,6 +12,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
 	import Avatar from '../profiles/Avatar.svelte';
+	import HubWarningBadge from '../HubWarningBadge.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
@@ -23,11 +24,13 @@
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
-						size={42}
-					/>
+					<HubWarningBadge>
+						<Avatar
+							image={myProfile?.avatar}
+							initials={myProfile?.name.slice(0, 2)}
+							size={42}
+						/>
+					</HubWarningBadge>
 				</Link>
 			{/await}
 		{/snippet}

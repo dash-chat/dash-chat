@@ -8,6 +8,18 @@ function nmcli(...args: string[]): string {
 	return execFileSync('nmcli', args, { encoding: 'utf8' });
 }
 
+/** One field of a device or connection, '' when unset; `-g` escapes ':'
+ *  and '\' in what it prints. */
+function nmcliField(
+	field: string,
+	object: 'device' | 'connection',
+	name: string,
+): string {
+	return nmcli('-s', '-g', field, object, 'show', name)
+		.replace(/\n$/, '')
+		.replace(/\\(.)/g, '$1');
+}
+
 function address(device: string): string {
 	return nmcli('-g', 'IP4.ADDRESS', 'device', 'show', device)
 		.trim()
@@ -112,4 +124,22 @@ export const linux: HostWifi = {
 	},
 
 	leaveWifi,
+
+	// `-s` reveals a profile's secret to the user who owns the session, with
+	// no prompt, and nothing where policy withholds it. Only an open or
+	// WPA2-personal network a phone finds by scanning can be handed to one:
+	// not an enterprise, WEP or WPA3-only one, nor a hidden one.
+	currentNetwork(device, testNetworks) {
+		const profile = nmcliField('GENERAL.CONNECTION', 'device', device);
+		if (profile === '') return null;
+		const field = (name: string) => nmcliField(name, 'connection', profile);
+		const ssid = field('802-11-wireless.ssid');
+		if (ssid === '' || testNetworks.includes(ssid)) return null;
+		if (field('802-11-wireless.hidden') === 'yes') return null;
+		const keyManagement = field('802-11-wireless-security.key-mgmt');
+		if (keyManagement === '') return { ssid, passphrase: '' };
+		if (keyManagement !== 'wpa-psk') return null;
+		const passphrase = field('802-11-wireless-security.psk');
+		return passphrase === '' ? null : { ssid, passphrase };
+	},
 };

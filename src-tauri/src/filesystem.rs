@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime};
 
-const DATABASE_VERSION: &str = "0.16";
+const DATABASE_VERSION: &str = "0.17";
 
 /// When `DATA_DIR` is set, isolate the XDG directories under it so concurrently
 /// running desktop instances don't share WebKitGTK's SQLite databases (which
@@ -15,7 +15,7 @@ pub fn init_data_dir() {
     }
 }
 
-const SETTINGS_FILE_NAME: &str = "settings.json";
+pub(crate) const SETTINGS_FILE_NAME: &str = "settings.json";
 const NOTIFIED_OPERATIONS_DB_FILE_NAME: &str = "notified_operations.db";
 #[cfg(desktop)]
 const LOCAL_MAILBOX_DB_FILE_NAME: &str = "local-mailbox.redb";
