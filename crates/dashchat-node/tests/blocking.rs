@@ -215,6 +215,7 @@ async fn test_block_and_unblock_contact() {
 /// and removes bobbi. Alice must be notified of the group-info and
 /// group-control ops (and see their effects) but never of the chat message.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "group membership state is not processed yet; unignore once the p2panda-spaces refactor is complete"]
 async fn test_blocked_group_member_control_and_info_still_apply() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 

@@ -421,7 +421,11 @@ impl OpProjection {
                 })
             }
 
+            // Only group chat creation publishes this (`Node::create_chat_group`),
+            // so it is what defines a topic as a group chat in the projection.
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
+                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
+                    .await?;
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }

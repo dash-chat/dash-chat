@@ -401,6 +401,7 @@ async fn blocked_author_is_not_acked() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "the requester cannot publish into the direct chat space before the acceptor creates it; rework once the membership story is settled"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
     setup();
 

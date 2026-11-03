@@ -782,6 +782,7 @@ mod tests {
         let (streams, drain) = TopicStreams::new(spawn_node().await, None);
         let streams = Arc::new(streams);
         let drain_task = spawn_acking_drain(drain);
+        streams.subscribe(topic).await.unwrap();
 
         let publishes = (0..10).map(|i| {
             let streams = streams.clone();
@@ -831,6 +832,7 @@ mod tests {
     async fn shutdown_fails_in_flight_publish_and_refuses_new_ones() {
         let topic = Topic::random();
         let (streams, drain) = TopicStreams::new(spawn_node().await, None);
+        streams.subscribe(topic).await.unwrap();
 
         let in_flight = streams
             .publish(topic, chat("never processed"))
