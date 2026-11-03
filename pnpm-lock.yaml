@@ -44,8 +44,8 @@ importers:
         specifier: ^3.5.1
         version: 3.5.1(prettier@3.6.2)(svelte@5.57.2(@typescript-eslint/types@8.45.0))
       rust-just:
-        specifier: ^1.46.0
-        version: 1.46.0
+        specifier: ^1.51.0
+        version: 1.59.0
       svelte:
         specifier: ^5.57.2
         version: 5.57.2(@typescript-eslint/types@8.45.0)
@@ -3214,6 +3214,10 @@ packages:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
 
+  execa@10.2.1:
+    resolution: {integrity: sha512-/Bofl3ZBh2Q4/PG0W63qFzP5vDAypi8Zc90UWTBzaDNIYiX7apPOd0N6L8hG8CojUdq4V51adu8BObP+iVsSTw==}
+    engines: {node: '>=22'}
+
   execa@9.6.1:
     resolution: {integrity: sha512-9Be3ZoN4LmYR90tUoVu2te2BsbzHfhJyfEiAVfz7N5/zv+jduIfLrV2xdQXOHbaD6KgpGdO9PRPM1Y4Q9QkPkA==}
     engines: {node: ^18.19.0 || >=20.5.0}
@@ -4620,6 +4624,10 @@ packages:
     resolution: {integrity: sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ==}
     engines: {node: '>=18'}
 
+  pretty-ms@9.3.1:
+    resolution: {integrity: sha512-HzMy3Geq23nVALD/M2LliU+F+M+gVNsvkQWWqeBZ8HDiCgzo6YPJ/Omrmtq24EFrIsk0a3EkQGEd7bDOo+IhGA==}
+    engines: {node: '>=18'}
+
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
@@ -4810,44 +4818,59 @@ packages:
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
 
-  rust-just-darwin-arm64@1.46.0:
-    resolution: {integrity: sha512-HBNv8T1wcKHtf/z+CQoLUmPrpJEj8VcUjsga829Gvb6FQcSFEYa4/kSXtacyokrSTZmwxGR/TGSOHFRgq0yHKw==}
+  rust-just-darwin-arm64@1.59.0:
+    resolution: {integrity: sha512-D5AVWiu0dzce4WwsqYnYmlrmuI64n2rqtf2Hu3zL3vbMNdMlufZ9Rhk1pbdlO1UlKuc1Dkb/U7RPvcUfr9HCug==}
     cpu: [arm64]
     os: [darwin]
 
-  rust-just-darwin-x64@1.46.0:
-    resolution: {integrity: sha512-jkNF+59LYDzSqOCtyku8t+8Pc85xdLxXX0Axnt/if39xN0CeGvDxniefTFJcvAIrVm25HBArunpMkYoWgTKSkA==}
+  rust-just-darwin-x64@1.59.0:
+    resolution: {integrity: sha512-+wtdFmoSaZCnc1gmoAMLPzfwVtODGvKGLRr93zL8t0D06U/+N0XgCo++QlMPm5duaIKvS52/zAQvzYMfQK8Xig==}
     cpu: [x64]
     os: [darwin]
 
-  rust-just-linux-arm64@1.46.0:
-    resolution: {integrity: sha512-bZuHO1rz+a/ORm8YyLGW4HUxgxR4a6LexeltC/mqAk2YwT8+wHPngoFOzi4Y8/UJopMzZo5L7wUE3F03cuyNPQ==}
+  rust-just-linux-arm64@1.59.0:
+    resolution: {integrity: sha512-SnAahZcgeWW+U2H4cBj7NpDwZSzqZK8FPpEYRnsHofBz4tf1w3ZVTzL6F1ERcDG7XdtSeulKWsXW4l8J8cdFEA==}
     cpu: [arm64]
     os: [linux]
 
-  rust-just-linux-arm@1.46.0:
-    resolution: {integrity: sha512-x7kO/cPbQg02R0xP4Uy3USlhaVRHuOfCj7jEofkL5hyiLcr+NnVG4Nqph1jTD6roGTc1V6ZtH0LM8y3tWqXn6A==}
+  rust-just-linux-arm@1.59.0:
+    resolution: {integrity: sha512-xeMCULzLBTjuY4r4G/ENQ6+6ccDgLFyluntYFvGJrXehM03mrEMk0zd5rE09UtgxjN6bZGF3RwIt4xCmLjr0/Q==}
     cpu: [arm]
     os: [linux]
 
-  rust-just-linux-x64@1.46.0:
-    resolution: {integrity: sha512-glh7tcuixwhWAnE8IZc1HxQxrMqN9xK1UCk4a6TnUWUyQT6WVhvdQXOQieNpSvZ8Idlc35p0j6/bhQi6G79wag==}
+  rust-just-linux-armv7@1.59.0:
+    resolution: {integrity: sha512-va/EwLSLm3zEpedo5tKPyk24ZlWkJALbDKz1zjFL+r8GQxSJ9Ax8TEtz/3qQT8B/u8ObkWVjBobm8DPbhXjZwQ==}
+    cpu: [armv7]
+    os: [linux]
+
+  rust-just-linux-loong64@1.59.0:
+    resolution: {integrity: sha512-xFZHQ0YggBE0vVrkOaMfMGCJT4cIJb2e8J2oK5HJyEoz1LKxvtCc39FrAX+C+Fa/54awTwdEEv1nWp1DdB0/pw==}
+    cpu: [loong64]
+    os: [linux]
+
+  rust-just-linux-riscv64@1.59.0:
+    resolution: {integrity: sha512-swqSa6w7OmMVNKefx29xU0OF3FWKjywJ37gQAWyFAhev1hG9l0Ppk7hbLTwxAXGwmuWaOH4hAjPpqY0Odt9vVg==}
+    cpu: [riscv64]
+    os: [linux]
+
+  rust-just-linux-x64@1.59.0:
+    resolution: {integrity: sha512-byVuUcr4NDVajlNaNwFIzNDs8YWTepyJ/KPLuCyWCRjqvHlDJHamxz03NxTQ+AxYZj5vH11PNXn2MsFtDnURrA==}
     cpu: [x64]
     os: [linux]
 
-  rust-just-windows-arm64@1.46.0:
-    resolution: {integrity: sha512-rIk8dbxzo7cyKu1hSzvcGMkb6CfwN/MnFGts5e8z//pNi0G0sGoMoHX4e1OMNNbJCXn+kQTWwK/hUayFUUDb/A==}
+  rust-just-windows-arm64@1.59.0:
+    resolution: {integrity: sha512-I53CSbPtYJkQjzVVqYzK6vzpa+fUNmOw/e4qpsIMVGFGmWDlZYsoQq8up1bPUfgdncpyWvTD7AdpcSmGyA3Zfw==}
     cpu: [arm64]
     os: [win32]
 
-  rust-just-windows-x64@1.46.0:
-    resolution: {integrity: sha512-zds5x/DzVELbf4uGyQDo5vuzKTGwCPbTQH/B9k9pP2vFp0HTQkwMORdQ4a7znUWvNzARQ44NMoXn0Du0m0Bi9Q==}
+  rust-just-windows-x64@1.59.0:
+    resolution: {integrity: sha512-D0+AQXdBNwcd5ZDBpgR8wbQVE5AkIdOuEqh+C2CwjbGCPlN/PL67wCLcXntGYy0CuAP5vV7phiyx+MLahqHT6w==}
     cpu: [x64]
     os: [win32]
 
-  rust-just@1.46.0:
-    resolution: {integrity: sha512-uKev9GStZKWN4znxzTMsIkdqz8Ykt79fmjGV479tvUV8tquGyXaJyM5EW70sDGSU/lVu4AMg+Q1irfAwWsYFDA==}
-    engines: {node: '>=20.19.0'}
+  rust-just@1.59.0:
+    resolution: {integrity: sha512-/E3Ut/c8ePthwqZdW3JO9rJQJfBaw8Uo/X5YEPQ61pX/zsOQ3o3syYe/L9Vvdgnxg6TSVG18HknaGaze3SPKKg==}
+    engines: {node: '>=22'}
     hasBin: true
 
   rxjs@7.8.2:
@@ -5674,6 +5697,11 @@ packages:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}
     engines: {node: '>=18'}
 
+  which-command@0.1.0:
+    resolution: {integrity: sha512-XZyoF5/5hZtXitIwzrU4NKK+Wtbb9aB9CezUEw2Q0wlYK8NUYQxC1rRXgNueYLtBAJwXIb+/tFVk4dozciNJMA==}
+    engines: {node: '>=22'}
+    hasBin: true
+
   which-module@2.0.1:
     resolution: {integrity: sha512-iBdZ57RDvnOR9AGBhML2vFZf7h8vmBjhoaZqODJBFWHVtKkDmKuHai3cx5PgVMrX5YDNp27AofYbAwctSS+vhQ==}
 
@@ -5804,10 +5832,6 @@ packages:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
 
-  yargs@18.0.0:
-    resolution: {integrity: sha512-4UEqdc2RYGHZc7Doyqkrqiln3p9X2DZVxaGbwhn2pi7MrRagKaOcIKe8L3OxYcbhXLgLFUS3zAYuQjKBQgmuNg==}
-    engines: {node: ^20.19.0 || ^22.12.0 || >=23}
-
   yargs@18.1.0:
     resolution: {integrity: sha512-2rAgRKu54VsHkqI0/tYkmluGXHD4KW7yZoycuqDQ15QOTnc2VVfy0nN/1eMhnQLO00A+dwtK20xuCnc1YGeUyg==}
     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
@@ -5837,6 +5861,10 @@ packages:
 
   yoctocolors@2.1.2:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
+    engines: {node: '>=18'}
+
+  yoctocolors@2.2.0:
+    resolution: {integrity: sha512-xYqdZFUK/VYazNl/oCDYN+3WloWQwMfZxBoiNt6qNyk+xfOdi598muWE42rNZFp1kNOiqW936q5RhUdnpqElSg==}
     engines: {node: '>=18'}
 
   zimmerframe@1.1.4:
@@ -8853,6 +8881,21 @@ snapshots:
 
   events@3.3.0: {}
 
+  execa@10.2.1:
+    dependencies:
+      '@sindresorhus/merge-streams': 4.0.0
+      figures: 6.1.0
+      get-stream: 9.0.1
+      human-signals: 8.0.1
+      is-plain-obj: 4.1.0
+      is-stream: 4.0.1
+      npm-run-path: 6.0.0
+      pretty-ms: 9.3.1
+      signal-exit: 4.1.0
+      strip-final-newline: 4.0.0
+      which-command: 0.1.0
+      yoctocolors: 2.2.0
+
   execa@9.6.1:
     dependencies:
       '@sindresorhus/merge-streams': 4.0.0
@@ -10231,6 +10274,10 @@ snapshots:
     dependencies:
       parse-ms: 4.0.0
 
+  pretty-ms@9.3.1:
+    dependencies:
+      parse-ms: 4.0.0
+
   process-nextick-args@2.0.1: {}
 
   process@0.11.10: {}
@@ -10455,39 +10502,51 @@ snapshots:
     dependencies:
       queue-microtask: 1.2.3
 
-  rust-just-darwin-arm64@1.46.0:
+  rust-just-darwin-arm64@1.59.0:
     optional: true
 
-  rust-just-darwin-x64@1.46.0:
+  rust-just-darwin-x64@1.59.0:
     optional: true
 
-  rust-just-linux-arm64@1.46.0:
+  rust-just-linux-arm64@1.59.0:
     optional: true
 
-  rust-just-linux-arm@1.46.0:
+  rust-just-linux-arm@1.59.0:
     optional: true
 
-  rust-just-linux-x64@1.46.0:
+  rust-just-linux-armv7@1.59.0:
     optional: true
 
-  rust-just-windows-arm64@1.46.0:
+  rust-just-linux-loong64@1.59.0:
     optional: true
 
-  rust-just-windows-x64@1.46.0:
+  rust-just-linux-riscv64@1.59.0:
     optional: true
 
-  rust-just@1.46.0:
+  rust-just-linux-x64@1.59.0:
+    optional: true
+
+  rust-just-windows-arm64@1.59.0:
+    optional: true
+
+  rust-just-windows-x64@1.59.0:
+    optional: true
+
+  rust-just@1.59.0:
     dependencies:
-      execa: 9.6.1
-      yargs: 18.0.0
+      execa: 10.2.1
+      yargs: 18.1.0
     optionalDependencies:
-      rust-just-darwin-arm64: 1.46.0
-      rust-just-darwin-x64: 1.46.0
-      rust-just-linux-arm: 1.46.0
-      rust-just-linux-arm64: 1.46.0
-      rust-just-linux-x64: 1.46.0
-      rust-just-windows-arm64: 1.46.0
-      rust-just-windows-x64: 1.46.0
+      rust-just-darwin-arm64: 1.59.0
+      rust-just-darwin-x64: 1.59.0
+      rust-just-linux-arm: 1.59.0
+      rust-just-linux-arm64: 1.59.0
+      rust-just-linux-armv7: 1.59.0
+      rust-just-linux-loong64: 1.59.0
+      rust-just-linux-riscv64: 1.59.0
+      rust-just-linux-x64: 1.59.0
+      rust-just-windows-arm64: 1.59.0
+      rust-just-windows-x64: 1.59.0
 
   rxjs@7.8.2:
     dependencies:
@@ -11395,6 +11454,8 @@ snapshots:
 
   whatwg-mimetype@4.0.0: {}
 
+  which-command@0.1.0: {}
+
   which-module@2.0.1: {}
 
   which@2.0.2:
@@ -11525,15 +11586,6 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 21.1.1
 
-  yargs@18.0.0:
-    dependencies:
-      cliui: 9.0.1
-      escalade: 3.2.0
-      get-caller-file: 2.0.5
-      string-width: 7.2.0
-      y18n: 5.0.8
-      yargs-parser: 22.0.0
-
   yargs@18.1.0:
     dependencies:
       cliui: 9.0.1
@@ -11561,6 +11613,8 @@ snapshots:
   yoctocolors-cjs@2.1.3: {}
 
   yoctocolors@2.1.2: {}
+
+  yoctocolors@2.2.0: {}
 
   zimmerframe@1.1.4: {}
 
