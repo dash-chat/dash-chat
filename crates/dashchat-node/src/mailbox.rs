@@ -165,10 +165,11 @@ mod tests {
         assert_eq!(op.blob_hashes(), Vec::<iroh_blobs::Hash>::new());
     }
 
-    /// Very simple test which circumvents the contact adding system:
-    /// - alice sends a message to a direct chat topic
-    /// - alice and bobbi add a mailbox after the fact
-    /// - bobbi still gets the message later
+    /// A mailbox added after the fact still delivers what was sent before:
+    /// - alice and bobbi become contacts over p2p
+    /// - bobbi goes away, and comes back unable to reach alice directly
+    /// - alice sends a message, then both add a mailbox
+    /// - bobbi gets the message through it
     #[tokio::test(flavor = "multi_thread")]
     async fn test_mailbox_late_join() {
         dashchat_node::testing::setup_tracing(
@@ -184,23 +185,29 @@ mod tests {
         );
 
         let mb = TestMailbox::from_env();
-        let config = NodeConfig::testing();
         let poll = PollConfig::default();
 
         // Start with no mailbox
-        let alice = TestNode::new(config.clone(), "alice").await;
-        let bobbi = TestNode::new(config.clone(), "bobbi").await;
-
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+        introduce_peers([&alice, &bobbi]).await.unwrap();
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
         let chat = alice.direct_chat_with(&bobbi);
-        alice.register_topic_legacy(chat).await.unwrap();
 
+        let bobbi_dir = bobbi.shutdown().await;
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
-        bobbi.add_mailbox(&mb).await;
+        // Without p2p, the mailbox is bobbi's only way to hear from alice.
+        let bobbi = TestNode::new_at_path(NodeConfig::testing().no_p2p(), "bobbi", bobbi_dir)
+            .await
+            .add_mailbox(&mb)
+            .await;
         alice.add_mailbox(&mb).await;
-
-        bobbi.register_topic_legacy(chat).await.unwrap();
         println!("=== added mailboxes ===");
 
         poll.wait_for(|| async {
@@ -228,18 +235,23 @@ mod tests {
         );
 
         let mb = TestMailbox::from_env();
-        let config = NodeConfig::testing();
+        let config = NodeConfig::testing().no_p2p();
         let poll = PollConfig::default();
 
-        let alice = TestNode::new(config.clone(), "alice").await;
-        let bobbi = TestNode::new(config.clone(), "bobbi").await;
-
+        let alice = TestNode::new(config.clone(), "alice")
+            .await
+            .add_mailbox(&mb)
+            .await;
+        let bobbi = TestNode::new(config.clone(), "bobbi")
+            .await
+            .add_mailbox(&mb)
+            .await;
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
         let chat_id = alice.direct_chat_with(&bobbi);
-        alice.register_topic_legacy(chat_id).await.unwrap();
-
-        alice.add_mailbox(&mb).await;
-        bobbi.add_mailbox(&mb).await;
-        bobbi.register_topic_legacy(chat_id).await.unwrap();
 
         alice
             .send_message_raw(chat_id, "Hello".into())
