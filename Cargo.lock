@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.21.0"
+version = "0.21.2"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -2110,6 +2110,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
+ "mailboxes-manager",
  "nanoid 0.5.0",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
@@ -2211,6 +2212,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
+ "mailboxes-manager",
  "maplit",
  "nanoid 0.4.0",
  "network-watch",
@@ -5781,13 +5783,11 @@ dependencies = [
 name = "mailbox-client"
 version = "0.1.0"
 dependencies = [
- "aliased",
  "anyhow",
  "async-trait",
  "axum",
  "bytes",
  "chrono",
- "ciborium",
  "dashchat-utils",
  "derive_more 1.0.0",
  "iroh",
@@ -5801,13 +5801,8 @@ dependencies = [
  "reporting",
  "reqwest 0.12.28",
  "serde",
- "serde_json",
- "sqlite-gate",
- "sqlx 0.9.0",
- "tempfile",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -5866,6 +5861,30 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "mailboxes-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "iroh",
+ "iroh-blobs",
+ "mailbox-client",
+ "mailbox-server",
+ "nanoid 0.5.0",
+ "pretty_assertions",
+ "reporting",
+ "serde",
+ "sqlite-gate",
+ "sqlx 0.9.0",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6580,7 +6599,7 @@ dependencies = [
  "pin-project-lite",
  "rustc-hash 2.1.3",
  "rustls 0.23.46",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.21",
  "tokio",
  "tokio-stream",
@@ -6625,7 +6644,7 @@ checksum = "8d0160422832eea1cc11c34be04ee6d5a046452b0b46cfb14695d55a1f24c954"
 dependencies = [
  "cfg_aliases",
  "libc",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -8878,7 +8897,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "rustix 1.1.5",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -11213,7 +11232,7 @@ dependencies = [
  "tray-icon",
  "url",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "window-vibrancy",
  "windows 0.62.2",
 ]
@@ -11517,13 +11536,15 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-mcp-bridge"
-version = "0.8.3"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d7a4377d58271c681729a469dd7766cd25f9db7640d1be541caa6124b0ea905"
+checksum = "aab4a85c370385dd0f7384855a75d480936d6c1f8a489fadd9fb878d4f0ef4b2"
 dependencies = [
  "base64 0.22.1",
  "block2 0.5.1",
+ "cairo-rs",
  "futures-util",
+ "gio",
  "image",
  "jni 0.21.1",
  "objc2 0.5.3",
@@ -11539,9 +11560,10 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
- "webview2-com 0.38.2",
- "windows 0.61.3",
- "windows-core 0.61.2",
+ "webkit2gtk",
+ "webview2-com",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -11579,7 +11601,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=a415a74db8f09350abd7e1a733c2b0c30e4730be#a415a74db8f09350abd7e1a733c2b0c30e4730be"
 dependencies = [
  "log",
  "ndk-context",
@@ -11601,7 +11623,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=a415a74db8f09350abd7e1a733c2b0c30e4730be#a415a74db8f09350abd7e1a733c2b0c30e4730be"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -11615,7 +11637,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=3136b282944beea5bc2bc7ef184c84d25b594616#3136b282944beea5bc2bc7ef184c84d25b594616"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=a415a74db8f09350abd7e1a733c2b0c30e4730be#a415a74db8f09350abd7e1a733c2b0c30e4730be"
 dependencies = [
  "rand 0.8.8",
  "serde",
@@ -11702,9 +11724,8 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-sharekit"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "875bdd9fb587e38505db5394df2542f2af4f63d5b2b6356728c9d73692c26900"
+version = "0.4.0-rc.7"
+source = "git+https://github.com/Choochmeque/tauri-plugin-sharekit?rev=61a7b9f40e67f43740538123e74f9ebb4c260fab#61a7b9f40e67f43740538123e74f9ebb4c260fab"
 dependencies = [
  "log",
  "objc2 0.6.5",
@@ -11717,8 +11738,9 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.21",
- "windows 0.61.3",
- "windows-collections 0.2.0",
+ "tokio",
+ "windows 0.62.2",
+ "windows-collections",
 ]
 
 [[package]]
@@ -11860,7 +11882,7 @@ dependencies = [
  "tracing",
  "uuid",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
 ]
@@ -11886,7 +11908,7 @@ dependencies = [
  "thiserror 2.0.21",
  "url",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
 ]
 
@@ -11910,7 +11932,7 @@ dependencies = [
  "tauri-utils",
  "url",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
  "wry",
 ]
@@ -13175,26 +13197,12 @@ dependencies = [
 
 [[package]]
 name = "webview2-com"
-version = "0.38.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7130243a7a5b33c54a444e54842e6a9e133de08b5ad7b5861cd8ed9a6a5bc96a"
-dependencies = [
- "webview2-com-macros",
- "webview2-com-sys 0.38.2",
- "windows 0.61.3",
- "windows-core 0.61.2",
- "windows-implement",
- "windows-interface",
-]
-
-[[package]]
-name = "webview2-com"
 version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f89fca7a704cee10dcb3654c1dbb8941d1783132f1917358af75bec37a7d7e6"
 dependencies = [
  "webview2-com-macros",
- "webview2-com-sys 0.39.1",
+ "webview2-com-sys",
  "windows 0.62.2",
  "windows-core 0.62.2",
 ]
@@ -13208,17 +13216,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "webview2-com-sys"
-version = "0.38.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "381336cfffd772377d291702245447a5251a2ffa5bad679c99e61bc48bacbf9c"
-dependencies = [
- "thiserror 2.0.21",
- "windows 0.61.3",
- "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -13350,36 +13347,14 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.61.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
-dependencies = [
- "windows-collections 0.2.0",
- "windows-core 0.61.2",
- "windows-future 0.2.1",
- "windows-link 0.1.3",
- "windows-numerics 0.2.0",
-]
-
-[[package]]
-name = "windows"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580"
 dependencies = [
- "windows-collections 0.3.2",
+ "windows-collections",
  "windows-core 0.62.2",
- "windows-future 0.3.2",
- "windows-numerics 0.3.1",
-]
-
-[[package]]
-name = "windows-collections"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8"
-dependencies = [
- "windows-core 0.61.2",
+ "windows-future",
+ "windows-numerics",
 ]
 
 [[package]]
@@ -13412,19 +13387,6 @@ dependencies = [
 
 [[package]]
 name = "windows-core"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
-dependencies = [
- "windows-implement",
- "windows-interface",
- "windows-link 0.1.3",
- "windows-result 0.3.4",
- "windows-strings 0.4.2",
-]
-
-[[package]]
-name = "windows-core"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb"
@@ -13438,24 +13400,13 @@ dependencies = [
 
 [[package]]
 name = "windows-future"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e"
-dependencies = [
- "windows-core 0.61.2",
- "windows-link 0.1.3",
- "windows-threading 0.1.0",
-]
-
-[[package]]
-name = "windows-future"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb"
 dependencies = [
  "windows-core 0.62.2",
  "windows-link 0.2.1",
- "windows-threading 0.2.1",
+ "windows-threading",
 ]
 
 [[package]]
@@ -13491,16 +13442,6 @@ name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
-
-[[package]]
-name = "windows-numerics"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
-dependencies = [
- "windows-core 0.61.2",
- "windows-link 0.1.3",
-]
 
 [[package]]
 name = "windows-numerics"
@@ -13694,15 +13635,6 @@ dependencies = [
  "windows_x86_64_gnu 0.53.1",
  "windows_x86_64_gnullvm 0.53.1",
  "windows_x86_64_msvc 0.53.1",
-]
-
-[[package]]
-name = "windows-threading"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66463ad2e0ea3bbf808b7f1d371311c80e115c0b71d60efc142cafbcfb057a6"
-dependencies = [
- "windows-link 0.1.3",
 ]
 
 [[package]]
@@ -13976,7 +13908,7 @@ dependencies = [
  "log",
  "serde",
  "thiserror 2.0.21",
- "windows 0.61.3",
+ "windows 0.62.2",
  "windows-core 0.62.2",
 ]
 
@@ -14023,7 +13955,7 @@ dependencies = [
  "url",
  "webkit2gtk",
  "webkit2gtk-sys",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-version",

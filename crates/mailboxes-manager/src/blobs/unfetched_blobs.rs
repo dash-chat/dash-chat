@@ -1,9 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::{
+use mailbox_client::{
     BlobReader, MailboxId, MailboxItem, OptionalItemTraits, UnfetchedBlobTracker,
-    manager::Mailboxes, store::MailboxStore,
+    store::MailboxStore,
 };
+
+use crate::manager::Mailboxes;
 
 // `reconcile_unfetched_blobs` currently lives in its own file because the blob
 // followup path is not yet cleanly separated from node concerns. This is a

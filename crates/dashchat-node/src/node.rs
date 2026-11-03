@@ -34,7 +34,7 @@ use p2panda_spaces::ActorId;
 use tokio::sync::{Mutex, mpsc};
 
 use mailbox_client::MailboxesConfig;
-use mailbox_client::manager::Mailboxes;
+use mailboxes_manager::Mailboxes;
 use tokio::task::JoinHandle;
 
 use crate::OnlinePeers;
@@ -401,17 +401,10 @@ impl Node {
 
         // === mailboxes === //
 
-        let sync_tracker = std::sync::Arc::new(
-            mailbox_client::MailboxSyncTracker::open(
-                filesystem.mailbox_sync_tracker_path(),
-                &config.sqlite_gate,
-            )
-            .await?,
-        );
-
-        let mailboxes = Mailboxes::spawn(
+        let mailboxes = Mailboxes::spawn_with_db(
+            filesystem.mailbox_sync_tracker_path(),
+            &config.sqlite_gate,
             op_store.clone(),
-            sync_tracker,
             config.mailboxes_config.clone(),
         )
         .await?;
@@ -1724,8 +1717,8 @@ impl Node {
 
         // Close pools last.
         // SqlitePool clones share state, so this drains every connection; the
-        // sync tracker owns a separate pool (mailbox_sync_tracker.db).
-        self.mailboxes.sync_tracker().close().await;
+        // manager owns the mailbox sync tracker persistence pool.
+        self.mailboxes.close().await;
         self.local_store.close().await;
         self.op_store.close().await;
 

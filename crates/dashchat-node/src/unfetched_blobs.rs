@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use mailbox_client::{BlobSource, MailboxId, UnfetchedBlobTracker};
+use mailbox_client::{MailboxId, UnfetchedBlobTracker};
+use mailboxes_manager::BlobSource;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 

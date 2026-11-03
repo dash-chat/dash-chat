@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.21.0"
+version = "0.21.2"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -23,13 +23,15 @@ sentry-types = "0.42"
 tauri = { version = "2.12.4", features = ["devtools", "tray-icon", "image-png"] }
 
 tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "347505a15d1607529d1426fe126274a9082e27a9" }
-tauri-plugin-mcp-bridge = "0.8"
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
-tauri-plugin-sharekit = "0.3"
+# The #277 merge: its windows crates match Tauri 2.12, which no published
+# version does, so the Windows build fails on 0.3.1. Later commits want
+# compileSdk 37, which the nix Android SDK lacks.
+tauri-plugin-sharekit = { git = "https://github.com/Choochmeque/tauri-plugin-sharekit", rev = "61a7b9f40e67f43740538123e74f9ebb4c260fab" }
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-opener = "2"
@@ -39,11 +41,12 @@ tauri-plugin-sentry-reporting = { workspace = true }
 tauri-plugin-subscriptions = { git = "https://github.com/dash-chat/tauri-plugin-subscriptions", rev = "30d1a889a4d7fca0a28bc9d77a7662b6f95cec29" }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "3136b282944beea5bc2bc7ef184c84d25b594616", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a415a74db8f09350abd7e1a733c2b0c30e4730be", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
+mailboxes-manager = { workspace = true }
 network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
 local-hub-discovery = { workspace = true }
@@ -134,6 +137,9 @@ tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios
 objc2 = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+# 0.13 is what compiles against Tauri 2.12 on Windows, and it does not build for
+# Android or iOS, where the bridge has never been used.
+tauri-plugin-mcp-bridge = "0.13"
 tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
