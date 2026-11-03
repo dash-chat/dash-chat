@@ -15,6 +15,21 @@ describe('Replying to messages', () => {
 		await exchangeContacts([agent1, agent2]);
 	});
 
+	// Must stay the first case: replying through the actions menu loads the
+	// chat's read-only state, which would hide a swipe that needs it loaded.
+	it('replies on the first swipe after opening a chat', async function () {
+		if (agent2.platform === 'desktop') this.skip();
+		await agent1.directChatPage.composer.sendMessage('Are you up?');
+		const target =
+			await agent2.directChatPage.messages.waitForMessage('Are you up?');
+
+		await target.replyBySwipe('Just about');
+
+		const reply =
+			await agent1.directChatPage.messages.waitForMessage('Just about');
+		await reply.waitForReplyQuote('Are you up?');
+	});
+
 	it('replies to a peer message and renders the quote on both sides', async () => {
 		await agent1.directChatPage.composer.sendMessage('Shall we meet tomorrow?');
 		const target = await agent2.directChatPage.messages.waitForMessage(
