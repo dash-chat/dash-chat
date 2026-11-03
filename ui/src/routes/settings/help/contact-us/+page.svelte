@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import ScreenshotsInput from '$lib/components/ScreenshotsInput.svelte';
@@ -49,11 +49,11 @@
 				includeLogs: includeDebugLog,
 			});
 			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
-			goto('/settings/help');
+			// The user may have already left during a slow send.
+			if (page.url.pathname === '/settings/help/contact-us') history.back();
 		} catch (e) {
 			console.error('Error sending feedback', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
-		} finally {
 			sending = false;
 		}
 	}
@@ -68,7 +68,7 @@
 	>
 		{#snippet left()}
 			<NavbarBackLink
-				onClick={() => goto('/settings/help')}
+				onClick={() => history.back()}
 				data-testid="contact-us-back"
 			/>
 		{/snippet}
