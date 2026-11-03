@@ -47,14 +47,15 @@ reporting = { path = "crates/reporting" }
 # - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
 # On top, the `dashchat-071-lan-priority` sync patches: nodes found over mDNS
 # are discovered right away, and sync forgets ended sessions, skips duplicate
-# ones and backs off from nodes whose sessions keep failing.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7", features = [
+# ones and backs off from nodes whose sessions keep failing. It also moves
+# p2panda-net to iroh-gossip 0.102.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -62,9 +63,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508ea
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "18fc508eab52f12bdb82bcaf3c292769d6ea5cd7" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [
@@ -83,9 +84,6 @@ iroh = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60
 iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
-# iroh-gossip 0.101.0 + n0-computer/iroh-gossip PRs #161, #162 and #163 (resource
-# cleanup, failed-dial and lost-join recovery, rejoin when isolated)
-iroh-gossip = { git = "https://github.com/dash-chat/iroh-gossip", rev = "efc565e0e63800a77a3add0dbb97f980278e2974" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
