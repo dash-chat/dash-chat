@@ -400,8 +400,12 @@ async fn blocked_author_is_not_acked() {
     );
 }
 
+/// TODO: pre-accept: the spec for pre-accept messaging. The requester has no
+/// space to publish into until the acceptor creates it, so this cannot run
+/// until pre-accept messages are possible again; un-ignore it then and delete
+/// `direct_chat_requester_cannot_publish_before_accept`.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "the requester cannot publish into the direct chat space before the acceptor creates it; rework once the membership story is settled"]
+#[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
     setup();
 
@@ -441,6 +445,46 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
     );
 
     alice.behavior().accept_next_contact().await.unwrap();
+
+    wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
+}
+
+/// TODO: pre-accept: the stopgap while pre-accept messaging is disabled.
+/// Delete once `direct_chat_is_not_acked_until_contact_accepted` runs again.
+#[tokio::test(flavor = "multi_thread")]
+async fn direct_chat_requester_cannot_publish_before_accept() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    let chat = bobbi.direct_chat_with(&alice);
+    bobbi
+        .send_message_raw(chat, "Hello before accept".into())
+        .await
+        .expect_err("the requester must not be able to publish before the contact is accepted");
+
+    alice.behavior().accept_next_contact().await.unwrap();
+
+    // Bobbi can publish once the accept has arrived and alice's space has been
+    // processed; a failed publish leaves nothing behind, so retrying is safe.
+    let sent = tokio::sync::Mutex::new(None);
+    poll.wait_for(|| async {
+        let header = bobbi
+            .send_message_raw(chat, "Hello after accept".into())
+            .await
+            .map_err(|e| e.to_string())?;
+        *sent.lock().await = Some(header);
+        Ok::<(), String>(())
+    })
+    .await
+    .unwrap();
+    let header = sent.lock().await.take().unwrap();
 
     wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
 }
