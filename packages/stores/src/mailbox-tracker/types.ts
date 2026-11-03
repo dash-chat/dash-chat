@@ -1,4 +1,4 @@
-import type { DeviceId, TopicId } from '../p2panda/types';
+import type { DeviceId, LogId, TopicId } from '../p2panda/types';
 
 export type MailboxId = string;
 
@@ -18,5 +18,12 @@ export interface LastError {
 	message: string;
 }
 
-/// Synced-up-to sequence number per (topic, author), shaped as `topic → author → seq`.
-export type MailboxSyncState = Record<TopicId, Record<DeviceId, number>>;
+/// The key a mailbox files one of a device's logs under within a topic.
+export type MailboxLogKey = string;
+
+export function mailboxLogKey(author: DeviceId, logId: LogId): MailboxLogKey {
+	return `${author}.${logId}`;
+}
+
+/// Synced-up-to sequence number per log, shaped as `topic → log key → seq`.
+export type MailboxSyncState = Record<TopicId, Record<MailboxLogKey, number>>;
