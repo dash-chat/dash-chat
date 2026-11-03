@@ -17,7 +17,7 @@ use p2panda::streams::{
     PublishError, PublishFuture, Source, StreamEvent, StreamFrom, StreamPublisher,
     StreamSubscription,
 };
-use p2panda::{Hash, NodeId, RelayUrl, Topic, VerifyingKey};
+use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_core::traits::Digest;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -84,9 +84,6 @@ pub enum ProcessorEvent {
     SpaceMembersChanged {
         topic: Topic,
     },
-
-    /// A member's key bundle was processed.
-    MemberKeyBundle(VerifyingKey),
 }
 
 /// Per-topic p2panda streams.
@@ -579,7 +576,6 @@ impl TopicDrain {
             StreamEvent::Space { space_id, .. } => Some(ProcessorEvent::SpaceMembersChanged {
                 topic: Topic::from(space_id),
             }),
-            StreamEvent::Member(member) => Some(ProcessorEvent::MemberKeyBundle(member)),
             _ => None,
         }
     }

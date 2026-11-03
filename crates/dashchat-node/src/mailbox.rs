@@ -253,7 +253,7 @@ mod tests {
             .unwrap();
         let chat_id = alice.direct_chat_with(&bobbi);
 
-        alice
+        let header = alice
             .send_message_raw(chat_id, "Hello".into())
             .await
             .unwrap();
@@ -274,7 +274,7 @@ mod tests {
             p2panda::operation::LogId::from_topic(*chat_id),
         );
 
-        // The mailbox should have recorded alice's seq 0 from both sides.
+        // The mailbox should have recorded alice's message from both sides.
         let alice_sync = alice
             .mailboxes
             .sync_tracker()
@@ -299,7 +299,7 @@ mod tests {
                 .get(&*chat_id)
                 .and_then(|m| m.get(&alice_log))
                 .copied();
-            if alice_seq == Some(0) && bobbi_seq == Some(0) {
+            if alice_seq == Some(header.seq_num) && bobbi_seq == Some(header.seq_num) {
                 Ok(())
             } else {
                 Err("watermark not recorded")

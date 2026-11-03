@@ -60,6 +60,12 @@ pub enum SystemNotification {
     GroupMembersChanged { chat_id: ChatId },
     /// Devices were introduced as belonging to agents.
     AgentsIntroduced { agents: BTreeMap<DeviceId, AgentId> },
+    /// A device published a newer profile. `agent_id` is absent while the
+    /// device's agent is still unknown.
+    ProfileChanged {
+        device_id: DeviceId,
+        agent_id: Option<AgentId>,
+    },
     /// A new tombstone has been created.
     Tombstones {
         topic: TopicId,
@@ -216,13 +222,9 @@ impl Node {
                             .await;
                         }
                         Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
-                            node.trigger_announcements_readers_sync();
                             if let Err(err) = node.notify_group_members_changed(topic).await {
                                 warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
                             }
-                        }
-                        Some(ProcessorEvent::MemberKeyBundle(_)) => {
-                            node.trigger_announcements_readers_sync();
                         }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
                             error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
@@ -487,32 +489,21 @@ impl Node {
         let payload = operation.message();
 
         match &payload {
-            Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                for (_, agent_id) in agents {
-                    if agent_id == &self.agent_id() {
-                        continue;
-                    }
-                    if let Err(err) = self
-                        .register_and_join_space(Topic::announcements(*agent_id))
-                        .await
-                    {
-                        tracing::error!(
-                            ?err,
-                            agent_id = ?agent_id.aliased(),
-                            "failed to register announcements topic for IntroduceAgents"
-                        );
-                    }
-                }
-            }
-
             Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) => {
                 self.join_chat_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
-            }
-
-            Payload::DeviceGroup(DeviceGroupPayload::AddContact { .. }) => {
-                self.trigger_announcements_readers_sync();
+                // Push my profile into the new space.
+                // Spawned: publishing needs this processor.
+                if !source.is_local() {
+                    let node = self.clone();
+                    let chat_id = *chat_id;
+                    tokio::spawn(async move {
+                        if let Err(err) = node.publish_my_profile_to(chat_id).await {
+                            tracing::warn!(?err, "failed to push my profile to a joined group");
+                        }
+                    });
+                }
             }
 
             Payload::Inbox(invitation) => {
@@ -599,7 +590,7 @@ impl Node {
                             }
 
                             self.save_keybundle(keybundle.clone()).await?;
-                            self.establish_contact(author, *agent_id).await?;
+                            self.establish_contact(author).await?;
 
                             let node = self.clone();
                             let agent_id = *agent_id;
@@ -618,6 +609,12 @@ impl Node {
                                 {
                                     tracing::warn!(?err, "failed to record accepted contact");
                                     return;
+                                }
+                                if let Err(err) = node.publish_my_profile_to(topic_id).await {
+                                    tracing::warn!(
+                                        ?err,
+                                        "failed to push my profile to the new direct chat"
+                                    );
                                 }
                                 // Messages they sent before we recorded the
                                 // acceptance were processed but dropped by the
@@ -829,7 +826,7 @@ impl Node {
     }
 
     /// Tell the frontend a group chat's membership changed. Membership changes
-    /// of other spaces (direct chats, announcements) are of no interest to it.
+    /// of other spaces (direct chats) are of no interest to it.
     async fn notify_group_members_changed(&self, topic: TopicId) -> anyhow::Result<()> {
         let chat_id = ChatId::from_topic_id(topic)?;
         if self.projection.is_group_chat(chat_id).await? {
