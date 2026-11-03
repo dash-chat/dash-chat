@@ -69,6 +69,8 @@ export class MessagesStore {
 		public chatId: ChatId,
 		public client: IMessagesClient,
 		public readOnly: () => ReactivePromise<boolean>,
+		/** The chat's group-control ops, which decide when we were a member. */
+		public controlOps: () => ReactivePromise<SimplifiedOperation<Payload>[]>,
 	) {}
 
 	messages = reactive(async () => {
@@ -89,6 +91,7 @@ export class MessagesStore {
 		const myDeviceId = await this.contactsStore.myDeviceId();
 		const ops = dropOpsAuthoredWhileNotAMember(
 			await this.dropOpsAuthoredWhileBlocked(opsOrdered, deviceAgents),
+			await this.controlOps(),
 			myDeviceId,
 		);
 		const messages = logsToMessages(ops, tombstones, deviceAgents, deviceNames);
