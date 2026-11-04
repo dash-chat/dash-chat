@@ -140,14 +140,15 @@
 			<Navbar
 				transparent={true}
 				titleClass="opacity1 min-w-0 flex-1"
-				leftClass="shrink-0"
+				leftClass={theme === 'ios' && !isWideScreen.value
+					? 'shrink-0 me-4'
+					: 'shrink-0'}
 				centerTitle={false}
 				right={theme === 'ios' ? connectionStatus : undefined}
 			>
 				{#snippet left()}
 					{#if !isWideScreen.value}
 						<NavbarBackLink
-							class="[&_svg]:size-[17px]"
 							onClick={() => goto('/')}
 							data-testid="group-chat-back"
 						/>
