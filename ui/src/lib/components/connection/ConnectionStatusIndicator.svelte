@@ -82,12 +82,7 @@
 	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $inputs then [mailboxes, onlinePeers]}
-	{@const status = connectionStatus(
-		mailboxes,
-		onlinePeers.length > 0,
-		renderingResumedAt.value,
-	)}
+{#snippet chip(status: ConnectionStatus)}
 	<span
 		data-testid="connection-status"
 		data-status={status.status}
@@ -143,6 +138,21 @@
 			</Dialog>
 		{/snippet}
 	</Modal>
+{/snippet}
+
+{#await $inputs}
+	{@render chip({ status: 'pending' })}
+{:then [mailboxes, onlinePeers]}
+	{@render chip(
+		connectionStatus(
+			mailboxes,
+			onlinePeers.length > 0,
+			renderingResumedAt.value,
+		),
+	)}
+{:catch}
+	<!-- A store that stalls rejects here, and can still resolve later. -->
+	{@render chip({ status: 'pending' })}
 {/await}
 
 <style>
