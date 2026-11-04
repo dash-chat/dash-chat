@@ -168,6 +168,13 @@
 					),
 	);
 
+	// Outlives `rect`: the popovers finish closing after the backdrop's fade, and
+	// losing it sooner would snap them back to Konsta's centred position.
+	let edgeStyle = $state('');
+	$effect.pre(() => {
+		if (rect) edgeStyle = outerEdgeStyle(rect);
+	});
+
 	let aboveAnchor = $state<HTMLElement>();
 	let belowAnchor = $state<HTMLElement>();
 
@@ -187,6 +194,16 @@
 		const barTop = base.top + next - GAP - aboveH - MARGIN;
 		if (barTop < safeTop) next += safeTop - barTop;
 		return next;
+	}
+
+	/** Lines a popover up with the target's outer edge, the one nearer the screen
+	 * edge. Konsta only centres popovers, and writes its `left` after this style,
+	 * hence the `!important`. */
+	function outerEdgeStyle(target: DOMRect): string {
+		const rightMargin = window.innerWidth - target.right;
+		return target.left < rightMargin
+			? `left: ${target.left}px !important`
+			: `left: auto !important; right: ${rightMargin}px`;
 	}
 </script>
 
@@ -224,6 +241,7 @@
 		opened={panelsShown && aboveAnchor !== undefined}
 		target={aboveAnchor}
 		backdrop={false}
+		style={edgeStyle}
 		class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0 {panelDelay}"
 	>
 		<div bind:this={aboveEl}>
@@ -236,6 +254,7 @@
 	opened={panelsShown && belowAnchor !== undefined}
 	target={belowAnchor}
 	backdrop={false}
+	style={edgeStyle}
 	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
 >
 	<div bind:this={belowEl}>
