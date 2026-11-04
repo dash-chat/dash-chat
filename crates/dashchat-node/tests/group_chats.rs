@@ -764,6 +764,26 @@ async fn test_group_events() {
         .await
         .unwrap();
 
+    bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::Membership { topic, header })
+                    if *topic == chat_id.into()
+                        && membership_action(header)
+                            .is_some_and(|a| action_adds_member(&a, cammy.device_id())) =>
+                {
+                    Some(())
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is handed the operation adding cammy");
+
     let changed = bobbi
         .watcher
         .lock()

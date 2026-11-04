@@ -161,11 +161,11 @@ pub async fn build_notification_data(
     };
 
     let Some(payload) = payload else {
-        #[cfg(mobile)]
+        #[cfg(any(mobile, test))]
         {
             return auth_control_op_notification(node, header, topic, sender_device_id, id).await;
         }
-        #[cfg(not(mobile))]
+        #[cfg(not(any(mobile, test)))]
         {
             let _ = (header, sender_device_id, id);
             return None;
@@ -416,7 +416,7 @@ fn media_placeholder(media: &MediaBundle) -> String {
 /// title) and in auth-control notifications (as the title for group
 /// invites/adds). Mobile-only: desktop notifications use neither MessagingStyle
 /// nor the auth-control variant.
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 async fn group_title(node: &Node, topic_id: TopicId) -> String {
     match node.get_group_info(topic_id).await {
         Ok(Some(info)) if !info.name.is_empty() => info.name,
@@ -440,7 +440,7 @@ async fn group_title(node: &Node, topic_id: TopicId) -> String {
 ///
 /// Mobile-only: on desktop we don't surface these as system notifications —
 /// the chat-list row already reflects the auth event reactively.
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 async fn auth_control_op_notification(
     node: &Node,
     header: &Header,
@@ -526,7 +526,7 @@ fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
-    use dashchat_node::testing::TestNode;
+    use dashchat_node::testing::{TestMailbox, TestNode};
     use dashchat_node::{AddContactResult, AsBody, NodeConfig, Profile};
     use p2panda::operation::LogId;
 
@@ -583,6 +583,67 @@ mod tests {
             .expect("bob's message is announced");
         assert_eq!(data.title.as_deref(), Some("Bob"));
         assert_eq!(data.body.as_deref(), Some("are you there?"));
+    }
+
+    /// Alice creates a group with us in it. The sync loop hands us her
+    /// membership operation bare, and that alone is announced.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn announces_being_added_to_a_group() {
+        crate::i18n::init_i18n();
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .set_profile(Profile {
+                name: "Alice".to_string(),
+                surname: None,
+                avatar: None,
+                about: None,
+            })
+            .await
+            .unwrap();
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bob)
+            .await
+            .unwrap();
+
+        let group = alice
+            .create_chat_group(std::collections::BTreeMap::from([(
+                *bob.device_id(),
+                p2panda_auth::Access::write(),
+            )]))
+            .await
+            .unwrap();
+        let header = alice
+            .get_group_control_ops(group)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|op| op.header)
+            .find(|header| {
+                dashchat_node::membership::membership_action(header).is_some_and(|action| {
+                    dashchat_node::membership::action_adds_member(&action, bob.device_id())
+                })
+            })
+            .expect("alice published an operation admitting bob");
+
+        let data = build_notification_data(&bob, group.into(), &header, None)
+            .await
+            .expect("being added is announced");
+        assert_eq!(data.title.as_deref(), Some("New group"));
+        assert_eq!(data.body.as_deref(), Some("Alice added you to the group."));
+        assert_eq!(
+            data.route.as_deref(),
+            Some(format!("/group-chat/{}", group.to_hex()).as_str())
+        );
     }
 
     /// Someone who scanned our code, and whom we have not accepted, writes to
