@@ -41,6 +41,7 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
+		readOnly,
 		onReply,
 		onNavigateToMessage,
 	}: {
@@ -52,6 +53,7 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
+		readOnly: boolean;
 		onReply?: () => void;
 		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
@@ -198,7 +200,9 @@
 {#if deleted}
 	<div class="group flex justify-start">{@render bubble()}</div>
 {:else if isMobile}
-	<SwipeToReply {onReply} target={slideEl}>{@render row()}</SwipeToReply>
+	<SwipeToReply {readOnly} {onReply} target={slideEl}
+		>{@render row()}</SwipeToReply
+	>
 {:else}
 	{@render row()}
 {/if}

@@ -2,7 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+		useReactiveValue,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -54,6 +58,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
@@ -92,7 +97,10 @@
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const peerName = useReactivePromise(store.peerName);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const messageGroups = useReactivePromise(store.groupedEvents);
+	const messageListData = useReactivePromises(() => [
+		store.groupedEvents(),
+		store.messages.readOnly(),
+	]);
 	const readMessageHashes = useReactivePromise(
 		store.messages.readMessageHashes,
 	);
@@ -377,7 +385,7 @@
 					{/snippet}
 
 					{#await $readMessageHashes then readHashes}
-						{#await $messageGroups then messageGroupsInDays}
+						{#await $messageListData then [messageGroupsInDays, readOnly]}
 							{@const unreadDivider = unreadDividerTracker.compute(
 								messageGroupsInDays,
 								readHashes,
@@ -553,6 +561,7 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	{readOnly}
 																	showDeliveryStatus={endsDeliveryStatusRun(
 																		messageGroup,
 																		i,
@@ -585,6 +594,7 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	{readOnly}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	sender={profile}
 																	onReply={() =>
@@ -607,7 +617,11 @@
 									{/each}
 								</div>
 							</div>
+						{:catch error}
+							<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 						{/await}
+					{:catch error}
+						<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 					{/await}
 				</ReverseScrollPage>
 

@@ -27,6 +27,7 @@
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
@@ -68,6 +69,7 @@
 		contactsStore.myDeviceId(),
 		store.groupedEvents(),
 		store.allMembers(),
+		store.messages.readOnly(),
 	]);
 	const composerData = useReactivePromises(() => [store.me(), store.info()]);
 
@@ -215,7 +217,7 @@
 				data-testid="group-chat-messages"
 			>
 				{#await $readMessageHashes then readHashes}
-					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members, readOnly]}
 						{@const unreadDivider = unreadDividerTracker.compute(
 							messageGroupsInDays,
 							readHashes,
@@ -267,6 +269,7 @@
 														{position}
 														{myDeviceId}
 														{chatId}
+														{readOnly}
 														showDeliveryStatus={endsDeliveryStatusRun(
 															messageGroup,
 															i,
@@ -301,6 +304,7 @@
 														{position}
 														{myDeviceId}
 														{chatId}
+														{readOnly}
 														searchQuery=""
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
@@ -324,7 +328,11 @@
 								{/each}
 							</div>
 						{/each}
+					{:catch error}
+						<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 					{/await}
+				{:catch error}
+					<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 				{/await}
 			</div>
 		</div>

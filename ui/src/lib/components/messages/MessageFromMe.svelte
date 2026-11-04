@@ -37,6 +37,7 @@
 		searchQuery,
 		chatId,
 		showDeliveryStatus = false,
+		readOnly,
 		onEdit,
 		onReply,
 		onNavigateToMessage,
@@ -49,6 +50,7 @@
 		/** Whether to render the message's delivery status indicator — see
 		 * `endsDeliveryStatusRun`. */
 		showDeliveryStatus?: boolean;
+		readOnly: boolean;
 		onEdit?: () => void;
 		onReply?: () => void;
 		onNavigateToMessage?: (hash: Hash) => void;
@@ -188,7 +190,9 @@
 {#if deleted}
 	<div class="group flex justify-end">{@render bubble()}</div>
 {:else if isMobile}
-	<SwipeToReply {onReply} target={messageEl}>{@render row()}</SwipeToReply>
+	<SwipeToReply {readOnly} {onReply} target={messageEl}
+		>{@render row()}</SwipeToReply
+	>
 {:else}
 	{@render row()}
 {/if}
