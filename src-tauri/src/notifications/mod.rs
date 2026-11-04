@@ -214,13 +214,6 @@ pub async fn build_notification_data(
                 ..Default::default()
             })
         }
-        // An auth/control op keeps its data in the header rather than a body:
-        // the push path decodes nothing and takes the branch above, while the
-        // sync path is handed what the node decoded. Same op, same answer.
-        #[cfg(mobile)]
-        Payload::GroupControl(_) => {
-            auth_control_op_notification(node, header, topic, sender_device_id, id).await
-        }
         _ => None,
     }
 }
