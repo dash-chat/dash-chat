@@ -11,7 +11,7 @@
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { connectionStatus, type ConnectionStatus } from './connection-status';
 	import type { ConnectionStatusTag } from './connection-status-tags';
-	import { mdiEmoticonPoop } from '@mdi/js';
+	import { mdiEmoticonPoop, mdiTimerSand } from '@mdi/js';
 	import { Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -38,7 +38,7 @@
 
 	const icons: Record<ConnectionStatusTag, string> = {
 		cloud: cloudSvg,
-		pending: cloudSvg,
+		pending: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiTimerSand}" /></svg>`,
 		local: localMailboxServerSvg,
 		p2p: p2pSvg,
 		disconnected: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiEmoticonPoop}" /></svg>`,
@@ -88,64 +88,61 @@
 		onlinePeers.length > 0,
 		renderingResumedAt.value,
 	)}
-	<!-- Pending is not rendered until the designer decides how it should look. -->
-	{#if status.status !== 'pending'}
+	<span
+		data-testid="connection-status"
+		data-status={status.status}
+		class="flex cursor-pointer"
+		role="button"
+		tabindex={0}
+		aria-label={ariaLabels[status.status]()}
+		onclick={() => (dialogOpened = true)}
+		onkeydown={onActivate(() => (dialogOpened = true))}
+	>
 		<span
-			data-testid="connection-status"
-			data-status={status.status}
-			class="flex cursor-pointer"
-			role="button"
-			tabindex={0}
-			aria-label={ariaLabels[status.status]()}
-			onclick={() => (dialogOpened = true)}
-			onkeydown={onActivate(() => (dialogOpened = true))}
+			class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
+			aria-hidden="true"
 		>
+			{@html icons[status.status]}
+		</span>
+	</span>
+
+	{#snippet titleSlot()}
+		<div class="flex flex-row items-center gap-2">
 			<span
-				class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
+				class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
 				aria-hidden="true"
 			>
 				{@html icons[status.status]}
 			</span>
-		</span>
+			<span data-testid="connection-status-dialog-title">
+				{titles[status.status]()}
+			</span>
+		</div>
+	{/snippet}
 
-		{#snippet titleSlot()}
-			<div class="flex flex-row items-center gap-2">
-				<span
-					class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
-					aria-hidden="true"
-				>
-					{@html icons[status.status]}
+	<Modal bind:opened={dialogOpened}>
+		{#snippet children(modal)}
+			<Dialog
+				data-testid="connection-status-dialog"
+				opened={modal.opened}
+				onBackdropClick={modal.close}
+				title={asTitle(titleSlot)}
+			>
+				<span data-testid="connection-status-dialog-description">
+					{description(status)}
 				</span>
-				<span data-testid="connection-status-dialog-title">
-					{titles[status.status]()}
-				</span>
-			</div>
+
+				{#snippet buttons()}
+					<DialogButton
+						data-testid="connection-status-dialog-close"
+						onClick={modal.close}
+					>
+						{m.close()}
+					</DialogButton>
+				{/snippet}
+			</Dialog>
 		{/snippet}
-
-		<Modal bind:opened={dialogOpened}>
-			{#snippet children(modal)}
-				<Dialog
-					data-testid="connection-status-dialog"
-					opened={modal.opened}
-					onBackdropClick={modal.close}
-					title={asTitle(titleSlot)}
-				>
-					<span data-testid="connection-status-dialog-description">
-						{description(status)}
-					</span>
-
-					{#snippet buttons()}
-						<DialogButton
-							data-testid="connection-status-dialog-close"
-							onClick={modal.close}
-						>
-							{m.close()}
-						</DialogButton>
-					{/snippet}
-				</Dialog>
-			{/snippet}
-		</Modal>
-	{/if}
+	</Modal>
 {/await}
 
 <style>
@@ -154,11 +151,11 @@
 		width: 35px;
 	}
 	.connection-status-local,
-	.connection-status-p2p {
+	.connection-status-p2p,
+	.connection-status-pending {
 		font-size: 22px;
 	}
-	.connection-status-cloud,
-	.connection-status-pending {
+	.connection-status-cloud {
 		font-size: 16px;
 	}
 	.connection-status-pending {
@@ -179,11 +176,11 @@
 		font-size: 32px;
 	}
 	.connection-status-dialog-icon-local,
-	.connection-status-dialog-icon-p2p {
+	.connection-status-dialog-icon-p2p,
+	.connection-status-dialog-icon-pending {
 		font-size: 26px;
 	}
-	.connection-status-dialog-icon-cloud,
-	.connection-status-dialog-icon-pending {
+	.connection-status-dialog-icon-cloud {
 		font-size: 20px;
 	}
 </style>
