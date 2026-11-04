@@ -124,6 +124,12 @@
 	}
 </script>
 
+{#snippet connectionStatus()}
+	<div class="grid size-11 shrink-0 place-items-center">
+		<ConnectionStatusIndicator {chatId} />
+	</div>
+{/snippet}
+
 <div class="absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
@@ -136,6 +142,7 @@
 				titleClass="opacity1 min-w-0 flex-1"
 				leftClass="shrink-0"
 				centerTitle={false}
+				right={theme === 'ios' ? connectionStatus : undefined}
 			>
 				{#snippet left()}
 					{#if !isWideScreen.value}
@@ -165,14 +172,9 @@
 					{/await}
 				{/snippet}
 
-				<!-- The same 44px cell as the home navbar. -->
-				<div
-					class="grid size-11 shrink-0 place-items-center {theme === 'material'
-						? 'me-2'
-						: ''}"
-				>
-					<ConnectionStatusIndicator {chatId} />
-				</div>
+				{#if theme === 'material'}
+					<div class="me-2">{@render connectionStatus()}</div>
+				{/if}
 			</Navbar>
 		{/snippet}
 
