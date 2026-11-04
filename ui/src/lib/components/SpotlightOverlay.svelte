@@ -39,18 +39,12 @@
 	// earlier would flash the closing backdrop over the target.
 	let spotlighted = $state(false);
 
-	function swallowClick(event: Event) {
-		event.preventDefault();
-		event.stopPropagation();
-	}
-
 	/** Pin `el` out of the flow, fixed at `base` (its pressed position), lock
 	 * its holder's height so the list doesn't reflow, and arm its lift
-	 * transition. The lift puts the target above the backdrop, so its own
-	 * content stays clickable — tapping a photo would open the lightbox behind
-	 * the overlay. Clicks are swallowed in the capture phase, so no descendant
-	 * handler runs: while spotlighted the message is there to be looked at,
-	 * not used. Returns the restore function. */
+	 * transition. The lift puts the target above the backdrop, so it is made
+	 * inert: touches fall through to the backdrop, which dismisses the overlay,
+	 * and nothing inside it can be activated behind the overlay. Returns the
+	 * restore function. */
 	function pinTarget(el: HTMLElement, base: DOMRect): () => void {
 		const holder = el.parentElement;
 		if (holder) {
@@ -63,9 +57,9 @@
 		el.style.margin = '0';
 		el.style.zIndex = '34';
 		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
-		el.addEventListener('click', swallowClick, true);
+		el.inert = true;
 		return () => {
-			el.removeEventListener('click', swallowClick, true);
+			el.inert = false;
 			el.style.position = '';
 			el.style.top = '';
 			el.style.left = '';
@@ -197,8 +191,10 @@
 </script>
 
 {#if opened}
+	<!-- active:transform-none: the default button press scale would pull the dim
+	     in from the screen edges for a frame, flashing the page around them. -->
 	<button
-		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90"
+		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90 active:transform-none"
 		aria-label={m.close()}
 		transition:fade={{ duration: 200 }}
 		onclick={onClose}
