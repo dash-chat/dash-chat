@@ -2496,6 +2496,9 @@ impl Node {
                 });
             }
         }
+        // The store batches writes for up to 500 ms: without this commit, a kill right
+        // after sending keeps the message but loses its media.
+        self.require_blob_sync()?.blobs.store().sync_db().await?;
         Ok(MediaBundle::from(items))
     }
 
