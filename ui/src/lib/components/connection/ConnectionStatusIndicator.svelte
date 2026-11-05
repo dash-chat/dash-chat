@@ -11,14 +11,11 @@
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { connectionStatus, type ConnectionStatus } from './connection-status';
 	import type { ConnectionStatusTag } from './connection-status-tags';
-	import { mdiEmoticonPoop, mdiTimerSand } from '@mdi/js';
 	import { Dialog, DialogButton } from 'konsta/svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { onActivate } from '$lib/utils/keyboard';
-	import cloudSvg from '$lib/assets/connection-status/cloud.svg?raw';
-	import localMailboxServerSvg from '$lib/assets/connection-status/localmailboxserver.svg?raw';
-	import p2pSvg from '$lib/assets/connection-status/p2p.svg?raw';
+	import ConnectionStatusIcon from './ConnectionStatusIcon.svelte';
 
 	/** Without a `chatId` there is no peer to be directly connected to, so the
 	 * status never reads p2p. */
@@ -41,14 +38,6 @@
 		mailboxTrackerStore.connectionStatusForAllMailboxes(),
 		chatId === undefined ? noPeers() : onlinePeersStore.onlinePeers(chatId),
 	]);
-
-	const icons: Record<ConnectionStatusTag, string> = {
-		cloud: cloudSvg,
-		pending: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiTimerSand}" /></svg>`,
-		local: localMailboxServerSvg,
-		p2p: p2pSvg,
-		disconnected: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="${mdiEmoticonPoop}" /></svg>`,
-	};
 
 	const ariaLabels: Record<ConnectionStatusTag, () => string> = {
 		cloud: m.connectionStatusCloudAriaLabel,
@@ -99,21 +88,15 @@
 		onclick={() => (dialogOpened = true)}
 		onkeydown={onActivate(() => (dialogOpened = true))}
 	>
-		<span
-			class="connection-status connection-status-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
-			aria-hidden="true"
-		>
-			{@html icons[status.status]}
+		<span class="flex w-[35px] justify-center" aria-hidden="true">
+			<ConnectionStatusIcon status={status.status} />
 		</span>
 	</span>
 
 	{#snippet titleSlot()}
-		<div class="flex flex-row items-center gap-2">
-			<span
-				class="connection-status-dialog-icon connection-status-dialog-icon-{status.status} flex h-[1em] justify-center *:h-full *:w-auto"
-				aria-hidden="true"
-			>
-				{@html icons[status.status]}
+		<div class="flex flex-row items-center gap-3">
+			<span aria-hidden="true">
+				<ConnectionStatusIcon status={status.status} />
 			</span>
 			<span data-testid="connection-status-dialog-title">
 				{titles[status.status]()}
@@ -160,43 +143,3 @@
 	<!-- A store that stalls rejects here, and can still resolve later. -->
 	{@render chip({ status: 'pending' })}
 {/await}
-
-<style>
-	.connection-status {
-		font-size: 28px;
-		width: 35px;
-	}
-	.connection-status-local,
-	.connection-status-p2p,
-	.connection-status-pending {
-		font-size: 22px;
-	}
-	.connection-status-cloud {
-		font-size: 16px;
-	}
-	.connection-status-pending {
-		animation: connection-pending 1.2s ease-in-out infinite;
-	}
-	@keyframes connection-pending {
-		50% {
-			opacity: 0.15;
-		}
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.connection-status-pending {
-			animation: none;
-			opacity: 0.5;
-		}
-	}
-	.connection-status-dialog-icon {
-		font-size: 32px;
-	}
-	.connection-status-dialog-icon-local,
-	.connection-status-dialog-icon-p2p,
-	.connection-status-dialog-icon-pending {
-		font-size: 26px;
-	}
-	.connection-status-dialog-icon-cloud {
-		font-size: 20px;
-	}
-</style>
