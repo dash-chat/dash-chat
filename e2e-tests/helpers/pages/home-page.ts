@@ -45,6 +45,7 @@ export class HomePage extends TestHelper {
 	emptyState = this.el(tid('all-chats-empty'));
 	blockedRowIcon = this.el(tid('blocked-row-icon'));
 	unreadBadge = this.el(tid('chat-row-unread-badge'));
+	p2pBadge = this.el(tid('chat-row-p2p-badge'));
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {
