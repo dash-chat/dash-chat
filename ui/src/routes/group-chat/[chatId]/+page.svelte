@@ -25,6 +25,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
@@ -168,7 +169,10 @@
 									size="2.25rem"
 								/>
 							</span>
-							<span class="flex-1 min-w-0 truncate">{info.name}</span>
+							<span class="flex flex-1 min-w-0 flex-col">
+								<span class="truncate">{info.name}</span>
+								<ConnectedPeersCount {chatId} />
+							</span>
 						</Link>
 					{/await}
 				{/snippet}

@@ -70,6 +70,10 @@ export class HomePage extends TestHelper {
 		);
 	}
 
+	chatRowP2pBadge(contactName: string) {
+		return this.chatListItem(contactName).$(tid('chat-row-p2p-badge'));
+	}
+
 	hasChatListItem(contactName: string) {
 		return this.chatListItem(contactName).isExisting();
 	}
