@@ -293,8 +293,9 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.directChatPage.back.click();
 		await createGroup(sender, 'Group while killed', ['Rex']);
 		await expect(notifications).toHaveDelivered({
-			title: 'Group while killed',
+			title: 'Ben',
 			body: added,
+			conversation: 'Group while killed',
 		});
 
 		const message = `hi PUSH_GROUP_${Date.now()}`;
@@ -325,7 +326,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		// and what the device holds afterwards is its final answer.
 		await receiver.pause(30_000);
 		await expect(notifications).not.toHaveDelivered({
-			title: 'Group while blocked',
+			conversation: 'Group while blocked',
 		});
 		await expect(notifications).not.toHaveDelivered({ title: newMessage });
 	});
