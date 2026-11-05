@@ -175,6 +175,9 @@
 	.media.voice:first-child {
 		padding-top: 7px;
 	}
+	.quote + .media.voice {
+		padding-top: 9px;
+	}
 	.sender-name + .content > .media.voice:first-child {
 		padding-top: 3px;
 	}

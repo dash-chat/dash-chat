@@ -34,7 +34,7 @@
 		{#if hold}
 			<!-- left-1/2 + translate(-50%) is symmetric centering, so RTL doesn't apply. -->
 			<div
-				class="lock-pill pointer-events-none absolute bottom-full left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
+				class="lock-pill pointer-events-none absolute bottom-[calc(100%+var(--composer-banner-height,0px))] left-1/2 mb-2 flex flex-col items-center gap-1.5 rounded-full bg-gray-100 px-1.5 py-2.5 dark:bg-gray-700"
 				style="transform: translate(-50%, {-8 * voice.drag.lockProgress}px)"
 			>
 				<wa-icon

@@ -60,7 +60,7 @@
 	data-testid="reply-quote"
 >
 	<QuoteFrame {mine}>
-		<span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-1.5">
+		<span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-2">
 			{#if reply.kind === 'content'}
 				{#if authorName}
 					<span class="reply-quote-author" data-testid="reply-quote-author"
