@@ -5,8 +5,8 @@
 		IOnlinePeersStore,
 		MailboxTrackerStore,
 	} from 'dash-chat-stores';
-	import { reactive } from 'signalium';
 	import { useReactivePromises } from '$lib/stores/use-signal';
+	import { reactive, relay } from 'signalium';
 	import { getContext, type Snippet } from 'svelte';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { connectionStatus, type ConnectionStatus } from './connection-status';
@@ -29,7 +29,13 @@
 	);
 	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
 
-	const noPeers = reactive(async (): Promise<AgentId[]> => []);
+	// A relay, because it answers on first read: an async reactive would paint
+	// the home chip as pending on every mount.
+	const noPeers = reactive(() =>
+		relay<AgentId[]>(state => {
+			state.value = [];
+		}),
+	);
 
 	const inputs = useReactivePromises(() => [
 		mailboxTrackerStore.connectionStatusForAllMailboxes(),
