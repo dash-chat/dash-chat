@@ -167,8 +167,11 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.homePage.ready();
 		await createGroup(sender, groupName, ['Rex']);
 		await sender.groupChatPage.composer.sendMessage(message);
-		// Long enough for the push to reach the extension and for it to finish.
-		await receiver.pause(20_000);
+		await expect(notifications).toHaveDelivered({
+			title: 'Zoe',
+			body: message,
+			conversation: groupName,
+		});
 
 		// Switching back, not tapping: on iOS the extension joined the group in
 		// the shared store, and the still-running app has to catch up on it.
@@ -296,7 +299,11 @@ describe('Push notifications (real device, end-to-end)', () => {
 
 		const message = `hi PUSH_GROUP_${Date.now()}`;
 		await sender.groupChatPage.composer.sendMessage(message);
-		await expect(notifications).toHaveDelivered({ body: message });
+		await expect(notifications).toHaveDelivered({
+			title: 'Ben',
+			body: message,
+			conversation: 'Group while killed',
+		});
 	});
 
 	it('announces nothing for a group a blocked contact adds the killed app to', async () => {

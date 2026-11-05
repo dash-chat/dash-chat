@@ -13,6 +13,9 @@ const SPRINGBOARD = 'com.apple.springboard';
  * the app name too, so matching on the name alone finds those as well. */
 const OUR_CELLS = 'name == "ListCell" AND label BEGINSWITH[c] "Dash Chat,"';
 
+/** The message of any notification showing: a cell's label runs a subtitle into it. */
+const PRIMARY_TEXT = 'name == "TextContent.Primary"';
+
 /** A collapsed stack of several of our notifications, which says so after the
  * app name and exposes only the newest. */
 const STACK = `${OUR_CELLS} AND label CONTAINS ", Grouped, "`;
@@ -35,15 +38,30 @@ const BANNER = 'name == "NotificationShortLookView"';
  * as long as it takes to arrive, and another can land just as one left. */
 const BANNERS_TIMEOUT = 5 * 60_000;
 
-/** Parse a cell's label. Only the first separators are structural: a body of
- * its own may contain commas, so it is whatever follows them. */
-function parseCell(label: string): DeliveredNotification | null {
+/** Parse a cell's label: "<title>, <subtitle>, <body>", where `primaryTexts`
+ * tell where the body starts, a body of its own possibly containing commas.
+ * Without one that fits there is no telling a subtitle from the body, so the
+ * conversation stays undefined rather than claiming there is none. */
+function parseCell(
+	label: string,
+	primaryTexts: string[],
+): DeliveredNotification | null {
 	const parts = label.split(', ');
 	if (parts[1] === 'Grouped') parts.splice(1, 1);
 	if (parts.length < 3) return null;
 	const title = parts[2];
-	const body = parts.slice(3).join(', ');
-	return { title, body, texts: body === '' ? [title] : [title, body] };
+	const rest = parts.slice(3).join(', ');
+	if (rest === '')
+		return { title, body: '', conversation: null, texts: [title] };
+	if (primaryTexts.includes(rest)) {
+		return { title, body: rest, conversation: null, texts: [title, rest] };
+	}
+	const body = primaryTexts
+		.filter(text => text !== '' && rest.endsWith(`, ${text}`))
+		.sort((a, b) => b.length - a.length)[0];
+	if (body === undefined) return { title, body: rest, texts: [title, rest] };
+	const conversation = rest.slice(0, -`, ${body}`.length);
+	return { title, body, conversation, texts: [title, conversation, body] };
 }
 
 /** Appium's app state for an app that owns the screen. */
@@ -161,17 +179,16 @@ export class IosNotifications extends AppiumNotificationHelper {
 	/** The cells Notification Center is showing. Expects it open and the
 	 * driver in the native context, which [`withNotificationUi`] arranges. */
 	private async readCells(): Promise<DeliveredNotification[]> {
-		const labels = await this.cellLabels();
-		return labels
-			.map(parseCell)
-			.filter((n): n is DeliveredNotification => n !== null);
-	}
-
-	private async cellLabels(): Promise<string[]> {
 		await this.expandStacks();
-		return this.agent
+		const primaryTexts = await this.agent
+			.$$(`-ios predicate string:${PRIMARY_TEXT}`)
+			.map(async text => (await text.getAttribute('value')) ?? '');
+		const labels = await this.agent
 			.$$(`-ios predicate string:${OUR_CELLS}`)
 			.map(async cell => (await cell.getAttribute('label')) ?? '');
+		return labels
+			.map(label => parseCell(label, primaryTexts))
+			.filter((n): n is DeliveredNotification => n !== null);
 	}
 
 	/** Wait for our cell containing `textIncludes`, expanding whatever stack it

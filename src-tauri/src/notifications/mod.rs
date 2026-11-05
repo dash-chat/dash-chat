@@ -300,6 +300,12 @@ async fn chat_message_notification(
         }
     };
 
+    // iOS would learn a sender with no name as a contact called "New message".
+    #[cfg(mobile)]
+    let sender_id = sender_agent_id
+        .filter(|_| sender_name.is_some() || cfg!(target_os = "android"))
+        .map(|agent_id| agent_id.to_hex());
+
     #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
     let mut data = NotificationData {
         id,
@@ -320,14 +326,20 @@ async fn chat_message_notification(
     // and iOS via `INSendMessageIntent.speakableGroupName`.
     #[cfg(mobile)]
     {
-        let conversation_title = if is_direct_chat {
-            None
+        let (conversation_title, recipient_count, conversation_icon_bytes) = if is_direct_chat {
+            (None, None, None)
         } else {
-            Some(group_title(node, topic).await)
+            (
+                Some(group_title(node, topic).await),
+                group_recipient_count(node, topic).await,
+                Some(group_avatar(node, topic).await),
+            )
         };
         data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
-            sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
+            sender_id,
             conversation_title,
+            recipient_count,
+            conversation_icon_bytes,
         });
     }
 
@@ -414,6 +426,35 @@ fn media_placeholder(media: &MediaBundle) -> String {
         0 => String::new(),
         1 => format!("📷 {}", sonix_i18n::t!("photo")),
         n => format!("📷 {}", sonix_i18n::t!("photosCount", { "count": n })),
+    }
+}
+
+/// The group's photo, or a generic group icon for a group without one.
+#[cfg(mobile)]
+async fn group_avatar(node: &Node, topic_id: TopicId) -> String {
+    const GENERIC_GROUP_AVATAR: &str = concat!(
+        "data:image/png;base64,",
+        include_str!("group-avatar.png.base64")
+    );
+    node.get_group_info(topic_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|info| info.image)
+        .filter(|image| image.starts_with("data:image/"))
+        .unwrap_or_else(|| GENERIC_GROUP_AVATAR.to_string())
+}
+
+/// How many people besides us are in the group, if that can be told.
+#[cfg(mobile)]
+async fn group_recipient_count(node: &Node, topic: TopicId) -> Option<u32> {
+    let chat_id = ChatId::from_topic_id(topic).ok()?;
+    match node.get_group_members(chat_id).await {
+        Ok(members) => Some(members.len().saturating_sub(1) as u32),
+        Err(err) => {
+            log::error!("Failed to load the members of {topic}: {err:?}");
+            None
+        }
     }
 }
 

@@ -115,6 +115,8 @@ class NotificationService: UNNotificationServiceExtension {
         let largeIconBytes = notification_large_icon_bytes(n).asString()
         let conversationSenderId = notification_conversation_sender_id(n).asString()
         let conversationTitle = notification_conversation_title(n).asString()
+        let recipientCount = Int(notification_conversation_recipient_count(n))
+        let conversationIconBytes = notification_conversation_icon_bytes(n).asString()
 
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
@@ -141,13 +143,13 @@ class NotificationService: UNNotificationServiceExtension {
         // Try the iOS 15+ Communication Notifications path: this re-renders the
         // notification with the sender's avatar prominently shown (the
         // "avatar replaces app icon" Signal/iMessage look). Requires title +
-        // body + route + avatar bytes; falls through to the legacy attachment
-        // path if any is missing or the system rejects the intent.
+        // body + route, on a chat message; anything else takes the legacy
+        // attachment path, as does an intent the system rejects.
         if #available(iOS 15.0, *),
+           conversationSenderId?.isEmpty == false || conversationTitle?.isEmpty == false,
            let title, !title.isEmpty,
            let body, !body.isEmpty,
-           let route, !route.isEmpty,
-           let avatarData {
+           let route, !route.isEmpty {
             // Prefer the explicit sender id (so group senders don't collapse
             // into one INPerson); fall back to route for direct chats.
             let personHandle: String = (conversationSenderId?.isEmpty == false) ? conversationSenderId! : route
@@ -159,7 +161,12 @@ class NotificationService: UNNotificationServiceExtension {
                 displayName: title,
                 body: body,
                 avatarData: avatarData,
-                conversationTitle: groupName
+                conversationTitle: groupName,
+                recipientCount: recipientCount,
+                conversationIconData: (conversationIconBytes?.isEmpty == false)
+                    ? decodeBase64DataURL(conversationIconBytes!)
+                    : nil,
+                donate: conversationSenderId?.isEmpty == false
             ) {
                 log.info("delivering Communication Notification")
                 self.deliver(communicationContent)
@@ -189,10 +196,13 @@ class NotificationService: UNNotificationServiceExtension {
         conversationId: String,
         displayName: String,
         body: String,
-        avatarData: Data,
-        conversationTitle: String?
+        avatarData: Data?,
+        conversationTitle: String?,
+        recipientCount: Int,
+        conversationIconData: Data?,
+        donate: Bool
     ) -> UNNotificationContent? {
-        let avatar = INImage(imageData: avatarData)
+        let avatar = avatarData.map { INImage(imageData: $0) }
         let handle = INPersonHandle(value: senderHandle, type: .unknown)
         let sender = INPerson(
             personHandle: handle,
@@ -216,12 +226,21 @@ class NotificationService: UNNotificationServiceExtension {
             sender: sender,
             attachments: nil
         )
+        // iOS ignores `speakableGroupName` unless told there are recipients.
+        if speakableGroupName != nil {
+            let metadata = INSendMessageIntentDonationMetadata()
+            metadata.recipientCount = max(recipientCount, 1)
+            intent.donationMetadata = metadata
+            if let conversationIconData {
+                intent.setImage(INImage(imageData: conversationIconData), forParameterNamed: \.speakableGroupName)
+            }
+        }
 
         // Donate so the system learns the contact over time — boosts breakthrough
         // behavior in Focus and Communication Limits. Fire-and-forget.
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming
-        interaction.donate(completion: nil)
+        if donate { interaction.donate(completion: nil) }
 
         // Pin sound on the base before `updating(from:)` is called — that API
         // returns a fresh content derived from the intent and doesn't always
