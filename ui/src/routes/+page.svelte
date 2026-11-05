@@ -70,9 +70,9 @@
 			glass capsule on iOS: the status gets its own bubble before the capsule
 			(rightClass orders the slot last). -->
 		<div
-			class="ms-auto me-2 grid size-11 place-items-center {theme === 'ios'
+			class="ms-auto grid size-11 place-items-center {theme === 'ios'
 				? 'rounded-full bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-				: ''}"
+				: 'me-2'}"
 		>
 			<ConnectionStatusIndicator />
 		</div>
