@@ -36,7 +36,7 @@
 	{#await $inputs then [mailboxes, onlinePeers]}
 		{#if connectionStatus(mailboxes, onlinePeers.length > 0, renderingResumedAt.value).status === 'p2p'}
 			<span
-				class="badge absolute end-0 -bottom-[4.5px] grid size-[18px] place-items-center rounded-full bg-white text-[#525252] *:size-[11.25px] dark:bg-[#2a2a2a] dark:text-white"
+				class="badge absolute end-0 -bottom-[4.5px] grid size-[18px] place-items-center text-[#525252] *:size-[13.5px] dark:text-white"
 				role="img"
 				aria-label={m.chatRowP2pBadgeLabel()}
 				data-testid="chat-row-p2p-badge"
