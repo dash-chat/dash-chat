@@ -59,9 +59,14 @@
 		background-color: rgba(255, 255, 255, 0.16);
 	}
 
+	.quote-frame-composer {
+		border-radius: 18px 18px 4px 4px;
+	}
+
 	/* The iOS theme copies Signal's composer reply-banner greys. */
 	:global(.k-ios) .quote-frame-composer {
 		background-color: #dfdfe1;
+		border-radius: 16px;
 	}
 	:global(.k-ios) .quote-frame-composer .quote-frame-bar {
 		background-color: #c1c1c3;

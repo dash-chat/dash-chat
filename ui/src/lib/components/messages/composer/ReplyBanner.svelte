@@ -38,15 +38,15 @@
 </script>
 
 <div
-	class="row items-center px-2 pt-1.5 text-sm"
+	class="row items-center px-1.5 pt-1.5 text-sm"
 	data-testid="composer-reply-banner"
 	transition:slide={{ duration: 200 }}
 >
 	<QuoteFrame composer>
-		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-1">
+		<span class="row min-w-0 flex-1 items-center gap-2 ps-2 py-2">
 			<span class="column min-w-0 flex-1 leading-tight">
 				<span class="truncate font-semibold">
-					{m.replyingTo({ name: authorName })}
+					{authorName}
 				</span>
 				<span class="quiet truncate" data-testid="composer-reply-preview">
 					{preview}
@@ -57,7 +57,7 @@
 			label={m.cancel()}
 			testid="composer-cancel-reply"
 			onClick={onCancel}
-			class="!h-7 !w-7 shrink-0 self-start"
+			class="!h-8 !w-8 shrink-0 self-start"
 		>
 			<wa-icon class="text-xl" src={wrapPathInSvg(mdiClose)}></wa-icon>
 		</IconButton>

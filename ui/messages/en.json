@@ -37,7 +37,6 @@
 	"youDeletedThisMessage": "You deleted this message.",
 	"someoneDeletedThisMessage": "{{name}} deleted this message.",
 	"reply": "Reply",
-	"replyingTo": "Replying to {{name}}",
 	"voiceMessage": "Voice message",
 	"messageDeleted": "Message deleted",
 	"messageStatusUnsent": "Sending",
