@@ -67,9 +67,13 @@
 		{/snippet}
 
 		<!-- A navbar child, not part of the right slot that Konsta wraps in one
-			glass capsule on iOS: the status stands before the capsule (rightClass
-			orders the slot last), in a 44px cell like the compose button. -->
-		<div class="ms-auto me-2 grid size-11 place-items-center">
+			glass capsule on iOS: the status gets its own bubble before the capsule
+			(rightClass orders the slot last). -->
+		<div
+			class="ms-auto me-2 grid size-11 place-items-center {theme === 'ios'
+				? 'rounded-full bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
+				: ''}"
+		>
 			<ConnectionStatusIndicator />
 		</div>
 	</Navbar>

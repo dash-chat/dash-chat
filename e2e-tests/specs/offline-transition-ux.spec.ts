@@ -7,10 +7,11 @@
  *
  * Visible states under test:
  *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
- *   - Navbar chip:    cloud → disconnected → local → cloud
+ *   - Navbar chip:    cloud → pending → disconnected → local → cloud
  */
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { MAILBOX_HUNG_MS } from '../helpers/timeouts';
 import {
 	isRemoteMailbox,
 	killMailbox,
@@ -99,6 +100,20 @@ describe('Offline UX', () => {
 			}
 			await agent2.startApp();
 			await returnToChat(agent2, 'Alice');
+		});
+
+		it('navbar chip reads pending after the first failed poll, and clicking it explains the state', async () => {
+			const indicator = agent1.directChatPage.connectionStatusIndicator;
+			await indicator.waitForStatus(
+				'pending',
+				MAILBOX_HUNG_MS,
+				'the chip did not read pending after the first failed poll',
+			);
+
+			await indicator.expectDialog(
+				await agent1.tr('connectionStatusPendingTitle'),
+				await agent1.tr('connectionStatusPendingDescription'),
+			);
 		});
 
 		it('new messages start as unsent, then downgrade to sending', async () => {

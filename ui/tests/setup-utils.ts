@@ -63,7 +63,7 @@ function hasText(selector: string, text: string): boolean {
 }
 
 export interface ConnectionStatusSample {
-	/** Null while the chip is not mounted, which is how pending renders. */
+	/** Null while the chip is not mounted. */
 	status: ConnectionStatusTag | null;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
