@@ -244,6 +244,47 @@ function recordMediaDownloads() {
 		}
 	});
 	mediaObserver.observe({ type: 'resource', buffered: true });
+	recordBlobImageLoads();
+}
+
+/** WebKit keeps no resource timing for a custom scheme, so where blobs are served
+ * from `irohblob://` a photo's download is timed from its `<img>` appearing to its
+ * `load` event. */
+function recordBlobImageLoads() {
+	const appearedAt = new Map<string, number>();
+	const noteAppeared = (img: HTMLImageElement) => {
+		if (img.src.startsWith('irohblob:') && !appearedAt.has(img.src)) {
+			appearedAt.set(img.src, performance.now());
+		}
+	};
+	new MutationObserver(records => {
+		for (const record of records) {
+			if (record.target instanceof HTMLImageElement) {
+				noteAppeared(record.target);
+			}
+			for (const node of record.addedNodes) {
+				if (!(node instanceof Element)) continue;
+				if (node instanceof HTMLImageElement) noteAppeared(node);
+				node.querySelectorAll('img').forEach(noteAppeared);
+			}
+		}
+	}).observe(document.documentElement, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeFilter: ['src'],
+	});
+	document.addEventListener(
+		'load',
+		e => {
+			if (!(e.target instanceof HTMLImageElement)) return;
+			const appeared = appearedAt.get(e.target.src);
+			if (appeared !== undefined && !mediaDownloads.has(e.target.src)) {
+				mediaDownloads.set(e.target.src, performance.now() - appeared);
+			}
+		},
+		true,
+	);
 }
 
 /** Milliseconds the photo whose alt contains `label` spent downloading — the

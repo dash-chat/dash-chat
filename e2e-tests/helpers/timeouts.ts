@@ -33,8 +33,14 @@ export const MAILBOX_UNANSWERED_MS =
  *  failure, and a poll interval, 2.5 s, precedes each of the two. */
 export const MAILBOX_HUNG_MS = 50_000;
 
-/** What the app gets to tell the user the mailbox answers again. */
+/** What the app gets to tell the user the mailbox answers again, after an
+ *  outage short enough that it still polls at the unbacked-off interval. */
 export const MAILBOX_HEALED_MS = 4_000;
+
+/** The same after an outage of any length: ten failures in a row back polling
+ *  off to every 10 s (`MailboxesConfig::stopped_interval`), and the poll that
+ *  notices the healed link can be a whole interval away. */
+export const MAILBOX_HEALED_AFTER_BACKOFF_MS = 12_000;
 
 /** The longest an app whose cold start could not reach the cloud waits before
  *  trying to register it again: its retry backs off to 10 s. */

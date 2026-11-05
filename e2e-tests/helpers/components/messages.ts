@@ -1078,7 +1078,9 @@ export class Message extends TestHelper {
 			.action('pointer', { parameters: { pointerType: 'touch' } })
 			.move({ x: x - 75, y })
 			.down()
-			.pause(800)
+			// A move in place, not a pause: XCUITest interpolates a move from the
+			// press, so a pause before it turns the hold into one slow drag.
+			.move({ x: x - 75, y, duration: 800 })
 			.move({ x: x + 75, y, duration: 200 })
 			.up()
 			.perform();

@@ -215,8 +215,13 @@ export class IosNotifications extends AppiumNotificationHelper {
 			await this.switchToNative();
 			await this.openNotificationCenter();
 			const result = await fn(() => this.readCells());
-			if (frontmost) await this.restoreWebview();
-			else await this.dismissNotificationUi();
+			if (frontmost) {
+				await this.restoreWebview();
+			} else {
+				await this.dismissNotificationUi();
+				// Left on SpringBoard, WDA finds nothing in whichever app comes next.
+				await this.agent.updateSettings({ defaultActiveApplication: 'auto' });
+			}
 			return result;
 		});
 	}
