@@ -13,7 +13,7 @@ const TRACING_FILTER: [&str; 4] = [
 async fn device_group_is_a_space() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice").await;
 
     let members = alice
         .space_members(alice.device_group_topic().into())
@@ -37,11 +37,12 @@ async fn device_group_is_a_space() {
 async fn device_group_space_survives_restart() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice").await;
     let device_id = alice.device_id();
     let dir = alice.shutdown().await;
 
-    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", dir).await;
+    let alice =
+        TestNode::new_at_path(NodeConfig::testing().no_p2p().no_blob_sync(), "alice", dir).await;
     let members = alice
         .space_members(alice.device_group_topic().into())
         .await
