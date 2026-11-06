@@ -838,9 +838,12 @@ impl Node {
     }
 
     /// Tell the frontend a group chat's membership changed. Membership changes
-    /// of other spaces (direct chats) are of no interest to it.
+    /// of other spaces (direct chats, the device group — whose topic need not
+    /// even parse as a chat id) are of no interest to it.
     async fn notify_group_members_changed(&self, topic: TopicId) -> anyhow::Result<()> {
-        let chat_id = ChatId::from_topic_id(topic)?;
+        let Ok(chat_id) = ChatId::from_topic_id(topic) else {
+            return Ok(());
+        };
         if self.projection.is_group_chat(chat_id).await? {
             self.notify_system_event(SystemNotification::GroupMembersChanged { chat_id })
                 .await?;

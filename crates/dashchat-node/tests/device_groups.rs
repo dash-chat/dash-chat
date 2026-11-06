@@ -7,6 +7,62 @@ const TRACING_FILTER: [&str; 4] = [
     "p2panda_spaces=info",
 ];
 
+/// The device group is backed by a Space: created at first startup with this
+/// device as its only member, writable without any further setup.
+#[tokio::test(flavor = "multi_thread")]
+async fn device_group_is_a_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+
+    let members = alice
+        .space_members(alice.device_group_topic().into())
+        .await
+        .unwrap();
+    assert_eq!(
+        members
+            .iter()
+            .map(|(device_id, _)| *device_id)
+            .collect::<Vec<_>>(),
+        vec![alice.device_id()]
+    );
+
+    let (_, access) = members.first().unwrap();
+    assert_eq!(*access, p2panda_auth::Access::manage());
+}
+
+/// The device group space is rejoined on restart, so publishes into it keep
+/// working and its log keeps accumulating across node lifetimes.
+#[tokio::test(flavor = "multi_thread")]
+async fn device_group_space_survives_restart() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let device_id = alice.device_id();
+    let dir = alice.shutdown().await;
+
+    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", dir).await;
+    let members = alice
+        .space_members(alice.device_group_topic().into())
+        .await
+        .unwrap();
+    assert!(members.iter().any(|(member, _)| *member == device_id));
+
+    alice
+        .set_profile(Profile {
+            name: "Alice After Restart".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        alice.my_profile().await.unwrap().unwrap().name,
+        "Alice After Restart"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "device groups are not supported yet"]
 async fn device_group_solo() {
