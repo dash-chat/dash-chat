@@ -2463,13 +2463,14 @@ impl Node {
             }
         }
 
-        // @TODO: I had to add this so that the device group topic is subscribed to when we later
-        // attempt to publish operations to it.
+        // The device group is a space we own: created on this node's first
+        // startup (with this device as its only member, for now) and rejoined
+        // on every later one, so publishes into it always find it subscribed.
         if let Err(err) = self
-            .initialize_stream(self.device_group_topic().into())
+            .register_and_create_space(self.device_group_topic())
             .await
         {
-            error!(?err, "failed to initialize device group topic");
+            error!(?err, "failed to initialize the device group space");
             failures += 1;
         }
 
