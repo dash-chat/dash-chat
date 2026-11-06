@@ -67,12 +67,14 @@ requirement that, once operations are encrypted too, blob and operation must
 use the same secret atomically.
 
 **Domain separation (decided):** blobs are encrypted with an HKDF subkey of
-the group secret (fixed info label, e.g. `"blob/v1"`), not with the group
-secret directly. AEAD with random nonces would make direct use safe, but the
-subkey separates blob ciphertexts from (future) operation ciphertexts and
-would later allow handing out a blob key without exposing the operation key
-(e.g. forwarding, out-of-band attachment serving). The derivation lives in
-p2panda-encryption so `GroupSecret::as_bytes()` stays crate-private.
+the group secret, not with the group secret directly. AEAD with random nonces
+would make direct use safe, but the subkey separates blob ciphertexts from
+(future) operation ciphertexts and would later allow handing out a blob key
+without exposing the operation key (e.g. forwarding, out-of-band attachment
+serving). The derivation mechanism lives in p2panda-encryption (so
+`GroupSecret::as_bytes()` stays crate-private), but the info label is
+application-supplied — dash-chat passes something like `"dashchat/blob/v1"`;
+p2panda never knows what a blob is.
 
 ### Pin the secret, don't assume "latest"
 
@@ -132,98 +134,111 @@ transaction as the forged operation, is structurally guaranteed to use the
 operation's secret. No new locking is needed — the API just has to put blob
 encryption inside that existing boundary.
 
+### Design principle: p2panda stays blob-agnostic
+
+p2panda never learns what a blob is — no `EncryptedBlob` type, no attachment
+parameters on publish. What the fork exposes is purely *"auxiliary data
+encrypted under the same secret context as a publish"*: a closure that runs
+within the publish transaction and is handed the encryption capability. What
+dash-chat does with that capability (encrypt media, build `MediaMetadata`,
+compute iroh hashes) is entirely dash-chat's business.
+
 ### Layered proposal
 
 **p2panda-encryption** (`data_scheme`), alongside `encrypt_data` /
-`decrypt_data`:
+`decrypt_data` — generic subkeyed AEAD, caller-supplied domain label:
 
 ```rust
-pub fn encrypt_blob(plaintext: &[u8], group_secret: &GroupSecret, nonce: XAeadNonce) -> Result<Vec<u8>, _>;
-pub fn decrypt_blob(ciphertext: &[u8], group_secret: &GroupSecret, nonce: XAeadNonce) -> Result<Vec<u8>, _>;
+pub fn encrypt_aux(plaintext: &[u8], group_secret: &GroupSecret, info: &[u8], nonce: XAeadNonce) -> Result<Vec<u8>, _>;
+pub fn decrypt_aux(ciphertext: &[u8], group_secret: &GroupSecret, info: &[u8], nonce: XAeadNonce) -> Result<Vec<u8>, _>;
 ```
 
-Identical to `encrypt_data` except the AEAD key is the HKDF blob subkey of
-the group secret. `GroupSecret::as_bytes()` stays `pub(crate)`.
+Identical to `encrypt_data` except the AEAD key is `HKDF(group_secret, info)`.
+`GroupSecret::as_bytes()` stays `pub(crate)`; no blob concepts.
 
-**p2panda-spaces** — the end state, with operations encrypted:
+**p2panda-spaces** — one handle type surfacing the secrets without exposing
+them, borrowed by closures so it cannot escape the transaction scope:
 
 ```rust
-pub struct EncryptedBlob {
-    pub group_secret_id: GroupSecretId,
-    pub nonce: XAeadNonce,
-    pub ciphertext: Vec<u8>,
+pub struct SpaceSecrets<'a> { /* &SecretBundleState + &Rng */ }
+
+impl SpaceSecrets<'_> {
+    pub fn latest_secret_id(&self) -> Option<GroupSecretId>;
+    /// Encrypt under the *latest* secret with a derived subkey and fresh
+    /// random nonce. Returns which secret was used.
+    pub fn encrypt_aux(&self, info: &[u8], plaintext: &[u8]) -> Result<(GroupSecretId, XAeadNonce, Vec<u8>), _>;
+    /// Decrypt by pinned secret id; `UnknownSecret` (not yet synced,
+    /// retriable) is distinct from AEAD failure (permanent).
+    pub fn decrypt_aux(&self, id: GroupSecretId, info: &[u8], nonce: XAeadNonce, ciphertext: &[u8]) -> Result<Vec<u8>, _>;
 }
 
 impl Space {
-    pub async fn publish_with_blobs(
+    /// Run `f` with access to this space's current encryption secrets.
+    pub async fn with_secrets<R>(&self, f: impl FnOnce(&SpaceSecrets<'_>) -> R) -> Result<R, _>;
+
+    /// (Later, when ops are encrypted.) Like `publish`, but the payload is
+    /// built inside the publish transaction with access to the same secret
+    /// context the payload will be encrypted with.
+    pub async fn publish_with<E>(
         &self,
-        blobs: Vec<Vec<u8>>,
-        payload: impl FnOnce(&[EncryptedBlob]) -> Result<Vec<u8>, _>,
-    ) -> Result<(F::Message, Event<C>, Vec<EncryptedBlob>), SpaceError<F, C>>;
+        payload: impl FnOnce(&SpaceSecrets<'_>) -> Result<Vec<u8>, E>,
+    ) -> Result<(F::Message, Event<C>), _>;
 }
 ```
 
-Flow, inside one `begin_write` (an extended `apply_publish`):
-
-1. Read `space_y`; take `secrets.latest()`.
-2. Encrypt each blob with the subkey and a fresh random nonce.
-3. Hand the `EncryptedBlob`s to the `payload` closure. The caller computes
-   each iroh hash right there — `iroh_blobs::Hash::new(&ciphertext)` is pure
-   BLAKE3, no store round-trip — builds `MediaMetadata`, and serializes the
-   op payload referencing them.
-4. `EncryptionGroup::send` on those payload bytes. Same `space_y` value, so
-   the same secret as step 2 by construction.
-5. Forge `SpacesArgs::Application`, commit, return the message plus the
-   `EncryptedBlob`s for the caller to write into the blob store and announce.
+`publish_with` is an extended `apply_publish`, inside one `begin_write`: read
+`space_y` → run the closure against its `secrets` → `EncryptionGroup::send`
+on the returned payload bytes. The closure and `send` read from the same
+`space_y` value, so "aux data encrypted in the closure uses the op's secret"
+holds by construction. `publish` stays as `publish_with(|_| Ok(payload))` in
+spirit. The handle guarantees `encrypt_aux` uses `latest()` — the same choice
+`send` makes — so the symmetry is structural, not a caller discipline.
 
 The closure shape (rather than a two-phase `begin_publish()` guard object) is
 deliberate: a guard would hold the store's write permit across arbitrary
 caller code and awaits, which invites deadlocks against the node's own
-processing loop; the closure keeps the transaction scope inside the library
-and makes the "same secret" property impossible to break from outside. The
-closure is synchronous and CPU-only, and XChaCha20 at 16 MiB is tens of
-milliseconds, so holding the write transaction across it is acceptable
-(membership changes are rare).
+processing loop; the borrowed-handle closure keeps the transaction scope
+inside the library and the secrets inside the handle. The closure is
+synchronous and CPU-only, and XChaCha20 at 16 MiB is tens of milliseconds, so
+holding the write transaction across it is acceptable (membership changes are
+rare).
 
-**Interim version (this step, operations still plaintext):**
+**What dash-chat builds on top** (all blob knowledge lives here):
 
-```rust
-impl Space {
-    pub async fn encrypt_blobs(&self, blobs: Vec<Vec<u8>>) -> Result<Vec<EncryptedBlob>, _>;
-    pub async fn decrypt_blob(&self, group_secret_id: GroupSecretId, nonce: XAeadNonce, ciphertext: &[u8]) -> Result<Vec<u8>, _>;
-}
-```
-
-- `encrypt_blobs` takes the latest secret and encrypts all of a message's
-  attachments under it (one secret, per-blob nonces). Dash-chat then builds
-  the plaintext op and publishes via the stream publisher as today. Because
-  the op is plaintext, there is no op key to be atomic *with* yet; the
-  metadata pins `group_secret_id`, so decryption is correct across any
-  rotation race. The residual (temporary) gap: a removal processed between
-  `encrypt_blobs` and the publish means a blob a removed member could
-  decrypt — a milliseconds-wide window that `publish_with_blobs` closes for
-  good. For that reason `encrypt_blobs` can read committed state
-  (`manager.read()`) instead of holding a write transaction; the stronger
-  guarantee only exists in the combined call anyway.
-- `decrypt_blob` resolves the secret **by id** via `SecretBundle::get` (never
-  `latest()`), derives the subkey, decrypts. Its error type must distinguish
-  "unknown secret id" (welcome/rotation not synced yet → retriable, feeds the
-  wait-for-secrets behaviour) from AEAD failure (corrupt or hostile blob →
-  permanent).
-- Both are exposed on the high-level `p2panda::spaces::Space<M>` handle (and
-  usable on dash-chat's joined `Space` wrapper via `Space::run`), which also
-  retires dash-chat's production dependency on the test-gated
+- Send (this step, ops still plaintext): `space.with_secrets(|s| ...)`
+  encrypts each attachment via `s.encrypt_aux(b"dashchat/blob/v1", bytes)`
+  (one call per blob; all return the same latest `GroupSecretId`, each with
+  its own nonce), computes each iroh hash in place —
+  `iroh_blobs::Hash::new(&ciphertext)` is pure BLAKE3, no store round-trip —
+  and builds `MediaMetadata`. Then dash-chat stores the ciphertexts and
+  publishes the plaintext op via the stream publisher as today.
+- Send (later, ops encrypted): the same code moves inside
+  `space.publish_with(|s| ...)`, which also serializes the op payload and
+  returns it. Nothing about the blob handling changes; atomicity with the op
+  secret is gained for free.
+- Receive: `space.with_secrets(|s| s.decrypt_aux(id, info, nonce, &ct))` in
+  `load_blob`.
+- Because the op is plaintext in the interim, there is no op key to be atomic
+  *with* yet; the metadata pins `group_secret_id`, so decryption is correct
+  across any rotation race. The residual (temporary) gap: a removal processed
+  between `with_secrets` and the publish means one blob a removed member
+  could decrypt — a milliseconds-wide window that `publish_with` closes for
+  good. `with_secrets` can therefore read committed state (`manager.read()`)
+  rather than hold a write transaction.
+- `with_secrets`/`publish_with` are exposed on the high-level
+  `p2panda::spaces::Space<M>` handle (usable via dash-chat's `Space::run`),
+  which also retires dash-chat's production dependency on the test-gated
   `Node::spaces_manager()` / deprecated `TopicStreams::with_node` path.
 
-Note that even `publish_with_blobs` cannot defend against a removal that
-other members process concurrently (our publish and their removal race in the
+Note that even `publish_with` cannot defend against a removal that other
+members process concurrently (our publish and their removal race in the
 distributed sense) — the guarantee is the local one: once *this* node has
 processed a removal, nothing new is encrypted to the old secret. That is the
 same semantic Signal/MLS-style systems provide.
 
 One ordering wrinkle: `p2panda::spaces::Space::publish` currently dispatches
 the forged message to the egress pipeline before returning, so with
-`publish_with_blobs` the op can hit the network milliseconds before the
+`publish_with` the op can hit the network milliseconds before the
 ciphertexts are in the local iroh store. Remote fetch retries make this
 harmless, but if we want strict "blobs stored before op visible", the
 high-level wrapper needs a hook between forge/commit and dispatch (or it
@@ -430,17 +445,17 @@ material. Never log plaintext blob bytes (already the rule).
 3. **Wire format:** hard break, no capability negotiation.
 4. **Pending spaces:** wait for established encryption state, fail the send
    on timeout.
-5. **Fork API:** layered as in "Fork API" above — `encrypt_blob`/
-   `decrypt_blob` primitives in p2panda-encryption; `EncryptedBlob`,
-   `Space::encrypt_blobs`/`decrypt_blob` now and `Space::publish_with_blobs`
-   when ops get encrypted, with the payload-builder closure running inside
-   the publish write transaction so blob and op share one secret atomically.
+5. **Fork API:** p2panda stays blob-agnostic. Generic `encrypt_aux`/
+   `decrypt_aux` (HKDF subkey, caller-supplied info label) in
+   p2panda-encryption; a borrowed `SpaceSecrets` handle exposed through
+   `Space::with_secrets(closure)` now and `Space::publish_with(closure)` when
+   ops get encrypted, the latter running the payload-builder closure inside
+   the publish write transaction so aux data and op share one secret
+   atomically. All blob concepts (`MediaMetadata`, iroh hashing, the
+   `"dashchat/blob/v1"` label) live in dash-chat.
 
 Still open:
 
-- Whether the high-level `Space::publish` wrapper should store blobs before
-  dispatching the op (see the ordering wrinkle in "Fork API").
-- Exact HKDF info label and where `EncryptedBlob` lives (p2panda-spaces vs
-  p2panda-encryption).
-- Whether the interim `encrypt_blobs` should bother taking a write
-  transaction (stronger interim guarantee) or read committed state.
+- Whether the high-level `Space::publish` wrapper should let the caller store
+  blobs before the op is dispatched (see the ordering wrinkle in "Fork API").
+- Exact HKDF construction/label conventions for `encrypt_aux`.
