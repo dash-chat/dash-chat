@@ -392,13 +392,14 @@ impl OpProjection {
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
         node: BadUseOfNode,
-    ) -> Result<Option<SystemNotification>, ProjectionError> {
+    ) -> Result<Vec<SystemNotification>, ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
 
         self.enforce_blocklist(operation).await?;
 
+        let mut events = Vec::new();
         let event = match &payload {
             Payload::Chat(ChatPayload::MessageAck { acks }) => {
                 let mut delivered = BTreeMap::new();
@@ -424,8 +425,10 @@ impl OpProjection {
             // Only group chat creation publishes this (`Node::create_chat_group`),
             // so it is what defines a topic as a group chat in the projection.
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
-                    .await?;
+                let chat_id = ChatId::from_topic_id(topic)?;
+                if self.mark_group_as_group_chat(chat_id).await? {
+                    events.push(SystemNotification::GroupChatAdded { chat_id });
+                }
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
@@ -536,7 +539,8 @@ impl OpProjection {
             }
         }
 
-        Ok(event)
+        events.extend(event);
+        Ok(events)
     }
 
     // === helpers === //
@@ -686,14 +690,23 @@ impl OpProjection {
         Ok(())
     }
 
-    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
+    /// Returns whether the chat was not a group chat before.
+    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<bool> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
+        let result = sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
             .bind(chat_id.to_vec())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn is_group_chat(&self, chat_id: ChatId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM group_chats WHERE chat_id = ?")
+            .bind(chat_id.to_vec())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
     }
 
     /// Tombstone `root` and its entire current edit chain in `chat_id` with
