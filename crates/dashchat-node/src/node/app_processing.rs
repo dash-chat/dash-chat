@@ -541,7 +541,9 @@ impl Node {
                 }
                 match invitation {
                     InboxPayload::ContactRequest {
-                        agent_id, profile, ..
+                        agent_id,
+                        keybundle,
+                        ..
                     } => {
                         // A request arrived on our advertised inbox. Perform no
                         // network side-effects (bootstrap registration) and
@@ -575,11 +577,13 @@ impl Node {
                                 });
                             }
 
-                            self.save_keybundle(profile.keybundle.clone()).await?;
+                            self.save_keybundle(keybundle.clone()).await?;
                         }
                     }
                     InboxPayload::ContactRequestAccept {
-                        agent_id, profile, ..
+                        agent_id,
+                        keybundle,
+                        ..
                     } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
@@ -602,7 +606,7 @@ impl Node {
                                 return Ok(());
                             }
 
-                            self.save_keybundle(profile.keybundle.clone()).await?;
+                            self.save_keybundle(keybundle.clone()).await?;
                             self.establish_contact(author, *agent_id).await?;
 
                             let node = self.clone();

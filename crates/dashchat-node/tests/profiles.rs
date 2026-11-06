@@ -32,7 +32,6 @@ async fn test_set_profile_and_my_profile() {
         surname: Some("Alice Surname".to_string()),
         avatar: Some("alice_avatar.png".to_string()),
         about: None,
-        keybundle: alice.keybundle().await.unwrap(),
     };
     let _header = alice.set_profile(profile.clone()).await.unwrap();
 
@@ -52,7 +51,6 @@ async fn test_set_profile_overwrites_previous_profile() {
         surname: Some("Alice Updated Surname".to_string()),
         avatar: Some("new_avatar.png".to_string()),
         about: None,
-        keybundle: alice.keybundle().await.unwrap(),
     };
     let _header = alice.set_profile(updated_profile.clone()).await.unwrap();
 
@@ -86,7 +84,6 @@ async fn test_profiles_sync_between_contacts() {
         surname: Some("Alice Surname".to_string()),
         avatar: Some("this is a picture of alice".to_string()),
         about: None,
-        keybundle: alice.keybundle().await.unwrap(),
     };
     alice.set_profile(profile.clone()).await.unwrap();
     bobbi
@@ -95,7 +92,6 @@ async fn test_profiles_sync_between_contacts() {
             surname: Some("Bobbi Surname".to_string()),
             avatar: None,
             about: None,
-            keybundle: bobbi.keybundle().await.unwrap(),
         })
         .await
         .unwrap();
@@ -188,7 +184,6 @@ async fn contacts_read_my_announcements_space() {
         surname: Some("Alice Surname".to_string()),
         avatar: None,
         about: None,
-        keybundle: alice.keybundle().await.unwrap(),
     };
     alice.set_profile(profile.clone()).await.unwrap();
     poll.wait_for(|| async {
@@ -301,7 +296,6 @@ async fn group_members_read_my_announcements_space() {
         surname: None,
         avatar: None,
         about: None,
-        keybundle: alice.keybundle().await.unwrap(),
     };
     alice.set_profile(profile.clone()).await.unwrap();
     poll.wait_for(|| async {
