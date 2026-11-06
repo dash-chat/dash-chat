@@ -2900,6 +2900,95 @@ mod forged_contact_request_tests {
     }
 }
 
+#[cfg(test)]
+mod device_group_member_tests {
+    use crate::testing::*;
+    use crate::*;
+    use p2panda::operation::LogId;
+
+    fn forged_profile() -> Profile {
+        Profile {
+            name: "Forged".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        }
+    }
+
+    /// Mallory derives Alice's device-group topic, subscribes to it as a plain
+    /// stream, and publishes a forged profile into it. The op syncs to Alice,
+    /// but its author is not a member of her device-group space, so it must
+    /// not touch her state — neither her profile nor the device→agent mapping.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn device_group_ops_from_non_members_are_ignored() {
+        let config = NodeConfig::testing().no_p2p().no_blob_sync();
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(config.clone(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let mallory = TestNode::new(config, "mallory")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let mallory_device = mallory.device_id();
+
+        let topic: TopicId = alice.device_group_topic().into();
+        mallory.initialize_stream(topic).await.unwrap();
+        mallory
+            .publish(
+                Topic::<topic::kind::Untyped>::from(topic),
+                Payload::DeviceGroup(DeviceGroupPayload::SetProfile(forged_profile())),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Wait until Alice has processed (acked) Mallory's op.
+        let log_id = LogId::from_topic(topic);
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice
+                    .op_store
+                    .acked_log_height(&topic, &mallory_device, &log_id)
+                    .await
+                    .unwrap()
+                {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't processed mallory's forged op yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(alice.my_profile().await.unwrap().unwrap().name, "alice");
+        assert_eq!(alice.lookup_contact(mallory_device).await.unwrap(), None);
+    }
+
+    /// A device-group payload published into a chat space (whose members are
+    /// not my devices) must not touch my state, even when its author is a
+    /// member of that chat.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn device_group_ops_on_other_topics_are_ignored() {
+        let alice = TestNode::new(NodeConfig::testing().no_p2p().no_blob_sync(), "alice").await;
+        let chat_id = alice
+            .create_chat_group(std::collections::BTreeMap::new())
+            .await
+            .unwrap();
+
+        alice
+            .publish(
+                chat_id,
+                Payload::DeviceGroup(DeviceGroupPayload::SetProfile(forged_profile())),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(alice.my_profile().await.unwrap().unwrap().name, "alice");
+    }
+}
+
 fn space_group_id(topic: TopicId) -> p2panda::spaces::GroupId {
     p2panda::spaces::space_group_id(p2panda::spaces::SpaceId::from(*topic.as_bytes()))
 }
