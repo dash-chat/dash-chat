@@ -94,7 +94,8 @@ describe('Cloud mailbox on a spotty link', function () {
 		await expectDisconnected('the link was cut', MAILBOX_UNANSWERED_MS);
 		await sendHeldBack('while you were refusing');
 		await healMailboxLink();
-		await expectConnected('the link healed', MAILBOX_HEALED_MS);
+		// Failing fast, the polls of the outage back the mailbox off to degraded.
+		await expectConnected('the link healed', MAILBOX_HEALED_AFTER_BACKOFF_MS);
 		await messages().waitForMessageStatus('while you were refusing', [
 			'mailbox',
 		]);
@@ -105,17 +106,17 @@ describe('Cloud mailbox on a spotty link', function () {
 		// not carry, and a desktop cannot leave its network.
 		if (agent.platform !== 'ios') this.skip();
 		await agent.disableWifi();
-		const offAt = Date.now();
 		try {
+			await expectDisconnected('Wi-Fi went off', MAILBOX_UNANSWERED_MS);
+		} catch (err) {
+			// Checked only on failure: the probes take seconds the chip is
+			// being timed against.
 			if (await agent.hasInternet()) {
 				throw new Error(
 					'the phone still reaches the internet with Wi-Fi off; this case needs a phone with no other connection',
 				);
 			}
-			await expectDisconnected(
-				'Wi-Fi went off',
-				MAILBOX_UNANSWERED_MS - (Date.now() - offAt),
-			);
+			throw err;
 		} finally {
 			await agent.enableWifi();
 		}

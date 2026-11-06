@@ -29,6 +29,7 @@ dashchat-utils = { path = "crates/dashchat-utils" }
 sqlite-gate = { path = "crates/sqlite-gate" }
 panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
+netwatch-http-client = { path = "crates/netwatch-http-client" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailboxes-manager = { path = "crates/mailboxes-manager" }
 opus-transcode = { path = "crates/opus-transcode" }

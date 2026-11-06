@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 dashchat-utils = { workspace = true }
+netwatch-http-client = { workspace = true }
 anyhow = "1"
 async-trait = "0.1.85"
 chrono = { version = "0.4.42", features = ["serde"] }

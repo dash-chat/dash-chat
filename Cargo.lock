@@ -5812,6 +5812,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-server",
  "nanoid 0.5.0",
+ "netwatch-http-client",
  "once_cell",
  "p2panda-core",
  "pretty_assertions",
@@ -6525,6 +6526,18 @@ dependencies = [
  "windows 0.62.2",
  "windows-result 0.4.1",
  "wmi",
+]
+
+[[package]]
+name = "netwatch-http-client"
+version = "0.1.0"
+dependencies = [
+ "network-watch",
+ "reqwest 0.12.28",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -8528,6 +8541,7 @@ dependencies = [
  "anyhow",
  "dashchat-utils",
  "derive_more 2.1.1",
+ "netwatch-http-client",
  "reqwest 0.12.28",
  "serde",
 ]

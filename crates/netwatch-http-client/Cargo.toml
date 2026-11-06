@@ -1,0 +1,15 @@
+[package]
+name = "netwatch-http-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+network-watch = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["sync", "macros"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net", "time"] }

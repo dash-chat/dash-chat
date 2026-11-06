@@ -22,7 +22,11 @@ use once_cell::sync::Lazy;
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+pub static HTTP_CLIENT: Lazy<netwatch_http_client::Client> = Lazy::new(|| {
+    netwatch_http_client::Client::new(configure_http_client).expect("Failed to build HTTP client")
+});
+
+fn configure_http_client() -> reqwest::ClientBuilder {
     let builder = reqwest::Client::builder()
         .connect_timeout(dashchat_utils::HTTP_CONNECT_TIMEOUT)
         .timeout(dashchat_utils::HTTP_REQUEST_TIMEOUT);
@@ -34,8 +38,8 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         reqwest::Certificate::from_der(include_bytes!("../e2e-test-ca/ca.der"))
             .expect("e2e test CA is valid DER"),
     );
-    builder.build().expect("Failed to build HTTP client")
-});
+    builder
+}
 
 #[async_trait::async_trait]
 pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
