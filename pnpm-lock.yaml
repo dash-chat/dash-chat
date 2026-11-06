@@ -128,9 +128,6 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.12.4
         version: 2.12.4
-      '@webbuf/blake3':
-        specifier: ^3.0.28
-        version: 3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)
       blakejs:
         specifier: ^1.2.1
         version: 1.2.1
@@ -149,9 +146,6 @@ importers:
       tauri-plugin-system-theme:
         specifier: github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d
         version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=1b98b8fc84b8e5d35451ca4c1766447cf362069bd4cf3b8917e1d529cf67d302))
-      webbuf:
-        specifier: ^3.0.28
-        version: 3.0.28
     devDependencies:
       '@babel/cli':
         specifier: ^7.28.3
@@ -2244,38 +2238,6 @@ packages:
   '@wdio/xvfb@9.24.0':
     resolution: {integrity: sha512-eK0rUZeR+wlFapm2cb7OQ1LwC/nHmdo7eX02B2Dme7uQGF3+/ILkDTm5B0RYpGUbM3ktw3d0fhcwqqeNNH9KIA==}
     engines: {node: '>=18'}
-
-  '@webbuf/blake3@3.0.28':
-    resolution: {integrity: sha512-6yT6DvYSif9AnvOJlzoOz07uBpDtbZlfj00FVCbkFqRGK0yeR/MfnB3DxGgVTvwMKL+ehhcRAhqnphPFntxJ1Q==}
-    engines: {node: '>=20.8.0'}
-    peerDependencies:
-      '@webbuf/fixedbuf': ^3.0.28
-      '@webbuf/webbuf': ^3.0.28
-
-  '@webbuf/fixedbuf@3.0.28':
-    resolution: {integrity: sha512-kIR3VUjeVTVmSnGK9Z9Ej2LmLarBbn2Zcl5/SjV0pzDMzGTWSj9ALa56WYaYeqeemxfv8iaSqvX9WvwyEujUSA==}
-    engines: {node: '>=20.8.0'}
-    peerDependencies:
-      '@webbuf/webbuf': ^3.0.28
-
-  '@webbuf/numbers@3.0.28':
-    resolution: {integrity: sha512-8k56k5wv9ENL1z7c14a4mZu/rkvkVqveGV0sAC6FR+PqJCS0pq3sxxciHnaNUUBKV4wqe36PHY/+DJxoYSZr3g==}
-    engines: {node: '>=20.8.0'}
-    peerDependencies:
-      '@webbuf/fixedbuf': ^3.0.28
-      '@webbuf/webbuf': ^3.0.28
-
-  '@webbuf/rw@3.0.28':
-    resolution: {integrity: sha512-8NP+cMUi7fRcooqhS8fHw5Gu1K3uapPvUH9qra8BQOJEX2HFv8gdUpKLkApeXO7yh9eZpEwxfDvQZkeuA5tBZg==}
-    engines: {node: '>=20.8.0'}
-    peerDependencies:
-      '@webbuf/fixedbuf': ^3.0.28
-      '@webbuf/numbers': ^3.0.28
-      '@webbuf/webbuf': ^3.0.28
-
-  '@webbuf/webbuf@3.0.28':
-    resolution: {integrity: sha512-ugDgyhDMb/2U+rrHT4bL0PSMZva9eA/ATeLxHIoaVmvQ6hk7hBNAgc60nzuCmrwjYL+9L0cQe6xrGjostN2OPQ==}
-    engines: {node: '>=20.8.0'}
 
   '@xmldom/xmldom@0.9.10':
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
@@ -5683,10 +5645,6 @@ packages:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
 
-  webbuf@3.0.28:
-    resolution: {integrity: sha512-1szv8g4lR6wjSiUIO/13mLzwloidbNHlC4dh7inTVuA2FWvbNvIignrO1+XM77BqiDOVbnFJF4YfvSUPB1rsew==}
-    engines: {node: '>=20.8.0'}
-
   webdriver@9.24.0:
     resolution: {integrity: sha512-2R31Ey83NzMsafkl4hdFq6GlIBvOODQMkueLjeRqYAITu3QCYiq9oqBdnWA6CdePuV4dbKlYsKRX0mwMiPclDA==}
     engines: {node: '>=18.20.0'}
@@ -7889,28 +7847,6 @@ snapshots:
   '@wdio/xvfb@9.24.0':
     dependencies:
       '@wdio/logger': 9.18.0
-
-  '@webbuf/blake3@3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)':
-    dependencies:
-      '@webbuf/fixedbuf': 3.0.28(@webbuf/webbuf@3.0.28)
-      '@webbuf/webbuf': 3.0.28
-
-  '@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28)':
-    dependencies:
-      '@webbuf/webbuf': 3.0.28
-
-  '@webbuf/numbers@3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)':
-    dependencies:
-      '@webbuf/fixedbuf': 3.0.28(@webbuf/webbuf@3.0.28)
-      '@webbuf/webbuf': 3.0.28
-
-  '@webbuf/rw@3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/numbers@3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)':
-    dependencies:
-      '@webbuf/fixedbuf': 3.0.28(@webbuf/webbuf@3.0.28)
-      '@webbuf/numbers': 3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)
-      '@webbuf/webbuf': 3.0.28
-
-  '@webbuf/webbuf@3.0.28': {}
 
   '@xmldom/xmldom@0.9.10': {}
 
@@ -11373,13 +11309,6 @@ snapshots:
       defaults: 1.0.4
 
   web-streams-polyfill@3.3.3: {}
-
-  webbuf@3.0.28:
-    dependencies:
-      '@webbuf/fixedbuf': 3.0.28(@webbuf/webbuf@3.0.28)
-      '@webbuf/numbers': 3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)
-      '@webbuf/rw': 3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/numbers@3.0.28(@webbuf/fixedbuf@3.0.28(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28))(@webbuf/webbuf@3.0.28)
-      '@webbuf/webbuf': 3.0.28
 
   webdriver@9.24.0(supports-color@8.1.1):
     dependencies:
