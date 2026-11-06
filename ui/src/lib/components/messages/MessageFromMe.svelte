@@ -86,6 +86,7 @@
 			mailboxTrackerStore.syncStatusForOp,
 			chatId,
 			message.author,
+			message.logId,
 			message.seqNum,
 		),
 	);

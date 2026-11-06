@@ -9,7 +9,7 @@ import {
 	type MailboxId,
 	type MailboxSyncState,
 } from '../mailbox-tracker/types';
-import type { DeviceId, TopicId } from '../p2panda/types';
+import type { DeviceId, LogId, TopicId } from '../p2panda/types';
 
 const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
@@ -50,6 +50,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 		async (
 			_topicId: TopicId,
 			_author: DeviceId,
+			_logId: LogId,
 		): Promise<Record<MailboxId, number>> => ({
 			[MOCK_MAILBOX_ID]: Number.MAX_SAFE_INTEGER,
 		}),
@@ -59,6 +60,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 		async (
 			_topicId: TopicId,
 			_author: DeviceId,
+			_logId: LogId,
 			_seq: number,
 		): Promise<MailboxId[]> => [MOCK_MAILBOX_ID],
 	);
@@ -79,7 +81,12 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	syncStatusForOp = reactive(
-		async (_topicId: TopicId, _author: DeviceId, _seq: number) => ({
+		async (
+			_topicId: TopicId,
+			_author: DeviceId,
+			_logId: LogId,
+			_seq: number,
+		) => ({
 			syncedWithCloudMailbox: true,
 			syncedWithAnyLocalMailbox: false,
 		}),
