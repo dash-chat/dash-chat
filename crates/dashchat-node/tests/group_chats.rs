@@ -554,7 +554,6 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "p2panda-auth lets only a manager remove anyone, themself included; leaving as a non-admin needs a decision"]
 async fn test_non_admin_removes_themself() {
     setup();
 
