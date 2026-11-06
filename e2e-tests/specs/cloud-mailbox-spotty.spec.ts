@@ -3,10 +3,12 @@
  * link to it turns slow, hangs, or refuses connections, the way a mailbox
  * behind a struggling connection does. The chip may only read cloud while
  * the mailbox actually answers, and a message the mailbox cannot take stays
- * pending until it can. One agent in a solo group, so the chip is on screen.
+ * pending until it can, and a phone that loses its network says so at once.
+ * One agent in a solo group, so the chip is on screen.
  */
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import {
+	MAILBOX_HEALED_AFTER_BACKOFF_MS,
 	MAILBOX_HEALED_MS,
 	MAILBOX_HUNG_MS,
 	MAILBOX_UNANSWERED_MS,
@@ -96,5 +98,27 @@ describe('Cloud mailbox on a spotty link', function () {
 		await messages().waitForMessageStatus('while you were refusing', [
 			'mailbox',
 		]);
+	});
+
+	it('reads disconnected as soon as the phone loses its network, and connected again once it is back', async function () {
+		// Android reaches the run's mailbox over adb reverse, which Wi-Fi does
+		// not carry, and a desktop cannot leave its network.
+		if (agent.platform !== 'ios') this.skip();
+		await agent.disableWifi();
+		const offAt = Date.now();
+		try {
+			if (await agent.hasInternet()) {
+				throw new Error(
+					'the phone still reaches the internet with Wi-Fi off; this case needs a phone with no other connection',
+				);
+			}
+			await expectDisconnected(
+				'Wi-Fi went off',
+				MAILBOX_UNANSWERED_MS - (Date.now() - offAt),
+			);
+		} finally {
+			await agent.enableWifi();
+		}
+		await expectConnected('Wi-Fi came back', MAILBOX_HEALED_AFTER_BACKOFF_MS);
 	});
 });
