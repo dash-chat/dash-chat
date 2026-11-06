@@ -6,8 +6,13 @@ import { blockAgent } from '../../helpers/flows/block-agent';
 import { deleteAccount } from '../../helpers/flows/delete-account';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { noisePngBytes } from '../../helpers/images';
 import { pushTestingEnabled } from '../../setup/push-server';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
+
+// Two avatars this size make an Android tap intent small enough to post but,
+// if it carries their bytes, too large for Android to deliver.
+const AVATAR_PX = 200;
 
 /**
  * Real-device, end-to-end push tests: operations produced by one agent must
@@ -244,6 +249,22 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.homePage.ready();
 		await deleteAccount(sender);
 		await sender.createProfilePage.createProfile('Ben', 'Test');
+		// The group test below needs a photo for Ben as well as for the group.
+		await sender.homePage.settingsLink.click();
+		await sender.settingsPage.ready();
+		await sender.settingsPage.profileLink.click();
+		await sender.profilePage.ready();
+		await sender.profilePage.editPhoto.click();
+		await sender.editPhotoPage.ready();
+		await sender.editPhotoPage.setPhoto({
+			name: 'ben.png',
+			mimeType: 'image/png',
+			bytes: noisePngBytes(AVATAR_PX, 1),
+		});
+		await sender.editPhotoPage.save();
+		await sender.profilePage.ready();
+		await sender.profilePage.back.click();
+		await sender.settingsPage.back.click();
 		await navigateToAddContact(sender);
 		await sender.addContactPage.enterAddContactLink(receiverLink);
 		await sender.directChatPage.ready();
@@ -275,7 +296,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await receiver.directChatPage.messages.waitForMessage(shadeMessage);
 	});
 
-	it('announces a group the killed app was added to, and a message in it', async () => {
+	it('announces a group the killed app was added to, and a message in it whose tap opens the group', async () => {
 		const added = await receiver.tr('someoneAddedYouToTheGroup', {
 			name: 'Ben',
 		});
@@ -298,6 +319,24 @@ describe('Push notifications (real device, end-to-end)', () => {
 			conversation: 'Group while killed',
 		});
 
+		await sender.groupChatPage.infoLink.click();
+		await sender.groupInfoPage.ready();
+		await sender.groupInfoPage.editLink.click();
+		await sender.groupInfoEditPage.ready();
+		await sender.groupInfoEditPage.editPhotoButton.click();
+		await sender.editPhotoPage.ready();
+		await sender.editPhotoPage.setPhoto({
+			name: 'group.png',
+			mimeType: 'image/png',
+			bytes: noisePngBytes(AVATAR_PX, 2),
+		});
+		await sender.editPhotoPage.save();
+		await sender.groupInfoEditPage.ready();
+		await sender.groupInfoEditPage.save();
+		await sender.groupInfoPage.ready();
+		await sender.groupInfoPage.back.click();
+		await sender.groupChatPage.ready();
+
 		const message = `hi PUSH_GROUP_${Date.now()}`;
 		await sender.groupChatPage.composer.sendMessage(message);
 		await expect(notifications).toHaveDelivered({
@@ -305,10 +344,15 @@ describe('Push notifications (real device, end-to-end)', () => {
 			body: message,
 			conversation: 'Group while killed',
 		});
+
+		await notifications.tapNotification('Ben');
+		await notifications.returnToApp();
+		await receiver.groupChatPage.ready();
+		await receiver.groupChatPage.messages.waitForMessage(message);
 	});
 
 	it('announces nothing for a group a blocked contact adds the killed app to', async () => {
-		await receiver.startApp();
+		await receiver.groupChatPage.back.click();
 		await receiver.homePage.ready();
 		const newMessage = await receiver.tr('youHaveANewMessage');
 		await receiver.homePage.openChat('Ben');
