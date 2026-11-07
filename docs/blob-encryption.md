@@ -236,13 +236,10 @@ distributed sense) — the guarantee is the local one: once *this* node has
 processed a removal, nothing new is encrypted to the old secret. That is the
 same semantic Signal/MLS-style systems provide.
 
-One ordering wrinkle: `p2panda::spaces::Space::publish` currently dispatches
-the forged message to the egress pipeline before returning, so with
-`publish_with` the op can hit the network milliseconds before the
-ciphertexts are in the local iroh store. Remote fetch retries make this
-harmless, but if we want strict "blobs stored before op visible", the
-high-level wrapper needs a hook between forge/commit and dispatch (or it
-returns the message for the caller to dispatch, like the lower layer does).
+One ordering wrinkle, decided as a non-issue: `p2panda::spaces::Space::publish`
+dispatches the forged message to the egress pipeline before returning, so with
+`publish_with` the op can hit the network milliseconds before the ciphertexts
+are in the local iroh store. Remote fetch retries cover this; no hook needed.
 
 ## Wire-format changes (`MediaMetadata`)
 
@@ -454,8 +451,88 @@ material. Never log plaintext blob bytes (already the rule).
    atomically. All blob concepts (`MediaMetadata`, iroh hashing, the
    `"dashchat/blob/v1"` label) live in dash-chat.
 
-Still open:
+6. **Dispatch ordering:** not a concern; remote fetch retries cover the
+   window between op dispatch and the ciphertext landing in the blob store.
+7. **HKDF construction:** the crate's existing `crypto::hkdf::hkdf::<32>`
+   (RFC 5869 HKDF-SHA256) with empty salt, `ikm = group_secret.as_bytes()`,
+   `info` = the caller-supplied label, 32-byte output used as the `XAeadKey` —
+   the same building blocks and conventions `encrypt_data` and the key
+   manager already use. Dash-chat's label: `b"dashchat/blob/v1"`.
 
-- Whether the high-level `Space::publish` wrapper should let the caller store
-  blobs before the op is dispatched (see the ordering wrinkle in "Fork API").
-- Exact HKDF construction/label conventions for `encrypt_aux`.
+## Implementation plan
+
+Two PRs, landed in order: the fork change is independently testable and the
+dash-chat change pins its rev.
+
+### Phase 1 — p2panda fork (`dash-chat/p2panda`)
+
+1. **p2panda-encryption**: add `encrypt_aux` / `decrypt_aux` to
+   `data_scheme/data.rs` next to `encrypt_data` / `decrypt_data`:
+   `key = hkdf::<32>(&[], group_secret.as_bytes(), Some(info))`, then
+   `x_aead_encrypt(&key, plaintext, nonce, None)`. Error type wraps
+   `HkdfError` + `XAeadError`. Tests: round trip; ciphertext differs from
+   `encrypt_data` for identical inputs (subkey really in effect); wrong
+   info / secret / nonce fails to decrypt.
+2. **p2panda-spaces**: `SpaceSecrets<'a>` wrapping `&SecretBundleState` +
+   `&Rng`, with `latest_secret_id()`,
+   `encrypt_aux(info, plaintext) -> (GroupSecretId, XAeadNonce, Vec<u8>)`
+   (always `latest()`, fresh random nonce) and
+   `decrypt_aux(id, info, nonce, ct)` (via `SecretBundle::get`; error enum
+   distinguishes `UnknownSecret` from AEAD failure). `Space::with_secrets(f)`
+   reads committed state (`manager.read()` path, like `get_space_state`) and
+   errors distinctly when the space exists but encryption is not yet
+   established (`is_welcomed` false / no secret). Tests on the existing
+   two-member harness: encrypt on one member, decrypt on the other after
+   welcome; after a removal, old id still decrypts and new encrypts under a
+   new id; `UnknownSecret` before welcome.
+3. **p2panda (high level)**: expose `with_secrets` on
+   `p2panda::spaces::Space<M>`, delegating to the inner space — a
+   non-test-gated path, unlike `spaces_manager()`. `publish_with` is *not*
+   built now; it lands with op encryption (signature reserved in "Fork API").
+4. Bump the `rev` in dash-chat's root `Cargo.toml` + `cargo update`.
+
+### Phase 2 — dashchat-node (+ thin edges)
+
+5. **`chat/message.rs`**: add `group_secret_id` and `nonce` to every
+   `MediaMetadata` variant as required fields (hard break), serialized like
+   `hash` (hex string in human-readable formats, byte string in CBOR) —
+   generalize the `hash_bytes` serde helper for fixed-size byte arrays.
+   `size` keeps meaning plaintext size.
+6. **Send path** (`store_media` / `send_message`, node.rs): resolve the
+   joined `Space` for the chat topic (a blob ref on a non-space topic is a
+   hard error); bounded wait for secrets — retry `with_secrets` on
+   not-yet-established (reusing `dashchat_utils` retry helpers) up to a
+   timeout, then fail the send with a clear error; encrypt each item with
+   `encrypt_aux(b"dashchat/blob/v1", data)`; `store_blob` the ciphertext
+   (hash = ciphertext hash falls out); build the metadata. Enforce plaintext
+   ≤ `MAX_BLOB_BYTES − 16` so ciphertext stays under the transfer cap, and
+   mirror the headroom in the UI's `MAX_MESSAGE_BYTES` check.
+7. **Decrypt-info resolution**: in-memory map
+   `blob_hash → (topic, group_secret_id, nonce)` maintained alongside
+   `BlobFetchPool` — populated in `store_media` and `process_app`, rebuilt at
+   startup by the same op scan as `BlobFetchPool::from_ops`, entries dropped
+   in `unprocess_app` on message delete.
+8. **`load_blob`**: after obtaining ciphertext, look up decrypt info and run
+   `space.with_secrets(|s| s.decrypt_aux(..))`. `UnknownSecret` is treated
+   like blob-not-yet-available (poll until the caller's deadline — the
+   welcome may still be syncing); AEAD failure is permanent. Decrypt failures
+   must not feed `BlobFetchPool` failure counts. Everything downstream
+   (content-type sniffing, `?decode=wav`, `save_blob_to_cache`, `load_media`)
+   is untouched — it sees plaintext as today.
+9. **Redaction**: confirm `REDACTION_REGEXES` hex/byte-array patterns cover
+   `group_secret_id` and `nonce` as they'd appear in logs; extend if not.
+10. **Frontend**: add the new fields to `MediaMetadata` in
+    `packages/stores/src/types.ts` (typed, unused by the UI); no UI changes.
+
+### Phase 3 — tests and verification
+
+11. Update compiling tests: `crates/dashchat-node/tests/{blob_sync,
+    mailbox_blob_sync, photo_delivery, delete_messages}.rs`,
+    `crates/mailbox-server/tests/integration.rs`.
+12. New coverage (per "Testing" above): mailbox stores non-plaintext bytes;
+    same file in two chats → two hashes, both decrypt; late joiner decrypts
+    pre-join media; removal rotation; blob arriving before welcome retries to
+    success; decrypt failure doesn't evict from the fetch pool.
+13. `cargo nextest run`; `just e2e` media-attachments + media-stress must
+    pass unchanged (the regression proof that decryption is transparent);
+    `just format`.
