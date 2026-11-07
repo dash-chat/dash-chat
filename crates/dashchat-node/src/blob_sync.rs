@@ -414,6 +414,7 @@ impl BlobFetchPool {
     pub async fn from_ops(
         ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
         topic_store: SqliteStore,
+        decrypt_index: &crate::blob_crypto::BlobDecryptIndex,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
         let mut s = store.stack.lock().await;
@@ -442,6 +443,7 @@ impl BlobFetchPool {
                             );
                             continue;
                         };
+                        decrypt_index.insert_bundle(topic, media);
                         for item in media {
                             s.push((topic, item.hash()));
                         }
