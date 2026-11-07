@@ -29,7 +29,10 @@ export interface DraftVoiceNote {
 	waveform: Uint8Array;
 }
 
-export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+// 1 KiB under the backend's 16 MiB blob cap: each blob grows by a 16-byte
+// AEAD tag when encrypted, so a maximal attachment must not pass this check
+// only to fail server-side.
+export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024 - 1024;
 
 export class AttachmentTooLargeError extends Error {
 	readonly totalBytes: number;
