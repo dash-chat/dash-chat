@@ -23,7 +23,7 @@ use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
+use dashchat_utils::blob_sync::{BLOB_ENCRYPTION_OVERHEAD, MAX_BLOB_BYTES};
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{AccessLevel, Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
@@ -285,10 +285,6 @@ pub struct Node {
 /// How long a send waits for the chat space's encryption secrets to become established
 /// before failing.
 const BLOB_ENCRYPT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// AEAD tag added by blob encryption: the stored ciphertext is this much larger than the
-/// plaintext, and must still fit under [`MAX_BLOB_BYTES`].
-const BLOB_ENCRYPTION_OVERHEAD: u64 = 16;
 
 fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
     if size + BLOB_ENCRYPTION_OVERHEAD > MAX_BLOB_BYTES {
