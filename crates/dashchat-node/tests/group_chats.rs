@@ -1009,3 +1009,97 @@ async fn test_members_of_a_left_group_survive_restart() {
         "members of a left group must not wait for a join that never comes"
     );
 }
+
+/// A member added to a group after a media message was sent can still decrypt
+/// the media: the welcome carries the space's whole secret bundle, and the
+/// blob's metadata pins the secret it was encrypted with.
+#[tokio::test(flavor = "multi_thread")]
+async fn late_joiner_decrypts_pre_join_media() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes.clone(),
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    };
+    alice
+        .send_message(chat_id, "pre-join photo", Some(media), None)
+        .await
+        .unwrap();
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    // Cammy joins only after the media message exists.
+    bobbi
+        .add_group_member(chat_id, *cammy.device_id(), Access::write())
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let meta = cammy
+        .get_messages(chat_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|m| m.content.media().cloned())
+        .expect("media metadata present on cammy's copy of the message");
+
+    poll.wait_for(|| async {
+        cammy
+            .load_media(meta.clone())
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("blob not downloaded or decrypted yet: {err:?}"))
+    })
+    .await
+    .unwrap();
+
+    let OutgoingMedia::Photos { photos } = cammy.load_media(meta).await.unwrap() else {
+        panic!("expected a photo attachment");
+    };
+    assert_eq!(photos[0].data, photo_bytes);
+}
