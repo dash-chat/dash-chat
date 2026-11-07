@@ -1,6 +1,9 @@
 # Encrypting media blobs (design considerations)
 
-Status: design notes — nothing implemented yet.
+Status: implemented. Fork side on the p2panda `aux-encryption` branch
+(`encrypt_aux`/`decrypt_aux`, `SpaceSecrets`, `Space::with_secrets`);
+dash-chat side on this branch. `Space::publish_with` (op encryption) is still
+future work, as designed below.
 
 Goal: whenever an operation refers to a media blob, the blob is encrypted with
 the same keys that the operation *will* (later) be encrypted with, i.e. the
