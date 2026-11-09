@@ -397,5 +397,20 @@
     "testBanner": "اختبار الوصول المبكر",
     "feedback": "التغذية",
     "reportSent": "تم إرسال التقرير شكراً لك!",
-    "reportQueued": "تم حفظ التقرير سيتم إرسالها عندما تعود على الإنترنت."
+    "reportQueued": "تم حفظ التقرير سيتم إرسالها عندما تعود على الإنترنت.",
+    "checkingForMessages": "التحقق من الرسائل..",
+    "localHubLanBlockedOther": "تأكّدْ بأنّ حائطَكَ الناري يَتْركُ داش تَستعملُ الشبكةَ المحليةَ. إذا ما زالَ لا يَعْملُ وأنت تَستعملُ a VPN، يَطفئ شبكةِ VPN.",
+    "localHubLanBlockedMacosIntro": "(ماكوس) يحجب (داش شات) من الشبكة المحلية لإصلاحه:",
+    "localHubLanBlockedMacosStep1": "Open System Settings . Privacy ' security . Local Network.",
+    "localHubLanBlockedMacosStep2": "في قائمة التطبيقات، ابحث عن (داش شات) وأطفئه، ثمّ مرّة أخرى.",
+    "localHubLanBlockedMacosStep3": "إذا ما زالَ لا يَعْملُ وأنت تَستعملُ a VPN، يَطفئ شبكةِ VPN.",
+    "localHubLanBlockedMacosRecurs": "هذا يمكن أن يحدث مرة أخرى بعد إعادة تشغيل ماك. إذا فعلت، كرر هذه الخطوات.",
+    "openSystemSettings": "النظام المفتوح",
+    "chatRowP2pBadgeLabel": "Connected peer to-peer",
+    "connectedPeersCount_zero": "صفر متصل",
+    "connectedPeersCount_one": "{{count}} connected",
+    "connectedPeersCount_two": "متصلتان",
+    "connectedPeersCount_few": "{{count}} connected",
+    "connectedPeersCount_many": "",
+    "connectedPeersCount_other": "{{count}} connected"
 }
