@@ -2503,35 +2503,23 @@ impl Node {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
-                let mut parts = Vec::with_capacity(photos.len());
-                let mut datas = Vec::with_capacity(photos.len());
-                for photo in photos {
+                for photo in &photos {
                     ensure_blob_size(photo.data.len() as u64, &photo.name)?;
-                    parts.push((
-                        photo.name,
-                        photo.mime_type,
-                        photo.data.len() as u64,
-                        photo.width,
-                        photo.height,
-                    ));
-                    datas.push(photo.data);
                 }
-                let encrypted = self.encrypt_blobs(topic, datas).await?;
-                for (
-                    (name, mime_type, size, width, height),
-                    (group_secret_id, nonce, ciphertext),
-                ) in parts.into_iter().zip(encrypted)
-                {
+                for photo in photos {
+                    let size = photo.data.len() as u64;
+                    let (group_secret_id, nonce, ciphertext) =
+                        self.encrypt_blob(topic, photo.data).await?;
                     let hash = self
                         .require_blob_sync()?
                         .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                         .await?;
                     items.push(MediaMetadata::Photo {
-                        name,
-                        mime_type,
+                        name: photo.name,
+                        mime_type: photo.mime_type,
                         size,
-                        width,
-                        height,
+                        width: photo.width,
+                        height: photo.height,
                         hash,
                         group_secret_id,
                         nonce,
@@ -2541,9 +2529,8 @@ impl Node {
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
-                let mut encrypted = self.encrypt_blobs(topic, vec![file.data]).await?;
                 let (group_secret_id, nonce, ciphertext) =
-                    encrypted.pop().expect("one ciphertext per blob");
+                    self.encrypt_blob(topic, file.data).await?;
                 let hash = self
                     .require_blob_sync()?
                     .store_blob(topic, self.device_id(), operation_hash, ciphertext)
@@ -2561,9 +2548,8 @@ impl Node {
                 let size = voice_note.data.len() as u64;
                 ensure_blob_size(size, "voice note")?;
 
-                let mut encrypted = self.encrypt_blobs(topic, vec![voice_note.data]).await?;
                 let (group_secret_id, nonce, ciphertext) =
-                    encrypted.pop().expect("one ciphertext per blob");
+                    self.encrypt_blob(topic, voice_note.data).await?;
                 let hash = self
                     .require_blob_sync()?
                     .store_blob(topic, self.device_id(), operation_hash, ciphertext)
@@ -2579,35 +2565,30 @@ impl Node {
                 });
             }
         }
-        self.blob_decrypt_index.insert_bundle(topic, &items);
+        self.blob_decrypt_index.insert_blobs(topic, &items);
         Ok(MediaBundle::from(items))
     }
 
-    /// Encrypt media blobs towards the chat space on `topic`, all under the space's current
-    /// group secret (each with its own nonce).
+    /// Encrypt a media blob towards the chat space on `topic`, under the space's current
+    /// group secret.
     ///
     /// Waits up to [`BLOB_ENCRYPT_WAIT`] for the space's encryption state to become
     /// established (a freshly accepted contact or joined group may not have been welcomed
     /// yet), then fails the send.
-    async fn encrypt_blobs(
+    async fn encrypt_blob(
         &self,
         topic: TopicId,
-        datas: Vec<Vec<u8>>,
-    ) -> anyhow::Result<Vec<(GroupSecretId, XAeadNonce, Vec<u8>)>> {
+        data: Vec<u8>,
+    ) -> anyhow::Result<(GroupSecretId, XAeadNonce, Vec<u8>)> {
         let space = self.streams.space(topic).await?;
-        let datas = Arc::new(datas);
+        let data = Arc::new(data);
         let deadline = std::time::Instant::now() + BLOB_ENCRYPT_WAIT;
         loop {
-            let datas = datas.clone();
+            let data = data.clone();
             let result = space
                 .run(move |space| async move {
                     space
-                        .with_secrets(|secrets| {
-                            datas
-                                .iter()
-                                .map(|data| secrets.encrypt_aux(BLOB_AUX_INFO, data))
-                                .collect::<Result<Vec<_>, SecretsError>>()
-                        })
+                        .with_secrets(|secrets| secrets.encrypt_aux(BLOB_AUX_INFO, &data))
                         .await
                         .map_err(anyhow::Error::from)
                 })

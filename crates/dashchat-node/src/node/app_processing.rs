@@ -656,7 +656,7 @@ impl Node {
                 }
 
                 if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
-                    self.blob_decrypt_index.insert_bundle(topic.into(), media);
+                    self.blob_decrypt_index.insert_blobs(topic.into(), media);
                     for item in media.iter() {
                         blob_sync
                             .add_to_fetch_pool(topic.into(), author, hash, item.hash())

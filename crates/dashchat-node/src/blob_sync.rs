@@ -443,7 +443,7 @@ impl BlobFetchPool {
                             );
                             continue;
                         };
-                        decrypt_index.insert_bundle(topic, media);
+                        decrypt_index.insert_blobs(topic, media);
                         for item in media {
                             s.push((topic, item.hash()));
                         }

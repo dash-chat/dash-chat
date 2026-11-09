@@ -32,7 +32,7 @@ pub struct BlobDecryptIndex {
 }
 
 impl BlobDecryptIndex {
-    pub fn insert_bundle(&self, topic: TopicId, media: &[MediaMetadata]) {
+    pub fn insert_blobs(&self, topic: TopicId, media: &[MediaMetadata]) {
         let mut map = self.inner.lock().unwrap();
         for item in media {
             map.insert(
