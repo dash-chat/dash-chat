@@ -57,7 +57,13 @@ export class Messages extends TestHelper {
 		this.dividerSelector = tid(unreadDividerTestId);
 		this.root = this.el(this.messagesSelector);
 		this.unreadDivider = this.el(this.dividerSelector);
+		this.photoRetry = this.el(
+			`${this.messagesSelector} ${tid('message-attachment-photos')} ${tid('blob-image-retry')}`,
+		);
 	}
+
+	/** The reload affordance a chat photo shows once its blob failed to load. */
+	readonly photoRetry;
 
 	readonly messagesSelector: string;
 	readonly dividerSelector: string;
@@ -336,31 +342,35 @@ export class Messages extends TestHelper {
 		label: string,
 		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(messagesSel: string, photosSel: string, name: string) => {
-						const imgs =
-							document
-								.querySelector(messagesSel)
-								?.querySelectorAll(`${photosSel} img`) ?? [];
-						const img = Array.from(imgs).find(el =>
-							(el as HTMLImageElement).alt.includes(name),
-						) as HTMLImageElement | undefined;
-						if (img === undefined) return false;
-						if (img.complete && img.naturalWidth > 0) return true;
-						// Attachments render with loading="lazy", so one that is
-						// scrolled out of view never decodes and naturalWidth stays 0.
-						// Only scroll when it still needs decoding — scrolling on
-						// every poll forces a layout over the whole message list.
-						img.scrollIntoView({ block: 'center' });
-						return false;
-					},
-					this.messagesSelector,
-					tid('message-attachment-photos'),
-					label,
-				),
-			{ timeout, timeoutMsg: `Photo message "${label}" not found` },
+		await this.agent.waitUntil(() => this.isPhotoLoaded(label), {
+			timeout,
+			timeoutMsg: `Photo message "${label}" not found`,
+		});
+	}
+
+	/** Whether the photo attachment whose filename contains `label` has loaded. */
+	isPhotoLoaded(label: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				) as HTMLImageElement | undefined;
+				if (img === undefined) return false;
+				if (img.complete && img.naturalWidth > 0) return true;
+				// Attachments render with loading="lazy", so one that is
+				// scrolled out of view never decodes and naturalWidth stays 0.
+				// Only scroll when it still needs decoding — scrolling on
+				// every poll forces a layout over the whole message list.
+				img.scrollIntoView({ block: 'center' });
+				return false;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
 		);
 	}
 
