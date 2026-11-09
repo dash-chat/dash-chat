@@ -392,5 +392,17 @@
     "connectionStatusPendingDescription": "Мы проверяем ваше подключение к серверу сообщений.",
     "connectionStatusPendingAriaLabel": "Статус подключения: соединение. Заметьте детали.",
     "attachScreenshots": "Аттач скриншоты (факультативно)",
-    "addImage": "Добавить изображение"
+    "addImage": "Добавить изображение",
+    "checkingForMessages": "Проверка сообщений..",
+    "localHubLanBlockedOther": "Проверьте, что ваш брандмауэр позволяет Dash Chat использовать локальную сеть. Если он все еще не работает и вы используете VPN, выключите VPN.",
+    "localHubLanBlockedMacosIntro": "macOS блокирует Dash Chat из локальной сети. Чтобы исправить это:",
+    "localHubLanBlockedMacosStep1": "Open System Settings › Privacy & Security › Local Network.",
+    "localHubLanBlockedMacosStep2": "В списке приложений найдите Dash Chat и выключите его, затем снова.",
+    "localHubLanBlockedMacosStep3": "Если он все еще не работает и вы используете VPN, выключите VPN.",
+    "localHubLanBlockedMacosRecurs": "Это может произойти снова после перезагрузки вашего Mac. Если это так, повторите эти шаги.",
+    "openSystemSettings": "Открытые настройки системы",
+    "chatRowP2pBadgeLabel": "Соединенные сверст-к-пи",
+    "connectedPeersCount_one": "",
+    "connectedPeersCount_few": "{{count}}",
+    "connectedPeersCount_many": "{{count}}"
 }

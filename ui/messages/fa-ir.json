@@ -406,5 +406,16 @@
     "connectionStatusPendingDescription": "ما ارتباط شما را با سرور پیام چک می کنیم.",
     "connectionStatusPendingAriaLabel": "وضعیت اتصال: اتصال برای جزئیات ضربه بزنید.",
     "attachScreenshots": "تصاویر وابسته (اختیاری)",
-    "addImage": "Add image"
+    "addImage": "Add image",
+    "checkingForMessages": "بررسی پیام ها ..",
+    "localHubLanBlockedOther": "بررسی کنید که فایروال به Dash Chat اجازه می دهد از شبکه محلی استفاده کند. اگر هنوز کار نمی کند و از VPN استفاده می کنید، VPN را خاموش کنید.",
+    "localHubLanBlockedMacosIntro": "macOS مسدود کردن Dash Chat از شبکه محلی است. برای رفع آن:",
+    "localHubLanBlockedMacosStep1": "تنظیمات سیستم باز > حریم خصوصی و امنیت > شبکه محلی.",
+    "localHubLanBlockedMacosStep2": "در لیست اپلیکیشن ها، Dash Chat را پیدا کنید و سپس دوباره آن را خاموش کنید.",
+    "localHubLanBlockedMacosStep3": "اگر هنوز کار نمی کند و از VPN استفاده می کنید، VPN را خاموش کنید.",
+    "localHubLanBlockedMacosRecurs": "این اتفاق می تواند پس از شروع مجدد مک شما رخ دهد. اگر این کار را انجام دهد، این مراحل را تکرار کنید.",
+    "openSystemSettings": "تنظیمات سیستم باز",
+    "chatRowP2pBadgeLabel": "اتصال همتا به همتا",
+    "connectedPeersCount_one": "{{count}} متصل",
+    "connectedPeersCount_other": "{{count}} متصل"
 }

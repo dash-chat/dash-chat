@@ -401,5 +401,16 @@
     "connectionStatusPendingDescription": "हम संदेश सर्वर के लिए अपने कनेक्शन की जाँच कर रहे हैं।।",
     "connectionStatusPendingAriaLabel": "कनेक्शन की स्थिति: कनेक्ट करना। विवरण के लिए टैप करें।।",
     "attachScreenshots": "स्क्रीनशॉट संलग्न करें (वैकल्पिक)",
-    "addImage": "छवि जोड़ें"
+    "addImage": "छवि जोड़ें",
+    "checkingForMessages": "संदेश के लिए जाँच..",
+    "localHubLanBlockedOther": "चेक करें कि आपका फ़ायरवॉल डैश चैट स्थानीय नेटवर्क का उपयोग करने देता है। अगर यह अभी भी काम नहीं करता है और आप एक वीपीएन का उपयोग करते हैं, तो वीपीएन को बंद कर दें।।",
+    "localHubLanBlockedMacosIntro": "मैकओएस स्थानीय नेटवर्क से डैश चैट को अवरुद्ध कर रहा है। इसे ठीक करने के लिए:",
+    "localHubLanBlockedMacosStep1": "ओपन सिस्टम सेटिंग › गोपनीयता और सुरक्षा › स्थानीय नेटवर्क।।",
+    "localHubLanBlockedMacosStep2": "एप्लिकेशन की सूची में, डैश चैट ढूंढें और फिर उसके स्विच को चालू करें।।",
+    "localHubLanBlockedMacosStep3": "अगर यह अभी भी काम नहीं करता है और आप एक वीपीएन का उपयोग करते हैं, तो वीपीएन को बंद कर दें।।",
+    "localHubLanBlockedMacosRecurs": "इसके बाद आप अपने मैक को फिर से शुरू कर सकते हैं। यदि यह करता है तो इन चरणों को दोहराएं।।",
+    "openSystemSettings": "ओपन सिस्टम सेटिंग",
+    "chatRowP2pBadgeLabel": "कनेक्टेड सहकर्मी से सहकर्मी",
+    "connectedPeersCount_one": "{{count}} कनेक्ट",
+    "connectedPeersCount_other": "{{count}} कनेक्ट"
 }
