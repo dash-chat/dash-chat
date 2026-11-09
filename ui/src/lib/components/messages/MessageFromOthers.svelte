@@ -12,7 +12,7 @@
 		type MessagesStore,
 		type Profile,
 	} from 'dash-chat-stores';
-	import type { MessagePosition } from './message-helpers';
+	import { type MessagePosition, hasMessageActions } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
@@ -75,10 +75,21 @@
 	let slideEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
+	const readOnly = useReactiveValue(store.readOnly);
+	const hasActions = $derived(
+		hasMessageActions(
+			message,
+			myDeviceId,
+			$readOnly ?? true,
+			onReply !== undefined,
+		),
+	);
+
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		if (isMobile) {
-			reactionsOpened = true;
-		} else if (e instanceof MouseEvent) {
+			// A writable chat's overlay always has the reaction bar to show.
+			reactionsOpened = hasActions || $readOnly === false;
+		} else if (hasActions && e instanceof MouseEvent) {
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}

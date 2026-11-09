@@ -12,10 +12,13 @@
 		type DeviceId,
 		type Message,
 		type MessagesStore,
-		hasBody,
 	} from 'dash-chat-stores';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { MESSAGE_DELETION_ENABLED, canEditMessage } from './message-helpers';
+	import {
+		MESSAGE_DELETION_ENABLED,
+		canCopyMessage,
+		canEditMessage,
+	} from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 
@@ -49,9 +52,7 @@
 	const readOnly = useReactivePromise(store.readOnly);
 
 	const canEdit = $derived(canEditMessage(message, myDeviceId));
-	const canCopy = $derived(
-		hasBody(message.content) && message.content.message !== '',
-	);
+	const canCopy = $derived(canCopyMessage(message));
 
 	let confirmingDelete = $state(false);
 </script>
