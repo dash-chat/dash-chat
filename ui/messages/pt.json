@@ -390,5 +390,17 @@
     "connectionStatusPendingDescription": "Estamos a verificar a sua ligação ao servidor de mensagens.",
     "connectionStatusPendingAriaLabel": "Status da conexão: conexão. Toque em detalhes.",
     "attachScreenshots": "Anexar screenshots (opcional)",
-    "addImage": "Adicionar imagem"
+    "addImage": "Adicionar imagem",
+    "checkingForMessages": "Verificando mensagens..",
+    "localHubLanBlockedOther": "Verifique se seu firewall permite que o Dash Chat use a rede local. Se ainda não funcionar e usar uma VPN, desligue a VPN.",
+    "localHubLanBlockedMacosIntro": "o macOS está bloqueando o Dash Chat da rede local. Para corrigi-lo:",
+    "localHubLanBlockedMacosStep1": "Configurações do sistema aberto › Privacidade e segurança › Rede local.",
+    "localHubLanBlockedMacosStep2": "Na lista de aplicativos, encontre o Dash Chat e desligue o interruptor e, em seguida, ligue novamente.",
+    "localHubLanBlockedMacosStep3": "Se ainda não funcionar e usar uma VPN, desligue a VPN.",
+    "localHubLanBlockedMacosRecurs": "Isso pode acontecer novamente depois de reiniciar seu Mac. Se o fizer, repita estes passos.",
+    "openSystemSettings": "Abrir configurações do sistema",
+    "chatRowP2pBadgeLabel": "Conectado peer-to-peer",
+    "connectedPeersCount_one": "{{count}} conectado",
+    "connectedPeersCount_many": "",
+    "connectedPeersCount_other": "{{count}} conectado"
 }
