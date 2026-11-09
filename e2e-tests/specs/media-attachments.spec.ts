@@ -245,6 +245,6 @@ describe('Media attachments', () => {
 		if (!message) throw new Error('Photo message "copyless" not found');
 		await message.openActions();
 		expect(await message.copyAction.isExisting()).toBe(false);
-		expect(await message.deleteAction.isExisting()).toBe(true);
+		expect(await message.replyAction.isExisting()).toBe(true);
 	});
 });

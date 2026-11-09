@@ -172,7 +172,6 @@ export const textMessageMoves: Moves = [
 	{ build: (a, t, e) => new ReactMove(a, t, e), weight: 5 },
 	{ build: (a, t) => new ReplyMove(a, t), weight: 3 },
 	{ build: (a, t) => new EditMove(a, t), weight: 3 },
-	{ build: (a, t) => new DeleteMove(a, t), weight: 2 },
 ];
 
 /** The text-message moves by the names a search prints them under. */

@@ -15,7 +15,7 @@
 		hasBody,
 	} from 'dash-chat-stores';
 	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { canEditMessage } from './message-helpers';
+	import { MESSAGE_DELETION_ENABLED, canEditMessage } from './message-helpers';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import DeleteMessageDialog from './DeleteMessageDialog.svelte';
 
@@ -85,16 +85,20 @@
 			data-testid="message-action-copy"
 		/>
 	{/if}
-	<ListAction
-		title={m.delete()}
-		icon={mdiDeleteOutline}
-		actionType="danger"
-		onClick={() => {
-			onDelete?.();
-			confirmingDelete = true;
-		}}
-		data-testid="message-action-delete"
-	/>
+	{#if MESSAGE_DELETION_ENABLED}
+		<ListAction
+			title={m.delete()}
+			icon={mdiDeleteOutline}
+			actionType="danger"
+			onClick={() => {
+				onDelete?.();
+				confirmingDelete = true;
+			}}
+			data-testid="message-action-delete"
+		/>
+	{/if}
 </List>
 
-<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />
+{#if MESSAGE_DELETION_ENABLED}
+	<DeleteMessageDialog {message} {myDeviceId} bind:opened={confirmingDelete} />
+{/if}
