@@ -411,7 +411,7 @@
     "connectionStatusPendingAriaLabel": "Estado de conexión: conexión. Pulsa para detalles.",
     "attachScreenshots": "Capturas de pantalla (opcional)",
     "addImage": "Agregar imagen",
-    "checkingForMessages": "Comprobando mensajes..",
+    "checkingForMessages": "Sincronizando mensajes..",
     "localHubLanBlockedOther": "Comprueba que tu firewall permite que Dash Chat use la red local. Si todavía no funciona y usas una VPN, apaga la VPN.",
     "localHubLanBlockedMacosIntro": "macOS está bloqueando Dash Chat desde la red local. Para arreglarlo:",
     "localHubLanBlockedMacosStep1": "Configuración de sistema abierto › Privacidad y Seguridad › Red local.",
