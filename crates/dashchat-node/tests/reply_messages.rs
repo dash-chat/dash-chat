@@ -195,6 +195,7 @@ async fn reply_must_target_the_latest_known_edit() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn cannot_reply_to_a_deleted_message() {
     setup();
     let mailbox = MemMailbox::new();

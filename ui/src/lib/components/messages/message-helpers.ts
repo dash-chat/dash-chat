@@ -25,6 +25,10 @@ export function canEditMessage(
 	return withinWindow(message.timestamp, EDIT_WINDOW_MS);
 }
 
+/** Off while p2panda keeps encrypted payloads in the operation header, which
+ * a delete (dropping only the body) cannot remove. */
+export const MESSAGE_DELETION_ENABLED = false;
+
 export function canDeleteMessageForEveryone(
 	message: Message,
 	myDeviceId: DeviceId,
