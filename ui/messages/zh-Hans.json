@@ -384,5 +384,15 @@
     "connectionStatusPendingDescription": "我们检查你与信息服务器的联系.",
     "connectionStatusPendingAriaLabel": "连接状况:连接 详细情况.",
     "attachScreenshots": "每次屏幕",
-    "addImage": "添加图像"
+    "addImage": "添加图像",
+    "checkingForMessages": "信息的核对..…",
+    "localHubLanBlockedOther": "检查你的防火墙让Dash Chat使用当地网络。 如果它仍然不做工作,而且你使用“禁忌”,就会 turn.",
+    "localHubLanBlockedMacosIntro": "macOS正在阻止当地网络的Dash Chat。 确定:",
+    "localHubLanBlockedMacosStep1": "开放系统  Privacy 隐私和安全 当地网络.",
+    "localHubLanBlockedMacosStep2": "在信标清单中,发现Dash Chat,将其开关,然后再次开关.",
+    "localHubLanBlockedMacosStep3": "如果它仍然不做工作,而且你使用“禁忌”,就会 turn.",
+    "localHubLanBlockedMacosRecurs": "这可以在你重新开始其宏观之后再次出现。 如果是的话,则重复这些步骤.",
+    "openSystemSettings": "开放系统环境",
+    "chatRowP2pBadgeLabel": "连接同龄人与生产者",
+    "connectedPeersCount_other": "{{count}} 连接"
 }
