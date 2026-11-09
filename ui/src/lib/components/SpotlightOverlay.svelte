@@ -21,8 +21,9 @@
 		/** Rendered in a pill-shaped popover above the target; omit to show no
 		 * popover there. */
 		above?: Snippet;
-		/** Rendered in a popover below the target. */
-		below: Snippet;
+		/** Rendered in a popover below the target; omit to show no popover
+		 * there. */
+		below?: Snippet;
 	}
 
 	let {
@@ -151,8 +152,12 @@
 		const base = target.getBoundingClientRect();
 		baseRect = base;
 		bump = untrack(() =>
-			belowEl
-				? ensembleBump(base, aboveEl?.offsetHeight ?? 0, belowEl.offsetHeight)
+			aboveEl || belowEl
+				? ensembleBump(
+						base,
+						aboveEl?.offsetHeight ?? 0,
+						belowEl?.offsetHeight ?? 0,
+					)
 				: 0,
 		);
 		// Konsta popovers only re-read their anchors on window resize; nudge
@@ -236,13 +241,15 @@
 	</Popover>
 {/if}
 
-<Popover
-	opened={panelsShown && belowAnchor !== undefined}
-	target={belowAnchor}
-	backdrop={false}
-	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
->
-	<div bind:this={belowEl}>
-		{@render below()}
-	</div>
-</Popover>
+{#if below}
+	<Popover
+		opened={panelsShown && belowAnchor !== undefined}
+		target={belowAnchor}
+		backdrop={false}
+		class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
+	>
+		<div bind:this={belowEl}>
+			{@render below()}
+		</div>
+	</Popover>
+{/if}
