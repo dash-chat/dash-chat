@@ -39,18 +39,12 @@
 	// earlier would flash the closing backdrop over the target.
 	let spotlighted = $state(false);
 
-	function swallowClick(event: Event) {
-		event.preventDefault();
-		event.stopPropagation();
-	}
-
 	/** Pin `el` out of the flow, fixed at `base` (its pressed position), lock
 	 * its holder's height so the list doesn't reflow, and arm its lift
-	 * transition. The lift puts the target above the backdrop, so its own
-	 * content stays clickable — tapping a photo would open the lightbox behind
-	 * the overlay. Clicks are swallowed in the capture phase, so no descendant
-	 * handler runs: while spotlighted the message is there to be looked at,
-	 * not used. Returns the restore function. */
+	 * transition. The lift puts the target above the backdrop, so it is made
+	 * inert: touches fall through to the backdrop, which dismisses the overlay,
+	 * and nothing inside it can be activated behind the overlay. Returns the
+	 * restore function. */
 	function pinTarget(el: HTMLElement, base: DOMRect): () => void {
 		const holder = el.parentElement;
 		if (holder) {
@@ -63,9 +57,9 @@
 		el.style.margin = '0';
 		el.style.zIndex = '34';
 		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
-		el.addEventListener('click', swallowClick, true);
+		el.inert = true;
 		return () => {
-			el.removeEventListener('click', swallowClick, true);
+			el.inert = false;
 			el.style.position = '';
 			el.style.top = '';
 			el.style.left = '';
@@ -174,6 +168,13 @@
 					),
 	);
 
+	// Outlives `rect`: the popovers finish closing after the backdrop's fade, and
+	// losing it sooner would snap them back to Konsta's centred position.
+	let edgeStyle = $state('');
+	$effect.pre(() => {
+		if (rect) edgeStyle = outerEdgeStyle(rect);
+	});
+
 	let aboveAnchor = $state<HTMLElement>();
 	let belowAnchor = $state<HTMLElement>();
 
@@ -194,11 +195,23 @@
 		if (barTop < safeTop) next += safeTop - barTop;
 		return next;
 	}
+
+	/** Lines a popover up with the target's outer edge, the one nearer the screen
+	 * edge. Konsta only centres popovers, and writes its `left` after this style,
+	 * hence the `!important`. */
+	function outerEdgeStyle(target: DOMRect): string {
+		const rightMargin = window.innerWidth - target.right;
+		return target.left < rightMargin
+			? `left: ${target.left}px !important`
+			: `left: auto !important; right: ${rightMargin}px`;
+	}
 </script>
 
 {#if opened}
+	<!-- active:transform-none: the default button press scale would pull the dim
+	     in from the screen edges for a frame, flashing the page around them. -->
 	<button
-		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90"
+		class="fixed inset-0 z-[32] h-full w-full cursor-default bg-black/90 active:transform-none"
 		aria-label={m.close()}
 		transition:fade={{ duration: 200 }}
 		onclick={onClose}
@@ -228,6 +241,7 @@
 		opened={panelsShown && aboveAnchor !== undefined}
 		target={aboveAnchor}
 		backdrop={false}
+		style={edgeStyle}
 		class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0 {panelDelay}"
 	>
 		<div bind:this={aboveEl}>
@@ -240,6 +254,7 @@
 	opened={panelsShown && belowAnchor !== undefined}
 	target={belowAnchor}
 	backdrop={false}
+	style={edgeStyle}
 	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
 >
 	<div bind:this={belowEl}>

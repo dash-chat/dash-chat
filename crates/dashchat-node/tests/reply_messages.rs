@@ -135,7 +135,12 @@ async fn receiver_renders_reply_to_unknown_message_as_a_normal_message() {
     alice
         .send_message_raw(
             chat_id,
-            ChatMessageContent::new("nope", None, Some(p2panda_core::Hash::from_bytes([9; 32]))),
+            ChatMessageContent::new(
+                "nope",
+                None,
+                Some(p2panda_core::Hash::from_bytes([9; 32])),
+                0,
+            ),
         )
         .await
         .unwrap();
@@ -252,7 +257,7 @@ async fn receiver_ignores_reply_to_a_reaction() {
     bobbi
         .send_message_raw(
             chat_id,
-            ChatMessageContent::new("sneaky", None, Some(reaction.hash())),
+            ChatMessageContent::new("sneaky", None, Some(reaction.hash()), 0),
         )
         .await
         .unwrap();
@@ -291,7 +296,7 @@ async fn receiver_accepts_reply_to_an_edit_it_knows_is_superseded() {
     bobbi
         .send_message_raw(
             chat_id,
-            ChatMessageContent::new("crossing reply", None, Some(original.hash())),
+            ChatMessageContent::new("crossing reply", None, Some(original.hash()), 0),
         )
         .await
         .unwrap();

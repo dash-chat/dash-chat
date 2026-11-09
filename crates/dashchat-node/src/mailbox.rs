@@ -137,6 +137,7 @@ mod tests {
                 hash: media_hash,
             }]),
             None,
+            0,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
         let body = payload.try_into_body().unwrap();
@@ -172,6 +173,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=debug",
+                "mailboxes_manager=debug",
                 "p2panda_stream=warn",
                 "p2panda_auth=warn",
                 "p2panda_spaces=warn",
@@ -252,6 +254,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=info",
+                "mailboxes_manager=info",
                 "p2panda_stream=warn",
             ],
             true,
@@ -292,13 +295,13 @@ mod tests {
         // The mailbox should have recorded alice's seq 0 from both sides.
         let alice_sync = alice
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("alice sync state missing");
         let bobbi_sync = bobbi
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("bobbi sync state missing");

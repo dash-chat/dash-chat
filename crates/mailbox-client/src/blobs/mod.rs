@@ -1,2 +1,2 @@
-pub mod unfetched_blobs;
-pub mod upload_tracker;
+pub mod blob_delivery;
+pub mod upload_lifecycle;

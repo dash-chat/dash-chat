@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { ErrorPlaceholder } from '../helpers/components/error-placeholder';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
+import { TestBanner } from '../helpers/components/test-banner';
 import { Toast } from '../helpers/components/toast';
 import { UpdaterBanner } from '../helpers/components/updater-banner';
 import { CreateProfilePage } from '../helpers/pages/create-profile-page';
@@ -46,6 +47,7 @@ import { sourceLogFile } from './agent-logger';
 import { convergeNetworks, forgetTestNetworks } from './phone-lan';
 import {
 	APP_PACKAGE,
+	androidAsksNotificationPermission,
 	androidHasInternet,
 	denyAndroidNotificationPermission,
 	isAndroidAppRunning,
@@ -123,6 +125,7 @@ export type Agent = WebdriverIO.Browser & {
 	profilePage: ProfilePage;
 	settingsPage: SettingsPage;
 	toast: Toast;
+	testBanner: TestBanner;
 	updaterBanner: UpdaterBanner;
 	welcomePage: WelcomePage;
 
@@ -134,8 +137,7 @@ export type Agent = WebdriverIO.Browser & {
 	 *  back to [`injectDeepLink`]. */
 	handleDeepLink(url: string): Promise<void>;
 	/** Dispatch a URL through the app's deep link routing logic directly,
-	 *  bypassing OS delivery — for links the OS wouldn't route to the app
-	 *  (e.g. the dash-chat:// scheme is only registered on desktop). */
+	 *  bypassing OS delivery. */
 	injectDeepLink(url: string): Promise<void>;
 	/** Resolve a paraglide message key in the agent's current locale. */
 	tr(key: string, params?: Record<string, unknown>): Promise<string>;
@@ -249,14 +251,16 @@ export type Agent = WebdriverIO.Browser & {
 	/** Kill the phone's push extension process, so the next push starts a
 	 *  fresh one. iOS only. */
 	killPushExtension(): Promise<void>;
+	/** Whether the OS has a notification permission to ask for. Android only. */
+	asksNotificationPermission(): boolean;
 	/** Take the notification permission back to never asked, so the app's next
 	 *  request shows the system dialog. Call it between [`stopApp`] and
 	 *  [`startApp`]. Android only. */
-	resetNotificationPermission(): void;
+	resetNotificationPermission(): Promise<void>;
 	/** Deny the notification permission for good, so the app's requests are
 	 *  refused without a dialog. Call it between [`stopApp`] and
 	 *  [`startApp`]. Android only. */
-	denyNotificationPermission(): void;
+	denyNotificationPermission(): Promise<void>;
 	/** What this agent's device has logged so far in the run, as the harness
 	 *  captured it. */
 	readLog(): string;
@@ -291,6 +295,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.profilePage = new ProfilePage(b);
 	agent.settingsPage = new SettingsPage(b);
 	agent.toast = new Toast(b);
+	agent.testBanner = new TestBanner(b);
 	agent.updaterBanner = new UpdaterBanner(b);
 	agent.welcomePage = new WelcomePage(b);
 }
@@ -528,21 +533,29 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		}
 		pressAndroidBack(deviceUdid(b));
 	};
-	agent.resetNotificationPermission = () => {
+	agent.asksNotificationPermission = () => {
+		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
+			throw new Error(
+				`asksNotificationPermission needs android, got ${agent.platform}`,
+			);
+		}
+		return androidAsksNotificationPermission(deviceUdid(b));
+	};
+	agent.resetNotificationPermission = async () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
 			throw new Error(
 				`resetNotificationPermission needs android, got ${agent.platform}`,
 			);
 		}
-		resetAndroidNotificationPermission(deviceUdid(b));
+		await resetAndroidNotificationPermission(b, deviceUdid(b));
 	};
-	agent.denyNotificationPermission = () => {
+	agent.denyNotificationPermission = async () => {
 		if (agent.platform !== 'android' && agent.platform !== 'android-emulator') {
 			throw new Error(
 				`denyNotificationPermission needs android, got ${agent.platform}`,
 			);
 		}
-		denyAndroidNotificationPermission(deviceUdid(b));
+		await denyAndroidNotificationPermission(b, deviceUdid(b));
 	};
 
 	return agent;

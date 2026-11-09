@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocatePreferredPort } from './allocate-port';
+import { exe } from './host-process';
 import { PUSH_PREFERRED_PORT } from './network-id';
 import { phonePlatforms } from './test-env';
 
@@ -89,7 +90,12 @@ export function spawnPushServer(
 ): ChildProcess {
 	// Prebuilt binary (built by the e2e build step); `cargo run` here would risk
 	// a rebuild that blows the readiness timeout, same as the mailbox server.
-	const bin = path.join(ROOT, 'target', 'debug', 'push-notifications-server');
+	const bin = path.join(
+		ROOT,
+		'target',
+		'debug',
+		exe('push-notifications-server'),
+	);
 	if (!existsSync(bin)) {
 		throw new Error(
 			`${bin} not found — run the suite via 'just e2e' (which builds ` +

@@ -653,8 +653,8 @@ export class Message extends TestHelper {
 	/** The message's wrapper element in the list. */
 	readonly wrapper;
 
-	/** Every message mounts its own (closed) actions popover, so the menu and
-	 * its actions must be resolved scoped to this message's wrapper. */
+	/** Each message hosts its own actions menu, so the menu and its actions
+	 * must be resolved scoped to this message's wrapper. */
 	get actionsMenu() {
 		return this.wrapper.$(tid('message-actions-menu'));
 	}
@@ -1041,6 +1041,73 @@ export class Message extends TestHelper {
 			this.hash,
 		);
 		await this.composeReply(replyText);
+	}
+
+	/** Tap the bubble's position with a real finger, landing on whatever is on
+	 * top of it. `.click()` refuses an element that something else covers. */
+	async tapByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x, y })
+			.down()
+			.up()
+			.perform();
+	}
+
+	/** Drag a real finger across the bubble's position toward the end edge,
+	 * landing on whatever is on top of it. `replyBySwipe` dispatches straight
+	 * to the row instead. */
+	async swipeByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x: x - 75, y })
+			.down()
+			.move({ x: x + 75, y, duration: 200 })
+			.up()
+			.perform();
+	}
+
+	/** Long-press the bubble and, without lifting the finger, drag it toward the
+	 * end edge, so the whole gesture belongs to the touch that opened the
+	 * spotlight. */
+	async holdThenDragByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x: x - 75, y })
+			.down()
+			// A move in place, not a pause: XCUITest interpolates a move from the
+			// press, so a pause before it turns the hold into one slow drag.
+			.move({ x: x - 75, y, duration: 800 })
+			.move({ x: x + 75, y, duration: 200 })
+			.up()
+			.perform();
+	}
+
+	/** Whether this message's first photo accepts focus, which is what a
+	 * keyboard or a screen reader needs to activate it. */
+	photoTakesFocus(): Promise<boolean> {
+		return this.agent.execute(
+			(cellSel: string) => {
+				const cell = document.querySelector<HTMLElement>(cellSel);
+				if (cell === null) throw new Error('Photo cell not found');
+				cell.focus();
+				return document.activeElement === cell;
+			},
+			`${this.wrapperSelector} ${tid('message-attachment-photos')} button`,
+		);
+	}
+
+	private async bubbleCentre(): Promise<{ x: number; y: number }> {
+		const bubble = this.wrapper.$('.message');
+		const { x, y } = await bubble.getLocation();
+		const { width, height } = await bubble.getSize();
+		return {
+			x: Math.round(x + width / 2),
+			y: Math.round(y + height / 2),
+		};
 	}
 
 	/** Reply via the hover toolbar's Reply shortcut rather than the actions

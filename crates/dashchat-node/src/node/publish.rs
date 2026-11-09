@@ -39,7 +39,7 @@ impl Node {
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
         // Re-announce any still-unfetched blobs now that we've published.
-        self.notify_unfetched_blob_followup();
+        self.notify_blobs_changed();
 
         Ok(event.header().to_owned())
     }

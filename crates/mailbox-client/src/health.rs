@@ -58,23 +58,6 @@ impl SyncStatus {
             SyncStatus::Stopped => config.stopped_interval,
         }
     }
-
-    pub(crate) fn as_db_str(&self) -> &'static str {
-        match self {
-            SyncStatus::Active => "active",
-            SyncStatus::Degraded => "degraded",
-            SyncStatus::Stopped => "stopped",
-        }
-    }
-
-    pub(crate) fn from_db_str(s: &str) -> Option<Self> {
-        match s {
-            "active" => Some(SyncStatus::Active),
-            "degraded" => Some(SyncStatus::Degraded),
-            "stopped" => Some(SyncStatus::Stopped),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,7 +67,7 @@ pub struct LastError {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct MailboxConnectionState {
+pub struct MailboxConnectionHealth {
     pub status: SyncStatus,
     pub consecutive_errors: u32,
     #[serde(rename = "next_poll_in_ms", serialize_with = "ser_next_poll_in_ms")]
@@ -103,8 +86,11 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
     s.serialize_i64(ms)
 }
 
-impl MailboxConnectionState {
-    pub(crate) fn new() -> Self {
+impl MailboxConnectionHealth {
+    /// Not part of the intended surface: callers outside this crate are tests
+    /// (`mailboxes-manager`'s). Use `seeded` for a status-aware start.
+    #[doc(hidden)]
+    pub fn new() -> Self {
         Self {
             status: SyncStatus::Active,
             consecutive_errors: 0,
@@ -118,7 +104,7 @@ impl MailboxConnectionState {
     /// at that status's interval instead of climbing there again from Active,
     /// while the immediate first poll still gives a recovered mailbox its
     /// instant comeback.
-    pub(crate) fn seeded(status: SyncStatus, config: &MailboxesConfig) -> Self {
+    pub fn seeded(status: SyncStatus, config: &MailboxesConfig) -> Self {
         let consecutive_errors = match status {
             SyncStatus::Active => 0,
             SyncStatus::Degraded => config.degraded_threshold,
@@ -131,7 +117,7 @@ impl MailboxConnectionState {
         }
     }
 
-    pub(crate) fn record_success(&mut self, config: &MailboxesConfig) {
+    pub fn record_success(&mut self, config: &MailboxesConfig) {
         self.consecutive_errors = 0;
         self.status = SyncStatus::Active;
         self.next_poll = Instant::now() + config.active_interval + config.between_polls_delay;
@@ -139,7 +125,7 @@ impl MailboxConnectionState {
         self.last_error = None;
     }
 
-    pub(crate) fn record_error(&mut self, config: &MailboxesConfig, err: String) {
+    pub fn record_error(&mut self, config: &MailboxesConfig, err: String) {
         self.consecutive_errors += 1;
         self.status = if self.consecutive_errors >= config.stopped_threshold {
             SyncStatus::Stopped
@@ -155,7 +141,7 @@ impl MailboxConnectionState {
     /// A failed probe confirms what the status already said; it is not a step
     /// further into backoff, and it never defers the scheduled poll, so a
     /// storm of probes can't keep the status from ever being re-judged.
-    pub(crate) fn record_probe_error(&mut self, config: &MailboxesConfig, err: String) {
+    pub fn record_probe_error(&mut self, config: &MailboxesConfig, err: String) {
         let after_probe =
             Instant::now() + self.status.interval(config) + config.between_polls_delay;
         self.next_poll = self.next_poll.min(after_probe);
@@ -169,12 +155,12 @@ impl MailboxConnectionState {
         });
     }
 
-    pub(crate) fn reschedule(&mut self, config: &MailboxesConfig) {
+    pub fn reschedule(&mut self, config: &MailboxesConfig) {
         self.next_poll = Instant::now() + self.status.interval(config) + config.between_polls_delay;
     }
 
     /// Treat this mailbox as healthy again
-    pub(crate) fn wakeup(&mut self) {
+    pub fn wakeup(&mut self) {
         self.status = SyncStatus::Active;
         self.consecutive_errors = 0;
     }
@@ -202,7 +188,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn tracker_starts_active() {
-        let tracker = MailboxConnectionState::new();
+        let tracker = MailboxConnectionHealth::new();
         assert_eq!(tracker.status, SyncStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
     }
@@ -210,7 +196,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_success_resets_to_active() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
 
         // Accumulate some errors first
         tracker.record_error(&config, "x".into());
@@ -228,7 +214,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_error_transitions() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
 
         // 1 error: still Active
         tracker.record_error(&config, "x".into());
@@ -255,7 +241,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_next_poll_after_success() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
 
         let before = Instant::now();
         tracker.record_success(&config);
@@ -267,7 +253,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_next_poll_after_errors() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
         let delay = config.between_polls_delay;
 
         // First error: still Active interval

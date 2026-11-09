@@ -68,76 +68,79 @@
 		{senderName}
 	</div>
 {/if}
-{#if message.replyQuote}
-	<div style={mediaCapStyle}>
-		<ReplyQuote
-			reply={message.replyQuote}
-			{mine}
-			onNavigate={onNavigateToMessage}
-		/>
-	</div>
-{/if}
-{#if photos.length > 0}
-	<div class="media photos">
-		<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
-		{#if isMediaOnly && metadata}
-			<div
-				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
-			>
-				{@render metadata()}
-			</div>
-		{/if}
-	</div>
-{:else if file}
-	<div class="media file">
-		<FileAttachment {file} metadata={isMediaOnly ? metadata : undefined} />
-	</div>
-{:else if voiceNote}
-	<div class="media voice">
-		<VoiceNoteAttachment
-			voice={voiceNote}
-			metadata={isMediaOnly ? metadata : undefined}
-		/>
-	</div>
-{/if}
-{#if hasText || (metadata && !isMediaOnly)}
-	<div class="caption relative px-1" style={mediaCapStyle}>
-		{#if metadata}
-			<div
-				class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
-				bind:clientWidth={metadataWidth}
-			>
-				{@render metadata()}
-			</div>
-		{/if}
-		<div class="max-w-full" use:shrinkToWidestLine>
-			<MessageText text={body?.message ?? ''} {searchQuery} />
-			<!-- Reserves the metadata's space in the bottom-end corner, since
-			     wrapped text cannot be made to avoid an absolute box via CSS. -->
-			{#if metadata}
-				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
-				></span>
+<div class="content flex flex-col gap-1">
+	{#if message.replyQuote}
+		<div class="quote" style={mediaCapStyle}>
+			<ReplyQuote
+				reply={message.replyQuote}
+				{mine}
+				onNavigate={onNavigateToMessage}
+			/>
+		</div>
+	{/if}
+	{#if photos.length > 0}
+		<div class="media photos">
+			<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
+			{#if isMediaOnly && metadata}
+				<div
+					class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
+				>
+					{@render metadata()}
+				</div>
 			{/if}
 		</div>
-	</div>
-{/if}
+	{:else if file}
+		<div class="media file">
+			<FileAttachment {file} metadata={isMediaOnly ? metadata : undefined} />
+		</div>
+	{:else if voiceNote}
+		<div class="media voice">
+			<VoiceNoteAttachment
+				voice={voiceNote}
+				metadata={isMediaOnly ? metadata : undefined}
+			/>
+		</div>
+	{/if}
+	{#if hasText || (metadata && !isMediaOnly)}
+		<div class="caption relative px-1" style={mediaCapStyle}>
+			{#if metadata}
+				<div
+					class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
+					bind:clientWidth={metadataWidth}
+				>
+					{@render metadata()}
+				</div>
+			{/if}
+			<div class="relative top-px max-w-full" use:shrinkToWidestLine>
+				<MessageText text={body?.message ?? ''} {searchQuery} />
+				<!-- Reserves the metadata's space in the bottom-end corner, since
+			     wrapped text cannot be made to avoid an absolute box via CSS. -->
+				{#if metadata}
+					<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
+					></span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+</div>
 
 <style>
 	.sender-name {
+		padding-block: 1px;
 		padding-inline: 0.25rem;
-		margin-bottom: 0.125rem;
 		font-size: 0.875rem;
+		line-height: 1.0625rem;
 		font-weight: 600;
 		text-align: start;
 	}
 
-	/* Photos bleed past the bubble's 0.5rem padding to sit edge-to-edge; the
-	 * Card's overflow clip rounds the corners to match the bubble. */
+	/* Photos bleed past the bubble's padding to sit edge-to-edge; the Card's
+	 * overflow clip rounds the corners to match the bubble. */
 	.media {
 		position: relative;
 	}
 	.media.photos {
-		margin: -0.5rem;
+		margin: calc(-1 * var(--message-padding-y)) -0.5rem;
 		max-width: calc(100% + 1rem);
 	}
 	/* Hairline border so near-white images don't bleed into the bubble. */
@@ -152,6 +155,10 @@
 	.media.photos:not(:first-child) {
 		margin-top: 0;
 	}
+	.sender-name + .content > .media.photos:first-child,
+	.sender-name + .content > .quote:first-child {
+		margin-top: 2px;
+	}
 	/* Leave a gap before a caption below the media instead of bleeding down. */
 	.media.photos:has(+ .caption) {
 		margin-bottom: 4px;
@@ -162,9 +169,17 @@
 		margin-bottom: 4px;
 	}
 	/* Space the file/voice row away from the sender-name header in groups. */
-	.sender-name + .media.file,
-	.sender-name + .media.voice {
-		margin-top: 6px;
+	.sender-name + .content > .media.file:first-child {
+		margin-top: 2px;
+	}
+	.media.voice:first-child {
+		padding-top: 7px;
+	}
+	.quote + .media.voice {
+		padding-top: 9px;
+	}
+	.sender-name + .content > .media.voice:first-child {
+		padding-top: 3px;
 	}
 
 	/* Image-only bubbles bleed to the bottom edge with the timestamp overlaid

@@ -590,13 +590,13 @@ test('a group invite notifies the member it names, after whoever added them', ()
 	// The title is the group's name only once the op naming it has arrived
 	// too, which may come after the invite.
 	assert.deepEqual(showing(m, B), [
-		`group-001 | ${A} added you to the group. or New group | ${A} added you to the group.`,
+		`group-001 › ${A} | ${A} added you to the group. or New group › ${A} | ${A} added you to the group.`,
 	]);
 	m.openedChat(B, group);
 	assert.deepEqual(showing(m, B), []);
 });
 
-test('a group message is told apart from the invite of the one who sent it', () => {
+test('a group message joins the thread of the invite before it', () => {
 	const m = new ExpectedModel([desktop(A), phone(B)], [], true, true, true);
 	contacts(m, A, B);
 	m.propagate();
@@ -605,11 +605,10 @@ test('a group message is told apart from the invite of the one who sent it', () 
 	m.setGroupInfo(group, 'renamed-01', 'about-01');
 	m.addMessage(group, A, 'text', 'sm-1');
 	m.propagate();
+	// The rename and the message come from different authors, so either may
+	// be processed first.
 	assert.deepEqual(showing(m, B), [
-		`group-001 | ${A} added you to the group. or New group | ${A} added you to the group.`,
-		// The rename and the message come from different authors, so either
-		// may be processed first.
-		`group-001 › ${A} | sm-1 or New group › ${A} | sm-1 or renamed-01 › ${A} | sm-1`,
+		`group-001 › ${A} | ${A} added you to the group. or New group › ${A} | ${A} added you to the group. or group-001 › ${A} | sm-1 or New group › ${A} | sm-1 or renamed-01 › ${A} | sm-1`,
 	]);
 });
 
@@ -627,7 +626,7 @@ test('being put back in a group notifies again, the removal having said nothing'
 	m.addGroupMember(group, A, B);
 	m.propagate();
 	assert.deepEqual(showing(m, B), [
-		`group-001 | ${A} added you to the group. or New group | ${A} added you to the group.`,
+		`group-001 › ${A} | ${A} added you to the group. or New group › ${A} | ${A} added you to the group.`,
 	]);
 });
 

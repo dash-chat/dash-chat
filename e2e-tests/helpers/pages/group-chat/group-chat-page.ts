@@ -20,6 +20,7 @@ export class GroupChatPage extends TestHelper {
 		this.composer,
 	);
 	notMemberNotice = this.el(tid('group-chat-not-member'));
+	connectedPeersCount = this.el(tid('connected-peers-count'));
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'group-chat-scroll');
 

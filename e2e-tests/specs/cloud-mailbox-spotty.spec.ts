@@ -3,10 +3,12 @@
  * link to it turns slow, hangs, or refuses connections, the way a mailbox
  * behind a struggling connection does. The chip may only read cloud while
  * the mailbox actually answers, and a message the mailbox cannot take stays
- * pending until it can. One agent in a solo group, so the chip is on screen.
+ * pending until it can, and a phone that loses its network says so at once.
+ * One agent in a solo group, so the chip is on screen.
  */
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import {
+	MAILBOX_HEALED_AFTER_BACKOFF_MS,
 	MAILBOX_HEALED_MS,
 	MAILBOX_HUNG_MS,
 	MAILBOX_UNANSWERED_MS,
@@ -92,9 +94,32 @@ describe('Cloud mailbox on a spotty link', function () {
 		await expectDisconnected('the link was cut', MAILBOX_UNANSWERED_MS);
 		await sendHeldBack('while you were refusing');
 		await healMailboxLink();
-		await expectConnected('the link healed', MAILBOX_HEALED_MS);
+		// Failing fast, the polls of the outage back the mailbox off to degraded.
+		await expectConnected('the link healed', MAILBOX_HEALED_AFTER_BACKOFF_MS);
 		await messages().waitForMessageStatus('while you were refusing', [
 			'mailbox',
 		]);
+	});
+
+	it('reads disconnected as soon as the phone loses its network, and connected again once it is back', async function () {
+		// Android reaches the run's mailbox over adb reverse, which Wi-Fi does
+		// not carry, and a desktop cannot leave its network.
+		if (agent.platform !== 'ios') this.skip();
+		await agent.disableWifi();
+		try {
+			await expectDisconnected('Wi-Fi went off', MAILBOX_UNANSWERED_MS);
+		} catch (err) {
+			// Checked only on failure: the probes take seconds the chip is
+			// being timed against.
+			if (await agent.hasInternet()) {
+				throw new Error(
+					'the phone still reaches the internet with Wi-Fi off; this case needs a phone with no other connection',
+				);
+			}
+			throw err;
+		} finally {
+			await agent.enableWifi();
+		}
+		await expectConnected('Wi-Fi came back', MAILBOX_HEALED_AFTER_BACKOFF_MS);
 	});
 });

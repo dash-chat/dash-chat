@@ -434,6 +434,7 @@
 			<VoiceRecordingBar
 				{voice}
 				onLeavingChange={leaving => (voiceBarLeaving = leaving)}
+				banner={replyBanner}
 			/>
 
 			<div

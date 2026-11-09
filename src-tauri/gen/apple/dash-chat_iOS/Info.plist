@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.21.2</string>
+	<string>0.21.5</string>
 	<key>CFBundleVersion</key>
-	<string>0.21.2</string>
+	<string>0.21.5</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -66,5 +66,16 @@
 	<string>Dash Chat needs access to your photo library to attach photos to messages and to save photos you download from chats.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Dash Chat uses the microphone to record voice messages you send in chats.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dash-chat</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>dash-chat</string>
+		</dict>
+	</array>
 </dict>
 </plist>

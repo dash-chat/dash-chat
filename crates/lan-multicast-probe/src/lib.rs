@@ -116,9 +116,13 @@ async fn refuses_multicast(interface: Ipv4Addr) -> io::Result<bool> {
                     | io::ErrorKind::PermissionDenied
             ) =>
         {
+            log::debug!("multicast refused on {interface}: {err}");
             Ok(true)
         }
-        Err(err) => Err(err),
+        Err(err) => {
+            log::debug!("multicast probe failed on {interface}: {err}");
+            Err(err)
+        }
     }
 }
 

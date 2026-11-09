@@ -646,7 +646,14 @@ mod tests {
         assert!(hubs["elsewhere"].probed_at.is_none());
     }
 
+    /// Windows retries a refused connect for ~2s before reporting it, so there a
+    /// refusal is indistinguishable from a timeout: a hub that went away costs
+    /// the full `PROBE_TIMEOUT` to drop.
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "Windows reports a refusal only after ~2s of retries"
+    )]
     async fn a_refused_dial_settles_the_probe_without_redialling() {
         // Bound but not listening: the port stays ours, and a dial is refused.
         let reserved = tokio::net::TcpSocket::new_v4().unwrap();

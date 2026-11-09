@@ -110,8 +110,7 @@ export class ConnectionStatusIndicator extends TestHelper {
 	}
 
 	/** Wait until the chip is not showing a local hub. Which other state it
-	 *  reads instead depends on the cloud connection, so this leaves it open;
-	 *  an unmounted chip (pending is not rendered) shows no hub either. */
+	 *  reads instead depends on the cloud connection, so this leaves it open. */
 	async waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
 		let seen: ConnectionStatus | null = null;
 		try {

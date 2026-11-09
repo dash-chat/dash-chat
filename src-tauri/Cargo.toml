@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.21.2"
+version = "0.21.5"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -41,11 +41,12 @@ tauri-plugin-sentry-reporting = { workspace = true }
 tauri-plugin-subscriptions = { git = "https://github.com/dash-chat/tauri-plugin-subscriptions", rev = "30d1a889a4d7fca0a28bc9d77a7662b6f95cec29" }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a415a74db8f09350abd7e1a733c2b0c30e4730be", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "e3537c5f8d58e9c9891370253f94de32f1b18043", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
+mailboxes-manager = { workspace = true }
 network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
 local-hub-discovery = { workspace = true }
@@ -138,7 +139,7 @@ objc2 = "0.6"
 # 0.13 is what compiles against Tauri 2.12 on Windows, and it does not build for
 # Android or iOS, where the bridge has never been used.
 tauri-plugin-mcp-bridge = "0.13"
-tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
 tauri-plugin-updater = "2.9"

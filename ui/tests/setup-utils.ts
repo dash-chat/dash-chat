@@ -23,6 +23,7 @@ import {
 	type ConnectionStatusTag,
 } from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
+import { discardPendingCrashReport } from '../src/lib/utils/error-report';
 
 const requestJoinOutcomes = new Map<string, string>();
 
@@ -62,7 +63,7 @@ function hasText(selector: string, text: string): boolean {
 }
 
 export interface ConnectionStatusSample {
-	/** Null while the chip is not mounted, which is how pending renders. */
+	/** Null while the chip is not mounted. */
 	status: ConnectionStatusTag | null;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
@@ -243,6 +244,47 @@ function recordMediaDownloads() {
 		}
 	});
 	mediaObserver.observe({ type: 'resource', buffered: true });
+	recordBlobImageLoads();
+}
+
+/** WebKit keeps no resource timing for a custom scheme, so where blobs are served
+ * from `irohblob://` a photo's download is timed from its `<img>` appearing to its
+ * `load` event. */
+function recordBlobImageLoads() {
+	const appearedAt = new Map<string, number>();
+	const noteAppeared = (img: HTMLImageElement) => {
+		if (img.src.startsWith('irohblob:') && !appearedAt.has(img.src)) {
+			appearedAt.set(img.src, performance.now());
+		}
+	};
+	new MutationObserver(records => {
+		for (const record of records) {
+			if (record.target instanceof HTMLImageElement) {
+				noteAppeared(record.target);
+			}
+			for (const node of record.addedNodes) {
+				if (!(node instanceof Element)) continue;
+				if (node instanceof HTMLImageElement) noteAppeared(node);
+				node.querySelectorAll('img').forEach(noteAppeared);
+			}
+		}
+	}).observe(document.documentElement, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeFilter: ['src'],
+	});
+	document.addEventListener(
+		'load',
+		e => {
+			if (!(e.target instanceof HTMLImageElement)) return;
+			const appeared = appearedAt.get(e.target.src);
+			if (appeared !== undefined && !mediaDownloads.has(e.target.src)) {
+				mediaDownloads.set(e.target.src, performance.now() - appeared);
+			}
+		},
+		true,
+	);
 }
 
 /** Milliseconds the photo whose alt contains `label` spent downloading — the
@@ -269,8 +311,10 @@ function clearNotifications(): Promise<void> {
 	return invokeAfterSetup('plugin:notification|remove_active');
 }
 
-/** Reset the app to first-launch state: clear web storage and the app's
- * notifications, which the OS would otherwise keep, then run the real
+/** Reset the app to first-launch state: clear web storage, the app's
+ * notifications, which the OS would otherwise keep, and any held crash report,
+ * which lives outside the data dir and would cover every later spec's first
+ * screen with its sheet, then run the real
  * `delete_account` command — the same code path as Settings → Account →
  * Delete account — which shuts the node down, deletes the data dir, and (on
  * mobile) exits the app. The iOS e2e harness calls this before each spec
@@ -280,7 +324,10 @@ function clearNotifications(): Promise<void> {
 function resetToFirstLaunch(): void {
 	localStorage.clear();
 	sessionStorage.clear();
-	void clearNotifications().finally(() => invokeAfterSetup('delete_account'));
+	void Promise.allSettled([
+		clearNotifications(),
+		discardPendingCrashReport(),
+	]).finally(() => invokeAfterSetup('delete_account'));
 }
 
 /** Summon the Android soft keyboard for the currently focused input. A

@@ -21,11 +21,14 @@
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
@@ -67,6 +70,7 @@
 		contactsStore.myDeviceId(),
 		store.groupedEvents(),
 		store.allMembers(),
+		store.messages.readOnly(),
 	]);
 	const composerData = useReactivePromises(() => [store.me(), store.info()]);
 
@@ -121,6 +125,12 @@
 	}
 </script>
 
+{#snippet connectionStatus()}
+	<div class="grid size-11 shrink-0 place-items-center">
+		<ConnectionStatusIndicator {chatId} />
+	</div>
+{/snippet}
+
 <div class="absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
@@ -131,8 +141,11 @@
 			<Navbar
 				transparent={true}
 				titleClass="opacity1 min-w-0 flex-1"
-				leftClass="shrink-0"
+				leftClass={theme === 'ios' && !isWideScreen.value
+					? 'shrink-0 me-4'
+					: 'shrink-0'}
 				centerTitle={false}
+				right={theme === 'ios' ? connectionStatus : undefined}
 			>
 				{#snippet left()}
 					{#if !isWideScreen.value}
@@ -147,28 +160,26 @@
 						<Link
 							href={`/group-chat/${chatId}/info`}
 							data-testid="group-chat-info-link"
-							class="flex w-full min-w-0 items-center justify-start gap-2"
+							class="flex w-full min-w-0 items-center justify-start gap-4 ps-0"
 						>
 							<span class="shrink-0">
 								<Avatar
 									image={info.image}
 									initials={info.name.slice(0, 2)}
-									size="2.5rem"
+									size="2.25rem"
 								/>
 							</span>
-							<span class="flex-1 min-w-0 truncate">{info.name}</span>
+							<span class="flex flex-1 min-w-0 flex-col">
+								<span class="truncate">{info.name}</span>
+								<ConnectedPeersCount {chatId} />
+							</span>
 						</Link>
 					{/await}
 				{/snippet}
 
-				<!-- The same 44px cell as the home navbar. -->
-				<div
-					class="grid size-11 shrink-0 place-items-center {theme === 'material'
-						? 'me-2'
-						: ''}"
-				>
-					<ConnectionStatusIndicator {chatId} />
-				</div>
+				{#if theme === 'material'}
+					<div class="me-2">{@render connectionStatus()}</div>
+				{/if}
 			</Navbar>
 		{/snippet}
 
@@ -209,11 +220,11 @@
 
 			<div
 				bind:this={messagesEl}
-				class="column m-2 gap-1"
+				class="swipe-clip-boundary column my-2 gap-1 ps-3 pe-4"
 				data-testid="group-chat-messages"
 			>
 				{#await $readMessageHashes then readHashes}
-					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members, readOnly]}
 						{@const unreadDivider = unreadDividerTracker.compute(
 							messageGroupsInDays,
 							readHashes,
@@ -229,9 +240,13 @@
 								{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
 									<div
 										class="column"
-										class:pt-px={i > 0}
-										class:pt-1={i === 0 &&
+										class:pt-[1.5px]={i > 0 && isMobile}
+										class:pt-px={i > 0 && !isMobile}
+										class:pt-3={i === 0 &&
 											messageGroup !== messageGroupsInDay.eventsGroups[0]}
+										class:pb-[3px]={i === messageGroup.length - 1 &&
+											item.kind !== 'control' &&
+											item.message.author !== myDeviceId}
 										data-message-group={messageGroup[0][0]}
 									>
 										{#if unreadDivider.hash === hash}
@@ -261,6 +276,7 @@
 														{position}
 														{myDeviceId}
 														{chatId}
+														{readOnly}
 														showDeliveryStatus={endsDeliveryStatusRun(
 															messageGroup,
 															i,
@@ -295,6 +311,7 @@
 														{position}
 														{myDeviceId}
 														{chatId}
+														{readOnly}
 														searchQuery=""
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
@@ -318,7 +335,11 @@
 								{/each}
 							</div>
 						{/each}
+					{:catch error}
+						<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 					{/await}
+				{:catch error}
+					<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 				{/await}
 			</div>
 		</div>

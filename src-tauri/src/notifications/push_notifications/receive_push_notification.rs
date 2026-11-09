@@ -187,7 +187,7 @@ async fn reconnect_cloud_mailbox(
         }
         return;
     };
-    let status = mailbox.connection_state().borrow().status;
+    let status = mailbox.health().borrow().status;
     if status != mailbox_client::SyncStatus::Active {
         node.mailboxes.probe(id).await;
     }

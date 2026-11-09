@@ -275,8 +275,9 @@ impl BlobSync {
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
-        let downloader =
-            Downloader::new_with_opts(&store, &endpoint, mixed_alpn.as_slice(), Default::default());
+        let downloader = Downloader::builder(&store, &endpoint)
+            .alpn(mixed_alpn.as_slice())
+            .build();
         let router = Router::builder(endpoint.clone())
             .accept(mixed_alpn, blobs.clone())
             .spawn();

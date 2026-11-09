@@ -20,6 +20,7 @@ import {
 	isMessage,
 	mediaBundleToAttachment,
 } from '../types';
+import { orderEventsAscending } from '../utils/group-events-in-days';
 import { type IMessagesClient } from './messages-client';
 import { dropOpsAuthoredWhileNotAMember } from './op-visibility';
 import { type MessageReply } from './replies';
@@ -42,6 +43,9 @@ export interface Message {
 	 * `'deleted-for-everyone'` once deleted. */
 	content: MessageDisplay;
 	timestamp: number;
+	/** See `MessageContentV1.lamport`; `0` when the payload carries none or is
+	 * gone (tombstoned). */
+	lamport: number;
 	author: DeviceId;
 	seqNum: number;
 	replyQuote?: MessageReply;
@@ -52,6 +56,7 @@ export interface Message {
 export type Bodyless = {
 	hash: string;
 	timestamp: number;
+	lamport: number;
 	author: DeviceId;
 	seqNum: number;
 };
@@ -69,27 +74,45 @@ export class MessagesStore {
 		public readOnly: () => ReactivePromise<boolean>,
 	) {}
 
-	messages = reactive(async () => {
+	/** The chat's visible ops, each after the ops it references. Reactions sit at
+	 * the end, so this is an order to apply them in, not to display them in. */
+	causalOps = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 
-		const opsOrdered = Object.values(logs)
+		const opsByTimestamp = Object.values(logs)
 			.flat()
 			.sort(
 				(a, b) =>
 					a.header.timestamp - b.header.timestamp ||
 					a.hash.localeCompare(b.hash),
 			);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		return opsInCausalOrder(
+			dropOpsAuthoredWhileNotAMember(
+				await this.dropOpsAuthoredWhileBlocked(opsByTimestamp, deviceAgents),
+				myDeviceId,
+			),
+		);
+	});
+
+	messages = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const causalOps = await this.causalOps();
 		const tombstones = await this.tombstoneStore.tombstones(this.chatId);
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
 		const deviceNames = await this.deviceNames();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const ops = dropOpsAuthoredWhileNotAMember(
-			await this.dropOpsAuthoredWhileBlocked(opsOrdered, deviceAgents),
-			myDeviceId,
+		const messages = logsToMessages(
+			causalOps,
+			tombstones,
+			deviceAgents,
+			deviceNames,
 		);
-		const messages = logsToMessages(ops, tombstones, deviceAgents, deviceNames);
 		for (const message of Object.values(messages)) {
 			if (message.author !== myDeviceId) continue;
 			message.deliveryStatus = await this.messageAckStore.deliveryStatus(
@@ -172,13 +195,15 @@ export class MessagesStore {
 		return await this.contactsStore.profilesForAgents(new Set(members));
 	});
 
-	lastMessage = reactive(async () => {
-		const messages = await this.messages();
+	orderedMessages = reactive(async () =>
+		orderEventsAscending(await this.messages()),
+	);
 
-		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.timestamp - m1.timestamp,
-		);
-		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
+	lastMessage = reactive(async () => {
+		const orderedMessages = await this.orderedMessages();
+		return orderedMessages.length > 0
+			? orderedMessages[orderedMessages.length - 1][1]
+			: undefined;
 	});
 
 	readMessageHashes = reactive(async () => {
@@ -283,7 +308,7 @@ export class MessagesStore {
 
 // Apply each log item to the set of messages incrementally.
 //
-// `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
+// `causalOps` is the interleaved list of all operations from all authors in the chat topic.
 // It must be ordered so that any partial ordering constraints are upheld, i.e. items
 // which reference prior items must appear after them.
 //
@@ -301,8 +326,37 @@ function blockedAt(history: BlockHistoryEvent[], timestamp: number): boolean {
 	return blocked;
 }
 
-function logsToMessages(
-	opsOrdered: SimplifiedOperation<Payload>[],
+/** Reactions go last because they carry no lamport to place them after their
+ * target when the authors' clocks disagree. */
+export function opsInCausalOrder(
+	ops: SimplifiedOperation<Payload>[],
+): SimplifiedOperation<Payload>[] {
+	const isReaction = (op: SimplifiedOperation<Payload>) =>
+		op.body?.type === 'Chat' && op.body.payload.type === 'Reaction';
+	const orderable = Object.fromEntries(
+		ops
+			.filter(op => !isReaction(op))
+			.map(op => [
+				op.hash,
+				{
+					op,
+					timestamp: op.header.timestamp,
+					lamport:
+						op.body?.type === 'Chat' && op.body.payload.type === 'Message'
+							? (op.body.payload.payload.lamport ?? 0)
+							: 0,
+					author: op.header.verifying_key,
+				},
+			]),
+	);
+	return [
+		...orderEventsAscending(orderable).map(([, { op }]) => op),
+		...ops.filter(isReaction),
+	];
+}
+
+export function logsToMessages(
+	causalOps: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
 	deviceAgents: Record<DeviceId, AgentId>,
 	deviceNames: Record<DeviceId, string>,
@@ -311,7 +365,7 @@ function logsToMessages(
 	// Map of EditMessage -> the target they reference
 	const editTargets: Record<Hash, Hash> = {};
 
-	for (const op of opsOrdered) {
+	for (const op of causalOps) {
 		const author = op.header.verifying_key;
 		const body = op.body;
 
@@ -325,6 +379,7 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
+				lamport: 0,
 			};
 			continue;
 		}
@@ -343,7 +398,7 @@ function logsToMessages(
 					hasBody(replyTarget.content)
 				) {
 					// It's intended that the quoted text is the version of the message at the time of the reply.
-					// This works as is only because messages are ordered by timestamp and we set this quote while
+					// This works as is only because messages are ordered by lamport and we set this quote while
 					// traversing the partial conversation. If replies were resolved during a second pass over the
 					// conversation, we might pick up the current edited text instead, so be careful.
 					replyQuote = {
@@ -383,6 +438,7 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
+				lamport: body.payload.payload.lamport ?? 0,
 				replyQuote: replyQuote,
 			};
 		} else if (body.payload.type === 'Reaction') {
@@ -478,6 +534,7 @@ function placeholderFor(message: Bodyless): Message {
 		author: message.author,
 		seqNum: message.seqNum,
 		timestamp: message.timestamp,
+		lamport: message.lamport,
 	};
 }
 

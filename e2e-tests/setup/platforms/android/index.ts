@@ -636,10 +636,51 @@ async function exitOverJdwp(udid: string, pid: string): Promise<boolean> {
 	}
 }
 
+/** POST_NOTIFICATIONS only exists from API 33: below it there is no permission
+ *  to revoke and no system dialog, as notifications are on until turned off in
+ *  the system settings. */
+export function androidAsksNotificationPermission(udid: string): boolean {
+	return Number(adbShell(udid, 'getprop ro.build.version.sdk').trim()) >= 33;
+}
+
+/** Flip the app's master switch on the system's notification settings screen,
+ *  the only way to change what areNotificationsEnabled() reports below API 33.
+ *  It survives clearing the app's data, so whoever turns it off has to turn it
+ *  back on. */
+async function setAndroidNotificationsSwitch(
+	browser: WebdriverIO.Browser,
+	udid: string,
+	on: boolean,
+): Promise<void> {
+	adbShell(
+		udid,
+		`am start -a android.settings.APP_NOTIFICATION_SETTINGS --es android.provider.extra.APP_PACKAGE ${APP_PACKAGE}`,
+	);
+	const masterSwitch = browser.$(
+		'android=new UiSelector().resourceId("com.android.settings:id/switch_widget")',
+	);
+	await masterSwitch.waitForExist();
+	const wanted = String(on);
+	if ((await masterSwitch.getAttribute('checked')) !== wanted) {
+		await masterSwitch.click();
+	}
+	await browser.waitUntil(
+		async () => (await masterSwitch.getAttribute('checked')) === wanted,
+	);
+	adbShell(udid, 'am force-stop com.android.settings');
+}
+
 /** Put the notification permission the session's autoGrantPermissions
  *  granted back to never asked, so the app's next request shows the system
  *  dialog. Android kills the app when it loses a permission. */
-export function resetAndroidNotificationPermission(udid: string): void {
+export async function resetAndroidNotificationPermission(
+	browser: WebdriverIO.Browser,
+	udid: string,
+): Promise<void> {
+	if (!androidAsksNotificationPermission(udid)) {
+		await setAndroidNotificationsSwitch(browser, udid, true);
+		return;
+	}
 	const permission = 'android.permission.POST_NOTIFICATIONS';
 	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
 	adbShell(
@@ -650,7 +691,14 @@ export function resetAndroidNotificationPermission(udid: string): void {
 
 /** Deny the notification permission for good, as two refusals in the system
  *  dialog do: the app's next request is refused without showing a dialog. */
-export function denyAndroidNotificationPermission(udid: string): void {
+export async function denyAndroidNotificationPermission(
+	browser: WebdriverIO.Browser,
+	udid: string,
+): Promise<void> {
+	if (!androidAsksNotificationPermission(udid)) {
+		await setAndroidNotificationsSwitch(browser, udid, false);
+		return;
+	}
 	const permission = 'android.permission.POST_NOTIFICATIONS';
 	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
 	adbShell(

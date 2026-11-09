@@ -8,6 +8,7 @@
 
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import type { Snippet } from 'svelte';
 	import { Button, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -21,9 +22,12 @@
 	interface Props {
 		voice: VoiceRecorder;
 		onLeavingChange?: (leaving: boolean) => void;
+		/** Row kept above the recording controls, e.g. the reply banner the bar
+		 * would otherwise cover. */
+		banner?: Snippet;
 	}
 
-	let { voice, onLeavingChange }: Props = $props();
+	let { voice, onLeavingChange, banner }: Props = $props();
 
 	const theme = $derived(useTheme());
 	// Matches the message input's pill so every composer surface looks alike.
@@ -65,24 +69,25 @@
 	<!-- One element across both mobile views so locking swaps the contents
 	     instead of replaying the grow-in transition. -->
 	<div
-		class="voice-bar has-end-button {surfaceClass} {hold
-			? 'pointer-events-none px-2 text-[var(--k-text-color)]'
-			: 'ps-3 pe-2'}"
+		class="voice-bar has-end-button text-[var(--k-text-color)] {surfaceClass}"
+		class:pointer-events-none={hold}
 		style="--end-button-size: {theme === 'ios' ? '42px' : '40px'}"
 		data-testid={hold ? 'voice-recording-overlay' : 'voice-locked-bar'}
 		transition:morph={morphParams}
 		onoutrostart={() => onLeavingChange?.(true)}
 		onoutroend={() => onLeavingChange?.(false)}
 	>
+		{@render banner?.()}
+
 		<div
-			class="flex flex-1 items-center gap-2"
+			class="flex flex-1 items-center gap-2 {hold ? 'px-2' : 'ps-3 pe-2'}"
 			out:fade={{ duration: contentFadeMs }}
 		>
 			{#if hold}
 				<RecordingIndicator elapsedMs={voice.elapsedMs} />
 
 				<div
-					class="flex flex-1 items-center justify-center gap-1 text-sm"
+					class="flex items-center gap-1 text-sm"
 					style="opacity: {0.6 * (1 - voice.drag.cancelProgress)}"
 				>
 					<wa-icon class="rtl:-scale-x-100" src={wrapPathInSvg(mdiChevronLeft)}
@@ -130,6 +135,8 @@
 	   the bordered pill, mirroring the message input's send button. */
 	.voice-bar.has-end-button {
 		inset-inline-end: calc(var(--end-button-size) + 0.5rem);
+		flex-direction: column;
+		align-items: stretch;
 	}
 	/* On desktop the bar spans the full row and lays out its own inner pill plus
 	   the Cancel/Send buttons, so it must not look like a pill — it just paints

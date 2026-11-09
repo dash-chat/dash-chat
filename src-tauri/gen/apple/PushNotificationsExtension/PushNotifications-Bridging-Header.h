@@ -24,3 +24,5 @@ RustByteSlice notification_route(const struct push_notification *data);
 RustByteSlice notification_large_icon_bytes(const struct push_notification *data);
 RustByteSlice notification_conversation_sender_id(const struct push_notification *data);
 RustByteSlice notification_conversation_title(const struct push_notification *data);
+RustByteSlice notification_conversation_icon_bytes(const struct push_notification *data);
+int32_t notification_conversation_recipient_count(const struct push_notification *data);

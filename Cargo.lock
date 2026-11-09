@@ -885,9 +885,9 @@ dependencies = [
 
 [[package]]
 name = "bao-tree"
-version = "0.16.1"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "149a2a6017771141e2cd5d0c55b3892d8ff1958df5c318b2e496bf3544b426ed"
+checksum = "50d0e17303b78c9bb240014f3f401ecae5c0460438ace49a171e5f97e3ae57ba"
 dependencies = [
  "blake3",
  "bytes",
@@ -2090,7 +2090,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.21.2"
+version = "0.21.5"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -2118,6 +2118,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
+ "mailboxes-manager",
  "nanoid 0.4.0",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
@@ -2133,7 +2134,7 @@ dependencies = [
  "push-notifications-client",
  "push-notifications-server",
  "regex",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "sentry-types 0.42.0",
  "serde",
  "serde_json",
@@ -2218,6 +2219,7 @@ dependencies = [
  "mailbox-client",
  "mailbox-local-server",
  "mailbox-server",
+ "mailboxes-manager",
  "maplit",
  "nanoid 0.4.0",
  "network-watch",
@@ -3431,19 +3433,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures-concurrency"
-version = "7.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "175cd8cca9e1d45b87f18ffa75088f2099e3c4fe5e2f83e42de112560bea8ea6"
-dependencies = [
- "fixedbitset",
- "futures-core",
- "futures-lite 2.6.1",
- "pin-project",
- "smallvec",
-]
-
-[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4502,7 +4491,7 @@ dependencies = [
  "http 1.5.0",
  "hyper 1.11.1",
  "hyper-util",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "tokio",
  "tokio-rustls 0.26.5",
  "tower-service",
@@ -4574,7 +4563,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -4905,8 +4894,9 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "iroh"
-version = "1.2.0"
-source = "git+https://github.com/dash-chat/iroh?rev=4e42c9350414609594a60de95a51f3fe933ee018#4e42c9350414609594a60de95a51f3fe933ee018"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3689cab508af9bcef7816c1201b403595ec6aa20e7d15e1f9683bb4be4a5b17"
 dependencies = [
  "backon",
  "blake3",
@@ -4937,7 +4927,7 @@ dependencies = [
  "rand 0.10.3",
  "reqwest 0.13.5",
  "rustc-hash 2.1.3",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "serde",
  "smallvec",
@@ -4953,8 +4943,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-base"
-version = "1.2.0"
-source = "git+https://github.com/dash-chat/iroh?rev=4e42c9350414609594a60de95a51f3fe933ee018#4e42c9350414609594a60de95a51f3fe933ee018"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43b72366b16001af3a51574233df88ca6d62da0215807549a769e7de887da803"
 dependencies = [
  "curve25519-dalek 5.0.0",
  "data-encoding",
@@ -4971,10 +4962,10 @@ dependencies = [
 
 [[package]]
 name = "iroh-blobs"
-version = "0.103.0"
-source = "git+https://github.com/maackle/iroh-blobs?branch=main#cf7973c31df84b475f689614178a6504c8a4c847"
+version = "0.104.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f0c0f527363afa91564f82080fc5d31dd463e1831df0b546ff9594bbfa3cb60"
 dependencies = [
- "arrayvec",
  "bao-tree",
  "bytes",
  "cfg_aliases",
@@ -5011,8 +5002,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-dns"
-version = "1.3.0"
-source = "git+https://github.com/dash-chat/iroh?rev=4e42c9350414609594a60de95a51f3fe933ee018#4e42c9350414609594a60de95a51f3fe933ee018"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7481d0792dde1035a2b06ec06ed3cf6d01fcb1a494e6931b489e32073382048d"
 dependencies = [
  "arc-swap",
  "cfg_aliases",
@@ -5023,7 +5015,7 @@ dependencies = [
  "n0-future",
  "portable-atomic",
  "rand 0.10.3",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "simple-dns",
  "strum",
  "tokio",
@@ -5033,14 +5025,14 @@ dependencies = [
 
 [[package]]
 name = "iroh-gossip"
-version = "0.101.0"
-source = "git+https://github.com/dash-chat/iroh-gossip?rev=efc565e0e63800a77a3add0dbb97f980278e2974#efc565e0e63800a77a3add0dbb97f980278e2974"
+version = "0.102.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f78267c0d936a3f51b8aa24419a7a267e42d1800ac99315f48045f2540c57922"
 dependencies = [
  "blake3",
  "bytes",
  "data-encoding",
  "derive_more 2.1.1",
- "futures-concurrency",
  "hex",
  "indexmap 2.14.2",
  "iroh",
@@ -5051,6 +5043,7 @@ dependencies = [
  "n0-future",
  "postcard",
  "rand 0.10.3",
+ "rustc-hash 2.1.3",
  "serde",
  "tokio",
  "tokio-util",
@@ -5092,9 +5085,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-metrics"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "291065721ad7c477b972e581bbc528df031dc8eb5e39fe1ff3300ae5dfb157ef"
+checksum = "8ede55536349842337f7cdc63012ec33dc637945f3259c98a0763aac364cdf09"
 dependencies = [
  "iroh-metrics-derive",
  "itoa",
@@ -5119,8 +5112,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-relay"
-version = "1.2.0"
-source = "git+https://github.com/dash-chat/iroh?rev=4e42c9350414609594a60de95a51f3fe933ee018#4e42c9350414609594a60de95a51f3fe933ee018"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e5589e7c1475700686603a970275687f760df853bc6525c7eb1347aa31d7230"
 dependencies = [
  "blake3",
  "bytes",
@@ -5141,11 +5135,12 @@ dependencies = [
  "noq",
  "noq-proto",
  "num_enum",
+ "percent-encoding",
  "pin-project",
  "postcard",
  "rand 0.10.3",
  "reqwest 0.13.5",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "serde",
  "serde_bytes",
@@ -5176,9 +5171,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-util"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20e41eb982f15230c55f0a70a74a514360e1f565b07861924fd0e8db172b3d00"
+checksum = "889d5cc9da2eaac9f63657237c491db17d1fe9fffdc7c0f2f0e04c49d5d45053"
 dependencies = [
  "derive_more 2.1.1",
  "iroh",
@@ -5202,7 +5197,7 @@ dependencies = [
  "noq",
  "postcard",
  "rcgen",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "serde",
  "smallvec",
  "tokio",
@@ -5805,13 +5800,11 @@ dependencies = [
 name = "mailbox-client"
 version = "0.1.0"
 dependencies = [
- "aliased",
  "anyhow",
  "async-trait",
  "axum",
  "bytes",
  "chrono",
- "ciborium",
  "dashchat-utils",
  "derive_more 1.0.0",
  "iroh",
@@ -5819,19 +5812,16 @@ dependencies = [
  "mailbox-client",
  "mailbox-server",
  "nanoid 0.5.0",
+ "netwatch-http-client",
  "once_cell",
  "p2panda-core",
  "pretty_assertions",
  "reporting",
  "reqwest 0.12.28",
  "serde",
- "serde_json",
- "sqlite-gate",
- "sqlx 0.9.0",
- "tempfile",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -5883,13 +5873,37 @@ dependencies = [
  "serde_json",
  "serial_test",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tokio",
  "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "mailboxes-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "iroh",
+ "iroh-blobs",
+ "mailbox-client",
+ "mailbox-server",
+ "nanoid 0.5.0",
+ "pretty_assertions",
+ "reporting",
+ "serde",
+ "sqlite-gate",
+ "sqlx 0.9.0",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6136,7 +6150,7 @@ dependencies = [
  "rand 0.10.3",
  "reqwest 0.13.5",
  "rustc-hash 2.1.3",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "simple-dns",
  "system-configuration 0.8.0",
  "tokio",
@@ -6515,6 +6529,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "netwatch-http-client"
+version = "0.1.0"
+dependencies = [
+ "network-watch",
+ "reqwest 0.12.28",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "network-watch"
 version = "0.1.0"
 dependencies = [
@@ -6612,9 +6638,9 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 
 [[package]]
 name = "noq"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b78be567e796cfa74bb9bdc4117790af2d505eb887019cf8803244353eb09d89"
+checksum = "6249a065adc1edbc1704a95436f38dd60476064dbc3b7c47cf279e02d1590eb5"
 dependencies = [
  "bytes",
  "cfg_aliases",
@@ -6623,7 +6649,7 @@ dependencies = [
  "noq-udp",
  "pin-project-lite",
  "rustc-hash 2.1.3",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
@@ -6634,9 +6660,9 @@ dependencies = [
 
 [[package]]
 name = "noq-proto"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c1e5b6fe668491eca022f745a0a9402585626c73a7b839b3424ace15d6a9c8f"
+checksum = "c01a35be3ed37558c8db69554419f24eff8a63599b54f711bbe3863ec727c47d"
 dependencies = [
  "aes-gcm",
  "bytes",
@@ -6650,7 +6676,7 @@ dependencies = [
  "rand_pcg",
  "ring",
  "rustc-hash 2.1.3",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "rustls-platform-verifier",
  "slab",
@@ -6663,9 +6689,9 @@ dependencies = [
 
 [[package]]
 name = "noq-udp"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dc50afea61aff926e150a36c31f06094608848e114a3fe667d76ec233163b1c"
+checksum = "8d0160422832eea1cc11c34be04ee6d5a046452b0b46cfb14695d55a1f24c954"
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -7618,7 +7644,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7644,7 +7670,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7656,7 +7682,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7671,7 +7697,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7686,7 +7712,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek 4.1.3",
@@ -7709,7 +7735,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7737,7 +7763,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7753,7 +7779,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7771,7 +7797,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7789,7 +7815,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=18fc508eab52f12bdb82bcaf3c292769d6ea5cd7#18fc508eab52f12bdb82bcaf3c292769d6ea5cd7"
+source = "git+https://github.com/dash-chat/p2panda?rev=630d1c5e3f618f9ae24211d24ca7b1707636ff05#630d1c5e3f618f9ae24211d24ca7b1707636ff05"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -8515,6 +8541,7 @@ dependencies = [
  "anyhow",
  "dashchat-utils",
  "derive_more 2.1.1",
+ "netwatch-http-client",
  "reqwest 0.12.28",
  "serde",
 ]
@@ -8933,7 +8960,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "rustix 1.1.5",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -9076,7 +9103,7 @@ dependencies = [
  "log",
  "percent-encoding",
  "pin-project-lite",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "rustls-platform-verifier",
  "serde",
@@ -9345,9 +9372,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "log",
  "once_cell",
@@ -9412,7 +9439,7 @@ dependencies = [
  "jni 0.22.4",
  "log",
  "once_cell",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-native-certs 0.8.4",
  "rustls-platform-verifier-android",
  "rustls-webpki 0.103.15",
@@ -9674,7 +9701,7 @@ dependencies = [
  "cfg_aliases",
  "httpdate",
  "reqwest 0.13.5",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "sentry-backtrace",
  "sentry-contexts",
  "sentry-core",
@@ -11237,7 +11264,7 @@ dependencies = [
  "tray-icon",
  "url",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "window-vibrancy",
  "windows 0.62.2",
 ]
@@ -11566,7 +11593,7 @@ dependencies = [
  "tokio-tungstenite",
  "uuid",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
 ]
@@ -11606,7 +11633,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification"
 version = "2.3.3"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=a415a74db8f09350abd7e1a733c2b0c30e4730be#a415a74db8f09350abd7e1a733c2b0c30e4730be"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=e3537c5f8d58e9c9891370253f94de32f1b18043#e3537c5f8d58e9c9891370253f94de32f1b18043"
 dependencies = [
  "log",
  "ndk-context",
@@ -11628,7 +11655,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-macros"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=a415a74db8f09350abd7e1a733c2b0c30e4730be#a415a74db8f09350abd7e1a733c2b0c30e4730be"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=e3537c5f8d58e9c9891370253f94de32f1b18043#e3537c5f8d58e9c9891370253f94de32f1b18043"
 dependencies = [
  "jni 0.21.1",
  "libc",
@@ -11642,7 +11669,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-notification-models"
 version = "0.1.0"
-source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=a415a74db8f09350abd7e1a733c2b0c30e4730be#a415a74db8f09350abd7e1a733c2b0c30e4730be"
+source = "git+https://github.com/guillemcordoba/plugins-workspace?rev=e3537c5f8d58e9c9891370253f94de32f1b18043#e3537c5f8d58e9c9891370253f94de32f1b18043"
 dependencies = [
  "rand 0.8.8",
  "serde",
@@ -11714,7 +11741,7 @@ dependencies = [
  "network-watch",
  "regex",
  "reqwest 0.13.5",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "sentry",
  "serde",
  "serde_json",
@@ -11819,7 +11846,7 @@ dependencies = [
  "osakit",
  "percent-encoding",
  "reqwest 0.13.5",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "semver",
  "serde",
  "serde_json",
@@ -11860,9 +11887,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-wdio-webdriver"
-version = "1.4.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52c5e97428174a52b7f4357bbc4535fcce52c6a06c8ee7a379502f7cda1b6045"
+checksum = "5a775b0b59f6f12b38d1f28667311a89cd07f532f540e27d65c6eadfba1156d8"
 dependencies = [
  "async-trait",
  "axum",
@@ -11886,9 +11913,9 @@ dependencies = [
  "tracing",
  "uuid",
  "webkit2gtk",
- "webview2-com 0.38.2",
- "windows 0.61.3",
- "windows-core 0.61.2",
+ "webview2-com",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -11912,7 +11939,7 @@ dependencies = [
  "thiserror 2.0.20",
  "url",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
 ]
 
@@ -11937,7 +11964,7 @@ dependencies = [
  "tauri-utils",
  "url",
  "webkit2gtk",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
  "wry",
 ]
@@ -12206,7 +12233,7 @@ version = "0.26.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0c85f2c3ef0b1cd58b36682f4b17aaa995f0e5db534d85692b4903abce21f67"
 dependencies = [
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "tokio",
 ]
 
@@ -12722,7 +12749,7 @@ dependencies = [
  "base64 0.23.1",
  "log",
  "percent-encoding",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "ureq-proto",
  "utf8-zero",
@@ -13201,26 +13228,12 @@ dependencies = [
 
 [[package]]
 name = "webview2-com"
-version = "0.38.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7130243a7a5b33c54a444e54842e6a9e133de08b5ad7b5861cd8ed9a6a5bc96a"
-dependencies = [
- "webview2-com-macros",
- "webview2-com-sys 0.38.2",
- "windows 0.61.3",
- "windows-core 0.61.2",
- "windows-implement",
- "windows-interface",
-]
-
-[[package]]
-name = "webview2-com"
 version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f89fca7a704cee10dcb3654c1dbb8941d1783132f1917358af75bec37a7d7e6"
 dependencies = [
  "webview2-com-macros",
- "webview2-com-sys 0.39.1",
+ "webview2-com-sys",
  "windows 0.62.2",
  "windows-core 0.62.2",
 ]
@@ -13234,17 +13247,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "webview2-com-sys"
-version = "0.38.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "381336cfffd772377d291702245447a5251a2ffa5bad679c99e61bc48bacbf9c"
-dependencies = [
- "thiserror 2.0.20",
- "windows 0.61.3",
- "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -14011,8 +14013,8 @@ dependencies = [
  "log",
  "serde",
  "thiserror 2.0.20",
- "windows 0.61.3",
- "windows-core 0.61.2",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -14058,7 +14060,7 @@ dependencies = [
  "url",
  "webkit2gtk",
  "webkit2gtk-sys",
- "webview2-com 0.39.1",
+ "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-version",
