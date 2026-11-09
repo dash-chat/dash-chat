@@ -275,8 +275,12 @@ impl BlobSync {
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        // iroh-blobs' default of 1 s is shorter than a handshake on a slow network.
+        let mut pool_options = iroh_blobs::util::connection_pool::Options::default();
+        pool_options.connect_timeout = dashchat_utils::HTTP_CONNECT_TIMEOUT;
         let downloader = Downloader::builder(&store, &endpoint)
             .alpn(mixed_alpn.as_slice())
+            .pool_options(pool_options)
             .build();
         let router = Router::builder(endpoint.clone())
             .accept(mixed_alpn, blobs.clone())
