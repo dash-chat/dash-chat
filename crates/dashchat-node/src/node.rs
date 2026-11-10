@@ -632,9 +632,12 @@ impl Node {
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
     pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
+        // A mailbox must keep our key bundle for as long as the code can be scanned.
+        let max_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)
+            .expect("mailbox retention fits a chrono duration");
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
-            Utc::now() + self.config.contact_code_expiry,
+            Utc::now() + self.config.contact_code_expiry.min(max_expiry),
         );
         self.initialize_stream(*inbox_topic.topic)
             .await
