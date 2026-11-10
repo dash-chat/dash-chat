@@ -43,7 +43,13 @@ type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
 function simulateUpdate(
-	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+	state:
+		| 'available'
+		| 'misplaced'
+		| 'downloading'
+		| 'ready'
+		| 'error'
+		| 'hidden',
 ) {
 	window.dispatchEvent(
 		new CustomEvent('test-simulate-update', { detail: state }),

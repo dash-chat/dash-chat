@@ -19,6 +19,14 @@ describe('UpdaterBanner', () => {
 		expect(await agent.updaterBanner.title.getText()).toBeTruthy();
 	});
 
+	it('asks to move the app when it runs from a disk image', async () => {
+		await agent.updaterBanner.simulateUpdate('misplaced');
+		await agent.updaterBanner.banner.waitForExist();
+		expect(await agent.updaterBanner.banner.getText()).toContain(
+			await agent.tr('updateTapToMove'),
+		);
+	});
+
 	it('shows downloading banner with progress bar', async () => {
 		await agent.updaterBanner.simulateUpdate('downloading');
 		await agent.updaterBanner.banner.waitForExist();

@@ -7,10 +7,6 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiRefresh, mdiClose } from '@mdi/js';
 	import type { Update } from '@tauri-apps/plugin-updater';
-	import {
-		moveToApplicationsFolder,
-		needsMove,
-	} from 'tauri-plugin-move-to-applications-api';
 
 	type BannerState =
 		| 'hidden'
@@ -25,12 +21,16 @@
 	let contentLength = $state(0);
 	let version = $state('');
 	let update: Update | null = $state(null);
-	// The move ends with the app relaunching, so this only resets on failure.
 	let moving = false;
 
 	// Set to a state name to preview the banner in dev mode
-	const mockUpdate: false | 'available' | 'downloading' | 'ready' | 'error' =
-		false;
+	const mockUpdate:
+		| false
+		| 'available'
+		| 'misplaced'
+		| 'downloading'
+		| 'ready'
+		| 'error' = false;
 
 	onMount(() => {
 		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
@@ -58,15 +58,11 @@
 	});
 
 	async function simulateMockUpdate(
-		mode: 'available' | 'downloading' | 'ready' | 'error',
+		mode: 'available' | 'misplaced' | 'downloading' | 'ready' | 'error',
 	) {
 		version = '1.2.0';
-		if (mode === 'error') {
-			bannerState = 'error';
-			return;
-		}
-		if (mode === 'available') {
-			bannerState = 'available';
+		if (mode === 'error' || mode === 'available' || mode === 'misplaced') {
+			bannerState = mode;
 			return;
 		}
 		bannerState = 'downloading';
@@ -86,22 +82,40 @@
 			update = await check();
 			if (!update) return;
 			version = update.version;
-			bannerState = (await needsMove()) ? 'misplaced' : 'available';
+			bannerState = (await isMisplaced()) ? 'misplaced' : 'available';
 		} catch (err) {
 			console.warn('Update check failed:', err);
 		}
 	}
 
+	/** Whether the app runs from somewhere it cannot replace itself. */
+	async function isMisplaced() {
+		try {
+			const { needsMove } = await import(
+				'tauri-plugin-move-to-applications-api'
+			);
+			return await needsMove();
+		} catch (err) {
+			console.warn('Checking the app location failed:', err);
+			return false;
+		}
+	}
+
 	/** Relaunches the app from Applications, where it can update itself. */
-	async function moveAndUpdate() {
+	async function moveToApplications() {
 		if (moving) return;
 		moving = true;
 		try {
+			const { moveToApplicationsFolder } = await import(
+				'tauri-plugin-move-to-applications-api'
+			);
+			// Returns only if the user cancels the administrator prompt.
 			await moveToApplicationsFolder();
 		} catch (err) {
-			moving = false;
 			console.warn('Moving to Applications failed:', err);
 			bannerState = 'error';
+		} finally {
+			moving = false;
 		}
 	}
 
@@ -146,7 +160,7 @@
 		if (bannerState === 'available') {
 			downloadAndInstall();
 		} else if (bannerState === 'misplaced') {
-			moveAndUpdate();
+			moveToApplications();
 		} else if (bannerState === 'ready') {
 			restart();
 		} else if (bannerState === 'error') {
@@ -176,7 +190,9 @@
 				</div>
 				<div class="text-xs opacity-80">{m.updateTapToUpdate()}</div>
 			{:else if bannerState === 'misplaced'}
-				<div class="text-sm font-semibold">{m.updateAvailable()}</div>
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateAvailable()}
+				</div>
 				<div class="text-xs opacity-80">{m.updateTapToMove()}</div>
 			{:else if bannerState === 'downloading'}
 				<div class="text-sm font-semibold">{m.updateDownloading()}</div>

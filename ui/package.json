@@ -48,7 +48,7 @@
 		"tauri-plugin-android-fs-api": "28.4.0",
 		"tauri-plugin-audio-recorder-api": "0.1.2",
 		"tauri-plugin-background-service": "^1.0.0",
-		"tauri-plugin-move-to-applications-api": "github:dash-chat/tauri-plugin-move-to-applications#fdd227324f9b9cbc32e95b8db820b33e535b7c61",
+		"tauri-plugin-move-to-applications-api": "github:dash-chat/tauri-plugin-move-to-applications#271cb9183098f9e727dd1f0efdedcccd28fd8c92",
 		"tauri-plugin-network-interfaces-api": "github:dash-chat/tauri-plugin-network-interfaces#3a8c5daa79c1890dcd3096363cbf9f969b7bac1d",
 		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d",
 		"tauri-plugin-view-api": "^0.0.5",

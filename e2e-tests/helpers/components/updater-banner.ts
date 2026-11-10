@@ -3,6 +3,7 @@ import { tid } from '../selectors';
 
 export type UpdateState =
 	| 'available'
+	| 'misplaced'
 	| 'downloading'
 	| 'ready'
 	| 'error'

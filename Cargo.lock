@@ -4937,7 +4937,7 @@ dependencies = [
  "bytes",
  "cfg_aliases",
  "chrono",
- "constant_time_eq 0.6.1",
+ "constant_time_eq 0.4.2",
  "data-encoding",
  "derive_more 2.1.1",
  "genawaiter",
@@ -11610,7 +11610,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-move-to-applications"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-move-to-applications?rev=fdd227324f9b9cbc32e95b8db820b33e535b7c61#fdd227324f9b9cbc32e95b8db820b33e535b7c61"
+source = "git+https://github.com/dash-chat/tauri-plugin-move-to-applications?rev=271cb9183098f9e727dd1f0efdedcccd28fd8c92#271cb9183098f9e727dd1f0efdedcccd28fd8c92"
 dependencies = [
  "core-foundation 0.10.1",
  "libc",

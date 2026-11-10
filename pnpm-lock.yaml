@@ -271,8 +271,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       tauri-plugin-move-to-applications-api:
-        specifier: github:dash-chat/tauri-plugin-move-to-applications#fdd227324f9b9cbc32e95b8db820b33e535b7c61
-        version: https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/fdd227324f9b9cbc32e95b8db820b33e535b7c61
+        specifier: github:dash-chat/tauri-plugin-move-to-applications#271cb9183098f9e727dd1f0efdedcccd28fd8c92
+        version: https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92
       tauri-plugin-network-interfaces-api:
         specifier: github:dash-chat/tauri-plugin-network-interfaces#3a8c5daa79c1890dcd3096363cbf9f969b7bac1d
         version: https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/3a8c5daa79c1890dcd3096363cbf9f969b7bac1d
@@ -5290,8 +5290,8 @@ packages:
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
 
-  tauri-plugin-move-to-applications-api@https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/fdd227324f9b9cbc32e95b8db820b33e535b7c61:
-    resolution: {gitHosted: true, integrity: sha512-RJ8m0PTALYuBCGAtbgd1t1/4DCSnpopU/7ZgsovzyrsZVDXxOqrgNzEaALZKTDziN8aiEXRBQ4+t4ESjzv9Klw==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/fdd227324f9b9cbc32e95b8db820b33e535b7c61}
+  tauri-plugin-move-to-applications-api@https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92:
+    resolution: {gitHosted: true, integrity: sha512-5kVFHcVEgXEfCxWopzglO3D6kT+VSlshePaiOZgktmoezg+tKiScVQKxZMMWmB3L69b7cajNxGVPwBiCLMibzg==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92}
     version: 0.1.0
 
   tauri-plugin-network-interfaces-api@https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/3a8c5daa79c1890dcd3096363cbf9f969b7bac1d:
@@ -11119,7 +11119,7 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.12.4
 
-  tauri-plugin-move-to-applications-api@https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/fdd227324f9b9cbc32e95b8db820b33e535b7c61:
+  tauri-plugin-move-to-applications-api@https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92:
     dependencies:
       '@tauri-apps/api': 2.12.4
 
