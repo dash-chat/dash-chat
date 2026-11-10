@@ -170,7 +170,8 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
                 node.unfetched_blob_tracker(),
                 node.mailboxes.upload_tracker(),
             )
-            .with_blob_reader(node.blob_reader()),
+            .with_blob_reader(node.blob_reader())
+            .with_blob_pusher(node.blob_pusher().await),
         )
         .await;
     log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");

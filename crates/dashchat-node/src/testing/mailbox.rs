@@ -181,7 +181,8 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
                 node.unfetched_blob_tracker(),
                 node.mailboxes.upload_tracker(),
             )
-            .with_blob_reader(node.blob_reader()),
+            .with_blob_reader(node.blob_reader())
+            .with_blob_pusher(node.blob_pusher().await),
         )
         .await;
     node.register_with_mailbox(url).await.unwrap();

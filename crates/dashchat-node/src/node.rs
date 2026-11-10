@@ -648,6 +648,21 @@ impl Node {
         })
     }
 
+    /// A pusher backed by this node's iroh endpoint and blob store, for the toy
+    /// mailbox client to push blobs to a mailbox over iroh. `None` when the node
+    /// has no networking layer or blob sync is disabled.
+    pub async fn blob_pusher(&self) -> Option<mailbox_client::IrohPusher> {
+        let endpoint = self.endpoint.clone()?;
+        let blob_sync = self.blob_sync.clone()?;
+        let alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, self.config.network_id);
+        Some(mailbox_client::IrohPusher::new(
+            endpoint.endpoint().await.ok()?,
+            blob_sync.blobs.store().clone(),
+            alpn,
+        ))
+    }
+
     /// Tell the manager the set of things-that-might-be-owed-to-mailboxes has
     /// changed (e.g. a publish just landed a new blob), so it should run a
     /// sync pass now rather than wait out the next interval. Pure wake-up.

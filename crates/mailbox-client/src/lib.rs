@@ -8,6 +8,7 @@ pub mod topic_registry;
 
 pub use health::{LastError, MailboxConnectionHealth, MailboxesConfig, SyncStatus};
 
+pub use blobs::iroh_push::IrohPusher;
 pub use blobs::upload_lifecycle::BlobUploadLifecycle;
 pub use mailbox_server::RegisterPeerRequest;
 
@@ -39,6 +40,21 @@ fn configure_http_client() -> reqwest::ClientBuilder {
             .expect("e2e test CA is valid DER"),
     );
     builder
+}
+
+/// Client-side deadline floor for a single blob transfer attempt, larger than
+/// the default HTTP timeout because a blob can be big.
+const BLOB_TRANSFER_TIMEOUT_FLOOR: std::time::Duration = std::time::Duration::from_secs(30);
+/// The slowest uplink a transfer is given time to finish over, so a big blob
+/// from a phone on a weak connection isn't cut off by the floor.
+const SLOWEST_UPLINK_BYTES_PER_SEC: f64 = 32.0 * 1024.0;
+
+/// The deadline for one blob transfer attempt (HTTP upload or iroh push): the
+/// floor, scaled up so a big blob still fits over the slowest supported uplink.
+pub fn blob_transfer_timeout(size_bytes: u64) -> std::time::Duration {
+    BLOB_TRANSFER_TIMEOUT_FLOOR.max(std::time::Duration::from_secs_f64(
+        size_bytes as f64 / SLOWEST_UPLINK_BYTES_PER_SEC,
+    ))
 }
 
 #[async_trait::async_trait]
@@ -96,6 +112,17 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
     async fn upload_blob(&self, _bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
         Err(BlobUploadError::MailboxUnavailable(anyhow::anyhow!(
             "mailbox does not accept blob uploads"
+        )))
+    }
+
+    /// Push one blob to the mailbox over iroh: the mailbox imports the
+    /// chunk-validated stream as it arrives, so an interrupted push leaves
+    /// resumable progress in its store, unlike the whole-body HTTP upload.
+    /// The default errors: mailboxes without an iroh pusher have nothing to
+    /// push over, and delivery falls back to `upload_blob`.
+    async fn push_blob(&self, _hash: iroh_blobs::Hash) -> Result<(), BlobUploadError> {
+        Err(BlobUploadError::Blob(anyhow::anyhow!(
+            "mailbox does not accept iroh blob pushes"
         )))
     }
 }

@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::{BlobReader, BlobUploadLifecycle, UnfetchedBlobTracker};
+use crate::{BlobReader, BlobUploadError, BlobUploadLifecycle, UnfetchedBlobTracker};
 
 /// Outbound delivery of blobs to ONE mailbox, driving the client's blob
 /// primitives (`announce_blob_hashes` / `upload_blob`).
@@ -122,9 +122,12 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         Ok(already_stored)
     }
 
-    /// Spawn a detached best-effort task that streams each blob's bytes to
-    /// the mailbox, one at a time (so at most one blob is held in memory).
-    /// Every blob that uploads successfully is removed from the unfetched
+    /// Spawn a detached best-effort task that delivers each blob to the
+    /// mailbox, one at a time: an iroh push first (the mailbox imports the
+    /// chunk-validated stream incrementally, so interrupted pushes leave
+    /// resumable progress on its side), then the whole-body HTTP upload as
+    /// the fallback (so at most one blob is held in memory).
+    /// Every blob that lands is removed from the unfetched
     /// tracker (the mailbox now holds it). We keep going through the batch as
     /// long as uploads are feasible: a blob we can't read or that the mailbox
     /// rejects is left in the tracker and skipped, but the moment the mailbox
@@ -154,6 +157,22 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         tokio::spawn(async move {
             let mut claimed = claimed.into_iter();
             while let Some((hash, claim)) = claimed.next() {
+                // Push over iroh first: the mailbox imports the chunk-validated
+                // stream incrementally, so an interrupted push leaves resumable
+                // progress on its side. Fall back to the whole-body HTTP upload.
+                match client.push_blob(hash).await {
+                    Ok(()) => {
+                        tracing::info!(%hash, "pushed blob");
+                        if let Err(err) = tracker.remove(&id, &[hash]).await {
+                            tracing::error!(?err, mailbox = %id, "failed to clear pushed blob");
+                        }
+                        lifecycle.finish_upload(&claim_key, hash, claim, true);
+                        continue;
+                    }
+                    Err(err) => {
+                        tracing::debug!(%hash, ?err, "blob push failed; falling back to HTTP upload");
+                    }
+                }
                 let bytes = match reader.read_blob(hash).await {
                     Ok(bytes) => bytes,
                     Err(err) => {
@@ -172,7 +191,7 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
                         }
                         lifecycle.finish_upload(&claim_key, hash, claim, true);
                     }
-                    Err(crate::BlobUploadError::MailboxUnavailable(err)) => {
+                    Err(BlobUploadError::MailboxUnavailable(err)) => {
                         tracing::warn!(%hash, ?err, "mailbox unreachable; aborting remaining uploads, relying on announce/fetch backstop");
                         lifecycle.finish_upload(&claim_key, hash, claim, false);
                         claimed.by_ref().for_each(|(hash, claim)| {
@@ -180,7 +199,7 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
                         });
                         break;
                     }
-                    Err(crate::BlobUploadError::Blob(err)) => {
+                    Err(BlobUploadError::Blob(err)) => {
                         tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
                         lifecycle.finish_upload(&claim_key, hash, claim, false);
                     }
@@ -294,7 +313,7 @@ mod tests {
             Ok(Vec::new()) // nothing already stored
         }
 
-        async fn upload_blob(&self, _bytes: bytes::Bytes) -> Result<(), crate::BlobUploadError> {
+        async fn upload_blob(&self, _bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
             Ok(())
         }
     }
@@ -312,6 +331,105 @@ mod tests {
         async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
             hash == self.hash
         }
+    }
+
+    /// A client that records which delivery path each blob took, with a push
+    /// that can be made to fail.
+    #[derive(Default)]
+    struct RecordingClient {
+        pushed: Mutex<Vec<iroh_blobs::Hash>>,
+        uploaded: Mutex<Vec<iroh_blobs::Hash>>,
+        push_fails: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl MailboxClient<Msg> for RecordingClient {
+        fn id(&self) -> MailboxId {
+            "mailbox-id".to_string()
+        }
+
+        async fn publish(&self, _ops: Vec<Msg>) -> Result<PublishResponse<Msg>, anyhow::Error> {
+            Ok(PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: FetchRequest<Msg>,
+        ) -> Result<FetchResponse<Msg>, anyhow::Error> {
+            Ok(FetchResponse(Default::default()))
+        }
+
+        async fn upload_blob(&self, _bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
+            self.uploaded
+                .lock()
+                .unwrap()
+                .push(iroh_blobs::Hash::new(b"uploaded"));
+            Ok(())
+        }
+
+        async fn push_blob(&self, hash: iroh_blobs::Hash) -> Result<(), BlobUploadError> {
+            self.pushed.lock().unwrap().push(hash);
+            if self.push_fails {
+                return Err(BlobUploadError::Blob(anyhow::anyhow!("push failed")));
+            }
+            Ok(())
+        }
+    }
+
+    fn recording_delivery(
+        client: Arc<RecordingClient>,
+        hash: iroh_blobs::Hash,
+    ) -> (
+        BlobDelivery<Msg>,
+        RecordingTracker,
+        tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let (emptied_tx, emptied_rx) = tokio::sync::oneshot::channel();
+        let tracker = RecordingTracker::default();
+        *tracker.emptied.lock().unwrap() = Some(emptied_tx);
+        let delivery = BlobDelivery::<Msg>::new(
+            client,
+            Some(Arc::new(StaticReader { hash })),
+            Arc::new(tracker.clone()),
+            crate::testing::noop_upload_lifecycle(),
+        );
+        (delivery, tracker, emptied_rx)
+    }
+
+    #[tokio::test]
+    async fn a_successful_push_delivers_without_the_http_upload() {
+        let hash = iroh_blobs::Hash::new(b"pushed blob");
+        let client = Arc::new(RecordingClient::default());
+        let (delivery, _tracker, emptied_rx) = recording_delivery(client.clone(), hash);
+
+        delivery.publish(vec![hash]).await.unwrap();
+        emptied_rx.await.unwrap();
+
+        assert_eq!(*client.pushed.lock().unwrap(), vec![hash]);
+        assert!(
+            client.uploaded.lock().unwrap().is_empty(),
+            "a successful push must not fall back to the HTTP upload"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_push_falls_back_to_the_http_upload() {
+        let hash = iroh_blobs::Hash::new(b"fallback blob");
+        let client = Arc::new(RecordingClient {
+            push_fails: true,
+            ..Default::default()
+        });
+        let (delivery, _tracker, emptied_rx) = recording_delivery(client.clone(), hash);
+
+        delivery.publish(vec![hash]).await.unwrap();
+        emptied_rx.await.unwrap();
+
+        assert_eq!(*client.pushed.lock().unwrap(), vec![hash]);
+        assert_eq!(
+            client.uploaded.lock().unwrap().len(),
+            1,
+            "a failed push must fall back to the HTTP upload"
+        );
     }
 
     /// Regression: the tracker's key is the mailbox id (what reconcile reads
