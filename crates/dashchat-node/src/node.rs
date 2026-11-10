@@ -639,6 +639,12 @@ impl Node {
         self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        // A scanner needs our key bundle to create the direct chat space
+        // before we have answered anything.
+        self.op_store
+            .associate_member_log(&inbox_topic.topic.into(), &self.device_id())
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
         self.local_store
             .add_active_inbox_topic(inbox_topic.clone())
             .await
@@ -914,7 +920,8 @@ impl Node {
     }
 
     /// Run [`Self::admit_to_direct_chat`] in the background, since the key
-    /// bundle of someone whose code we scanned only arrives with their answer.
+    /// bundle of someone whose code we scanned only arrives once we sync
+    /// their inbox.
     pub(crate) async fn spawn_direct_chat_admission(&self, peer: DeviceId, chat_id: DirectChatId) {
         let node = self.clone();
         let handle = tokio::spawn(async move {

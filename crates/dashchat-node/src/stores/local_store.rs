@@ -24,19 +24,20 @@ const DEVICE_GROUP_TOPIC_KEY: &str = "device_group_topic";
 /// Through a normal flow between Alice and Bob, the roles show
 /// up in the following order:
 ///
-/// - Alice creates a QR code for inbox X as role `Advertised`
+/// - Alice creates a QR code for inbox X as role `Advertised`, and lets her
+///   key bundle log sync along with X
 /// - Bob scans, then:
 ///     - Bob creates inbox Y as role `Reply`
 ///     - Bob creates the direct chat space S, with only himself in it
 ///     - Bob publishes ContactRequest (declaring Y and S) to X
 ///     - Bob registers X as role `Requested`
+/// - Bob receives Alice's key bundle on X and admits her to S
 /// - Alice receives ContactRequest on X
 /// - Alice accepts the request (either via UI or mutual request) and:
-///     - Alice publishes ContactRequestAccept to Y, with her key bundle
+///     - Alice publishes ContactRequestAccept to Y
 ///     - Alice registers Y as role `Accepted`
 ///     - Alice subscribes to S
-/// - Bob receives ContactRequestAccept on Y and admits Alice to S, finishing
-///   contact request flow
+/// - Bob receives ContactRequestAccept on Y, finishing contact request flow
 /// - Bob drops X
 ///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
