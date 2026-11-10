@@ -33,7 +33,7 @@
 		/* A <button>'s intrinsic block size does not follow its flex content, so
 		   the author and text lines get shrunk and clipped without this. */
 		height: fit-content;
-		border-radius: 0.5rem;
+		border-radius: 10px 10px 4px 4px;
 		overflow: hidden;
 		text-align: start;
 	}
@@ -49,7 +49,8 @@
 		color: rgba(0, 0, 0, 0.87);
 	}
 	:global(.dark) .quote-frame-mine {
-		background-color: rgba(255, 255, 255, 0.45);
+		background-color: rgba(0, 0, 0, 0.4);
+		color: white;
 	}
 
 	.quote-frame-others {
@@ -59,9 +60,18 @@
 		background-color: rgba(255, 255, 255, 0.16);
 	}
 
+	:global(.k-ios) .quote-frame {
+		border-radius: 0.5rem;
+	}
+
+	.quote-frame-composer {
+		border-radius: 18px 18px 4px 4px;
+	}
+
 	/* The iOS theme copies Signal's composer reply-banner greys. */
 	:global(.k-ios) .quote-frame-composer {
 		background-color: #dfdfe1;
+		border-radius: 16px;
 	}
 	:global(.k-ios) .quote-frame-composer .quote-frame-bar {
 		background-color: #c1c1c3;

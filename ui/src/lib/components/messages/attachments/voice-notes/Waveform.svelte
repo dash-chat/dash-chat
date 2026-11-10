@@ -10,7 +10,7 @@
 
 	let { peaks, player }: Props = $props();
 
-	const MIN_HEIGHT_PERCENT = 12;
+	const MIN_HEIGHT_PERCENT = 8;
 	const heights = $derived(
 		peaks.map(p => MIN_HEIGHT_PERCENT + p * (100 - MIN_HEIGHT_PERCENT)),
 	);
@@ -90,4 +90,9 @@
 			{@render bars(0.95)}
 		</div>
 	</div>
+	<span
+		class="absolute inset-y-0 w-0.5 rounded-full bg-current"
+		style="inset-inline-start: calc({progress} * (100% - 2px))"
+		aria-hidden="true"
+	></span>
 </div>

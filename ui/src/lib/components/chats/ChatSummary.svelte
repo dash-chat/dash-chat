@@ -18,7 +18,7 @@
 		beforeYesterday,
 	} from '$lib/utils/time';
 	import { groupEventText } from '$lib/utils/group-event-text';
-	import Avatar from '../profiles/Avatar.svelte';
+	import AvatarWithP2pBadge from './AvatarWithP2pBadge.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCancel } from '@mdi/js';
 
@@ -52,11 +52,7 @@
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<Avatar
-			image={summary.avatar}
-			initials={summary.name.slice(0, 2)}
-			waitingForProfile={summary.waitingForProfile}
-		/>
+		<AvatarWithP2pBadge {summary} />
 	{/snippet}
 	{#snippet after()}
 		<span class="text-xs">

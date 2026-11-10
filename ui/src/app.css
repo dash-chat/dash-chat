@@ -249,9 +249,13 @@ li.plain span {
 	margin: 0;
 	min-width: 0;
 	overflow-wrap: anywhere;
+	border-radius: 18px;
+	--message-padding-y: 7px;
+	--text-sm--line-height: 1.3125rem;
 }
 .wide-layout .message {
 	font-weight: 500;
+	--text-sm--line-height: 1.25rem;
 }
 
 /* Bubbles I sent hang on the end side, incoming ones on the start side. Both
@@ -289,7 +293,7 @@ li.plain span {
 	background-clip: padding-box;
 }
 .offline-message > div {
-	padding: calc(0.5rem - 2px) !important;
+	padding: calc(var(--message-padding-y) - 2px) calc(0.5rem - 2px) !important;
 }
 
 .icon-only-card {

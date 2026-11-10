@@ -74,12 +74,9 @@ impl BlobSync {
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
-        let downloader = Downloader::new_with_opts(
-            &store,
-            &endpoint.endpoint().await?,
-            &mixed_alpn,
-            Default::default(),
-        );
+        let downloader = Downloader::builder(&store, &endpoint.endpoint().await?)
+            .alpn(mixed_alpn.as_slice())
+            .build();
 
         Ok(Self {
             blobs,

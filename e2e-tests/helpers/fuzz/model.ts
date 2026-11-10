@@ -1681,8 +1681,9 @@ export class ExpectedModel {
 
 	/** The notification an op produces on `holder`'s device, or null for one
 	 *  the app shows nothing for. Unless the device notifies each message,
-	 *  a chat's messages share an id, so a later one replaces the entry the
-	 *  way Android collapses a conversation; every other kind gets its own. */
+	 *  a chat's messages and the add that brought us into it share an id, so a
+	 *  later one replaces the entry the way Android collapses a conversation;
+	 *  a request gets its own. */
 	private notificationFor(
 		holder: string,
 		op: Op,
@@ -1732,19 +1733,23 @@ export class ExpectedModel {
 		}
 		if (op.kind === 'group') {
 			// Unlike a message's sender, the app names whoever added it from
-			// their profile alone, never from a request they sent.
+			// their profile alone, never from a request they sent. The add is
+			// a line of the group's thread, from whoever added us.
 			const by = this.profileName(holder, op.by);
+			const title = by ?? texts.unnamedSender;
 			const body =
 				by === null ? texts.addedToAGroup : texts.addedYouToTheGroup(by);
 			return {
-				id: op.id,
+				id: this.notifiesEachMessage(holder)
+					? op.id
+					: `chat:${chatTopic(op.chat)}`,
 				route: chatTopic(op.chat),
 				opens: op.chat,
-				tapText: by ?? texts.addedToAGroup,
-				oneOf: this.groupTitles(op.chat, texts).map(title => ({
+				tapText: title,
+				oneOf: this.groupTitles(op.chat, texts).map(conversation => ({
 					title,
 					body,
-					conversation: null,
+					conversation,
 				})),
 			};
 		}

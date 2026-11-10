@@ -29,6 +29,7 @@ dashchat-utils = { path = "crates/dashchat-utils" }
 sqlite-gate = { path = "crates/sqlite-gate" }
 panic-policy = { path = "crates/panic-policy" }
 network-watch = { path = "crates/network-watch" }
+netwatch-http-client = { path = "crates/netwatch-http-client" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailboxes-manager = { path = "crates/mailboxes-manager" }
 opus-transcode = { path = "crates/opus-transcode" }
@@ -68,26 +69,19 @@ p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "630d
 p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "630d1c5e3f618f9ae24211d24ca7b1707636ff05" }
 
 # iroh imports must match p2panda iroh dep version
-iroh = { version = "1.0.0", default-features = false, features = [
+iroh = { version = "1.4.1", default-features = false, features = [
   "tls-ring",
 ] }
-iroh-blobs = "0.103.0"
+iroh-blobs = "0.104.0"
 
 [patch.crates-io]
 # tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
 # app, which tao drops on the scene lifecycle (dash-chat/tao branch dashchat)
 tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2e7fff8997bd5c77b9" }
-iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
-# Fork of iroh main (1.2.0 + PR #4512, the relay-backpressure fix) carrying the
-# iroh#4390 pending_open_paths fix (dash-chat/iroh branch dashchat)
-iroh = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
-iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
-iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
-iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "4e42c9350414609594a60de95a51f3fe933ee018" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a415a74db8f09350abd7e1a733c2b0c30e4730be" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "e3537c5f8d58e9c9891370253f94de32f1b18043" }
 # ndk-context 0.1.1 + rust-mobile/ndk-context PRs #6 and #8 (RwLock-held context,
 # try_* functions) + a second initialize_android_context keeping the first context
 # instead of panicking (dash-chat/ndk-context branch dashchat). android_init.rs

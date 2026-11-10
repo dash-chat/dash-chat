@@ -38,6 +38,7 @@
 	const theme = $derived(useTheme());
 
 	let textarea: HTMLTextAreaElement;
+	let bannerHeight = $state(0);
 
 	/** Focus the input with the cursor at the end. */
 	export function focus() {
@@ -89,9 +90,15 @@
 		: 'min-h-[44px] bg-incoming-surface'}"
 	{onpaste}
 >
-	{@render banner?.()}
+	<div bind:clientHeight={bannerHeight}>
+		{@render banner?.()}
+	</div>
 
-	<div class="relative flex w-full items-end" class:pe-1={after}>
+	<div
+		class="relative flex w-full items-end"
+		class:pe-1={after}
+		style="--composer-banner-height: {bannerHeight}px"
+	>
 		{@render before?.()}
 
 		<textarea

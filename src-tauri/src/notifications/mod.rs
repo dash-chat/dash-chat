@@ -300,8 +300,10 @@ async fn chat_message_notification(
         }
     };
 
-    #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
-    let mut data = NotificationData {
+    #[cfg(mobile)]
+    let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
+
+    let data = NotificationData {
         id,
         title: Some(sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"))),
         body: Some(body_text),
@@ -312,46 +314,74 @@ async fn chat_message_notification(
         ..Default::default()
     };
 
-    // Mobile-only: render as a chat thread (Android MessagingStyle /
-    // iOS Communication Notifications). `sender_id` keeps each `Person`
-    // distinct within group threads so different senders don't collapse;
-    // `conversation_title` (groups only) is the group name — Android
-    // surfaces it via `setConversationTitle(...) + setGroupConversation(true)`
-    // and iOS via `INSendMessageIntent.speakableGroupName`.
     #[cfg(mobile)]
-    {
-        let conversation_title = if is_direct_chat {
-            None
-        } else {
-            Some(group_title(node, topic).await)
-        };
-        data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
-            sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
-            conversation_title,
-        });
-    }
+    let data = in_conversation_thread(node, topic, is_direct_chat, sender_id, data).await;
 
-    // Android-only: reuse a stable per-conversation id (so successive
-    // messages update the same notification instead of stacking) and put
-    // every chat thread under the "dashchat.chats" OS-level group.
+    Some(data)
+}
+
+/// The key that keeps each sender of a conversation thread one person, so
+/// different senders in a group don't collapse into one.
+#[cfg(mobile)]
+fn conversation_sender_id(
+    sender_agent_id: Option<AgentId>,
+    sender_has_name: bool,
+) -> Option<String> {
+    // iOS would learn a sender with no name as a contact called "New message".
+    sender_agent_id
+        .filter(|_| sender_has_name || cfg!(target_os = "android"))
+        .map(|agent_id| agent_id.to_hex())
+}
+
+/// `data` as an entry of `topic`'s conversation thread: an Android
+/// MessagingStyle thread, an iOS Communication Notification. A group's thread
+/// carries its name, size and avatar.
+#[cfg(mobile)]
+async fn in_conversation_thread(
+    node: &Node,
+    topic: TopicId,
+    is_direct_chat: bool,
+    sender_id: Option<String>,
+    data: NotificationData,
+) -> NotificationData {
+    let (conversation_title, recipient_count, conversation_icon_bytes) = if is_direct_chat {
+        (None, None, None)
+    } else {
+        (
+            Some(group_title(node, topic).await),
+            group_recipient_count(node, topic).await,
+            Some(group_avatar(node, topic).await),
+        )
+    };
+    let data = NotificationData {
+        conversation_style: Some(tauri_plugin_notification::ConversationStyle {
+            sender_id,
+            conversation_title,
+            recipient_count,
+            conversation_icon_bytes,
+        }),
+        ..data
+    };
+
+    // Android appends to the thread already showing at the same id, so a
+    // conversation needs one id for all its notifications.
     //
     // TODO: XOR the truncated topic id with a node-specific secret before
     // using it as the notification id. The first 4 bytes are
     // public-derivable, so an adversary could mine a contact whose topic
     // id shares a 4-byte LE prefix with an existing conversation and get
     // their messages collapsed into the wrong MessagingStyle thread.
-    #[cfg(target_os = "android")]
-    {
-        match stable_notification_id(topic.as_bytes()) {
-            Ok(id) => data.id = id,
-            Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
-            ),
-        }
-        data.group = Some("dashchat.chats".to_string());
+    if !cfg!(target_os = "android") {
+        return data;
     }
-
-    Some(data)
+    NotificationData {
+        id: stable_notification_id(topic.as_bytes()).unwrap_or_else(|err| {
+            log::error!("Failed to derive Android MessagingStyle id from topic: {err:?}");
+            data.id
+        }),
+        group: Some("dashchat.chats".to_string()),
+        ..data
+    }
 }
 
 /// Whether `agent_id` is a contact we accepted. Unlike `Node::is_accepted_contact`
@@ -414,6 +444,35 @@ fn media_placeholder(media: &MediaBundle) -> String {
         0 => String::new(),
         1 => format!("📷 {}", sonix_i18n::t!("photo")),
         n => format!("📷 {}", sonix_i18n::t!("photosCount", { "count": n })),
+    }
+}
+
+/// The group's photo, or a generic group icon for a group without one.
+#[cfg(mobile)]
+async fn group_avatar(node: &Node, topic_id: TopicId) -> String {
+    const GENERIC_GROUP_AVATAR: &str = concat!(
+        "data:image/png;base64,",
+        include_str!("group-avatar.png.base64")
+    );
+    node.get_group_info(topic_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|info| info.image)
+        .filter(|image| image.starts_with("data:image/"))
+        .unwrap_or_else(|| GENERIC_GROUP_AVATAR.to_string())
+}
+
+/// How many people besides us are in the group, if that can be told.
+#[cfg(mobile)]
+async fn group_recipient_count(node: &Node, topic: TopicId) -> Option<u32> {
+    let chat_id = ChatId::from_topic_id(topic).ok()?;
+    match node.get_group_members(chat_id).await {
+        Ok(members) => Some(members.len().saturating_sub(1) as u32),
+        Err(err) => {
+            log::error!("Failed to load the members of {topic}: {err:?}");
+            None
+        }
     }
 }
 
@@ -485,28 +544,40 @@ async fn auth_control_op_notification(
         return None;
     }
 
-    let sender_name = match node.lookup_contact(sender_device_id).await.ok().flatten() {
-        Some(agent_id) => node
-            .projection
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|profile| profile.name),
+    let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
+    let sender_profile = match sender_agent_id {
+        Some(agent_id) => node.projection.get_profile(agent_id).await.ok().flatten(),
         None => None,
     };
+    let sender_name = sender_profile
+        .as_ref()
+        .map(|profile| profile.name.clone())
+        .filter(|name| !name.is_empty());
+    let sender_avatar = sender_profile
+        .and_then(|profile| profile.avatar)
+        .filter(|avatar| avatar.starts_with("data:image/"));
+    let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
 
-    Some(NotificationData {
+    // Signal writes the add into the group's thread, as a line from whoever
+    // added us.
+    let data = NotificationData {
         id,
-        title: Some(group_title(node, topic).await),
+        title: Some(
+            sender_name
+                .clone()
+                .unwrap_or_else(|| sonix_i18n::t!("newMessage")),
+        ),
         body: Some(match &sender_name {
             Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
             None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
         }),
         icon: Some("ic_stat_icon".to_string()),
+        large_icon_bytes: sender_avatar,
+        group: Some(topic.to_hex()),
         route: Some(format!("/group-chat/{}", topic.to_hex())),
         ..Default::default()
-    })
+    };
+    Some(in_conversation_thread(node, topic, false, sender_id, data).await)
 }
 
 #[cfg(mobile)]

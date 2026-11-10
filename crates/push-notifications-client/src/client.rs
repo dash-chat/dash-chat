@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug)]
 pub struct PushNotificationsClient {
     base_url: String,
-    http: reqwest::Client,
+    http: netwatch_http_client::Client,
 }
 
 async fn check_response(resp: reqwest::Response) -> anyhow::Result<()> {
@@ -22,10 +22,11 @@ async fn check_response(resp: reqwest::Response) -> anyhow::Result<()> {
 
 impl PushNotificationsClient {
     pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(dashchat_utils::HTTP_CONNECT_TIMEOUT)
-            .timeout(dashchat_utils::HTTP_REQUEST_TIMEOUT)
-            .build()?;
+        let http = netwatch_http_client::Client::new(|| {
+            reqwest::Client::builder()
+                .connect_timeout(dashchat_utils::HTTP_CONNECT_TIMEOUT)
+                .timeout(dashchat_utils::HTTP_REQUEST_TIMEOUT)
+        })?;
         Ok(Self { base_url, http })
     }
 
