@@ -411,11 +411,7 @@ async fn blocked_author_is_not_acked() {
     );
 }
 
-/// TODO: pre-accept: the spec for pre-accept messaging. The code owner only
-/// takes part in the requester's space once they accept, so this cannot run
-/// until pre-accept messages are possible again; un-ignore it then.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "TODO: pre-accept: the code owner does not take part in the direct chat space before accepting"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
     setup();
 

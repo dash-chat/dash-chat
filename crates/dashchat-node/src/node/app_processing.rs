@@ -579,6 +579,7 @@ impl Node {
                     InboxPayload::ContactRequest {
                         agent_id,
                         keybundle,
+                        direct_chat_id,
                         ..
                     } => {
                         // A request arrived on our advertised inbox. Perform no
@@ -611,6 +612,27 @@ impl Node {
                                         tracing::warn!(
                                             ?err,
                                             "failed to auto-accept mutual contact request"
+                                        );
+                                    }
+                                });
+                            }
+
+                            // Join the requester's space now, so we can read
+                            // what they write before we accept. Only if the
+                            // projection recorded it as our chat with them: a
+                            // request could name any space, even one of ours.
+                            let direct_chat_id = *direct_chat_id;
+                            if self.projection.direct_chat_peer(direct_chat_id).await?
+                                == Some(author)
+                            {
+                                let node = self.clone();
+                                tokio::spawn(async move {
+                                    if let Err(err) =
+                                        node.register_and_join_space(direct_chat_id).await
+                                    {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to join the requester's direct chat space"
                                         );
                                     }
                                 });
