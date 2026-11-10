@@ -98,6 +98,20 @@ impl OpStore {
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
+    /// Make `author`'s key bundle log sync along with `topic`.
+    pub async fn associate_member_log(
+        &self,
+        topic: &TopicId,
+        author: &DeviceId,
+    ) -> anyhow::Result<()> {
+        let author: p2panda::VerifyingKey = **author;
+        let log_id = p2panda::spaces::member_log_id(author);
+        p2panda_store::tx!(self.store, {
+            self.store.associate_tx(topic, &author, &log_id).await
+        })?;
+        Ok(())
+    }
+
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
     pub async fn close(&self) {
         self.store.pool().close().await;

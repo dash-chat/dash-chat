@@ -610,6 +610,12 @@ impl Node {
         self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        // A scanner needs our key bundle to create the direct chat space
+        // before we have answered anything.
+        self.op_store
+            .associate_member_log(&inbox_topic.topic.into(), &self.device_id())
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
         self.local_store
             .add_active_inbox_topic(inbox_topic.clone())
             .await
@@ -1174,6 +1180,16 @@ impl Node {
 
     pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
         Ok(self.streams.with_node(async |node| node.me().await).await?)
+    }
+
+    /// Wait until a valid spaces key bundle of `device_id` has reached us.
+    pub async fn keybundle_of(&self, device_id: DeviceId) -> anyhow::Result<()> {
+        let pending = self
+            .streams
+            .with_node(async |node| anyhow::Ok(node.member(*device_id)))
+            .await?;
+        pending.registered().await?;
+        Ok(())
     }
 
     pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {

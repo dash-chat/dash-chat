@@ -345,3 +345,33 @@ async fn test_p2p_acceptance_survives_acceptor_restart() {
         .await
         .unwrap();
 }
+
+/// Bobbi scans Alice's code with a mailbox as their only link, and Alice
+/// answers nothing before she accepts. He must still get her key bundle, or he
+/// cannot create their direct chat space ahead of her acceptance.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_requester_gets_code_owner_keybundle_from_mailbox() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let config = NodeConfig::testing().no_p2p().no_blob_sync();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(config, "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        bobbi.keybundle_of(alice.device_id()),
+    )
+    .await
+    .expect("bobbi never received alice's key bundle")
+    .unwrap();
+}
