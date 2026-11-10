@@ -120,6 +120,7 @@
 			);
 			// Returns only if the user cancels the administrator prompt.
 			await moveToApplicationsFolder();
+			bannerState = 'misplaced';
 		} catch (err) {
 			console.warn('Moving to Applications failed:', err);
 			bannerState = 'moveError';
