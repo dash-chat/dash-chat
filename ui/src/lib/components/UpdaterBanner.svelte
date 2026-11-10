@@ -184,16 +184,15 @@
 		></wa-icon>
 
 		<div class="flex-1 min-w-0">
-			{#if bannerState === 'available'}
+			{#if bannerState === 'available' || bannerState === 'misplaced'}
 				<div class="text-sm font-semibold" data-testid="updater-banner-title">
 					{m.updateAvailable()}
 				</div>
-				<div class="text-xs opacity-80">{m.updateTapToUpdate()}</div>
-			{:else if bannerState === 'misplaced'}
-				<div class="text-sm font-semibold" data-testid="updater-banner-title">
-					{m.updateAvailable()}
+				<div class="text-xs opacity-80">
+					{bannerState === 'available'
+						? m.updateTapToUpdate()
+						: m.updateTapToMove()}
 				</div>
-				<div class="text-xs opacity-80">{m.updateTapToMove()}</div>
 			{:else if bannerState === 'downloading'}
 				<div class="text-sm font-semibold">{m.updateDownloading()}</div>
 				<div class="mt-1">
