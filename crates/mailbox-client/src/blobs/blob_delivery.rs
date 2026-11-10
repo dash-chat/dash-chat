@@ -123,17 +123,14 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
     }
 
     /// Spawn a detached best-effort task that delivers each blob to the
-    /// mailbox, one at a time: an iroh push first (the mailbox imports the
-    /// chunk-validated stream incrementally, so interrupted pushes leave
-    /// resumable progress on its side), then the whole-body HTTP upload as
-    /// the fallback (so at most one blob is held in memory).
-    /// Every blob that lands is removed from the unfetched
-    /// tracker (the mailbox now holds it). We keep going through the batch as
-    /// long as uploads are feasible: a blob we can't read or that the mailbox
-    /// rejects is left in the tracker and skipped, but the moment the mailbox
-    /// itself is unreachable we stop — the remaining blobs stay queued for
-    /// the mailbox's fetch backstop rather than burning through the batch
-    /// against a dead endpoint.
+    /// mailbox, one at a time (so at most one blob is held in memory). Every
+    /// blob that lands is removed from the unfetched tracker (the mailbox now
+    /// holds it). We keep going through the batch as long as delivery is
+    /// feasible: a blob whose delivery fails is left in the tracker and the
+    /// batch moves on, but the moment the mailbox itself is unreachable we
+    /// stop — the remaining blobs stay queued for the mailbox's fetch
+    /// backstop rather than burning through the batch against a dead
+    /// endpoint.
     fn spawn_upload(&self, reader: Arc<dyn BlobReader>, hashes: Vec<iroh_blobs::Hash>) {
         // Claimed up front, so a later sync doesn't start the ones this task
         // hasn't reached yet alongside it over the same uplink. The lifecycle
@@ -151,62 +148,88 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
         if claimed.is_empty() {
             return;
         }
-        let client = self.client.clone();
+        let delivery = self.clone();
         let tracker = self.tracker.clone();
         let lifecycle = self.lifecycle.clone();
         tokio::spawn(async move {
             let mut claimed = claimed.into_iter();
             while let Some((hash, claim)) = claimed.next() {
-                // Push over iroh first: the mailbox imports the chunk-validated
-                // stream incrementally, so an interrupted push leaves resumable
-                // progress on its side. Fall back to the whole-body HTTP upload.
-                match client.push_blob(hash).await {
-                    Ok(()) => {
-                        tracing::info!(%hash, "pushed blob");
+                match delivery.deliver_blob(&reader, hash).await {
+                    DeliverOutcome::Delivered => {
                         if let Err(err) = tracker.remove(&id, &[hash]).await {
-                            tracing::error!(?err, mailbox = %id, "failed to clear pushed blob");
+                            tracing::error!(?err, mailbox = %id, "failed to clear delivered blob");
                         }
                         lifecycle.finish_upload(&claim_key, hash, claim, true);
-                        continue;
                     }
-                    Err(err) => {
-                        tracing::debug!(%hash, ?err, "blob push failed; falling back to HTTP upload");
-                    }
-                }
-                let bytes = match reader.read_blob(hash).await {
-                    Ok(bytes) => bytes,
-                    Err(err) => {
-                        tracing::warn!(%hash, ?err, "failed to read blob for upload; relying on announce");
+                    DeliverOutcome::Failed => {
                         lifecycle.finish_upload(&claim_key, hash, claim, false);
-                        continue;
                     }
-                };
-                let size = bytes.len();
-                tracing::info!(%hash, size, "uploading blob");
-                match client.upload_blob(bytes).await {
-                    Ok(()) => {
-                        tracing::info!(%hash, size, "uploaded blob");
-                        if let Err(err) = tracker.remove(&id, &[hash]).await {
-                            tracing::error!(?err, mailbox = %id, "failed to clear uploaded blob");
-                        }
-                        lifecycle.finish_upload(&claim_key, hash, claim, true);
-                    }
-                    Err(BlobUploadError::MailboxUnavailable(err)) => {
-                        tracing::warn!(%hash, ?err, "mailbox unreachable; aborting remaining uploads, relying on announce/fetch backstop");
+                    DeliverOutcome::MailboxUnavailable => {
                         lifecycle.finish_upload(&claim_key, hash, claim, false);
                         claimed.by_ref().for_each(|(hash, claim)| {
                             lifecycle.finish_upload(&claim_key, hash, claim, false)
                         });
                         break;
                     }
-                    Err(BlobUploadError::Blob(err)) => {
-                        tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
-                        lifecycle.finish_upload(&claim_key, hash, claim, false);
-                    }
                 }
             }
         });
     }
+
+    /// Deliver one blob: an iroh push first (the mailbox imports the
+    /// chunk-validated stream incrementally, so an interrupted push leaves
+    /// resumable progress on its side), then the whole-body HTTP upload as
+    /// the fallback.
+    async fn deliver_blob(
+        &self,
+        reader: &Arc<dyn BlobReader>,
+        hash: iroh_blobs::Hash,
+    ) -> DeliverOutcome {
+        match self.client.push_blob(hash).await {
+            Ok(()) => {
+                tracing::info!(%hash, "pushed blob");
+                return DeliverOutcome::Delivered;
+            }
+            Err(err) => {
+                tracing::debug!(%hash, ?err, "blob push failed; falling back to HTTP upload");
+            }
+        }
+        let bytes = match reader.read_blob(hash).await {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "failed to read blob for upload; relying on announce");
+                return DeliverOutcome::Failed;
+            }
+        };
+        let size = bytes.len();
+        tracing::info!(%hash, size, "uploading blob");
+        match self.client.upload_blob(bytes).await {
+            Ok(()) => {
+                tracing::info!(%hash, size, "uploaded blob");
+                DeliverOutcome::Delivered
+            }
+            Err(BlobUploadError::MailboxUnavailable(err)) => {
+                tracing::warn!(%hash, ?err, "mailbox unreachable; aborting remaining uploads, relying on announce/fetch backstop");
+                DeliverOutcome::MailboxUnavailable
+            }
+            Err(BlobUploadError::Blob(err)) => {
+                tracing::warn!(%hash, ?err, "blob upload failed; relying on announce");
+                DeliverOutcome::Failed
+            }
+        }
+    }
+}
+
+/// How one blob's delivery attempt ended, telling the batch loop whether to
+/// continue.
+enum DeliverOutcome {
+    /// The mailbox now holds the blob.
+    Delivered,
+    /// This blob was attempted but didn't land (unreadable, rejected, timed
+    /// out); the batch continues with the next one.
+    Failed,
+    /// The mailbox itself is unreachable; the batch stops.
+    MailboxUnavailable,
 }
 
 #[cfg(test)]
