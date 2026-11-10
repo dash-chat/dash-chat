@@ -27,10 +27,20 @@ describe('UpdaterBanner', () => {
 		);
 	});
 
-	it('says when the app could not be moved', async () => {
-		await agent.updaterBanner.simulateUpdate('moveError');
+	it('shows the move running', async () => {
+		await agent.updaterBanner.simulateUpdate('moving');
 		await agent.updaterBanner.banner.waitForExist();
-		expect(await agent.updaterBanner.banner.getText()).toContain(
+		expect(await agent.updaterBanner.title.getText()).toBe(
+			await agent.tr('updateMoving'),
+		);
+	});
+
+	// The e2e build leaves the plugin out, so the move itself fails.
+	it('says when tapping to move could not move the app', async () => {
+		await agent.updaterBanner.simulateUpdate('misplaced');
+		await agent.updaterBanner.banner.waitForExist();
+		await agent.updaterBanner.banner.click();
+		await expect(agent.updaterBanner.title).toHaveText(
 			await agent.tr('updateMoveError'),
 		);
 	});

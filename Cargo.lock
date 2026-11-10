@@ -2114,7 +2114,7 @@ dependencies = [
  "mailbox-local-server",
  "mailbox-server",
  "mailboxes-manager",
- "nanoid 0.5.0",
+ "nanoid",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
  "network-watch",
@@ -2217,7 +2217,7 @@ dependencies = [
  "mailbox-server",
  "mailboxes-manager",
  "maplit",
- "nanoid 0.4.0",
+ "nanoid",
  "network-watch",
  "p2panda",
  "p2panda-auth",
@@ -5778,7 +5778,7 @@ dependencies = [
  "iroh-blobs",
  "mailbox-client",
  "mailbox-server",
- "nanoid 0.5.0",
+ "nanoid",
  "netwatch-http-client",
  "once_cell",
  "p2panda-core",
@@ -5862,7 +5862,7 @@ dependencies = [
  "iroh-blobs",
  "mailbox-client",
  "mailbox-server",
- "nanoid 0.5.0",
+ "nanoid",
  "pretty_assertions",
  "reporting",
  "serde",
@@ -6187,15 +6187,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
 dependencies = [
  "rand 0.8.8",
-]
-
-[[package]]
-name = "nanoid"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8628de41fe064cc3f0cf07f3d299ee3e73521adaff72278731d5c8cae3797873"
-dependencies = [
- "rand 0.9.5",
 ]
 
 [[package]]

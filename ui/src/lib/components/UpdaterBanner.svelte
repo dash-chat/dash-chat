@@ -12,27 +12,21 @@
 		| 'hidden'
 		| 'available'
 		| 'misplaced'
+		| 'moving'
 		| 'moveError'
 		| 'downloading'
 		| 'ready'
 		| 'error';
+	type MockState = Exclude<BannerState, 'hidden'>;
 
 	let bannerState: BannerState = $state('hidden');
 	let progress = $state(0);
 	let contentLength = $state(0);
 	let version = $state('');
 	let update: Update | null = $state(null);
-	let moving = false;
 
 	// Set to a state name to preview the banner in dev mode
-	const mockUpdate:
-		| false
-		| 'available'
-		| 'misplaced'
-		| 'moveError'
-		| 'downloading'
-		| 'ready'
-		| 'error' = false;
+	const mockUpdate: false | MockState = false;
 
 	onMount(() => {
 		if (!isTauriEnv() || isMobile || import.meta.env.DEV) {
@@ -59,15 +53,7 @@
 			);
 	});
 
-	async function simulateMockUpdate(
-		mode:
-			| 'available'
-			| 'misplaced'
-			| 'moveError'
-			| 'downloading'
-			| 'ready'
-			| 'error',
-	) {
+	async function simulateMockUpdate(mode: MockState) {
 		version = '1.2.0';
 		if (mode !== 'downloading' && mode !== 'ready') {
 			bannerState = mode;
@@ -88,7 +74,10 @@
 		try {
 			const { check } = await import('@tauri-apps/plugin-updater');
 			update = await check();
-			if (!update) return;
+			if (!update) {
+				bannerState = 'hidden';
+				return;
+			}
 			version = update.version;
 			bannerState = (await isMisplaced()) ? 'misplaced' : 'available';
 		} catch (err) {
@@ -112,21 +101,24 @@
 	/** Moves the app to Applications, where it can update itself, and
 	 * relaunches it from there unless the user cancels. */
 	async function moveToApplications() {
-		if (moving) return;
-		moving = true;
+		bannerState = 'moving';
 		try {
 			const { moveToApplicationsFolder } = await import(
 				'tauri-plugin-move-to-applications-api'
 			);
 			// Returns only if the user cancels the administrator prompt.
 			await moveToApplicationsFolder();
-			bannerState = 'misplaced';
+			settle('moving', 'misplaced');
 		} catch (err) {
 			console.warn('Moving to Applications failed:', err);
-			bannerState = 'moveError';
-		} finally {
-			moving = false;
+			settle('moving', 'moveError');
 		}
+	}
+
+	/** Ends the operation `from` in state `to`, unless the banner was
+	 * dismissed while it ran. */
+	function settle(from: BannerState, to: BannerState) {
+		if (bannerState === from) bannerState = to;
 	}
 
 	async function downloadAndInstall() {
@@ -145,10 +137,10 @@
 				}
 			});
 
-			bannerState = 'ready';
+			settle('downloading', 'ready');
 		} catch (err) {
 			console.warn('Update download failed:', err);
-			bannerState = 'error';
+			settle('downloading', 'error');
 		}
 	}
 
@@ -189,7 +181,9 @@
 	>
 		<wa-icon
 			src={wrapPathInSvg(mdiRefresh)}
-			class={bannerState === 'downloading' ? 'animate-spin' : ''}
+			class={bannerState === 'downloading' || bannerState === 'moving'
+				? 'animate-spin'
+				: ''}
 			style="font-size: 24px; color: white;"
 		></wa-icon>
 
@@ -203,11 +197,19 @@
 						? m.updateTapToUpdate()
 						: m.updateTapToMove()}
 				</div>
+			{:else if bannerState === 'moving'}
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateMoving()}
+				</div>
 			{:else if bannerState === 'moveError'}
-				<div class="text-sm font-semibold">{m.updateMoveError()}</div>
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateMoveError()}
+				</div>
 				<div class="text-xs opacity-80">{m.updateTapToRetry()}</div>
 			{:else if bannerState === 'downloading'}
-				<div class="text-sm font-semibold">{m.updateDownloading()}</div>
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateDownloading()}
+				</div>
 				<div class="mt-1">
 					<Progressbar
 						progress={progressFraction()}
@@ -220,10 +222,14 @@
 					/>
 				</div>
 			{:else if bannerState === 'ready'}
-				<div class="text-sm font-semibold">{m.updateReady()}</div>
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateReady()}
+				</div>
 				<div class="text-xs opacity-80">{m.updateTapToRestart()}</div>
 			{:else if bannerState === 'error'}
-				<div class="text-sm font-semibold">{m.updateError()}</div>
+				<div class="text-sm font-semibold" data-testid="updater-banner-title">
+					{m.updateError()}
+				</div>
 				<div class="text-xs opacity-80">{m.updateTapToRetry()}</div>
 			{/if}
 		</div>
