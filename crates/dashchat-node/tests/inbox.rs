@@ -375,3 +375,64 @@ async fn test_requester_gets_code_owner_keybundle_from_mailbox() {
     .expect("bobbi never received alice's key bundle")
     .unwrap();
 }
+
+/// Bobbi scans Alice's code and writes to her before she has answered. She
+/// can read it while still deciding, and once she accepts they talk both ways.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_requester_messages_before_acceptance() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let config = NodeConfig::testing().no_p2p().no_blob_sync();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(config, "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    let chat = bobbi.direct_chat_with(&alice);
+
+    poll.wait_for(|| async {
+        bobbi
+            .send_message_raw(chat, "before".into())
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("bobbi cannot send yet: {err}"))
+    })
+    .await
+    .unwrap();
+
+    poll.wait_for(|| async {
+        (alice.get_messages(chat).await.unwrap().len() == 1)
+            .then_some(())
+            .ok_or("alice hasn't received the message sent before she accepted")
+    })
+    .await
+    .unwrap();
+    assert!(alice.get_contacts().await.unwrap().is_empty());
+
+    alice.accept_contact(bobbi.agent_id()).await.unwrap();
+    poll.wait_for(|| async {
+        bobbi
+            .get_contacts()
+            .await
+            .unwrap()
+            .contains(&alice.agent_id())
+            .then_some(())
+            .ok_or("bobbi never learned alice accepted")
+    })
+    .await
+    .unwrap();
+
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+    assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 2);
+}
