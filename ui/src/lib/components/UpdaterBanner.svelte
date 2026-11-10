@@ -12,6 +12,7 @@
 		| 'hidden'
 		| 'available'
 		| 'misplaced'
+		| 'moveError'
 		| 'downloading'
 		| 'ready'
 		| 'error';
@@ -28,6 +29,7 @@
 		| false
 		| 'available'
 		| 'misplaced'
+		| 'moveError'
 		| 'downloading'
 		| 'ready'
 		| 'error' = false;
@@ -58,10 +60,16 @@
 	});
 
 	async function simulateMockUpdate(
-		mode: 'available' | 'misplaced' | 'downloading' | 'ready' | 'error',
+		mode:
+			| 'available'
+			| 'misplaced'
+			| 'moveError'
+			| 'downloading'
+			| 'ready'
+			| 'error',
 	) {
 		version = '1.2.0';
-		if (mode === 'error' || mode === 'available' || mode === 'misplaced') {
+		if (mode !== 'downloading' && mode !== 'ready') {
 			bannerState = mode;
 			return;
 		}
@@ -101,7 +109,8 @@
 		}
 	}
 
-	/** Relaunches the app from Applications, where it can update itself. */
+	/** Moves the app to Applications, where it can update itself, and
+	 * relaunches it from there unless the user cancels. */
 	async function moveToApplications() {
 		if (moving) return;
 		moving = true;
@@ -113,7 +122,7 @@
 			await moveToApplicationsFolder();
 		} catch (err) {
 			console.warn('Moving to Applications failed:', err);
-			bannerState = 'error';
+			bannerState = 'moveError';
 		} finally {
 			moving = false;
 		}
@@ -159,7 +168,7 @@
 	function handleBannerClick() {
 		if (bannerState === 'available') {
 			downloadAndInstall();
-		} else if (bannerState === 'misplaced') {
+		} else if (bannerState === 'misplaced' || bannerState === 'moveError') {
 			moveToApplications();
 		} else if (bannerState === 'ready') {
 			restart();
@@ -193,6 +202,9 @@
 						? m.updateTapToUpdate()
 						: m.updateTapToMove()}
 				</div>
+			{:else if bannerState === 'moveError'}
+				<div class="text-sm font-semibold">{m.updateMoveError()}</div>
+				<div class="text-xs opacity-80">{m.updateTapToRetry()}</div>
 			{:else if bannerState === 'downloading'}
 				<div class="text-sm font-semibold">{m.updateDownloading()}</div>
 				<div class="mt-1">

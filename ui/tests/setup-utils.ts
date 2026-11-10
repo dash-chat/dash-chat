@@ -46,6 +46,7 @@ function simulateUpdate(
 	state:
 		| 'available'
 		| 'misplaced'
+		| 'moveError'
 		| 'downloading'
 		| 'ready'
 		| 'error'

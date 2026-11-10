@@ -399,6 +399,7 @@
 	"updateTapToRestart": "Tap to restart and apply update.",
 	"updateTapToRetry": "Tap to retry.",
 	"updateTapToMove": "Tap to move Dash Chat to Applications so it can update.",
+	"updateMoveError": "Couldn't move Dash Chat to Applications.",
 	"moveToApplicationsTitle": "Move to Applications?",
 	"moveToApplicationsMessage": "Dash Chat can only update itself from your Applications folder.",
 	"moveToApplicationsMove": "Move to Applications",

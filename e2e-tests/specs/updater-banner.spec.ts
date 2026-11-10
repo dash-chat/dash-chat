@@ -27,6 +27,14 @@ describe('UpdaterBanner', () => {
 		);
 	});
 
+	it('says when the app could not be moved', async () => {
+		await agent.updaterBanner.simulateUpdate('moveError');
+		await agent.updaterBanner.banner.waitForExist();
+		expect(await agent.updaterBanner.banner.getText()).toContain(
+			await agent.tr('updateMoveError'),
+		);
+	});
+
 	it('shows downloading banner with progress bar', async () => {
 		await agent.updaterBanner.simulateUpdate('downloading');
 		await agent.updaterBanner.banner.waitForExist();
