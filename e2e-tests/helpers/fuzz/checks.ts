@@ -313,7 +313,7 @@ export async function expectHubs(
 		DISCOVERY_MS,
 		`${sa.name}: the chip did not read local within ${DISCOVERY_MS / 1_000}s after ${after}`,
 	);
-	await chip.waitForLocalHubCount(
+	await sa.agent.groupChatPage.connectionStatusBar.waitForLocalHubCount(
 		expected,
 		DISCOVERY_MS,
 		`${sa.name}: the dialog did not name ${expected} hub(s) after ${after}`,

@@ -49,8 +49,7 @@ describe('Pure p2p sync (no mailbox)', function () {
 			);
 		}
 
-		const chip = agent1.directChatPage.connectionStatusIndicator;
-		await chip.expectDialog(
+		await agent1.directChatPage.connectionStatusBar.expectDialog(
 			await agent1.tr('connectionStatusP2pTitle'),
 			await agent1.tr('connectionStatusP2pDescription'),
 		);

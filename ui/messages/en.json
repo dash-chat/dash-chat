@@ -361,6 +361,7 @@
 	"connectionStatusPendingTitle": "Connecting…",
 	"connectionStatusPendingDescription": "We're checking your connection to the message server.",
 	"connectionStatusPendingAriaLabel": "Connection status: connecting. Tap for details.",
+	"connectionStatusHideDetailsAriaLabel": "Hide connection status",
 
 	"help": "Help",
 	"contactUs": "Contact us",

@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	connectedToCloudMailboxServer,
 	connectionStatus,
+	internetStatus,
+	reachableLocalMailboxCount,
 } from './connection-status';
 
 const RESUMED_AT = Date.parse('2026-01-05T12:00:00Z');
@@ -114,6 +116,42 @@ describe('connectionStatus', () => {
 	it('reads disconnected once settling ends without a verdict', () => {
 		vi.setSystemTime(SETTLED_AT);
 		expect(status({})).toEqual({ status: 'disconnected' });
+	});
+});
+
+describe('internetStatus', () => {
+	function internet(cloudMailbox: MailboxConnectionHealth | null) {
+		return internetStatus({ cloudMailbox, localMailboxes: [] }, RESUMED_AT);
+	}
+
+	it('reads the cloud on its own, even with a local hub standing in', () => {
+		expect(
+			internetStatus(
+				{ cloudMailbox: failing(3), localMailboxes: [answering()] },
+				RESUMED_AT,
+			),
+		).toBe('disconnected');
+	});
+
+	it('is connected once a poll since resuming vouches for the cloud', () => {
+		expect(internet(answering())).toBe('cloud');
+	});
+
+	it('stays pending until the settling window runs out', () => {
+		expect(internet(null)).toBe('pending');
+		vi.setSystemTime(SETTLED_AT);
+		expect(internet(null)).toBe('disconnected');
+	});
+});
+
+describe('reachableLocalMailboxCount', () => {
+	it('counts only the hubs that are answering', () => {
+		expect(
+			reachableLocalMailboxCount({
+				cloudMailbox: null,
+				localMailboxes: [answering(), failing(3)],
+			}),
+		).toBe(1);
 	});
 });
 

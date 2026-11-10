@@ -1,4 +1,5 @@
 import { Composer } from '../../components/composer';
+import { ConnectionStatusBar } from '../../components/connection-status-bar';
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { type MessageStatus, Messages } from '../../components/messages';
 import { Navbar } from '../../components/navbar';
@@ -45,6 +46,7 @@ export class DirectChatPage extends TestHelper {
 		this.composer,
 	);
 	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
+	connectionStatusBar = new ConnectionStatusBar(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {

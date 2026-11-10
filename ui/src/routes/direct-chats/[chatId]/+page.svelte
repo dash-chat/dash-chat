@@ -73,6 +73,9 @@
 	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
 	import { useDeviceId } from '$lib/stores/my-device-id';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import ConnectionStatusBar from '$lib/components/connection/ConnectionStatusBar.svelte';
+	import ConnectionStatusBarCollapseButton from '$lib/components/connection/ConnectionStatusBarCollapseButton.svelte';
+	import { connectionBarNavbarClass } from '$lib/components/connection/connection-bar-navbar-class';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
@@ -278,11 +281,21 @@
 	}
 
 	const theme = $derived(useTheme());
+	let connectionBarOpened = $state(false);
 </script>
 
 {#snippet connectionStatus()}
 	<div class="grid size-11 shrink-0 place-items-center">
-		<ConnectionStatusIndicator {chatId} />
+		{#if connectionBarOpened}
+			<ConnectionStatusBarCollapseButton
+				onclick={() => (connectionBarOpened = false)}
+			/>
+		{:else}
+			<ConnectionStatusIndicator
+				{chatId}
+				onclick={() => (connectionBarOpened = true)}
+			/>
+		{/if}
 	</div>
 {/snippet}
 
@@ -300,6 +313,10 @@
 					data-testid="direct-chat-scroll"
 				>
 					{#snippet navbar()}
+						<ConnectionStatusBar
+							{chatId}
+							opened={connectionBarOpened && !searchMode}
+						/>
 						{#if searchMode}
 							<Navbar
 								transparent={true}
@@ -327,6 +344,7 @@
 							</Navbar>
 						{:else}
 							<Navbar
+								class={connectionBarNavbarClass(connectionBarOpened)}
 								transparent={true}
 								titleClass="opacity1 min-w-0 flex-1"
 								leftClass={theme === 'ios' && !isWideScreen.value

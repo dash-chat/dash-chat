@@ -40,36 +40,54 @@ export function connectedToCloudMailboxServer(
 	return mailboxes.cloudMailbox !== null && reachable(mailboxes.cloudMailbox);
 }
 
-/** What the user is told about their connection: 'pending' while no verdict
- * has been earned yet.
- *
- * The cloud takes precedence: a local hub is only worth mentioning while it
- * stands in for an unreachable cloud, so a cloud that is still reachable but
- * not vouched for reads pending even with a hub up. Vouching takes a poll
- * answered since `resumedAt` with none failed after it; anything measured
- * before `resumedAt` happened while the app was away and says nothing about
- * the connection now, so neither a stale success nor a stale failure settles
- * the verdict. Reactive through `withinWindow`, so the settling deadline
- * re-renders the caller when it expires. */
-export function connectionStatus(
+export function reachableLocalMailboxCount(
 	mailboxes: AllMailboxesConnectionState,
-	peerOnline: boolean,
+): number {
+	return mailboxes.localMailboxes.filter(reachable).length;
+}
+
+/** The cloud connection on its own, whatever else may be standing in for it.
+ *
+ * Vouching takes a poll answered since `resumedAt` with none failed after it;
+ * anything measured before `resumedAt` happened while the app was away and says
+ * nothing about the connection now, so neither a stale success nor a stale
+ * failure settles the verdict. Reactive through `withinWindow`, so the settling
+ * deadline re-renders the caller when it expires. */
+export function internetStatus(
+	mailboxes: AllMailboxesConnectionState,
 	resumedAt: number,
-): ConnectionStatus {
+): 'cloud' | 'pending' | 'disconnected' {
 	const { cloudMailbox } = mailboxes;
 	if (cloudMailbox !== null && reachable(cloudMailbox)) {
 		const vouched =
 			cloudMailbox.consecutive_errors === 0 &&
 			happenedAfter(cloudMailbox.last_success_at, resumedAt);
-		return { status: vouched ? 'cloud' : 'pending' };
+		return vouched ? 'cloud' : 'pending';
 	}
-	const count = mailboxes.localMailboxes.filter(reachable).length;
-	if (count > 0) return { status: 'local', count };
 	const failedSinceResume = happenedAfter(
 		cloudMailbox?.last_error?.at,
 		resumedAt,
 	);
-	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS))
-		return { status: 'pending' };
+	return !failedSinceResume && withinWindow(resumedAt, SETTLING_MS)
+		? 'pending'
+		: 'disconnected';
+}
+
+/** What the user is told about their connection: 'pending' while no verdict
+ * has been earned yet.
+ *
+ * The cloud takes precedence: a local hub is only worth mentioning while it
+ * stands in for an unreachable cloud, so a cloud that is still reachable but
+ * not vouched for reads pending even with a hub up. */
+export function connectionStatus(
+	mailboxes: AllMailboxesConnectionState,
+	peerOnline: boolean,
+	resumedAt: number,
+): ConnectionStatus {
+	const internet = internetStatus(mailboxes, resumedAt);
+	if (connectedToCloudMailboxServer(mailboxes)) return { status: internet };
+	const count = reachableLocalMailboxCount(mailboxes);
+	if (count > 0) return { status: 'local', count };
+	if (internet === 'pending') return { status: 'pending' };
 	return { status: peerOnline ? 'p2p' : 'disconnected' };
 }

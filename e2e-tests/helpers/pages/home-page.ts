@@ -1,3 +1,4 @@
+import { ConnectionStatusBar } from '../components/connection-status-bar';
 import { checkOverflow } from '../review/checks';
 import { tid } from '../selectors';
 import { TestHelper } from './test-helper';
@@ -46,6 +47,7 @@ export class HomePage extends TestHelper {
 	blockedRowIcon = this.el(tid('blocked-row-icon'));
 	unreadBadge = this.el(tid('chat-row-unread-badge'));
 	p2pBadge = this.el(tid('chat-row-p2p-badge'));
+	connectionStatusBar = new ConnectionStatusBar(this.agent);
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {

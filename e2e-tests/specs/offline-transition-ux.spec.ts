@@ -77,7 +77,7 @@ describe('Offline UX', () => {
 			const indicator = agent1.directChatPage.connectionStatusIndicator;
 			expect(await indicator.status()).toBe('cloud');
 
-			await indicator.expectDialog(
+			await agent1.directChatPage.connectionStatusBar.expectDialog(
 				await agent1.tr('connectionStatusCloudTitle'),
 				await agent1.tr('connectionStatusCloudDescription'),
 			);
@@ -110,7 +110,7 @@ describe('Offline UX', () => {
 				'the chip did not read pending after the first failed poll',
 			);
 
-			await indicator.expectDialog(
+			await agent1.directChatPage.connectionStatusBar.expectDialog(
 				await agent1.tr('connectionStatusPendingTitle'),
 				await agent1.tr('connectionStatusPendingDescription'),
 			);
@@ -150,7 +150,7 @@ describe('Offline UX', () => {
 				{ timeout: 90_000, interval: 1_000 },
 			);
 
-			await indicator.expectDialog(
+			await agent1.directChatPage.connectionStatusBar.expectDialog(
 				await agent1.tr('connectionStatusDisconnectedTitle'),
 				await agent1.tr('connectionStatusDisconnectedDescription'),
 			);
@@ -177,7 +177,7 @@ describe('Offline UX', () => {
 					{ timeout: 60_000 },
 				);
 
-				await indicator.expectDialog(
+				await agent1.directChatPage.connectionStatusBar.expectDialog(
 					await agent1.tr('connectionStatusLocalTitle'),
 					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
 				);

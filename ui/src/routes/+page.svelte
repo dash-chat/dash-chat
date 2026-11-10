@@ -15,11 +15,15 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import ConnectionStatusBar from '$lib/components/connection/ConnectionStatusBar.svelte';
+	import ConnectionStatusBarCollapseButton from '$lib/components/connection/ConnectionStatusBarCollapseButton.svelte';
+	import { connectionBarNavbarClass } from '$lib/components/connection/connection-bar-navbar-class';
 	import HubWarningBadge from '$lib/components/HubWarningBadge.svelte';
 
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
+	let connectionBarOpened = $state(false);
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const myProfile = useReactivePromise(contactsStore.myProfile);
 
@@ -45,7 +49,9 @@
 {/snippet}
 
 <Page>
+	<ConnectionStatusBar opened={connectionBarOpened} />
 	<Navbar
+		class={connectionBarNavbarClass(connectionBarOpened)}
 		title={m.chats()}
 		titleClass="opacity1"
 		rightClass="order-1"
@@ -74,9 +80,23 @@
 				? 'rounded-full bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
 				: 'me-2'}"
 		>
-			<ConnectionStatusIndicator />
+			{#if connectionBarOpened}
+				<ConnectionStatusBarCollapseButton
+					onclick={() => (connectionBarOpened = false)}
+				/>
+			{:else}
+				<ConnectionStatusIndicator
+					onclick={() => (connectionBarOpened = true)}
+				/>
+			{/if}
 		</div>
 	</Navbar>
+
+	<div
+		class="transition-[height] duration-200 {connectionBarOpened
+			? 'h-14'
+			: 'h-0'}"
+	></div>
 
 	<UpdaterBanner />
 

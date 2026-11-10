@@ -27,6 +27,9 @@
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import ConnectionStatusBar from '$lib/components/connection/ConnectionStatusBar.svelte';
+	import ConnectionStatusBarCollapseButton from '$lib/components/connection/ConnectionStatusBarCollapseButton.svelte';
+	import { connectionBarNavbarClass } from '$lib/components/connection/connection-bar-navbar-class';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
@@ -107,6 +110,7 @@
 	}
 
 	const theme = $derived(useTheme());
+	let connectionBarOpened = $state(false);
 
 	function navigateToMessage(hash: Hash) {
 		scrollToMessage(messagesEl, hash);
@@ -127,7 +131,16 @@
 
 {#snippet connectionStatus()}
 	<div class="grid size-11 shrink-0 place-items-center">
-		<ConnectionStatusIndicator {chatId} />
+		{#if connectionBarOpened}
+			<ConnectionStatusBarCollapseButton
+				onclick={() => (connectionBarOpened = false)}
+			/>
+		{:else}
+			<ConnectionStatusIndicator
+				{chatId}
+				onclick={() => (connectionBarOpened = true)}
+			/>
+		{/if}
 	</div>
 {/snippet}
 
@@ -138,7 +151,9 @@
 		data-testid="group-chat-scroll"
 	>
 		{#snippet navbar()}
+			<ConnectionStatusBar {chatId} opened={connectionBarOpened} />
 			<Navbar
+				class={connectionBarNavbarClass(connectionBarOpened)}
 				transparent={true}
 				titleClass="opacity1 min-w-0 flex-1"
 				leftClass={theme === 'ios' && !isWideScreen.value

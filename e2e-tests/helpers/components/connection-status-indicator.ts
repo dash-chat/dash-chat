@@ -49,10 +49,6 @@ export function samplesOnResume(
 
 export class ConnectionStatusIndicator extends TestHelper {
 	chip = this.el(tid('connection-status'));
-	dialog = this.el(tid('connection-status-dialog'));
-	dialogTitle = this.el(tid('connection-status-dialog-title'));
-	dialogDescription = this.el(tid('connection-status-dialog-description'));
-	dialogCloseButton = this.el(tid('connection-status-dialog-close'));
 
 	/** Read the chip's data-status, or null while it is not mounted. */
 	status(): Promise<ConnectionStatus | null> {
@@ -79,15 +75,6 @@ export class ConnectionStatusIndicator extends TestHelper {
 			);
 		}
 		return history.statuses;
-	}
-
-	/** True if the dialog is mounted and visible (not the closed/fade-out state). */
-	isDialogOpen(): Promise<boolean> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return false;
-			return !el.classList.contains('opacity-0');
-		}, tid('connection-status-dialog'));
 	}
 
 	async waitForStatus(
@@ -124,48 +111,5 @@ export class ConnectionStatusIndicator extends TestHelper {
 		} catch {
 			throw new Error(`${timeoutMsg} (the chip last read ${String(seen)})`);
 		}
-	}
-
-	/** Open the dialog and wait until its text says `count` local hubs are
-	 *  connected, then close it. The chip must be reading local. */
-	async waitForLocalHubCount(
-		count: number,
-		timeout: number,
-		timeoutMsg: string,
-	): Promise<void> {
-		await this.chip.click();
-		await this.dialogDescription.waitForExist();
-		let seen: number | null = null;
-		try {
-			await this.agent.waitUntil(
-				async () => {
-					const text = await this.dialogDescription.getText();
-					seen = Number(text.match(/\d+/)?.[0]);
-					return seen === count;
-				},
-				{ timeout, interval: 200 },
-			);
-		} catch {
-			throw new Error(`${timeoutMsg} (the dialog last named ${String(seen)})`);
-		} finally {
-			await this.closeDialog();
-		}
-	}
-
-	/** Open the dialog, check it reads `title` and `description`, then close it. */
-	async expectDialog(title: string, description: string): Promise<void> {
-		await this.chip.click();
-		await this.agent.waitUntil(() => this.isDialogOpen());
-		try {
-			await expect(this.dialogTitle).toHaveText(title);
-			await expect(this.dialogDescription).toHaveText(description);
-		} finally {
-			await this.closeDialog();
-		}
-	}
-
-	private async closeDialog(): Promise<void> {
-		await this.dialogCloseButton.click();
-		await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
 	}
 }
