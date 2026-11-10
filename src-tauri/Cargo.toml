@@ -142,7 +142,8 @@ tauri-plugin-mcp-bridge = "0.13"
 tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
-tauri-plugin-updater = "2.9"
+tauri-plugin-updater = "2.14"
+tauri-plugin-move-to-applications = { git = "https://github.com/dash-chat/tauri-plugin-move-to-applications", rev = "fdd227324f9b9cbc32e95b8db820b33e535b7c61" }
 mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
 lan-multicast-probe = { workspace = true }

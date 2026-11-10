@@ -7,14 +7,26 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiRefresh, mdiClose } from '@mdi/js';
 	import type { Update } from '@tauri-apps/plugin-updater';
+	import {
+		moveToApplicationsFolder,
+		needsMove,
+	} from 'tauri-plugin-move-to-applications-api';
 
-	type BannerState = 'hidden' | 'available' | 'downloading' | 'ready' | 'error';
+	type BannerState =
+		| 'hidden'
+		| 'available'
+		| 'misplaced'
+		| 'downloading'
+		| 'ready'
+		| 'error';
 
 	let bannerState: BannerState = $state('hidden');
 	let progress = $state(0);
 	let contentLength = $state(0);
 	let version = $state('');
 	let update: Update | null = $state(null);
+	// The move ends with the app relaunching, so this only resets on failure.
+	let moving = false;
 
 	// Set to a state name to preview the banner in dev mode
 	const mockUpdate: false | 'available' | 'downloading' | 'ready' | 'error' =
@@ -73,13 +85,24 @@
 			const { check } = await import('@tauri-apps/plugin-updater');
 			update = await check();
 			if (!update) return;
+			version = update.version;
+			bannerState = (await needsMove()) ? 'misplaced' : 'available';
 		} catch (err) {
 			console.warn('Update check failed:', err);
-			return;
 		}
+	}
 
-		version = update.version;
-		bannerState = 'available';
+	/** Relaunches the app from Applications, where it can update itself. */
+	async function moveAndUpdate() {
+		if (moving) return;
+		moving = true;
+		try {
+			await moveToApplicationsFolder();
+		} catch (err) {
+			moving = false;
+			console.warn('Moving to Applications failed:', err);
+			bannerState = 'error';
+		}
 	}
 
 	async function downloadAndInstall() {
@@ -122,6 +145,8 @@
 	function handleBannerClick() {
 		if (bannerState === 'available') {
 			downloadAndInstall();
+		} else if (bannerState === 'misplaced') {
+			moveAndUpdate();
 		} else if (bannerState === 'ready') {
 			restart();
 		} else if (bannerState === 'error') {
@@ -150,6 +175,9 @@
 					{m.updateAvailable()}
 				</div>
 				<div class="text-xs opacity-80">{m.updateTapToUpdate()}</div>
+			{:else if bannerState === 'misplaced'}
+				<div class="text-sm font-semibold">{m.updateAvailable()}</div>
+				<div class="text-xs opacity-80">{m.updateTapToMove()}</div>
 			{:else if bannerState === 'downloading'}
 				<div class="text-sm font-semibold">{m.updateDownloading()}</div>
 				<div class="mt-1">
