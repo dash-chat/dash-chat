@@ -569,6 +569,20 @@ impl Node {
                                         );
                                     }
                                 });
+                            } else {
+                                // Receive what the requester sends ahead of
+                                // our answer, while staying silent ourselves.
+                                let node = self.clone();
+                                tokio::spawn(async move {
+                                    let topic_id =
+                                        node.direct_chat_topic(crate::FakeAgentId::from(author));
+                                    if let Err(err) = node.register_and_join_space(topic_id).await {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to join the requester's direct chat space"
+                                        );
+                                    }
+                                });
                             }
 
                             self.save_keybundle(keybundle.clone()).await?;
@@ -609,7 +623,14 @@ impl Node {
                                 let topic_id =
                                     node.direct_chat_topic(crate::FakeAgentId::from(author));
 
-                                if let Err(err) = node.join_space(topic_id).await {
+                                if let Err(err) = node.ensure_direct_chat_space(author).await {
+                                    tracing::error!(
+                                        ?err,
+                                        "direct chat space could not be created, can't proceed"
+                                    );
+                                    return;
+                                }
+                                if let Err(err) = node.join_space(topic_id.into()).await {
                                     tracing::error!(
                                         ?err,
                                         "direct chat space was subscribed improperly, can't proceed"

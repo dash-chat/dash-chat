@@ -39,7 +39,7 @@ const MAX_PAYLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 pub use blip::Blip;
 pub use blips_table::{BlipsKey, BlipsKeyError, BlipsKeyPrefix, BLIPS_TABLE};
 pub use blob_sync::{BlobFetchPool, BlobSync};
-pub use cleanup::{cleanup_old_messages, spawn_cleanup_task};
+pub use cleanup::{cleanup_old_messages, spawn_cleanup_task, MESSAGE_MAX_AGE};
 pub use dashchat_utils::FetchConfig;
 pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,

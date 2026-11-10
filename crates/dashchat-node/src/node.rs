@@ -277,6 +277,7 @@ pub struct Node {
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    direct_chat_creation_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
 
@@ -498,6 +499,7 @@ impl Node {
             unfetched_blob_followup_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
+            direct_chat_creation_handles: Default::default(),
             dirty_ack_topics: Default::default(),
         };
 
@@ -603,9 +605,12 @@ impl Node {
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
     pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
+        // A mailbox must keep our key bundle for as long as the code can be scanned.
+        let max_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)
+            .expect("mailbox retention fits a chrono duration");
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
-            Utc::now() + self.config.contact_code_expiry,
+            Utc::now() + self.config.contact_code_expiry.min(max_expiry),
         );
         self.initialize_stream(*inbox_topic.topic)
             .await
@@ -801,11 +806,48 @@ impl Node {
         self.direct_chat_topic(other)
     }
 
+    /// Create the direct chat space with `other` once their key bundle has
+    /// reached us. Does nothing if we already take part in it: we created it
+    /// before, or we joined it on their contact request and they create it.
+    pub(crate) async fn ensure_direct_chat_space(&self, other: DeviceId) -> anyhow::Result<()> {
+        self.keybundle_of(other).await?;
+        let topic = self.direct_chat_topic(FakeAgentId::from(other));
+        if self.streams.has_space(*topic).await? || self.streams.space(*topic).await.is_ok() {
+            return Ok(());
+        }
+        match self
+            .create_direct_chat_space(FakeAgentId::from(other))
+            .await
+        {
+            Err(err)
+                if matches!(
+                    err.downcast_ref::<streams::StreamsError>(),
+                    Some(streams::StreamsError::SpaceAlreadyExists(_))
+                ) =>
+            {
+                Ok(())
+            }
+            result => result,
+        }
+    }
+
+    /// Run [`Self::ensure_direct_chat_space`] in the background, since the key
+    /// bundle of someone whose code we scanned only arrives once we sync
+    /// their inbox.
+    pub(crate) async fn spawn_direct_chat_space_creation(&self, other: DeviceId) {
+        let node = self.clone();
+        let handle = tokio::spawn(async move {
+            if let Err(err) = node.ensure_direct_chat_space(other).await {
+                tracing::warn!(?err, other = ?other.aliased(), "failed to create direct chat space");
+            }
+        });
+        self.direct_chat_creation_handles.lock().await.push(handle);
+    }
+
     /// Create a new direct chat Space.
-    /// Note that only one node should create the space!
     ///
-    /// TODO: use a tie breaker in case both nodes created a space, so that one
-    ///       gets deterministically abandoned and both nodes choose the same space.
+    /// The one who scanned the other's contact code creates it. When both
+    /// scanned each other's, both may: p2panda merges the two.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
@@ -1728,6 +1770,10 @@ impl Node {
             let _ = handle.await;
         }
 
+        for handle in self.direct_chat_creation_handles.lock().await.drain(..) {
+            handle.abort();
+        }
+
         // While the network is still up, so peers see us leave instead of timing us out.
         self.online_peers.leave_all().await;
 
@@ -2015,6 +2061,9 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        self.spawn_direct_chat_space_creation(contact.device_pubkey)
+            .await;
+
         Ok(AddContactResult::NewRequest(direct_chat_topic_id))
     }
 
@@ -2084,9 +2133,19 @@ impl Node {
         self.publish_add_contact(agent_id, self.direct_chat_topic(fake_agent_id))
             .await?;
 
-        self.create_direct_chat_space(fake_agent_id)
+        self.ensure_direct_chat_space(device_pubkey)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+        let direct_chat_topic = self.direct_chat_topic(fake_agent_id);
+        self.join_space(direct_chat_topic.into())
+            .await
+            .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+        let node = self.clone();
+        tokio::spawn(async move {
+            if let Err(err) = node.publish_my_profile_to(direct_chat_topic.into()).await {
+                tracing::warn!(?err, "failed to push my profile to the new direct chat");
+            }
+        });
 
         // Messages the requester sent before acceptance were processed but
         // deliberately not acked; now that they are a contact, cover them.
@@ -2459,6 +2518,7 @@ impl Node {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
                 failures += 1;
             }
+            self.spawn_direct_chat_space_creation(owner).await;
         }
 
         self.local_store
