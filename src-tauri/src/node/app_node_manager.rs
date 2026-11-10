@@ -45,7 +45,9 @@ impl AppNodeManager {
     pub async fn spawn(app: &AppHandle, data_path: PathBuf) -> anyhow::Result<Self> {
         // The notification channel is owned here: the sender is reused across node
         // rebuilds, and the receiver drives the app-lifetime notification loop.
-        let (notification_tx, notification_rx) = mpsc::channel(100);
+        // The node drops notifications once this is full and the frontend never
+        // refetches them, so it has to be able to hold a whole catch-up's worth.
+        let (notification_tx, notification_rx) = mpsc::channel(1_000);
         let sqlite_gate = SqliteGate::new();
         let notified_operations_store = NotifiedOperationsStore::open(
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),

@@ -256,6 +256,11 @@ export class Messages extends TestHelper {
 			},
 			{ timeout, timeoutMsg: `Message "${text}" not found` },
 		);
+		// The app marks a message read only once it has been painted, so a caller
+		// that leaves the chat right after this must not get ahead of the paint.
+		await this.agent.executeAsync((done: () => void) => {
+			void window.__test.nextPaint().then(done);
+		});
 		return message!;
 	}
 

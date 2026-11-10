@@ -56,6 +56,14 @@ function forceBlobError(alt: string) {
 	);
 }
 
+/** Resolves once the page has painted its current layout and delivered that
+ * paint's IntersectionObserver callbacks. */
+function nextPaint(): Promise<void> {
+	return new Promise(resolve =>
+		requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+	);
+}
+
 /** True if the first element matching `selector` contains `text`. */
 function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
@@ -647,6 +655,7 @@ export const testUtils = {
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
+	nextPaint,
 	swipeToReply,
 	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
 	/** Wi-Fi control on phones (the network-interfaces plugin's `wifi-control`
