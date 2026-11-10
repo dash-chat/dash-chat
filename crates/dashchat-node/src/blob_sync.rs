@@ -65,6 +65,11 @@ impl BlobSync {
         let mask = EventMask {
             connected: ConnectMode::Notify,
             get: RequestMode::NotifyLog,
+            // Accept blob pushes (the mailbox delivery fast path): iroh-blobs
+            // disables them by default because they write to the store. Pushed
+            // data is chunk-validated against the requested hash, so a bad
+            // body can't land; what can land is an unsolicited but valid blob.
+            push: RequestMode::None,
             ..EventMask::DEFAULT
         };
         let (events, rx) = EventSender::channel(256, mask);

@@ -9,6 +9,10 @@ use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::provider::events::{
+    EventMask as IrohBlobsEventMask, EventSender as IrohBlobsEventSender,
+    RequestMode as IrohBlobsRequestMode,
+};
 use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
@@ -274,7 +278,16 @@ impl BlobSync {
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        // Accept blob pushes: iroh-blobs disables them by default because they
+        // write to the store. Pushed data is chunk-validated against the
+        // requested hash, and lands untagged, so the retention GC reclaims
+        // anything that is never announced.
+        let mask = IrohBlobsEventMask {
+            push: IrohBlobsRequestMode::None,
+            ..IrohBlobsEventMask::DEFAULT
+        };
+        let (events_tx, _events_rx) = IrohBlobsEventSender::channel(1, mask);
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events_tx));
         let downloader = Downloader::builder(&store, &endpoint)
             .alpn(mixed_alpn.as_slice())
             .build();

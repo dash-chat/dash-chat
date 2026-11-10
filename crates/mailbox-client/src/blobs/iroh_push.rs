@@ -1,6 +1,7 @@
 //! Pushing blobs to a mailbox over iroh instead of HTTP.
 
-use iroh_blobs::protocol::{ChunkRanges, ChunkRangesSeq, PushRequest};
+use futures::StreamExt;
+use iroh_blobs::protocol::{ChunkRanges, ChunkRangesSeq, ObserveRequest, PushRequest};
 
 use crate::{BlobUploadError, MailboxId, blob_transfer_timeout};
 
@@ -28,7 +29,8 @@ impl IrohPusher {
     }
 
     /// Push the whole blob to the mailbox whose `MailboxId` is its endpoint
-    /// id. The mailbox's dialing address must already be discoverable by the
+    /// id, returning once the mailbox reports it holds the complete blob.
+    /// The mailbox's dialing address must already be discoverable by the
     /// endpoint (the node learns it from the mailbox's `/health` response).
     pub async fn push_blob(
         &self,
@@ -46,14 +48,41 @@ impl IrohPusher {
             .connect(endpoint_id, &self.alpn)
             .await
             .map_err(|err| BlobUploadError::MailboxUnavailable(anyhow::anyhow!(err)))?;
-        let request = PushRequest::new(hash, ChunkRangesSeq::from_ranges([ChunkRanges::all()]));
         tokio::time::timeout(
             blob_transfer_timeout(size),
-            self.store.remote().execute_push(conn, request).complete(),
+            self.push_and_confirm(conn, hash),
         )
         .await
         .map_err(|_| BlobUploadError::Blob(anyhow::anyhow!("blob push timed out")))?
-        .map_err(|err| BlobUploadError::Blob(anyhow::anyhow!("blob push failed: {err:?}")))?;
-        Ok(())
+    }
+
+    async fn push_and_confirm(
+        &self,
+        conn: iroh::endpoint::Connection,
+        hash: iroh_blobs::Hash,
+    ) -> Result<(), BlobUploadError> {
+        let remote = self.store.remote();
+        // A push writes nothing back on success, so confirmation comes from
+        // watching the mailbox's bitfield over a second stream: it sends the
+        // current state at once and then live updates, and complete means the
+        // import finished. Started before the push so no update is missed.
+        let mut bitfields = remote.observe(conn.clone(), ObserveRequest::new(hash));
+        let request = PushRequest::new(hash, ChunkRangesSeq::from_ranges([ChunkRanges::all()]));
+        remote
+            .execute_push(conn, request)
+            .complete()
+            .await
+            .map_err(|err| BlobUploadError::Blob(anyhow::anyhow!("blob push failed: {err:?}")))?;
+        while let Some(bitfield) = bitfields.next().await {
+            let bitfield = bitfield.map_err(|err| {
+                BlobUploadError::Blob(anyhow::anyhow!("blob observe failed: {err}"))
+            })?;
+            if bitfield.is_complete() {
+                return Ok(());
+            }
+        }
+        Err(BlobUploadError::Blob(anyhow::anyhow!(
+            "mailbox closed the observe stream before the blob completed"
+        )))
     }
 }

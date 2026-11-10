@@ -451,3 +451,78 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
     let fetched = mailbox.blobs.get_bytes(hash).await.unwrap();
     assert_eq!(fetched.as_ref(), blob_data.as_slice());
 }
+
+/// The iroh blob push transport carries a blob to the mailbox: a client with
+/// a pusher wired pushes a blob directly (no publish, so the HTTP upload path
+/// never runs) and it lands in the mailbox's store.
+#[tokio::test(flavor = "multi_thread")]
+async fn push_blob_delivers_to_mailbox_over_iroh() {
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+
+    // Relay node hosting the in-process mailbox (shares its iroh endpoint +
+    // blob store). The mailbox's MailboxId is the relay's EndpointId.
+    let relay = TestNode::new(config.clone(), "relay").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let db_path = mailbox_dir.path().join("mailbox.redb");
+
+    let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
+    let server = mailbox_local_server::spawn_local_mailbox_server(
+        db_path,
+        relay.blobs(),
+        relay.blob_downloader(),
+        relay.iroh_endpoint().await.unwrap(),
+        None,
+        Some(common::TEST_UPLOAD_GRACE),
+        peer_addr_tx,
+    )
+    .await
+    .unwrap();
+    let url = server.url.clone();
+    wait_for_mailbox_health(&url).await;
+
+    let alice = TestNode::new(config.clone(), "alice").await;
+    // The push dials the mailbox by EndpointId; with mDNS off in tests, teach
+    // Alice the relay's address directly.
+    teach_peers(&alice, [&relay]).await.unwrap();
+
+    // Alice holds a blob the mailbox does not.
+    let blob_data = rand::random::<[u8; 8192]>().to_vec();
+    let hash = alice
+        .blobs()
+        .add_bytes(blob_data.clone())
+        .await
+        .unwrap()
+        .hash;
+
+    let client = ToyMailboxClient::<MailboxOperation>::new(
+        mailbox_id,
+        &url,
+        alice.endpoint_id(),
+        std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        alice.mailboxes.upload_tracker(),
+    )
+    .with_blob_pusher(alice.blob_pusher().await);
+
+    use mailbox_client::MailboxClient as _;
+    client.push_blob(hash).await.unwrap();
+
+    // The pusher's send side finishes before the mailbox's import necessarily
+    // completes, so poll rather than assert immediately.
+    poll.wait_for(|| async {
+        relay
+            .blobs()
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not imported the pushed blob")
+    })
+    .await
+    .unwrap();
+
+    let pushed = relay.blobs().get_bytes(hash).await.unwrap();
+    assert_eq!(pushed.as_ref(), blob_data.as_slice());
+}
