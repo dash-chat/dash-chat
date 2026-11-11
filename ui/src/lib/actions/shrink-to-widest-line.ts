@@ -1,5 +1,16 @@
 import type { Action } from 'svelte/action';
 
+/** How much `node`'s ancestors scale it horizontally: client rects are in
+ * rendered pixels, while a `width` is set in layout pixels. */
+function renderedScaleX(node: HTMLElement): number {
+	let scale = 1;
+	for (let el: HTMLElement | null = node; el; el = el.parentElement) {
+		const { transform } = getComputedStyle(el);
+		if (transform !== 'none') scale *= new DOMMatrixReadOnly(transform).a;
+	}
+	return scale;
+}
+
 /**
  * Shrinks a wrapped text block to its widest rendered line. When text wraps,
  * `fit-content` resolves to the max-width cap even though every line ends
@@ -18,8 +29,9 @@ export const shrinkToWidestLine: Action<HTMLElement> = node => {
 		const rects = Array.from(range.getClientRects()).filter(r => r.width > 0);
 		if (rects.length === 0) return;
 		const width = Math.ceil(
-			Math.max(...rects.map(r => r.right)) -
-				Math.min(...rects.map(r => r.left)),
+			(Math.max(...rects.map(r => r.right)) -
+				Math.min(...rects.map(r => r.left))) /
+				renderedScaleX(node),
 		);
 		node.style.width = `${width}px`;
 		const rect = node.getBoundingClientRect();

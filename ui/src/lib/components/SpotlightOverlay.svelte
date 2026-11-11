@@ -56,6 +56,7 @@
 		el.style.width = `${base.width}px`;
 		el.style.margin = '0';
 		el.style.zIndex = '34';
+		el.style.transformOrigin = `top ${outerEdge(base)}`;
 		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
 		el.inert = true;
 		return () => {
@@ -67,6 +68,7 @@
 			el.style.margin = '';
 			el.style.zIndex = '';
 			el.style.transition = '';
+			el.style.transformOrigin = '';
 			el.style.transform = '';
 			if (holder) holder.style.height = '';
 		};
@@ -87,7 +89,7 @@
 	// The whole spotlight scene lives between the page chrome (z <= 30) and
 	// Konsta's modal layer (z-40): backdrop 32, lifted target 34, anchored
 	// popovers 36. Sheets/dialogs (40) and toasts (50) always cover it.
-	// Pinning fixes the target at its pressed position (plus the bump), so
+	// Pinning fixes the target at its pressed position (plus the lift), so
 	// layout shifts underneath — the chat re-anchoring to the bottom when the
 	// keyboard hides, scroll compensations — cannot move it. Matches Signal's
 	// focused-message lift.
@@ -102,16 +104,17 @@
 	});
 
 	// The open/close animation: one GPU-composited transform transition, not a
-	// per-frame re-layout. Focused = lifted by `bump` to fit the ensemble; resting
-	// = the pressed spot. Flipping `opened` animates between them — up into focus on
-	// open, settle back on close — without re-pinning, so it's symmetric and can't
-	// stutter on an image bubble. No `scale`: scaling an image bubble by a
-	// non-integer factor filters its edge into a faint vertical seam.
+	// per-frame re-layout. Focused = moved to `focusedRect` to fit the ensemble;
+	// resting = the pressed spot. Flipping `opened` animates between them — up into
+	// focus on open, settle back on close — without re-pinning, so it's symmetric
+	// and can't stutter on an image bubble. Only a target too tall for the
+	// ensemble is scaled: scaling an image bubble by a non-integer factor filters
+	// its edge into a faint vertical seam.
 	$effect(() => {
-		if (!spotlighted || !target) return;
+		if (!spotlighted || !target || !baseRect || !focusedRect) return;
 		target.style.transform = opened
-			? `translateY(${bump}px)`
-			: 'translateY(0px)';
+			? `translateY(${focusedRect.top - baseRect.top}px) scale(${focusedRect.height / baseRect.height})`
+			: 'translateY(0px) scale(1)';
 	});
 
 	// Hold the popovers back until the target has finished lifting into place,
@@ -122,13 +125,14 @@
 	const panelDelay = $derived(panelsShown ? '!delay-[190ms]' : '');
 
 	// Where the target was when it was pressed is the reference the overlay
-	// pins the message to, like Signal does — plus the minimal vertical shift
-	// that fits the whole ensemble (reaction bar, message, actions menu)
-	// inside the full viewport, which the retracting keyboard uncovers (it
-	// overlays the webview, so nothing resizes). Both are computed once at
-	// open; nothing here re-runs while the keyboard animates away.
+	// pins the message to, like Signal does — plus the minimal vertical shift,
+	// and the shrink of a target too tall for it, that fit the whole ensemble
+	// (reaction bar, message, actions menu) inside the full viewport, which
+	// the retracting keyboard uncovers (it overlays the webview, so nothing
+	// resizes). Both are computed once at open; nothing here re-runs while
+	// the keyboard animates away.
 	let baseRect = $state<DOMRect>();
-	let bump = $state(0);
+	let focusedRect = $state<DOMRect>();
 	let aboveEl = $state<HTMLElement>();
 	let belowEl = $state<HTMLElement>();
 
@@ -138,41 +142,31 @@
 			// lift needs it until the very end.
 			if (!spotlighted) {
 				baseRect = undefined;
-				bump = 0;
+				focusedRect = undefined;
 			}
 			return;
 		}
 		const base = target.getBoundingClientRect();
 		baseRect = base;
-		bump = untrack(() =>
+		focusedRect = untrack(() =>
 			belowEl
-				? ensembleBump(base, aboveEl?.offsetHeight ?? 0, belowEl.offsetHeight)
-				: 0,
+				? ensembleTargetRect(
+						base,
+						aboveEl?.offsetHeight ?? 0,
+						belowEl.offsetHeight,
+					)
+				: base,
 		);
 		// Konsta popovers only re-read their anchors on window resize; nudge
 		// them once the anchors are in place.
 		requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 	});
 
-	// Anchors follow the pinned position, never the live layout.
-	const rect = $derived(
-		baseRect === undefined
-			? undefined
-			: bump === 0
-				? baseRect
-				: new DOMRect(
-						baseRect.x,
-						baseRect.y + bump,
-						baseRect.width,
-						baseRect.height,
-					),
-	);
-
-	// Outlives `rect`: the popovers finish closing after the backdrop's fade, and
-	// losing it sooner would snap them back to Konsta's centred position.
+	// Outlives `focusedRect`: the popovers finish closing after the backdrop's
+	// fade, and losing it sooner would snap them back to Konsta's centred position.
 	let edgeStyle = $state('');
 	$effect.pre(() => {
-		if (rect) edgeStyle = outerEdgeStyle(rect);
+		if (focusedRect) edgeStyle = outerEdgeStyle(focusedRect);
 	});
 
 	let aboveAnchor = $state<HTMLElement>();
@@ -181,29 +175,38 @@
 	const GAP = 8;
 	const MARGIN = 8;
 
-	/** The minimal vertical shift that fits the whole ensemble — reaction bar,
-	 * target, actions menu — between the safe-area top and the bottom of the
-	 * full viewport, which the retracting keyboard uncovers (innerHeight: the
-	 * webview never resizes). */
-	function ensembleBump(base: DOMRect, aboveH: number, belowH: number): number {
+	/** Where the target sits so the whole ensemble — reaction bar, target,
+	 * actions menu — fits between the safe-area top and the bottom of the full
+	 * viewport, which the retracting keyboard uncovers (innerHeight: the webview
+	 * never resizes): shifted vertically as little as possible, and shrunk
+	 * towards its outer edge when it is too tall to fit at full size. */
+	function ensembleTargetRect(
+		base: DOMRect,
+		aboveH: number,
+		belowH: number,
+	): DOMRect {
 		const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
-		const bottomLimit = window.innerHeight - safeBottom;
-		let next = 0;
-		const menuBottom = base.bottom + GAP + belowH + MARGIN;
-		if (menuBottom > bottomLimit) next -= menuBottom - bottomLimit;
-		const barTop = base.top + next - GAP - aboveH - MARGIN;
-		if (barTop < safeTop) next += safeTop - barTop;
-		return next;
+		const topLimit = safeTop + MARGIN + aboveH + GAP;
+		const bottomLimit = window.innerHeight - safeBottom - MARGIN - belowH - GAP;
+		const scale = Math.min(1, (bottomLimit - topLimit) / base.height);
+		const width = base.width * scale;
+		const height = base.height * scale;
+		const top = Math.max(topLimit, Math.min(base.top, bottomLimit - height));
+		const left = outerEdge(base) === 'left' ? base.left : base.right - width;
+		return new DOMRect(left, top, width, height);
 	}
 
-	/** Lines a popover up with the target's outer edge, the one nearer the screen
-	 * edge. Konsta only centres popovers, and writes its `left` after this style,
-	 * hence the `!important`. */
+	/** The target's edge nearer the screen edge. */
+	function outerEdge(target: DOMRect): 'left' | 'right' {
+		return target.left < window.innerWidth - target.right ? 'left' : 'right';
+	}
+
+	/** Lines a popover up with the target's outer edge. Konsta only centres
+	 * popovers, and writes its `left` after this style, hence the `!important`. */
 	function outerEdgeStyle(target: DOMRect): string {
-		const rightMargin = window.innerWidth - target.right;
-		return target.left < rightMargin
+		return outerEdge(target) === 'left'
 			? `left: ${target.left}px !important`
-			: `left: auto !important; right: ${rightMargin}px`;
+			: `left: auto !important; right: ${window.innerWidth - target.right}px`;
 	}
 </script>
 
@@ -223,16 +226,16 @@
      places one popover above the target and one below it. Konsta prefers the
      space above whenever the popover fits there; the below anchor zeroes that
      space out via its own --k-safe-area-top to force below-placement. -->
-{#if rect}
+{#if focusedRect}
 	<div
 		bind:this={aboveAnchor}
 		class="pointer-events-none fixed"
-		style={`left: ${rect.left}px; top: ${rect.top - GAP}px; width: ${rect.width}px; height: 0`}
+		style={`left: ${focusedRect.left}px; top: ${focusedRect.top - GAP}px; width: ${focusedRect.width}px; height: 0`}
 	></div>
 	<div
 		bind:this={belowAnchor}
 		class="pointer-events-none fixed"
-		style={`left: ${rect.left}px; top: ${rect.bottom + GAP}px; width: ${rect.width}px; height: 0; --k-safe-area-top: ${rect.bottom + GAP}px`}
+		style={`left: ${focusedRect.left}px; top: ${focusedRect.bottom + GAP}px; width: ${focusedRect.width}px; height: 0; --k-safe-area-top: ${focusedRect.bottom + GAP}px`}
 	></div>
 {/if}
 
