@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Popover } from 'konsta/svelte';
 	import { fade } from 'svelte/transition';
-	import { untrack, type Snippet } from 'svelte';
+	import type { Snippet } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import {
 		holdKeyboardSlot,
@@ -56,7 +56,7 @@
 		el.style.width = `${base.width}px`;
 		el.style.margin = '0';
 		el.style.zIndex = '34';
-		el.style.transformOrigin = `top ${outerEdge(base)}`;
+		el.style.transformOrigin = `top ${edgeNearerScreenEdge(base)}`;
 		el.style.transition = `transform ${LIFT_MS}ms ease-out`;
 		el.inert = true;
 		return () => {
@@ -129,36 +129,31 @@
 	// and the shrink of a target too tall for it, that fit the whole ensemble
 	// (reaction bar, message, actions menu) inside the full viewport, which
 	// the retracting keyboard uncovers (it overlays the webview, so nothing
-	// resizes). Both are computed once at open; nothing here re-runs while
-	// the keyboard animates away.
+	// resizes). The pressed position is read once at open, and the fit follows
+	// only the popovers' heights; nothing here re-runs while the keyboard
+	// animates away.
 	let baseRect = $state<DOMRect>();
-	let focusedRect = $state<DOMRect>();
-	let aboveEl = $state<HTMLElement>();
-	let belowEl = $state<HTMLElement>();
+	let aboveHeight = $state(0);
+	let belowHeight = $state(0);
 
 	$effect(() => {
 		if (!opened || !target) {
 			// Keep the pressed position while the backdrop fades out — the fixed
 			// lift needs it until the very end.
-			if (!spotlighted) {
-				baseRect = undefined;
-				focusedRect = undefined;
-			}
+			if (!spotlighted) baseRect = undefined;
 			return;
 		}
-		const base = target.getBoundingClientRect();
-		baseRect = base;
-		focusedRect = untrack(() =>
-			belowEl
-				? ensembleTargetRect(
-						base,
-						aboveEl?.offsetHeight ?? 0,
-						belowEl.offsetHeight,
-					)
-				: base,
-		);
-		// Konsta popovers only re-read their anchors on window resize; nudge
-		// them once the anchors are in place.
+		baseRect = target.getBoundingClientRect();
+	});
+
+	const focusedRect = $derived(
+		baseRect && ensembleTargetRect(baseRect, aboveHeight, belowHeight),
+	);
+
+	// Konsta popovers only re-read their anchors on window resize; nudge
+	// them once the anchors are in place.
+	$effect(() => {
+		if (!focusedRect) return;
 		requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 	});
 
@@ -174,6 +169,8 @@
 
 	const GAP = 8;
 	const MARGIN = 8;
+	// A viewport too short for the popovers alone leaves no room to fit into.
+	const MIN_FOCUSED_HEIGHT = 48;
 
 	/** Where the target sits so the whole ensemble — reaction bar, target,
 	 * actions menu — fits between the safe-area top and the bottom of the full
@@ -188,23 +185,27 @@
 		const { top: safeTop, bottom: safeBottom } = safeAreaInsets();
 		const topLimit = safeTop + MARGIN + aboveH + GAP;
 		const bottomLimit = window.innerHeight - safeBottom - MARGIN - belowH - GAP;
-		const scale = Math.min(1, (bottomLimit - topLimit) / base.height);
+		const room = Math.max(MIN_FOCUSED_HEIGHT, bottomLimit - topLimit);
+		const scale = Math.min(1, room / base.height);
 		const width = base.width * scale;
 		const height = base.height * scale;
 		const top = Math.max(topLimit, Math.min(base.top, bottomLimit - height));
-		const left = outerEdge(base) === 'left' ? base.left : base.right - width;
+		const left =
+			edgeNearerScreenEdge(base) === 'left' ? base.left : base.right - width;
 		return new DOMRect(left, top, width, height);
 	}
 
-	/** The target's edge nearer the screen edge. */
-	function outerEdge(target: DOMRect): 'left' | 'right' {
+	// Physical on purpose: it is read off the viewport, so it already follows
+	// the bubble to whichever side RTL puts it.
+	function edgeNearerScreenEdge(target: DOMRect): 'left' | 'right' {
 		return target.left < window.innerWidth - target.right ? 'left' : 'right';
 	}
 
-	/** Lines a popover up with the target's outer edge. Konsta only centres
-	 * popovers, and writes its `left` after this style, hence the `!important`. */
+	/** Lines a popover up with the target's outer edge, the one nearer the screen
+	 * edge. Konsta only centres popovers, and writes its `left` after this style,
+	 * hence the `!important`. */
 	function outerEdgeStyle(target: DOMRect): string {
-		return outerEdge(target) === 'left'
+		return edgeNearerScreenEdge(target) === 'left'
 			? `left: ${target.left}px !important`
 			: `left: auto !important; right: ${window.innerWidth - target.right}px`;
 	}
@@ -247,7 +248,7 @@
 		style={edgeStyle}
 		class="!z-[36] !w-auto !rounded-full !origin-bottom [&>div]:!translate-y-0 {panelDelay}"
 	>
-		<div bind:this={aboveEl}>
+		<div bind:offsetHeight={aboveHeight}>
 			{@render above()}
 		</div>
 	</Popover>
@@ -260,7 +261,7 @@
 	style={edgeStyle}
 	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
 >
-	<div bind:this={belowEl}>
+	<div bind:offsetHeight={belowHeight}>
 		{@render below()}
 	</div>
 </Popover>
