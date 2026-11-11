@@ -1,5 +1,5 @@
 <script lang="ts" generics="T">
-	import type { Snippet } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	interface Props extends HTMLAttributes<HTMLDivElement> {
@@ -109,6 +109,11 @@
 		if (initialized && scrollTarget === null && nearestIndex() === target)
 			return;
 		scrollToIndex(target, initialized);
+		if (!initialized) {
+			// A host can still re-parent this element while it mounts (the lightbox
+			// portals itself), which resets the scroll position just set.
+			tick().then(() => scrollToIndex(index, false));
+		}
 		initialized = true;
 	});
 
