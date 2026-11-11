@@ -30,9 +30,7 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{
-    AsBody, ChatPayload, DeviceId, Payload, TopicId,
-    mailbox::MailboxOperation,
-    stores::OpStore,
+    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore,
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
