@@ -495,7 +495,9 @@ export class Messages extends TestHelper {
 
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
-		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+		return this.agent.$(
+			`(//*[@data-testid="message-attachment-photos"]//button)[${index + 1}]`,
+		);
 	}
 
 	/** One entry per rendered message. A photo scrolled out of view never

@@ -43,6 +43,20 @@ describe('Photo lightbox', () => {
 		);
 	});
 
+	it('opens on the photo that was tapped', async () => {
+		const lb = agent1.directChatPage.messages.lightbox;
+		await agent1.directChatPage.messages.photoCellButton(2).click();
+		await lb.root.waitForExist();
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 2);
+		// The filmstrip follows the stage; a stage that fell back to the first
+		// photo drags the selection back with it.
+		await agent1.pause(1000);
+		expect(await lb.activeIndex()).toBe(2);
+
+		await lb.clickClose();
+		await agent1.waitUntil(async () => !(await lb.isOpen()));
+	});
+
 	it('navigates with arrows, keyboard, and filmstrip', async () => {
 		await agent1.directChatPage.messages.photoCellButton(0).click();
 		await agent1.directChatPage.messages.lightbox.root.waitForExist();
