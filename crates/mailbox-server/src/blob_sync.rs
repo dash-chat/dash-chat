@@ -391,6 +391,7 @@ impl BlobSync {
     }
 
     /// Whether `hash` currently carries a `mailbox/` retention tag.
+    #[cfg(feature = "test_utils")]
     pub async fn has_retention_tag_for_test(&self, hash: iroh_blobs::Hash) -> bool {
         let tags = self.blobs.store().tags();
         let Ok(mut stream) = tags.list_prefix(BLOB_TAG_PREFIX.as_bytes()).await else {
@@ -432,9 +433,13 @@ impl BlobSync {
                 let this = this.clone();
                 let mut updates = msg.rx;
                 tokio::spawn(async move {
+                    // Latch, don't track the last event: a Completed means the
+                    // import finished, whatever the stream does afterwards.
                     let mut completed = false;
                     while let Ok(Some(update)) = updates.recv().await {
-                        completed = matches!(update, RequestUpdate::Completed(_));
+                        if matches!(update, RequestUpdate::Completed(_)) {
+                            completed = true;
+                        }
                     }
                     if completed {
                         this.finish_push(hash).await;
@@ -447,9 +452,10 @@ impl BlobSync {
     /// Arrival tail for a completed push, matching the HTTP upload's:
     /// retention-tag the blob and retire its fetch-backstop entry. Blobs over
     /// [`MAX_BLOB_BYTES`] are left untagged for the GC to sweep — the same cap
-    /// the fetch path enforces ([`download_capped`]). The transfer itself
-    /// can't be capped: a push request carries no size, and iroh-blobs emits
-    /// no abortable progress events for pushes.
+    /// the fetch path enforces ([`download_capped`]) and the HTTP upload
+    /// rejects outright. The transfer itself can't be capped: a push request
+    /// carries no size, and iroh-blobs emits no abortable progress events for
+    /// pushes.
     async fn finish_push(&self, hash: iroh_blobs::Hash) {
         let size = match self.blobs.store().status(hash).await {
             Ok(iroh_blobs::api::proto::BlobStatus::Complete { size }) => size,
