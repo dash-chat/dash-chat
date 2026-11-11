@@ -15,11 +15,10 @@
 	import { shareFile } from '$lib/utils/files';
 	import { isMobile, isAndroid } from '$lib/utils/environment';
 	import { showToast } from '$lib/utils/toasts';
-	import BlobImage from '$lib/components/BlobImage.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import ShareButton from '$lib/components/ShareButton.svelte';
-	import ImageCarousel from '$lib/components/ImageCarousel.svelte';
 	import LightboxThumbnailStrip from './LightboxThumbnailStrip.svelte';
+	import ZoomablePhotoStage from './ZoomablePhotoStage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 
 	interface Props {
@@ -43,17 +42,12 @@
 
 	let rootEl: HTMLElement | undefined = $state();
 
-	// Desktop double-click zoom; on mobile, tapping the photo instead toggles
-	// `immersive` (chrome hidden). Both hide the surrounding UI via `chromeHidden`.
+	// Zooming hides the surrounding UI on desktop; on mobile a tap on the photo
+	// toggles it instead (`immersive`).
 	let zoomed = $state(false);
 	let immersive = $state(false);
 	const chromeHidden = $derived(isMobile ? immersive : zoomed);
-	let originX = $state(50);
-	let originY = $state(50);
-
-	let blobImages = $state<Array<{ retryIfErrored: () => boolean } | undefined>>(
-		[],
-	);
+	let stage: { zoomOut: () => void } | undefined = $state();
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
@@ -80,44 +74,11 @@
 		}
 	}
 
-	// Reset zoom when switching photos.
-	$effect(() => {
-		void index;
-		zoomed = false;
-	});
-
 	$effect(() => {
 		rootEl
 			?.querySelector<HTMLButtonElement>('[data-testid="lightbox-close"]')
 			?.focus();
 	});
-
-	function updateOrigin(event: MouseEvent) {
-		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		originX = ((event.clientX - rect.left) / rect.width) * 100;
-		originY = ((event.clientY - rect.top) / rect.height) * 100;
-	}
-
-	function onStageDoubleClick(event: MouseEvent) {
-		if (isMobile) return;
-		updateOrigin(event);
-		zoomed = !zoomed;
-	}
-
-	function onStageMouseMove(event: MouseEvent) {
-		if (zoomed) updateOrigin(event);
-	}
-
-	function onStageClick(event: MouseEvent) {
-		if (blobImages[index]?.retryIfErrored()) return;
-		// Mobile: a tap toggles immersive mode (hide all chrome). Desktop: tapping
-		// the letterbox around the image (anything but the photo) closes.
-		if (isMobile) {
-			immersive = !immersive;
-		} else if (!zoomed && !(event.target instanceof HTMLImageElement)) {
-			onClose();
-		}
-	}
 
 	function trapFocus(event: KeyboardEvent) {
 		if (!rootEl) return;
@@ -142,7 +103,7 @@
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			if (zoomed) {
-				zoomed = false;
+				stage?.zoomOut();
 			} else {
 				onClose();
 			}
@@ -172,28 +133,15 @@
 >
 	<!-- The stage fills the whole screen so the photo centres in the full
 	     viewport; the header and footer controls overlay the letterbox gaps. -->
-	<ImageCarousel
+	<ZoomablePhotoStage
+		bind:this={stage}
+		{photos}
 		bind:index
-		items={photos}
-		paused={zoomed}
-		class="absolute inset-0 cursor-default"
-		onclick={onStageClick}
-		ondblclick={onStageDoubleClick}
-		onmousemove={onStageMouseMove}
-	>
-		{#snippet slide(p, i)}
-			<BlobImage
-				bind:this={blobImages[i]}
-				item={p}
-				alt={p.name}
-				lazy={i !== index}
-				imgClass={`lightbox-image max-h-full max-w-full object-contain${zoomed && i === index ? ' zoomed' : ''}`}
-				imgStyle={i === index
-					? `transform-origin: ${originX}% ${originY}%`
-					: ''}
-			/>
-		{/snippet}
-	</ImageCarousel>
+		bind:zoomed
+		onTap={() => (immersive = !immersive)}
+		onBackgroundClick={onClose}
+		class="absolute inset-0"
+	/>
 
 	<div
 		class="lightbox-header absolute inset-x-0 top-0 flex items-center justify-between bg-black/60 px-3"
@@ -296,17 +244,6 @@
 	.lightbox-header :global(.lightbox-time) {
 		color: #b8b8b8;
 		font-size: 11px;
-	}
-
-	:global(.lightbox-image) {
-		transition: transform 0.15s ease;
-	}
-	:global(.lightbox-image.zoomed) {
-		transform: scale(3);
-		cursor: zoom-out;
-	}
-	:global(.lightbox-image:not(.zoomed)) {
-		cursor: zoom-in;
 	}
 
 	.lightbox-bottom-bar {
