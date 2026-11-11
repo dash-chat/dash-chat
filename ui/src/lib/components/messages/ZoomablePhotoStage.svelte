@@ -78,6 +78,8 @@
 			undefined,
 			viewer.options.zoomAnimationDuration,
 		);
+		// PhotoSwipe reports the new zoom level only once the animation ends.
+		zoomed = false;
 	}
 
 	function retryShownPhoto() {
@@ -139,6 +141,8 @@
 			if (created.gestures.isZooming) created.gestures.zoomLevels.change();
 		});
 		created.init();
+		// The lightbox around the viewer is already the dialog.
+		created.element?.removeAttribute('role');
 		syncShownPhotoLoad(created);
 		viewer = created;
 		return () => created.destroy();
@@ -195,17 +199,23 @@
 		data-testid="lightbox-stage"
 	></div>
 	{#if errored}
-		<button
-			type="button"
-			class="lightbox-image absolute inset-0 flex items-center justify-center bg-black text-white/60"
-			title={m.imageLoadFailedRetry()}
-			data-testid="blob-image-retry"
-			onclick={retryShownPhoto}
+		<!-- Only the button takes touches, so the stage under it still pages. -->
+		<div
+			class="pointer-events-none absolute inset-0 flex items-center justify-center"
 		>
-			<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-				<path fill="currentColor" d={mdiReload} />
-			</svg>
-		</button>
+			<button
+				type="button"
+				class="pointer-events-auto p-3 text-white/60"
+				title={m.imageLoadFailedRetry()}
+				aria-label={m.imageLoadFailedRetry()}
+				data-testid="lightbox-stage-retry"
+				onclick={retryShownPhoto}
+			>
+				<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+					<path fill="currentColor" d={mdiReload} />
+				</svg>
+			</button>
+		</div>
 	{:else if shownPhotoLoad === 'loading'}
 		<div
 			class="pointer-events-none absolute inset-0 flex items-center justify-center"
