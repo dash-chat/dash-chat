@@ -32,9 +32,6 @@ pub async fn spawn_relay_mailbox(
 ) -> LocalMailboxServer {
     let (peer_addr_tx, mut peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let blob_sync = relay.blob_sync_optional().expect("blob sync is enabled");
-    // Hosting a hub is what opens a node's blob push port; nodes refuse
-    // pushes by default.
-    blob_sync.set_accept_blob_pushes(true);
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
         blob_sync.blobs.clone(),

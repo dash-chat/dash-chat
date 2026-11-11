@@ -13,10 +13,7 @@ use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::Duration,
 };
 use tokio::{
@@ -50,7 +47,6 @@ pub struct BlobSync {
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
     downloader: Downloader,
-    accept_pushes: Arc<AtomicBool>,
 }
 
 impl BlobSync {
@@ -67,23 +63,23 @@ impl BlobSync {
             connected: ConnectMode::Notify,
             get: RequestMode::NotifyLog,
             // Every push waits on the event listener's authorization: accepted
-            // only while this node hosts a local hub (the only legitimate
-            // target of a push), refused and logged otherwise. An always-open
-            // push port would let any peer that learns this node's EndpointId
-            // write unbounded, never-collected bytes into this store — no GC
-            // is configured for it.
+            // only while this node's endpoint hosts a local hub (the only
+            // legitimate target of a push), refused and logged otherwise. An
+            // always-open push port would let any peer that learns this node's
+            // EndpointId write unbounded, never-collected bytes into this
+            // store — no GC is configured for it.
             push: RequestMode::Intercept,
             ..EventMask::DEFAULT
         };
         let (events, rx) = EventSender::channel(256, mask);
-        let accept_pushes = Arc::new(AtomicBool::new(false));
-        spawn_download_event_listener(rx, unfetched_tracker, accept_pushes.clone());
+        let iroh_endpoint = endpoint.endpoint().await?;
+        spawn_download_event_listener(rx, unfetched_tracker, iroh_endpoint.id());
 
         let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
-        let downloader = Downloader::builder(&store, &endpoint.endpoint().await?)
+        let downloader = Downloader::builder(&store, &iroh_endpoint)
             .alpn(mixed_alpn.as_slice())
             .build();
 
@@ -92,15 +88,7 @@ impl BlobSync {
             fetch_pool: blob_fetch,
             sources,
             downloader,
-            accept_pushes,
         })
-    }
-
-    /// Accept or refuse blob pushes to this node's store. Refused by default:
-    /// only a node hosting a local hub has anyone to accept pushes from.
-    /// Flipped by the local-hub lifecycle (start/stop).
-    pub fn set_accept_blob_pushes(&self, accept: bool) {
-        self.accept_pushes.store(accept, Ordering::Relaxed);
     }
 
     /// Clone the downloader so an in-process mailbox can fetch blobs into this
@@ -285,14 +273,14 @@ impl BlobSync {
 fn spawn_download_event_listener(
     mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
     tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
-    accept_pushes: Arc<AtomicBool>,
+    own_endpoint_id: iroh::EndpointId,
 ) {
     tokio::spawn(async move {
         let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
         while let Some(msg) = rx.recv().await {
             match msg {
                 ProviderMessage::PushRequestReceived(msg) => {
-                    let allowed = accept_pushes.load(Ordering::Relaxed);
+                    let allowed = dashchat_utils::local_hub::hosts_local_hub(own_endpoint_id);
                     if !allowed {
                         tracing::info!(
                             hash = %msg.inner.request.hash,

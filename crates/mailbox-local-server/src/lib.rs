@@ -22,6 +22,7 @@ pub struct LocalMailboxServer {
     /// checks).
     pub url: String,
     pub port: u16,
+    endpoint_id: EndpointId,
     stop_signal: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
     announcement: LocalHubAnnouncementService,
@@ -31,6 +32,9 @@ impl LocalMailboxServer {
     /// Retires the announcement, so peers hear this hub leave instead of
     /// waiting out its silence.
     pub async fn stop(self) {
+        // Close the push port first: a push refused mid-shutdown falls back to
+        // the HTTP upload, which the server still answers until it retires.
+        dashchat_utils::local_hub::deregister_local_hub(self.endpoint_id);
         // Goodbye first, while the server is still serving: a browser that hears
         // it retires the hub at once, where a refused probe deliberately means
         // nothing.
@@ -100,13 +104,20 @@ pub async fn spawn_local_mailbox_server(
         {
             log::error!("Local mailbox server failed: {e:?}");
         }
+        // Backstop for a server that failed rather than being stopped: stop()
+        // deregisters on the graceful path, and removal is idempotent.
+        dashchat_utils::local_hub::deregister_local_hub(endpoint_id);
     });
 
     let announcement = spawn_local_hub_announcement(endpoint_id, port)?;
 
+    // Hosting a hub opens this endpoint's blob push port; stop() closes it.
+    dashchat_utils::local_hub::register_local_hub(endpoint_id);
+
     Ok(LocalMailboxServer {
         url: format!("http://127.0.0.1:{port}"),
         port,
+        endpoint_id,
         stop_signal,
         task,
         announcement,

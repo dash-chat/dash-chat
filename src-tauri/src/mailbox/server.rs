@@ -46,9 +46,6 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         peer_addr_tx,
     )
     .await?;
-    // Hosting a hub is what opens this node's blob push port; nodes refuse
-    // pushes by default.
-    blob_sync.set_accept_blob_pushes(true);
 
     *guard = Some(server);
 
@@ -64,16 +61,6 @@ pub async fn stop_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::Re
         log::warn!("Tried to stop local mailbox, but it was not running");
         return Ok(());
     };
-    // Close the blob push port again; best-effort — stopping the hub matters
-    // even if the node can't be reached to flip it.
-    match handle.state::<AppNodeManager>().get().await {
-        Ok(node) => {
-            if let Some(blob_sync) = node.blob_sync_optional() {
-                blob_sync.set_accept_blob_pushes(false);
-            }
-        }
-        Err(err) => log::warn!("Could not close the blob push port: {err}"),
-    }
     log::info!("Sending stop signal to local mailbox...");
     server.stop().await;
 

@@ -464,9 +464,6 @@ async fn push_blob_delivers_to_mailbox_over_iroh() {
     // blob store). The mailbox's MailboxId is the relay's EndpointId.
     let relay = TestNode::new(config.clone(), "relay").await;
     let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
-    // Hosting a hub is what opens a node's blob push port; nodes refuse
-    // pushes by default.
-    relay.blob_sync().set_accept_blob_pushes(true);
 
     let mailbox_dir = tempfile::tempdir().unwrap();
     let db_path = mailbox_dir.path().join("mailbox.redb");
