@@ -65,6 +65,10 @@ export interface MailboxFlags {
 	/** Reject HTTP blob uploads with 410 Gone, so a run can prove blob
 	 *  delivery went over iroh push. */
 	disableBlobHttpUpload?: boolean;
+	/** Never run the blob fetch loop, so announced blobs are never pulled
+	 *  from their sources — with upload also off, only a client-side iroh
+	 *  push can put a blob on the mailbox. */
+	disableBlobFetch?: boolean;
 }
 
 /** Spawn the mailbox server in its own process group, bound to loopback on
@@ -105,6 +109,9 @@ export function spawnMailboxServer(
 	}
 	if (flags?.disableBlobHttpUpload === true) {
 		args.push('--disable-blob-http-upload');
+	}
+	if (flags?.disableBlobFetch === true) {
+		args.push('--disable-blob-fetch');
 	}
 	// `detached: true` puts it in its own process group so lifecycle helpers
 	// can signal -pid without touching the test runner.
@@ -177,6 +184,7 @@ export async function startLocalMailboxServer(
 			dbPath,
 			pushNotificationsUrl,
 			disableBlobHttpUpload: flags?.disableBlobHttpUpload,
+			disableBlobFetch: flags?.disableBlobFetch,
 		}),
 	);
 

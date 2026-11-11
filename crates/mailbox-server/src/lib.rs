@@ -113,12 +113,17 @@ pub struct ServerConfig {
     /// Reject HTTP blob uploads with 410 Gone (e2e knob for proving blob
     /// delivery goes over iroh push).
     pub disable_blob_http_upload: bool,
+    /// Never run the blob fetch loop, so announced blobs are never pulled
+    /// from their sources (e2e knob for proving blob delivery goes over
+    /// client push, not mailbox pull).
+    pub disable_blob_fetch: bool,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             disable_blob_http_upload: false,
+            disable_blob_fetch: false,
         }
     }
 }
@@ -157,7 +162,11 @@ pub async fn spawn_server(
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
+    let blob_fetch_handle = if config.disable_blob_fetch {
+        None
+    } else {
+        Some(blob_sync.spawn_fetch_loop(blob_sync.fetch_config()))
+    };
     let blob_gc_handle = blob_sync.spawn_blob_gc_task();
 
     let push_client = match push_notifications_url {
@@ -192,7 +201,9 @@ pub async fn spawn_server(
     while tasks.join_next().await.is_some() {}
 
     cleanup_task.abort();
-    blob_fetch_handle.abort();
+    if let Some(handle) = blob_fetch_handle {
+        handle.abort();
+    }
     if let Some(handle) = blob_gc_handle {
         handle.abort();
     }

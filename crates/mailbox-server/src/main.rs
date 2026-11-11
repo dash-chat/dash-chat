@@ -29,6 +29,11 @@ struct Args {
     /// delivery goes over iroh push)
     #[arg(long)]
     disable_blob_http_upload: bool,
+
+    /// Never fetch announced blobs from their sources (e2e knob for proving
+    /// blob delivery goes over iroh push, not mailbox pull)
+    #[arg(long)]
+    disable_blob_fetch: bool,
 }
 
 #[tokio::main]
@@ -57,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.network_id.unwrap_or(*NETWORK_ID),
         Some(ServerConfig {
             disable_blob_http_upload: args.disable_blob_http_upload,
+            disable_blob_fetch: args.disable_blob_fetch,
         }),
         signal,
     )

@@ -44,6 +44,7 @@ interface MailboxInfo {
 	dbPath: string;
 	pushNotificationsUrl?: string;
 	disableBlobHttpUpload?: boolean;
+	disableBlobFetch?: boolean;
 }
 
 function readInfo(): MailboxInfo {
@@ -193,18 +194,21 @@ export function mailboxBindPort(): number {
  */
 export async function restartMailbox(flags?: MailboxFlags): Promise<void> {
 	const info = localInfo();
-	const disableBlobHttpUpload =
-		flags?.disableBlobHttpUpload ?? info.disableBlobHttpUpload;
+	const effective: MailboxFlags = {
+		disableBlobHttpUpload:
+			flags?.disableBlobHttpUpload ?? info.disableBlobHttpUpload,
+		disableBlobFetch: flags?.disableBlobFetch ?? info.disableBlobFetch,
+	};
 	const server = spawnMailboxServer(
 		info.bindPort,
 		info.dbPath,
 		info.pushNotificationsUrl,
-		{ disableBlobHttpUpload },
+		effective,
 	);
 	server.unref();
 	writeFileSync(
 		MAILBOX_INFO_PATH,
-		JSON.stringify({ ...info, disableBlobHttpUpload, pid: server.pid }),
+		JSON.stringify({ ...info, ...effective, pid: server.pid }),
 	);
 	await waitForMailboxReady(info.url);
 }
@@ -230,16 +234,18 @@ export async function restartMailboxWithFlags(
  *  mailbox. A no-op against a remote mailbox, which is never broken. */
 export async function ensureHealthyMailbox(): Promise<void> {
 	if (isRemoteMailbox()) return;
-	const { pid, url, disableBlobHttpUpload } = readInfo();
+	const { pid, url, disableBlobHttpUpload, disableBlobFetch } = readInfo();
 	// Dev flags a spec put in force end with its file: the next one gets the
 	// default server back.
-	const flagged = disableBlobHttpUpload === true;
+	const flagged = disableBlobHttpUpload === true || disableBlobFetch === true;
 	if (isAlive(pid) && !flagged) {
 		resumeMailbox();
 	} else {
 		if (isAlive(pid)) await killMailbox();
 		await restartMailbox(
-			flagged ? { disableBlobHttpUpload: false } : undefined,
+			flagged
+				? { disableBlobHttpUpload: false, disableBlobFetch: false }
+				: undefined,
 		);
 	}
 	await healMailboxLink();
