@@ -101,6 +101,7 @@
 			appendToEl: hostEl,
 			bgOpacity: 0,
 			showHideAnimationType: 'none',
+			loop: false,
 			secondaryZoomLevel: zoom => zoom.initial * DOUBLE_TAP_ZOOM,
 			maxZoomLevel: zoom => zoom.initial * MAX_ZOOM,
 			errorMsg: '',
