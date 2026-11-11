@@ -39,19 +39,26 @@ impl IrohPusher {
     ) -> Result<(), BlobUploadError> {
         let endpoint_id =
             mailbox_server::decode_mailbox_id(mailbox_id).map_err(BlobUploadError::Blob)?;
+        // A blob we don't fully hold can't be pushed: fail fast
+        // rather than paying a dial plus a full transfer timeout.
         let size = match self.store.status(hash).await {
             Ok(iroh_blobs::api::proto::BlobStatus::Complete { size }) => size,
-            _ => 0,
+            _ => {
+                return Err(BlobUploadError::Blob(anyhow::anyhow!(
+                    "blob is not fully present locally"
+                )));
+            }
         };
-        let conn = self
-            .endpoint
-            .connect(endpoint_id, &self.alpn)
-            .await
-            .map_err(|err| BlobUploadError::MailboxUnavailable(anyhow::anyhow!(err)))?;
-        tokio::time::timeout(
-            blob_transfer_timeout(size),
-            self.push_and_confirm(conn, hash),
-        )
+        // The dial shares the transfer budget: an unbounded connect would
+        // stall every later blob in a serial delivery batch.
+        tokio::time::timeout(blob_transfer_timeout(size), async {
+            let conn = self
+                .endpoint
+                .connect(endpoint_id, &self.alpn)
+                .await
+                .map_err(|err| BlobUploadError::MailboxUnavailable(anyhow::anyhow!(err)))?;
+            self.push_and_confirm(conn, hash).await
+        })
         .await
         .map_err(|_| BlobUploadError::Blob(anyhow::anyhow!("blob push timed out")))?
     }

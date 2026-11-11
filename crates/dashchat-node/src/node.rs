@@ -652,12 +652,24 @@ impl Node {
     /// mailbox client to push blobs to a mailbox over iroh. `None` when the node
     /// has no networking layer or blob sync is disabled.
     pub async fn blob_pusher(&self) -> Option<mailbox_client::IrohPusher> {
-        let endpoint = self.endpoint.clone()?;
+        if self.endpoint.is_none() {
+            return None;
+        }
         let blob_sync = self.blob_sync.clone()?;
+        let endpoint = match self.iroh_endpoint().await {
+            Ok(endpoint) => endpoint,
+            Err(err) => {
+                // A networked node whose endpoint can't be read is a real
+                // degradation: without a pusher the client silently runs on
+                // the HTTP fallback alone.
+                tracing::warn!(?err, "blob pusher unavailable");
+                return None;
+            }
+        };
         let alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, self.config.network_id);
         Some(mailbox_client::IrohPusher::new(
-            endpoint.endpoint().await.ok()?,
+            endpoint,
             blob_sync.blobs.store().clone(),
             alpn,
         ))

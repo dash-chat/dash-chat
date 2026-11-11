@@ -4,21 +4,24 @@
 //! [`crate::operations::operation_delivery::OperationDelivery`]. One instance is the
 //! delivery relationship with one mailbox: it announces blob hashes (so the
 //! mailbox knows to fetch them as a backstop) and streams the bytes the
-//! mailbox reports lacking, with claims and retry backoffs handled through
-//! the injected [`BlobUploadLifecycle`].
+//! mailbox reports lacking — an iroh push first, an HTTP upload as the
+//! fallback — with claims and retry backoffs handled through the injected
+//! [`BlobUploadLifecycle`].
 //!
 //! Unlike operations, blobs are unordered and content-addressed: the
 //! outstanding set is a list of hashes, not a watermark, and delivery has a
-//! third party — the mailbox can fetch the bytes from us over iroh when a
-//! push never lands. The announce (`publish`) therefore has two phases, both
-//! visible: tell the mailbox what exists, then upload what it lacks.
+//! third party — the mailbox can pull the bytes from us over iroh when
+//! neither push transport lands them. The announce (`publish`) therefore has
+//! two phases, both visible: tell the mailbox what exists, then upload what
+//! it lacks.
 
 use std::sync::Arc;
 
 use crate::{BlobReader, BlobUploadError, BlobUploadLifecycle, UnfetchedBlobTracker};
 
 /// Outbound delivery of blobs to ONE mailbox, driving the client's blob
-/// primitives (`announce_blob_hashes` / `upload_blob`).
+/// primitives (`announce_blob_hashes`, then `push_blob` with `upload_blob`
+/// as the fallback).
 #[derive(Clone)]
 pub struct BlobDelivery<Item: crate::MailboxItem> {
     client: Arc<dyn crate::MailboxClient<Item>>,
@@ -191,7 +194,7 @@ impl<Item: crate::MailboxItem> BlobDelivery<Item> {
                 return DeliverOutcome::Delivered;
             }
             Err(err) => {
-                tracing::debug!(%hash, ?err, "blob push failed; falling back to HTTP upload");
+                tracing::warn!(%hash, ?err, "blob push failed; falling back to HTTP upload");
             }
         }
         let bytes = match reader.read_blob(hash).await {
