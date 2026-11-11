@@ -223,8 +223,8 @@ importers:
         specifier: ^2.3.1
         version: 2.3.1
       '@tauri-apps/plugin-updater':
-        specifier: ^2.10.0
-        version: 2.10.0
+        specifier: ^2.14.1
+        version: 2.14.1
       '@universalappfactory/tauri-plugin-medialibrary':
         specifier: ^0.13.0
         version: 0.13.0
@@ -270,6 +270,9 @@ importers:
       tauri-plugin-background-service:
         specifier: ^1.0.0
         version: 1.0.0
+      tauri-plugin-move-to-applications-api:
+        specifier: github:dash-chat/tauri-plugin-move-to-applications#271cb9183098f9e727dd1f0efdedcccd28fd8c92
+        version: https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92
       tauri-plugin-network-interfaces-api:
         specifier: github:dash-chat/tauri-plugin-network-interfaces#3a8c5daa79c1890dcd3096363cbf9f969b7bac1d
         version: https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/3a8c5daa79c1890dcd3096363cbf9f969b7bac1d
@@ -1939,8 +1942,8 @@ packages:
   '@tauri-apps/plugin-process@2.3.1':
     resolution: {integrity: sha512-nCa4fGVaDL/B9ai03VyPOjfAHRHSBz5v6F/ObsB73r/dA3MHHhZtldaDMIc0V/pnUw9ehzr2iEG+XkSEyC0JJA==}
 
-  '@tauri-apps/plugin-updater@2.10.0':
-    resolution: {integrity: sha512-ljN8jPlnT0aSn8ecYhuBib84alxfMx6Hc8vJSKMJyzGbTPFZAC44T2I1QNFZssgWKrAlofvJqCC6Rr472JWfkQ==}
+  '@tauri-apps/plugin-updater@2.14.1':
+    resolution: {integrity: sha512-Hr7nlBm1wT6xbwzjZ/S36YULazu8MNlj5vvOwMl47fXI7HTa5Bjl1PbDEwVHaZTAKzE1VZsUy35UqnbrQxmYQw==}
 
   '@tootallnate/quickjs-emscripten@0.23.0':
     resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
@@ -5287,6 +5290,10 @@ packages:
   tauri-plugin-background-service@1.0.0:
     resolution: {integrity: sha512-i3ANk6SLyTGInXJNQez1VrgnDYqlCptVtgjMO2neZQbH3lYnwKH9cfXKMAsqotTEAE/dTseCove+ielnuUQ2hg==}
 
+  tauri-plugin-move-to-applications-api@https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92:
+    resolution: {gitHosted: true, integrity: sha512-5kVFHcVEgXEfCxWopzglO3D6kT+VSlshePaiOZgktmoezg+tKiScVQKxZMMWmB3L69b7cajNxGVPwBiCLMibzg==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92}
+    version: 0.1.0
+
   tauri-plugin-network-interfaces-api@https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/3a8c5daa79c1890dcd3096363cbf9f969b7bac1d:
     resolution: {gitHosted: true, integrity: sha512-Xd00EPNoaIdh89L52TPjNlxEKQgJPzXG/ItGEq0ve0aa1/hatZrFKJhunJTUCon8RDC5iJTaFpJXLmw8yk9m0Q==, tarball: https://codeload.github.com/dash-chat/tauri-plugin-network-interfaces/tar.gz/3a8c5daa79c1890dcd3096363cbf9f969b7bac1d}
     version: 0.1.0
@@ -7421,7 +7428,7 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.12.4
 
-  '@tauri-apps/plugin-updater@2.10.0':
+  '@tauri-apps/plugin-updater@2.14.1':
     dependencies:
       '@tauri-apps/api': 2.12.4
 
@@ -11109,6 +11116,10 @@ snapshots:
       '@tauri-apps/api': 2.12.4
 
   tauri-plugin-background-service@1.0.0:
+    dependencies:
+      '@tauri-apps/api': 2.12.4
+
+  tauri-plugin-move-to-applications-api@https://codeload.github.com/dash-chat/tauri-plugin-move-to-applications/tar.gz/271cb9183098f9e727dd1f0efdedcccd28fd8c92:
     dependencies:
       '@tauri-apps/api': 2.12.4
 

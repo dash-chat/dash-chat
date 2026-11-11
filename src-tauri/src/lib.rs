@@ -118,6 +118,16 @@ pub fn run() {
                         }
                     },
                 ))
+                // After single-instance, so launching a second copy from the
+                // disk image focuses the running app instead of replacing it.
+                .plugin(tauri_plugin_move_to_applications::init(
+                    tauri_plugin_move_to_applications::Prompt {
+                        title: sonix_i18n::t!("moveToApplicationsTitle"),
+                        message: sonix_i18n::t!("moveToApplicationsMessage"),
+                        move_button: sonix_i18n::t!("moveToApplicationsMove"),
+                        cancel_button: sonix_i18n::t!("moveToApplicationsNotNow"),
+                    },
+                ))
                 .plugin(tauri_plugin_autostart::init(
                     tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                     Some(vec!["--minimized"]),
