@@ -464,6 +464,9 @@ async fn push_blob_delivers_to_mailbox_over_iroh() {
     // blob store). The mailbox's MailboxId is the relay's EndpointId.
     let relay = TestNode::new(config.clone(), "relay").await;
     let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+    // Hosting a hub is what opens a node's blob push port; nodes refuse
+    // pushes by default.
+    relay.blob_sync().set_accept_blob_pushes(true);
 
     let mailbox_dir = tempfile::tempdir().unwrap();
     let db_path = mailbox_dir.path().join("mailbox.redb");
@@ -663,4 +666,71 @@ async fn oversized_pushed_blob_is_not_retention_tagged() {
         tagged.is_err(),
         "oversized blob must not be retention-tagged"
     );
+}
+
+/// A node not hosting a local hub refuses blob pushes: an always-open push
+/// port would let any peer that learns its EndpointId write never-collected
+/// bytes into its store.
+///
+/// Driven below `IrohPusher` on purpose: iroh-blobs' push client stops its
+/// recv stream after sending, so a refusal is invisible to it — `push_blob`
+/// would only error when its 30s transfer-timeout floor lapses. The property
+/// under test is that the bytes never land.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_without_hub_refuses_blob_pushes() {
+    let config = NodeConfig::testing();
+    let host = TestNode::new(config.clone(), "host").await;
+    let alice = TestNode::new(config.clone(), "alice").await;
+    teach_peers(&alice, [&host]).await.unwrap();
+
+    // Kept tiny: the write side must fit the stream buffers, since the host
+    // stops reading the moment it refuses.
+    let hash = alice
+        .blobs()
+        .add_bytes(unique_blob_bytes(b"push-refusal-test".to_vec()))
+        .await
+        .unwrap()
+        .hash;
+
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let conn = alice
+        .iroh_endpoint()
+        .await
+        .unwrap()
+        .connect(host.endpoint_id(), &alpn)
+        .await
+        .unwrap();
+    let request = iroh_blobs::protocol::PushRequest::new(
+        hash,
+        iroh_blobs::protocol::ChunkRangesSeq::from_ranges([
+            iroh_blobs::protocol::ChunkRanges::all(),
+        ]),
+    );
+    // The write itself completes; the refusal shows up nowhere on the client.
+    alice
+        .blobs()
+        .remote()
+        .execute_push(conn, request)
+        .complete()
+        .await
+        .unwrap();
+
+    let tag_poll = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(2),
+    };
+    let landed = tag_poll
+        .wait_for(|| async {
+            host.blobs()
+                .has(hash)
+                .await
+                .unwrap_or(false)
+                .then_some(())
+                .ok_or("not stored")
+        })
+        .await;
+    assert!(landed.is_err(), "a refused push must never land");
 }

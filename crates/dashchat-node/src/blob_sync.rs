@@ -5,7 +5,7 @@ use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::provider::events::{
-    ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
+    AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
 };
 use mailboxes_manager::Mailboxes;
 use p2panda::operation::{LogId, Operation};
@@ -13,7 +13,10 @@ use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
@@ -29,7 +32,7 @@ pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 use crate::{
     AsBody, ChatPayload, DeviceId, Payload, TopicId,
     mailbox::MailboxOperation,
-    stores::{LocalStore, OpStore},
+    stores::OpStore,
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
@@ -49,6 +52,7 @@ pub struct BlobSync {
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
     downloader: Downloader,
+    accept_pushes: Arc<AtomicBool>,
 }
 
 impl BlobSync {
@@ -57,7 +61,6 @@ impl BlobSync {
         root: PathBuf,
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
-        local_store: LocalStore,
         unfetched_tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
@@ -65,15 +68,18 @@ impl BlobSync {
         let mask = EventMask {
             connected: ConnectMode::Notify,
             get: RequestMode::NotifyLog,
-            // Accept blob pushes (the mailbox delivery fast path): iroh-blobs
-            // disables them by default because they write to the store. Pushed
-            // data is chunk-validated against the requested hash, so a bad
-            // body can't land; what can land is an unsolicited but valid blob.
-            push: RequestMode::None,
+            // Every push waits on the event listener's authorization: accepted
+            // only while this node hosts a local hub (the only legitimate
+            // target of a push), refused and logged otherwise. An always-open
+            // push port would let any peer that learns this node's EndpointId
+            // write unbounded, never-collected bytes into this store — no GC
+            // is configured for it.
+            push: RequestMode::Intercept,
             ..EventMask::DEFAULT
         };
         let (events, rx) = EventSender::channel(256, mask);
-        spawn_download_event_listener(rx, unfetched_tracker);
+        let accept_pushes = Arc::new(AtomicBool::new(false));
+        spawn_download_event_listener(rx, unfetched_tracker, accept_pushes.clone());
 
         let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
@@ -88,7 +94,15 @@ impl BlobSync {
             fetch_pool: blob_fetch,
             sources,
             downloader,
+            accept_pushes,
         })
+    }
+
+    /// Accept or refuse blob pushes to this node's store. Refused by default:
+    /// only a node hosting a local hub has anyone to accept pushes from.
+    /// Flipped by the local-hub lifecycle (start/stop).
+    pub fn set_accept_blob_pushes(&self, accept: bool) {
+        self.accept_pushes.store(accept, Ordering::Relaxed);
     }
 
     /// Clone the downloader so an in-process mailbox can fetch blobs into this
@@ -273,11 +287,27 @@ impl BlobSync {
 fn spawn_download_event_listener(
     mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
     tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
+    accept_pushes: Arc<AtomicBool>,
 ) {
     tokio::spawn(async move {
         let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
         while let Some(msg) = rx.recv().await {
             match msg {
+                ProviderMessage::PushRequestReceived(msg) => {
+                    let allowed = accept_pushes.load(Ordering::Relaxed);
+                    if !allowed {
+                        tracing::info!(
+                            hash = %msg.inner.request.hash,
+                            "refusing blob push: this node is not hosting a local hub"
+                        );
+                    }
+                    let verdict = if allowed {
+                        Ok(())
+                    } else {
+                        Err(AbortReason::Permission)
+                    };
+                    msg.tx.send(verdict).await.ok();
+                }
                 ProviderMessage::ClientConnectedNotify(msg) => {
                     if let Some(id) = msg.inner.endpoint_id {
                         connections.insert(msg.inner.connection_id, id);
