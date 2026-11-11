@@ -604,6 +604,51 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
 mod tests {
     use super::*;
 
+    /// The push arrival tail matches the HTTP upload's: the blob is
+    /// retention-tagged, its own fetch-pool entry is retired, and a
+    /// still-deferred sibling from the same sender gets its grace restarted
+    /// (what keeps a serial push batch ahead of the fetch backstop).
+    #[tokio::test]
+    async fn finish_push_tags_and_retires_fetch_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let sync = BlobSync::new(
+            iroh::SecretKey::generate(),
+            dir.path().join("blobs"),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
+
+        // The state a push arrives into: the blob in the store but untagged,
+        // and two announced hashes from the same sender sitting out their
+        // upload grace in the fetch pool.
+        let tt = sync
+            .blobs
+            .add_bytes(bytes::Bytes::from_static(b"pushed blob"))
+            .temp_tag()
+            .await
+            .unwrap();
+        let pushed = tt.hash();
+        drop(tt);
+        let sibling = hash(9);
+        let source = endpoint_id(3);
+        sync.add_fetch_source(pushed, source, true).await;
+        sync.add_fetch_source(sibling, source, true).await;
+
+        // Distance the sibling's original deadline from the bump it is about
+        // to get.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let deadline_before = sync.fetch_pool.entries.lock().await[&sibling].not_before;
+
+        sync.finish_push(pushed).await;
+
+        assert!(sync.has_retention_tag_for_test(pushed).await);
+        let entries = sync.fetch_pool.entries.lock().await;
+        assert!(!entries.contains_key(&pushed));
+        assert!(entries[&sibling].not_before.unwrap() > deadline_before.unwrap());
+    }
+
     #[tokio::test]
     async fn endpoint_id_matches_secret_key() {
         let dir = tempfile::tempdir().unwrap();
