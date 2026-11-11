@@ -526,3 +526,141 @@ async fn push_blob_delivers_to_mailbox_over_iroh() {
     let pushed = relay.blobs().get_bytes(hash).await.unwrap();
     assert_eq!(pushed.as_ref(), blob_data.as_slice());
 }
+
+/// A blob that arrives at a standalone mailbox by iroh push gets the same
+/// retention tag as an uploaded or fetched one. Without it the mailbox's GC
+/// would reclaim the pushed bytes on its next sweep while still reporting the
+/// blob as held. Uses `BlobSync::new` (owns its store, GC on) — the
+/// in-process mailbox shares the node's store, where tagging is a no-op.
+#[tokio::test(flavor = "multi_thread")]
+async fn pushed_blob_is_retention_tagged() {
+    use mailbox_server::BlobSync;
+
+    let poll = PollConfig::default();
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+
+    // Sender holding a blob the mailbox does not.
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+    let blob_data = unique_blob_bytes(b"pushed-blob-tagging-test".to_vec());
+    let hash = sender
+        .blobs
+        .add_bytes(blob_data.clone())
+        .await
+        .unwrap()
+        .hash;
+
+    // The push dials the mailbox by EndpointId; teach the sender its address.
+    sender.add_peer_addr(mailbox.endpoint_addr());
+
+    let mailbox_id = mailbox_server::encode_mailbox_id(mailbox.endpoint_id());
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let pusher = mailbox_client::IrohPusher::new(
+        sender.endpoint().clone(),
+        sender.blobs.store().clone(),
+        alpn,
+    );
+    pusher.push_blob(&mailbox_id, hash).await.unwrap();
+
+    // push_blob resolves once the mailbox reports the blob complete; the tag
+    // is set by the push-event handler on the same signal, so poll for it.
+    poll.wait_for(|| async {
+        mailbox
+            .has_retention_tag_for_test(hash)
+            .await
+            .then_some(())
+            .ok_or("mailbox has not retention-tagged the pushed blob")
+    })
+    .await
+    .unwrap();
+
+    let pushed = mailbox.blobs.get_bytes(hash).await.unwrap();
+    assert_eq!(pushed.as_ref(), blob_data.as_slice());
+}
+
+/// A pushed blob over [`MAX_BLOB_BYTES`] is imported but never retention-
+/// tagged, so the hourly GC reclaims it — the same cap the mailbox's fetch
+/// path enforces on downloads.
+#[tokio::test(flavor = "multi_thread")]
+async fn oversized_pushed_blob_is_not_retention_tagged() {
+    use mailbox_server::BlobSync;
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+    let blob_data = vec![7u8; (dashchat_utils::blob_sync::MAX_BLOB_BYTES + 1) as usize];
+    let hash = sender.blobs.add_bytes(blob_data).await.unwrap().hash;
+
+    // The push dials the mailbox by EndpointId; teach the sender its address.
+    sender.add_peer_addr(mailbox.endpoint_addr());
+
+    let mailbox_id = mailbox_server::encode_mailbox_id(mailbox.endpoint_id());
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let pusher = mailbox_client::IrohPusher::new(
+        sender.endpoint().clone(),
+        sender.blobs.store().clone(),
+        alpn,
+    );
+    pusher.push_blob(&mailbox_id, hash).await.unwrap();
+
+    // The bytes landed; the cap only withholds the retention tag.
+    assert!(mailbox.blobs.has(hash).await.unwrap());
+
+    // The tag must never appear. Two seconds is generous: the legit tagging
+    // path above completes in tens of milliseconds.
+    let tag_poll = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(2),
+    };
+    let tagged = tag_poll
+        .wait_for(|| async {
+            mailbox
+                .has_retention_tag_for_test(hash)
+                .await
+                .then_some(())
+                .ok_or("not tagged")
+        })
+        .await;
+    assert!(
+        tagged.is_err(),
+        "oversized blob must not be retention-tagged"
+    );
+}

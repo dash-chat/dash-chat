@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{blob_sync::MAX_BLOB_BYTES, fetch_loop, FetchConfig, FetchPool};
 use futures::StreamExt;
 use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
 use iroh_blobs::provider::events::{
-    EventMask as IrohBlobsEventMask, EventSender as IrohBlobsEventSender,
-    RequestMode as IrohBlobsRequestMode,
+    EventMask as IrohBlobsEventMask, EventSender as IrohBlobsEventSender, ProviderMessage,
+    RequestMode as IrohBlobsRequestMode, RequestUpdate,
 };
 use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
@@ -280,13 +280,14 @@ impl BlobSync {
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
         // Accept blob pushes: iroh-blobs disables them by default because they
         // write to the store. Pushed data is chunk-validated against the
-        // requested hash, and lands untagged, so the retention GC reclaims
-        // anything that is never announced.
+        // requested hash, but lands untagged — InterceptLog lets the push
+        // handler retention-tag each blob as its push completes, or the
+        // retention GC would reclaim it on the next sweep.
         let mask = IrohBlobsEventMask {
-            push: IrohBlobsRequestMode::None,
+            push: IrohBlobsRequestMode::InterceptLog,
             ..IrohBlobsEventMask::DEFAULT
         };
-        let (events_tx, _events_rx) = IrohBlobsEventSender::channel(1, mask);
+        let (events_tx, events_rx) = IrohBlobsEventSender::channel(32, mask);
         let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events_tx));
         let downloader = Downloader::builder(&store, &endpoint)
             .alpn(mixed_alpn.as_slice())
@@ -295,7 +296,7 @@ impl BlobSync {
             .accept(mixed_alpn, blobs.clone())
             .spawn();
 
-        Ok(Self {
+        let this = Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
             downloader,
@@ -305,7 +306,9 @@ impl BlobSync {
             enable_gc: true,
             _router: Some(router),
             peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
-        })
+        };
+        this.spawn_push_handler(events_rx);
+        Ok(this)
     }
 
     /// Build a mailbox BlobSync that shares an existing iroh endpoint and blob
@@ -355,6 +358,12 @@ impl BlobSync {
         self.endpoint.id()
     }
 
+    /// The endpoint blobs are served from; clients pushing to this mailbox
+    /// dial it.
+    pub fn endpoint(&self) -> &iroh::Endpoint {
+        &self.endpoint
+    }
+
     /// The endpoint's current dialing address (relay + direct addresses),
     /// served via `/health` so clients can reach this mailbox by its EndpointId.
     pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
@@ -381,6 +390,20 @@ impl BlobSync {
         self.fetch_pool.clone()
     }
 
+    /// Whether `hash` currently carries a `mailbox/` retention tag.
+    pub async fn has_retention_tag_for_test(&self, hash: iroh_blobs::Hash) -> bool {
+        let tags = self.blobs.store().tags();
+        let Ok(mut stream) = tags.list_prefix(BLOB_TAG_PREFIX.as_bytes()).await else {
+            return false;
+        };
+        while let Some(info) = stream.next().await {
+            if info.is_ok_and(|info| info.hash == hash) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn spawn_fetch_loop(&self, config: FetchConfig) -> JoinHandle<()> {
         let this = self.clone();
         let pool = self.fetch_pool.clone();
@@ -388,6 +411,56 @@ impl BlobSync {
             let this = this.clone();
             async move { this.try_fetch(hash, sources, timeout).await }
         }))
+    }
+
+    /// Consume push-request events: authorize every push (the mask enables
+    /// them, so an unanswered authorization would hang the pusher) and, for
+    /// each one that completes, run the arrival tail. Without the tag, the
+    /// retention GC would reclaim a pushed blob the mailbox keeps reporting
+    /// as held.
+    fn spawn_push_handler(&self, mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let ProviderMessage::PushRequestReceived(msg) = msg else {
+                    continue;
+                };
+                let hash = msg.inner.request.hash;
+                if msg.tx.send(Ok(())).await.is_err() {
+                    continue;
+                }
+                let this = this.clone();
+                let mut updates = msg.rx;
+                tokio::spawn(async move {
+                    let mut completed = false;
+                    while let Ok(Some(update)) = updates.recv().await {
+                        completed = matches!(update, RequestUpdate::Completed(_));
+                    }
+                    if completed {
+                        this.finish_push(hash).await;
+                    }
+                });
+            }
+        });
+    }
+
+    /// Arrival tail for a completed push, matching the HTTP upload's:
+    /// retention-tag the blob and retire its fetch-backstop entry. Blobs over
+    /// [`MAX_BLOB_BYTES`] are left untagged for the GC to sweep — the same cap
+    /// the fetch path enforces ([`download_capped`]). The transfer itself
+    /// can't be capped: a push request carries no size, and iroh-blobs emits
+    /// no abortable progress events for pushes.
+    async fn finish_push(&self, hash: iroh_blobs::Hash) {
+        let size = match self.blobs.store().status(hash).await {
+            Ok(iroh_blobs::api::proto::BlobStatus::Complete { size }) => size,
+            _ => return,
+        };
+        if size > MAX_BLOB_BYTES {
+            tracing::warn!(%hash, size, "pushed blob exceeds size cap; leaving it for the GC");
+            return;
+        }
+        self.protect_blob(hash).await;
+        self.note_upload(hash).await;
     }
 
     async fn try_fetch(
