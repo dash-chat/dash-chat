@@ -1,6 +1,7 @@
 //! Pushing blobs to a mailbox over iroh instead of HTTP.
 
 use futures::StreamExt;
+use iroh_blobs::api::proto::Bitfield;
 use iroh_blobs::protocol::{ChunkRanges, ChunkRangesSeq, ObserveRequest, PushRequest};
 
 use crate::{BlobUploadError, MailboxId, blob_transfer_timeout};
@@ -80,11 +81,16 @@ impl IrohPusher {
             .complete()
             .await
             .map_err(|err| BlobUploadError::Blob(anyhow::anyhow!("blob push failed: {err:?}")))?;
-        while let Some(bitfield) = bitfields.next().await {
-            let bitfield = bitfield.map_err(|err| {
+        // Only the first observed bitfield is a full state; updates are deltas
+        // against it, so they must be accumulated: a large import observed
+        // mid-flight yields partial updates that are never complete alone.
+        let mut observed = Bitfield::empty();
+        while let Some(update) = bitfields.next().await {
+            let update = update.map_err(|err| {
                 BlobUploadError::Blob(anyhow::anyhow!("blob observe failed: {err}"))
             })?;
-            if bitfield.is_complete() {
+            observed.update(&update);
+            if observed.is_complete() {
                 return Ok(());
             }
         }
