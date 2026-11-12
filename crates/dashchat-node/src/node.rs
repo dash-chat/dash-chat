@@ -1,4 +1,5 @@
 mod app_processing;
+mod device_group;
 mod message_acks;
 mod profile;
 pub(crate) mod publish;

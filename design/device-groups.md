@@ -1,5 +1,8 @@
 # Device groups: from one device to many
 
+TODO: rewrite this doc more intentionally once multi-device groups actually land. 
+For now this is a vibe-coded list of considerations for that feature.
+
 Status: notes, written when the device-group topic was converted from a plain
 stream to a Space (single member: this device). This records what that
 conversion rests on and the complexity we take on when the space is actually
