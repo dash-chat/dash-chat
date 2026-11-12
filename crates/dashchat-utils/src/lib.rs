@@ -4,6 +4,8 @@ mod derive_watch;
 #[cfg(feature = "iroh")]
 pub mod endpoint;
 mod fetch_loop;
+#[cfg(feature = "iroh")]
+pub mod local_hub;
 mod retry_with_backoff;
 
 #[cfg(feature = "cbor")]

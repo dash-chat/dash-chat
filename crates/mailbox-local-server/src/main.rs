@@ -82,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         None,
         None,
         args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
+        None,
         signal,
     )
     .await;
