@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiSquareEditOutline } from '@mdi/js';
+	import { mdiQrcode, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 
@@ -15,6 +15,14 @@
 <div class="flex flex-col relative h-full">
 	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet right()}
+			<Link
+				iconOnly
+				href="/new-message/add-contact"
+				aria-label={m.addContact()}
+				data-testid="home-add-contact-btn"
+			>
+				<wa-icon src={wrapPathInSvg(mdiQrcode)}> </wa-icon>
+			</Link>
 			<Link
 				iconOnly
 				onClick={() => {

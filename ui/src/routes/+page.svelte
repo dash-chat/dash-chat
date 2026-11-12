@@ -4,7 +4,7 @@
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
+	import { mdiPencil, mdiQrcode, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
@@ -22,7 +22,19 @@
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 </script>
 
+{#snippet addContactAction()}
+	<Link
+		iconOnly
+		href="/new-message/add-contact"
+		aria-label={m.addContact()}
+		data-testid="home-add-contact-btn"
+	>
+		<wa-icon src={wrapPathInSvg(mdiQrcode)}> </wa-icon>
+	</Link>
+{/snippet}
+
 {#snippet composeActions()}
+	{@render addContactAction()}
 	<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
 		<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
 	</Link>
@@ -43,7 +55,7 @@
 	<Navbar
 		title={m.chats()}
 		titleClass="opacity1"
-		right={theme === 'ios' ? composeActions : undefined}
+		right={theme === 'ios' ? composeActions : addContactAction}
 		transparent={true}
 	>
 		{#snippet left()}
