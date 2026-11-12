@@ -7,8 +7,6 @@
 		/** Index of the centred slide; updated as the user scrolls. */
 		index?: number;
 		slide: Snippet<[T, number]>;
-		/** Freeze horizontal paging (e.g. while a slide is zoomed). */
-		paused?: boolean;
 		/** Stable per-item identity for the keyed `{#each}`. Defaults to the array
 		    index; pass an item-derived key when items can be removed mid-list so
 		    Svelte drops the right node instead of mutating it in place. */
@@ -19,7 +17,6 @@
 		items,
 		index = $bindable(0),
 		slide,
-		paused = false,
 		key = (_, i) => i,
 		class: className = '',
 		...rest
@@ -122,9 +119,7 @@
 
 <div
 	bind:this={carouselEl}
-	class="image-carousel flex snap-x snap-mandatory {paused
-		? 'overflow-hidden'
-		: 'overflow-x-auto'} {className}"
+	class="image-carousel flex snap-x snap-mandatory overflow-x-auto {className}"
 	onscroll={onScroll}
 	{...rest}
 >
