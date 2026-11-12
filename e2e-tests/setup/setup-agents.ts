@@ -13,6 +13,7 @@ import { asyncExitHook } from 'exit-hook';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { ErrorPlaceholder } from '../helpers/components/error-placeholder';
+import { MainTabbar } from '../helpers/components/main-tabbar';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { TestBanner } from '../helpers/components/test-banner';
 import { Toast } from '../helpers/components/toast';
@@ -117,6 +118,7 @@ export type Agent = WebdriverIO.Browser & {
 	groupInfoPage: GroupInfoPage;
 	helpPage: HelpPage;
 	homePage: HomePage;
+	mainTabbar: MainTabbar;
 	newGroupPage: NewGroupPage;
 	newMessagePage: NewMessagePage;
 	notificationsPage: NotificationsPage;
@@ -287,6 +289,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.groupInfoPage = new GroupInfoPage(b);
 	agent.helpPage = new HelpPage(b);
 	agent.homePage = new HomePage(b);
+	agent.mainTabbar = new MainTabbar(b);
 	agent.newGroupPage = new NewGroupPage(b);
 	agent.newMessagePage = new NewMessagePage(b);
 	agent.notificationsPage = new NotificationsPage(b);
