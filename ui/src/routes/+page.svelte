@@ -6,6 +6,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
+	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
@@ -14,7 +15,6 @@
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import HubWarningBadge from '$lib/components/HubWarningBadge.svelte';
 
 	const theme = $derived(useTheme());
@@ -26,6 +26,10 @@
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 </script>
+
+{#snippet addContactAction()}
+	<AddContactNavbarButton />
+{/snippet}
 
 {#snippet composeActions()}
 	<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
@@ -49,7 +53,7 @@
 		title={m.chats()}
 		titleClass="opacity1"
 		rightClass="order-1"
-		right={theme === 'ios' ? composeActions : undefined}
+		right={theme === 'ios' ? composeActions : addContactAction}
 		transparent={true}
 	>
 		{#snippet left()}
@@ -66,16 +70,14 @@
 			{/await}
 		{/snippet}
 
-		<!-- A navbar child, not part of the right slot that Konsta wraps in one
-			glass capsule on iOS: the status gets its own bubble before the capsule
-			(rightClass orders the slot last). -->
-		<div
-			class="ms-auto grid size-11 place-items-center {theme === 'ios'
-				? 'rounded-full bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-				: 'me-2'}"
-		>
-			<ConnectionStatusIndicator />
-		</div>
+		{#if theme === 'ios'}
+			<!-- A navbar child, not part of the right slot that Konsta wraps in one
+				glass capsule: it gets its own bubble before the capsule (rightClass
+				orders the slot last). -->
+			<div class="ms-auto">
+				<AddContactNavbarButton />
+			</div>
+		{/if}
 	</Navbar>
 
 	<UpdaterBanner />

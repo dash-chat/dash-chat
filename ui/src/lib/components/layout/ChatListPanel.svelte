@@ -6,6 +6,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
+	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
@@ -20,7 +21,12 @@
 </script>
 
 <div class="flex flex-col relative h-full">
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1"
+		rightClass="order-1"
+		transparent={true}
+	>
 		{#snippet left()}
 			{#await $myProfile then myProfile}
 				<Link iconOnly href="/settings" data-testid="home-settings-link">
@@ -35,7 +41,19 @@
 			{/await}
 		{/snippet}
 
+		{#if theme === 'ios'}
+			<!-- A navbar child, not part of the right slot that Konsta wraps in one
+				glass capsule: it gets its own bubble before the capsule (rightClass
+				orders the slot last). -->
+			<div class="ms-auto">
+				<AddContactNavbarButton />
+			</div>
+		{/if}
+
 		{#snippet right()}
+			{#if theme !== 'ios'}
+				<AddContactNavbarButton />
+			{/if}
 			<Link
 				iconOnly
 				onClick={() => {
