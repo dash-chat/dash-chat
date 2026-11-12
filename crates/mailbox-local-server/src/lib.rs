@@ -3,10 +3,11 @@
 //! sync against it without any cloud service.
 
 use std::fs;
-use std::net::Ipv6Addr;
+use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use dashchat_utils::local_hub::LocalHubRegistry;
 use iroh::EndpointId;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
@@ -22,6 +23,8 @@ pub struct LocalMailboxServer {
     /// checks).
     pub url: String,
     pub port: u16,
+    endpoint_id: EndpointId,
+    local_hub_registry: LocalHubRegistry,
     stop_signal: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
     announcement: LocalHubAnnouncementService,
@@ -31,6 +34,9 @@ impl LocalMailboxServer {
     /// Retires the announcement, so peers hear this hub leave instead of
     /// waiting out its silence.
     pub async fn stop(self) {
+        // Close the push port first: a push refused mid-shutdown falls back to
+        // the HTTP upload, which the server still answers until it retires.
+        self.local_hub_registry.deregister(self.endpoint_id);
         // Goodbye first, while the server is still serving: a browser that hears
         // it retires the hub at once, where a refused probe deliberately means
         // nothing.
@@ -54,6 +60,10 @@ impl LocalMailboxServer {
 /// `upload_grace` overrides how long the mailbox defers dialing a blob's source
 /// after an announce that expects an inline upload; `None` uses the production
 /// default.
+///
+/// `local_hub_registry` must be the handle the node's config holds: registering
+/// here is what opens this endpoint's blob push port, which the node's
+/// authorization loop guards.
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
@@ -62,6 +72,7 @@ pub async fn spawn_local_mailbox_server(
     fetch_config: Option<FetchConfig>,
     upload_grace: Option<Duration>,
     peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
+    local_hub_registry: LocalHubRegistry,
 ) -> anyhow::Result<LocalMailboxServer> {
     let (listener, port) = {
         let db_path = db_path.clone();
@@ -82,6 +93,7 @@ pub async fn spawn_local_mailbox_server(
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
 
+    let task_registry = local_hub_registry.clone();
     let task = tokio::spawn(async move {
         let signal = async move {
             let _ = stop_signal_rx.await;
@@ -93,19 +105,28 @@ pub async fn spawn_local_mailbox_server(
             Some(blob_sync),
             None,
             *dashchat_utils::NETWORK_ID,
+            None,
             signal,
         )
         .await
         {
             log::error!("Local mailbox server failed: {e:?}");
         }
+        // Backstop for a server that failed rather than being stopped: stop()
+        // deregisters on the graceful path, and removal is idempotent.
+        task_registry.deregister(endpoint_id);
     });
 
     let announcement = spawn_local_hub_announcement(endpoint_id, port)?;
 
+    // Hosting a hub opens this endpoint's blob push port; stop() closes it.
+    local_hub_registry.register(endpoint_id);
+
     Ok(LocalMailboxServer {
         url: format!("http://127.0.0.1:{port}"),
         port,
+        endpoint_id,
+        local_hub_registry,
         stop_signal,
         task,
         announcement,
@@ -133,7 +154,7 @@ pub fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener
         .ok()
         .and_then(|port| port.trim().parse::<u16>().ok());
     let listener = match remembered {
-        Some(port) => match std::net::TcpListener::bind((Ipv6Addr::UNSPECIFIED, port)) {
+        Some(port) => match std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)) {
             Ok(listener) => listener,
             Err(err) => {
                 log::info!("Local mailbox port {port} is not free ({err}); taking another");
@@ -152,7 +173,7 @@ pub fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener
 }
 
 fn any_free_listener() -> anyhow::Result<std::net::TcpListener> {
-    Ok(std::net::TcpListener::bind((Ipv6Addr::UNSPECIFIED, 0))?)
+    Ok(std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))?)
 }
 
 /// Announce a mailbox on the LAN so peers discover it. The instance id is the
@@ -220,6 +241,14 @@ mod tests {
         drop(taken);
         drop(held);
         assert_eq!(reserve_listener(&db_path(&dir)).unwrap().1, second);
+    }
+
+    /// Discovery only announces IPv4 addresses, so that is what peers dial.
+    #[test]
+    fn a_hub_accepts_ipv4_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_listener, port) = reserve_listener(&db_path(&dir)).unwrap();
+        std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     }
 
     #[test]

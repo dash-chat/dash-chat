@@ -27,7 +27,7 @@ describe('Get Started cards', () => {
 			.getStartedCard('add-contact')
 			.waitForExist({ reverse: true });
 
-		await agent.execute(() => window.location.reload());
+		await agent.refresh();
 		await waitForTestUtils(agent);
 		await agent.homePage.ready();
 

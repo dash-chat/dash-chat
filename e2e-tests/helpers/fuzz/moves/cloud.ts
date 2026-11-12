@@ -10,6 +10,7 @@ import {
 	slowMailboxLink,
 } from '../../../setup/mailbox-control';
 import {
+	MAILBOX_HEALED_AFTER_BACKOFF_MS,
 	MAILBOX_HEALED_MS,
 	MAILBOX_HUNG_MS,
 	MAILBOX_UNANSWERED_MS,
@@ -93,7 +94,12 @@ class CloudHealMove extends Move {
 		log(this.toString());
 		await healMailboxLink();
 		m.setCloudUsable(true);
-		await checkCloudAll(m, real, 'the cloud link healed', MAILBOX_HEALED_MS);
+		await checkCloudAll(
+			m,
+			real,
+			'the cloud link healed',
+			MAILBOX_HEALED_AFTER_BACKOFF_MS,
+		);
 	}
 
 	toString(): string {

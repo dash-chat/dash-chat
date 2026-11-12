@@ -37,7 +37,6 @@ use crate::stores::OpStore;
 pub(crate) fn spawn(
     endpoint: Option<p2panda::Endpoint>,
     mailboxes: Mailboxes<MailboxOperation, OpStore>,
-    unfetched_blob_trigger: std::sync::Arc<tokio::sync::Notify>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut settled = network_watch::network_change();
@@ -51,7 +50,7 @@ pub(crate) fn spawn(
                     return;
                 }
             }
-            handle_network_change(endpoint.as_ref(), &mailboxes, &unfetched_blob_trigger).await;
+            handle_network_change(endpoint.as_ref(), &mailboxes).await;
         }
     })
 }
@@ -59,12 +58,9 @@ pub(crate) fn spawn(
 pub(crate) async fn handle_network_change(
     endpoint: Option<&p2panda::Endpoint>,
     mailboxes: &Mailboxes<MailboxOperation, OpStore>,
-    unfetched_blob_trigger: &tokio::sync::Notify,
 ) {
-    tracing::info!("network-change notifier: probing mailboxes");
-    mailboxes.probe_all().await;
-    mailboxes.reset_uploads();
-    unfetched_blob_trigger.notify_one();
+    tracing::info!("network-change notifier: notifying mailboxes");
+    mailboxes.handle_network_change().await;
     if let Some(endpoint) = endpoint {
         notify_iroh(endpoint).await;
     }

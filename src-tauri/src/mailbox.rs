@@ -58,7 +58,7 @@ pub(crate) async fn cloud_mailbox_id(
         }
     }
     node.mailboxes
-        .sync_tracker()
+        .operation_tracker()
         .mailbox_id_for_url(&cloud_url)
         .await
         .unwrap_or(None)
@@ -170,7 +170,8 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
                 node.unfetched_blob_tracker(),
                 node.mailboxes.upload_tracker(),
             )
-            .with_blob_reader(node.blob_reader()),
+            .with_blob_reader(node.blob_reader())
+            .with_blob_pusher(node.blob_pusher().await),
         )
         .await;
     log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");

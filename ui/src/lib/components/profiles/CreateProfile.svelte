@@ -108,7 +108,6 @@
 	}
 	const theme = $derived(useTheme());
 	const pickerHasChanges = $derived(pickerAvatar !== avatar);
-	let textEditorOpen = $state(false);
 
 	const avatarSize = 100;
 
@@ -124,22 +123,11 @@
 	{#if showPicker}
 		<AvatarPicker
 			bind:avatar={pickerAvatar}
-			bind:inModalState={textEditorOpen}
 			onClose={closePicker}
 			onSave={selectAvatar}
 			saveLabel={m.save()}
 			saveDisabled={!pickerHasChanges}
 		/>
-
-		{#if !textEditorOpen && !isIos}
-			<FixedActionButton
-				tonal
-				disabled={!pickerHasChanges}
-				onClick={selectAvatar}
-			>
-				{m.save()}
-			</FixedActionButton>
-		{/if}
 	{:else}
 		<Navbar
 			title={m.setProfile()}

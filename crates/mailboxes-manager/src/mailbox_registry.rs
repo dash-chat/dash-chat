@@ -2,17 +2,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
 
+use mailbox_client::store::MailboxStore;
 use mailbox_client::{MailboxId, MailboxItem};
 
-use super::manager::TrackedMailbox;
+use super::tracked_mailbox::TrackedMailbox;
 
 /// Internal registry for managing a collection of tracked mailboxes.
-pub struct MailboxRegistry<Item: MailboxItem> {
-    pub(crate) mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>>>,
+pub struct MailboxRegistry<Item: MailboxItem, Store: MailboxStore<Item>> {
+    pub(crate) mailboxes: Arc<Mutex<BTreeMap<MailboxId, Arc<TrackedMailbox<Item, Store>>>>>,
     active_mailbox_ids_tx: watch::Sender<BTreeSet<MailboxId>>,
 }
 
-impl<Item: MailboxItem> MailboxRegistry<Item> {
+impl<Item: MailboxItem, Store: MailboxStore<Item>> MailboxRegistry<Item, Store> {
     pub fn new() -> Self {
         let (tx, _) = watch::channel(BTreeSet::new());
         Self {
@@ -25,9 +26,9 @@ impl<Item: MailboxItem> MailboxRegistry<Item> {
         &self,
         id: MailboxId,
         create: F,
-    ) -> (Arc<TrackedMailbox<Item>>, bool)
+    ) -> (Arc<TrackedMailbox<Item, Store>>, bool)
     where
-        F: FnOnce() -> TrackedMailbox<Item>,
+        F: FnOnce() -> TrackedMailbox<Item, Store>,
     {
         let mut map = self.mailboxes.lock().await;
         if let Some(existing) = map.get(&id).cloned() {
@@ -59,11 +60,11 @@ impl<Item: MailboxItem> MailboxRegistry<Item> {
         self.send_active_ids(&map);
     }
 
-    pub async fn get(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item>>> {
+    pub async fn get(&self, id: &MailboxId) -> Option<Arc<TrackedMailbox<Item, Store>>> {
         self.mailboxes.lock().await.get(id).cloned()
     }
 
-    pub async fn all(&self) -> Vec<(MailboxId, Arc<TrackedMailbox<Item>>)> {
+    pub async fn all(&self) -> Vec<(MailboxId, Arc<TrackedMailbox<Item, Store>>)> {
         self.mailboxes
             .lock()
             .await
@@ -77,7 +78,7 @@ impl<Item: MailboxItem> MailboxRegistry<Item> {
     /// I/O, since it runs under the registry mutex.
     pub async fn with_all<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>) -> R,
+        F: FnOnce(&BTreeMap<MailboxId, Arc<TrackedMailbox<Item, Store>>>) -> R,
     {
         let map = self.mailboxes.lock().await;
         f(&map)
@@ -87,7 +88,7 @@ impl<Item: MailboxItem> MailboxRegistry<Item> {
         self.active_mailbox_ids_tx.subscribe()
     }
 
-    fn send_active_ids(&self, map: &BTreeMap<MailboxId, Arc<TrackedMailbox<Item>>>) {
+    fn send_active_ids(&self, map: &BTreeMap<MailboxId, Arc<TrackedMailbox<Item, Store>>>) {
         let active: BTreeSet<MailboxId> = map.keys().cloned().collect();
         let _ = self.active_mailbox_ids_tx.send_replace(active);
     }

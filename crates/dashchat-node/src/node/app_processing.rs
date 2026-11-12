@@ -430,8 +430,9 @@ impl Node {
                         self.blob_decrypt_index.remove(&hashes);
                         let is_own = DeviceId::from(author) == self.device_id();
                         if let Err(err) = self
-                            .local_store
-                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .mailboxes
+                            .blob_tracker()
+                            .remove_all_mailboxes(&hashes)
                             .await
                         {
                             tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
@@ -606,6 +607,18 @@ impl Node {
                             let node = self.clone();
                             let agent_id = *agent_id;
                             tokio::spawn(async move {
+                                // The accept op can be processed more than once
+                                // (it is replayed when its ack fails), and each
+                                // processing lands here; record the contact only
+                                // the first time.
+                                match node.accepted_contact_agent_ids().await {
+                                    Ok(ids) if ids.contains(&agent_id) => return,
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        tracing::warn!(?err, "failed to check recorded contacts");
+                                        return;
+                                    }
+                                }
                                 let topic_id =
                                     node.direct_chat_topic(crate::FakeAgentId::from(author));
 

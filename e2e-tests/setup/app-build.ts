@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { envWithoutWdioLoader } from './harness-env';
+import { WINDOWS } from './host-process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -15,7 +16,13 @@ export const SKIP_FRONTEND_BUILD = `--config '{"build":{"beforeBuildCommand":""}
 /** Run a build command from the repo root. `env` must be the full child
  *  environment, with the values the build bakes in. */
 export function runBuild(command: string, env: NodeJS.ProcessEnv): void {
-	execSync(command, { cwd: ROOT, stdio: 'inherit', env });
+	// sh on Windows too: cmd.exe would keep SKIP_FRONTEND_BUILD's single quotes.
+	execSync(command, {
+		cwd: ROOT,
+		stdio: 'inherit',
+		env,
+		shell: WINDOWS ? 'sh' : undefined,
+	});
 }
 
 /** The frontend build tauri.conf.json would run before each platform build,

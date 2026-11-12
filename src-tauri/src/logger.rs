@@ -31,6 +31,7 @@ const LEVELS: &[(&str, LevelFilter)] = &[
     ("mailbox_server", LevelFilter::Debug),
     ("mailbox_local_server", LevelFilter::Debug),
     ("local_hub_discovery", LevelFilter::Debug),
+    ("lan_multicast_probe", LevelFilter::Debug),
     ("network_watch", LevelFilter::Debug),
     ("tauri_app_lib", LevelFilter::Debug), // dash-chat crate
     ("webview", LevelFilter::Debug),       // JS console.* forwarded via @tauri-apps/plugin-log

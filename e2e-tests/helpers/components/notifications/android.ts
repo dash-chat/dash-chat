@@ -14,6 +14,12 @@ const TEXT_EXTRA =
  *  a dump's last record runs on into sections that name other packages. */
 const RECORD_PACKAGE = /^0x[0-9a-f]+: pkg=(\S+) /;
 
+/** A record's flags: in hex on Android 12 (`0x40`), by name on Android 16
+ *  (`NO_CLEAR|FOREGROUND_SERVICE|SILENT`). */
+const RECORD_FLAGS = /\bflags=(\S+)/;
+
+const FLAG_FOREGROUND_SERVICE = 0x40;
+
 const MESSAGING_STYLE =
 	'android.template=String (android.app.Notification$MessagingStyle)';
 
@@ -43,16 +49,18 @@ const CLEAR_ALL =
 /** This app's active notifications, parsed from `dumpsys notification
  * --noredact`. A record with no title is a group summary — the plugin posts
  * one per group with nothing but an icon — and is left out, since it shows
- * the user no content of its own. The shade's view tree is NOT a reliable
- * content source: OEM skins (MIUI) render only the title while a notification
- * sits collapsed, so bodies never appear to UiAutomator. dumpsys reads the
- * posted notification itself. */
+ * the user no content of its own. So is a foreground service's, which comes
+ * and goes while a push is handled and announces nothing. The shade's view
+ * tree is NOT a reliable content source: OEM skins (MIUI) render only the title
+ * while a notification sits collapsed, so bodies never appear to UiAutomator.
+ * dumpsys reads the posted notification itself. */
 function dashChatNotifications(dump: string): DeliveredNotification[] {
 	const notifications: DeliveredNotification[] = [];
 	const records = dump
 		.split(/^\s*NotificationRecord\(/m)
 		.slice(1)
-		.filter(record => RECORD_PACKAGE.exec(record)?.[1] === APP_PACKAGE);
+		.filter(record => RECORD_PACKAGE.exec(record)?.[1] === APP_PACKAGE)
+		.filter(record => !isForegroundService(record));
 	for (const record of records) {
 		const extras = [...record.matchAll(TEXT_EXTRA)];
 		const extra = (key: string) => extras.find(([, k]) => k === key)?.[2];
@@ -72,6 +80,13 @@ function dashChatNotifications(dump: string): DeliveredNotification[] {
 		});
 	}
 	return notifications;
+}
+
+function isForegroundService(record: string): boolean {
+	const flags = RECORD_FLAGS.exec(record)?.[1] ?? '';
+	return flags.startsWith('0x')
+		? (parseInt(flags, 16) & FLAG_FOREGROUND_SERVICE) !== 0
+		: flags.split('|').includes('FOREGROUND_SERVICE');
 }
 
 /** The newest message of a chat notification's thread. Throws rather than

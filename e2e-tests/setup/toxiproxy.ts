@@ -7,7 +7,7 @@
  * records its API port so spec workers can reach it through the
  * `toxiproxy-node-client` library.
  */
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import {
 	closeSync,
 	mkdirSync,
@@ -27,6 +27,7 @@ import {
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort } from './allocate-port';
+import { isOnPath } from './host-process';
 import { waitForPortListening } from './wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,9 +54,7 @@ export interface LinkConditions {
 /** Every run's mailbox goes through the proxy, so a missing binary has to
  *  fail here, by name, rather than as a port that never listens. */
 function assertToxiproxyAvailable(): void {
-	try {
-		execSync('command -v toxiproxy-server', { stdio: 'ignore' });
-	} catch {
+	if (!isOnPath('toxiproxy-server')) {
 		throw new Error(
 			'toxiproxy-server not found — every e2e run degrades the cloud mailbox ' +
 				'through it. Run inside the nix dev shell, or install the ' +

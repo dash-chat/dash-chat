@@ -12,12 +12,12 @@
 	}: { profile: Profile; nameTestId?: string; blocked?: boolean } = $props();
 </script>
 
-<span class="flex w-full min-w-0 flex-row items-center gap-2">
+<span class="flex w-full min-w-0 flex-row items-center gap-4">
 	<span class="shrink-0">
 		<Avatar
 			image={profile.avatar}
 			initials={profile.name.slice(0, 2)}
-			size="2.5rem"
+			size="2.25rem"
 		/>
 	</span>
 	<span

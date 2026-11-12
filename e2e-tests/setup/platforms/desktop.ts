@@ -4,13 +4,7 @@ import {
 	execSync,
 	spawn,
 } from 'node:child_process';
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { remote } from 'webdriverio';
@@ -21,6 +15,7 @@ import { allocatePinnedPort } from '../allocate-port';
 import { SKIP_FRONTEND_BUILD, runBuild } from '../app-build';
 import { killAllE2EProcesses, killAndWait, pidsNamedWithEnv } from '../cleanup';
 import { envWithoutWdioLoader } from '../harness-env';
+import { WINDOWS, exe, forceKill, removeDirWithRetries } from '../host-process';
 import { E2E_NETWORK_ID } from '../network-id';
 import { E2E_RELAY_URL } from '../relay';
 import {
@@ -36,11 +31,11 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
  *  slot, driven through the W3C WebDriver server that build embeds
  *  (tauri-plugin-wdio-webdriver) on the port TAURI_WEBDRIVER_PORT names.
  *  The harness launches the process itself and the session goes straight to
- *  it: no tauri-driver, and so the same path on Linux and macOS, where no
- *  WebDriver for WKWebView exists. */
+ *  it: no tauri-driver, and so the same path on Linux, Windows and macOS, where
+ *  no WebDriver for WKWebView exists. */
 const MACOS = process.platform === 'darwin';
 
-export const APP_BINARY = path.join(ROOT, 'target', 'debug', 'dash-chat');
+export const APP_BINARY = path.join(ROOT, 'target', 'debug', exe('dash-chat'));
 
 export function agentDir(slot: number): string {
 	return path.join(ROOT, '.dbs', 'e2e', `agent-${slot}`);
@@ -82,7 +77,7 @@ export async function killAgentApp(slot: number): Promise<void> {
 		`DATA_DIR=${agentDir(slot)}`,
 	)) {
 		try {
-			process.kill(pid, 'SIGKILL');
+			forceKill(pid);
 		} catch {
 			/* already gone */
 		}
@@ -109,6 +104,26 @@ const WEBKITGTK_ENV: Record<string, string> = {
 	// freezes. See https://github.com/tauri-apps/tauri/issues/13498
 	WEBKIT_DISABLE_DMABUF_RENDERER: '1',
 };
+
+/** A WebView2 profile per agent, which the XDG dirs that isolate WebKitGTK's
+ *  don't move, and no throttling of a window another one covers: animations and
+ *  transitions have to finish in the background too. */
+function webview2Env(dataDir: string): Record<string, string> {
+	return {
+		WEBVIEW2_USER_DATA_FOLDER: path.join(dataDir, 'webview2'),
+		WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
+			// The first three are wry's defaults, which this variable may replace.
+			'--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion ' +
+			'--disable-backgrounding-occluded-windows ' +
+			'--disable-renderer-backgrounding ' +
+			'--disable-background-timer-throttling',
+	};
+}
+
+function webviewEnv(dataDir: string): Record<string, string> {
+	if (MACOS) return {};
+	return WINDOWS ? webview2Env(dataDir) : WEBKITGTK_ENV;
+}
 
 export function buildDesktopApp(): void {
 	runBuild(
@@ -143,7 +158,7 @@ export async function launchDesktopApp(
 		stdio,
 		env: {
 			...process.env,
-			...(MACOS ? {} : WEBKITGTK_ENV),
+			...webviewEnv(dataDir),
 			DATA_DIR: dataDir,
 			MAILBOX_URL: mailboxUrl,
 			TAURI_WEBDRIVER_PORT: String(port),
@@ -168,9 +183,9 @@ export async function launchAgentApp(slot: number): Promise<void> {
 		APP_BINARY,
 		agentDir(slot),
 		port,
-		MACOS
-			? {}
-			: { PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}` },
+		process.platform === 'linux'
+			? { PATH: `${installXdgOpenStub(slot)}:${process.env.PATH ?? ''}` }
+			: {},
 	);
 	launched.set(slot, app);
 }
@@ -197,12 +212,7 @@ function raiseMacApp(pid: number | undefined): void {
 export function clearAgentDir(slot: number): void {
 	const dataDir = agentDir(slot);
 	// A just-killed agent's WebKit helpers can still be writing into it.
-	rmSync(dataDir, {
-		recursive: true,
-		force: true,
-		maxRetries: 10,
-		retryDelay: 100,
-	});
+	removeDirWithRetries(dataDir);
 	mkdirSync(dataDir, { recursive: true });
 }
 
@@ -247,7 +257,7 @@ export async function connectDesktopAgent(
 		hostname: '127.0.0.1',
 		port: agentPort(slot),
 		capabilities: {
-			platformName: MACOS ? 'mac' : 'linux',
+			platformName: MACOS ? 'mac' : WINDOWS ? 'windows' : 'linux',
 		} as WebdriverIO.Capabilities,
 		logLevel: 'warn',
 		waitforTimeout: UI_TIMEOUT,
@@ -270,7 +280,8 @@ export async function discardDesktopAgent(slot: number): Promise<void> {
 	launched.delete(slot);
 	loggers.get(slot)?.kill();
 	loggers.delete(slot);
-	rmSync(agentDir(slot), { recursive: true, force: true });
+	// A just-killed agent's WebView2 processes hold their files for a moment.
+	removeDirWithRetries(agentDir(slot));
 }
 
 /** Kill every desktop agent this worker launched, and any app process still

@@ -14,6 +14,10 @@ pub struct ChatMessageContentV1 {
     /// messages unchanged (and silently drop the reply on newer ones).
     #[serde(default)]
     pub reply: Option<Hash>,
+    /// Lamport timestamp, used to ensure that new messages published after
+    /// existing messages are ordered after them, regardless of wall timestamp.
+    #[serde(default)]
+    pub lamport: u64,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -239,11 +243,13 @@ impl ChatMessageContent {
         message: impl Into<String>,
         media: Option<MediaBundle>,
         reply: Option<Hash>,
+        lamport: u64,
     ) -> Self {
         ChatMessageContentV1 {
             message: message.into(),
             media,
             reply,
+            lamport,
         }
     }
 
@@ -252,6 +258,7 @@ impl ChatMessageContent {
             message: message.into(),
             media: None,
             reply: None,
+            lamport: 0,
         }
     }
 
@@ -338,7 +345,7 @@ mod tests {
     #[test]
     fn chat_message_v1_reply_roundtrip() {
         let target = Hash::from_bytes([7; 32]);
-        let v1 = ChatMessageContent::new("hello", None, Some(target));
+        let v1 = ChatMessageContent::new("hello", None, Some(target), 0);
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -377,5 +384,25 @@ mod tests {
         assert_eq!(json["nonce"], serde_json::json!(hex::encode([9u8; 24])));
         let from_json: MediaMetadata = serde_json::from_value(json).unwrap();
         assert_eq!(from_json, meta);
+    }
+
+    /// Wire bytes from clients that predate the `lamport` field must keep
+    /// decoding, with the counter defaulting to 0.
+    #[test]
+    fn chat_message_v1_without_lamport_decodes() {
+        #[derive(serde::Serialize)]
+        struct PreLamportV1 {
+            message: String,
+            media: Option<MediaBundle>,
+        }
+        let bytes = encode_cbor(&PreLamportV1 {
+            message: "old".into(),
+            media: None,
+        })
+        .unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded.message(), "old");
+        assert_eq!(decoded.lamport, 0);
+        assert_eq!(decoded.reply(), None);
     }
 }

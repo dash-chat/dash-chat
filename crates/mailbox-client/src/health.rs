@@ -67,7 +67,7 @@ pub struct LastError {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct MailboxConnectionState {
+pub struct MailboxConnectionHealth {
     pub status: SyncStatus,
     pub consecutive_errors: u32,
     #[serde(rename = "next_poll_in_ms", serialize_with = "ser_next_poll_in_ms")]
@@ -86,7 +86,7 @@ fn ser_next_poll_in_ms<S: Serializer>(next: &Instant, s: S) -> Result<S::Ok, S::
     s.serialize_i64(ms)
 }
 
-impl MailboxConnectionState {
+impl MailboxConnectionHealth {
     /// Not part of the intended surface: callers outside this crate are tests
     /// (`mailboxes-manager`'s). Use `seeded` for a status-aware start.
     #[doc(hidden)]
@@ -188,7 +188,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn tracker_starts_active() {
-        let tracker = MailboxConnectionState::new();
+        let tracker = MailboxConnectionHealth::new();
         assert_eq!(tracker.status, SyncStatus::Active);
         assert_eq!(tracker.consecutive_errors, 0);
     }
@@ -196,7 +196,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_success_resets_to_active() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
 
         // Accumulate some errors first
         tracker.record_error(&config, "x".into());
@@ -214,7 +214,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_error_transitions() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
 
         // 1 error: still Active
         tracker.record_error(&config, "x".into());
@@ -241,7 +241,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_next_poll_after_success() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
 
         let before = Instant::now();
         tracker.record_success(&config);
@@ -253,7 +253,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn tracker_next_poll_after_errors() {
         let config = test_config();
-        let mut tracker = MailboxConnectionState::new();
+        let mut tracker = MailboxConnectionHealth::new();
         let delay = config.between_polls_delay;
 
         // First error: still Active interval

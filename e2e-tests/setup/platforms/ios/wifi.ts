@@ -1,7 +1,7 @@
 /**
  * Wi-Fi control for a physical iPhone. Test networks — the ones a run joins,
- * leaves and forgets — go through the app itself: the network-interfaces
- * plugin's `wifi-control` commands (`NEHotspotConfiguration`), reached over
+ * leaves and forgets — go through the app itself: the tauri-plugin-wifi
+ * commands (`NEHotspotConfiguration`), reached over
  * `window.__test.wifi`, which join and forget in seconds with the app on
  * screen throughout and list exactly the networks the app added, in range or
  * not. The radio is the one thing iOS gives no app an API for, so turning it

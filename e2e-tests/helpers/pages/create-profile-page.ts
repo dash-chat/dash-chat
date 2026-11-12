@@ -32,6 +32,9 @@ export class CreateProfilePage extends TestHelper {
 		await new WelcomePage(this.agent).tapContinue();
 		await this.ready();
 		await this.typeName(name, surname);
+		// The button rides above the keyboard, so a tap aimed while a slow keyboard
+		// is still opening lands on the spot the button just left.
+		await this.closeKeyboard();
 		await this.createButton.click();
 		await this.agent.$(tid('all-chats-empty')).waitForExist();
 	}

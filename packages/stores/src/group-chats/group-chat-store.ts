@@ -159,6 +159,7 @@ export class GroupChatStore {
 				event: { kind: 'message', message },
 				author: message.author,
 				timestamp: message.timestamp,
+				lamport: message.lamport,
 				type: 'Message',
 			};
 		}
@@ -176,6 +177,7 @@ export class GroupChatStore {
 				event: { kind: 'control', event },
 				author,
 				timestamp: event.timestamp,
+				lamport: 0,
 				type: 'GroupControl',
 			};
 		}

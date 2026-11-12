@@ -6,12 +6,18 @@
  * holding the claiming process's pid, created exclusively so two runs can't
  * both win it; a claim whose process is gone is stale and taken over. The
  * files live in /tmp rather than os.tmpdir(): `nix develop` gives every
- * shell its own TMPDIR, and a claim has to be seen from every shell.
+ * shell its own TMPDIR, and a claim has to be seen from every shell. Windows
+ * has no /tmp and no nix, so there it is os.tmpdir() after all.
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const CLAIMS_DIR = '/tmp/dash-chat-e2e/claims';
+export const CLAIMS_DIR = path.join(
+	process.platform === 'win32' ? tmpdir() : '/tmp',
+	'dash-chat-e2e',
+	'claims',
+);
 const POLL_MS = 5_000;
 const LOG_EVERY_MS = 60_000;
 

@@ -1,7 +1,7 @@
 import { withinWindow } from '$lib/utils/time';
 import type {
 	AllMailboxesConnectionState,
-	MailboxConnectionState,
+	MailboxConnectionHealth,
 } from 'dash-chat-stores';
 
 /** How long a verdict may stay unproven after the page becomes visible before
@@ -23,7 +23,7 @@ export type ConnectionStatus =
 	| { status: 'disconnected' }
 	| { status: 'pending' };
 
-function reachable(mailbox: MailboxConnectionState): boolean {
+function reachable(mailbox: MailboxConnectionHealth): boolean {
 	return (
 		mailbox.status === 'Active' &&
 		mailbox.consecutive_errors < DISCONNECTED_ERROR_THRESHOLD

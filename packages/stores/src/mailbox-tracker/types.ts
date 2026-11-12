@@ -4,7 +4,7 @@ export type MailboxId = string;
 
 export type SyncStatus = 'Active' | 'Degraded' | 'Stopped';
 
-export interface MailboxConnectionState {
+export interface MailboxConnectionHealth {
 	status: SyncStatus;
 	consecutive_errors: number;
 	/// Milliseconds from now until the next scheduled poll; negative if overdue.
@@ -26,4 +26,4 @@ export function mailboxLogKey(author: DeviceId, logId: LogId): MailboxLogKey {
 }
 
 /// Synced-up-to sequence number per log, shaped as `topic → log key → seq`.
-export type MailboxSyncState = Record<TopicId, Record<MailboxLogKey, number>>;
+export type OperationSyncState = Record<TopicId, Record<MailboxLogKey, number>>;

@@ -283,7 +283,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     PollConfig::default()
         .wait_for(|| async {
             tracked
-                .connection_state()
+                .health()
                 .borrow()
                 .last_success_at
                 .is_some()
@@ -299,7 +299,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     );
     let synced_before_send = alice
         .mailboxes
-        .sync_tracker()
+        .operation_tracker()
         .get_synced(&mailbox_id, &chat, &alice_log)
         .await
         .unwrap();
@@ -310,7 +310,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
         .wait_for(|| async {
             let synced = alice
                 .mailboxes
-                .sync_tracker()
+                .operation_tracker()
                 .get_synced(&mailbox_id, &chat, &alice_log)
                 .await
                 .unwrap();

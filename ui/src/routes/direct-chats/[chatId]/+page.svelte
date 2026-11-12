@@ -2,7 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+		useReactiveValue,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -51,8 +55,10 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
@@ -94,7 +100,10 @@
 	const contactRequest = useReactivePromise(store.contactRequest);
 	// TODO: pre-accept: remove with the AwaitingAcceptanceBar.
 	const pendingOutgoingRequest = useReactiveValue(store.pendingOutgoingRequest);
-	const messageGroups = useReactivePromise(store.groupedEvents);
+	const messageListData = useReactivePromises(() => [
+		store.groupedEvents(),
+		store.messages.readOnly(),
+	]);
 	const readMessageHashes = useReactivePromise(
 		store.messages.readMessageHashes,
 	);
@@ -274,6 +283,12 @@
 	const theme = $derived(useTheme());
 </script>
 
+{#snippet connectionStatus()}
+	<div class="grid size-11 shrink-0 place-items-center">
+		<ConnectionStatusIndicator {chatId} />
+	</div>
+{/snippet}
+
 <div
 	bind:this={parentDivEl}
 	class="absolute inset-0"
@@ -317,8 +332,11 @@
 							<Navbar
 								transparent={true}
 								titleClass="opacity1 min-w-0 flex-1"
-								leftClass="shrink-0"
+								leftClass={theme === 'ios' && !isWideScreen.value
+									? 'shrink-0 me-4'
+									: 'shrink-0'}
 								centerTitle={false}
+								right={theme === 'ios' ? connectionStatus : undefined}
 							>
 								{#snippet left()}
 									{#if !isWideScreen.value}
@@ -330,7 +348,7 @@
 								{/snippet}
 								{#snippet title()}
 									<Link
-										class="flex w-full min-w-0 items-center justify-start"
+										class="flex w-full min-w-0 items-center justify-start ps-0"
 										href={`/direct-chats/${chatId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
@@ -345,10 +363,10 @@
 										{:else}
 											{#await $peerName then peerName}
 												<span
-													class="flex w-full min-w-0 flex-row items-center gap-2"
+													class="flex w-full min-w-0 flex-row items-center gap-4"
 												>
 													<span class="shrink-0">
-														<Avatar waitingForProfile size="2.5rem" />
+														<Avatar waitingForProfile size="2.25rem" />
 													</span>
 													<span
 														class="flex-1 min-w-0 truncate {peerName
@@ -364,21 +382,15 @@
 									</Link>
 								{/snippet}
 
-								<!-- The same 44px cell as the home navbar. -->
-								<div
-									class="grid size-11 shrink-0 place-items-center {theme ===
-									'material'
-										? 'me-2'
-										: ''}"
-								>
-									<ConnectionStatusIndicator {chatId} />
-								</div>
+								{#if theme === 'material'}
+									<div class="me-2">{@render connectionStatus()}</div>
+								{/if}
 							</Navbar>
 						{/if}
 					{/snippet}
 
 					{#await $readMessageHashes then readHashes}
-						{#await $messageGroups then messageGroupsInDays}
+						{#await $messageListData then [messageGroupsInDays, readOnly]}
 							{@const unreadDivider = unreadDividerTracker.compute(
 								messageGroupsInDays,
 								readHashes,
@@ -502,11 +514,11 @@
 								{/if}
 
 								<div
-									class="column m-2 gap-1"
+									class="swipe-clip-boundary column my-2 gap-1 px-4"
 									data-testid="direct-chat-messages"
 								>
 									{#each visibleGroupsInDays as messageGroupsInDay (messageGroupsInDay.day.valueOf())}
-										<div use:navbarSticky class="self-center z-10">
+										<div use:navbarSticky class="self-center z-[15]">
 											<DayTag class="quiet" day={messageGroupsInDay.day} />
 										</div>
 
@@ -514,9 +526,13 @@
 											{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
 												<div
 													class="column"
-													class:pt-px={i > 0}
-													class:pt-1={i === 0 &&
+													class:pt-[1.5px]={i > 0 && isMobile}
+													class:pt-px={i > 0 && !isMobile}
+													class:pt-3={i === 0 &&
 														messageGroup !== messageGroupsInDay.eventsGroups[0]}
+													class:pb-[3px]={i === messageGroup.length - 1 &&
+														item.kind === 'message' &&
+														item.message.author !== myDeviceId}
 													data-message-group={messageGroup[0][0]}
 												>
 													{#if unreadDivider.hash === hash}
@@ -550,6 +566,7 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	{readOnly}
 																	showDeliveryStatus={endsDeliveryStatusRun(
 																		messageGroup,
 																		i,
@@ -582,6 +599,7 @@
 																	{position}
 																	{myDeviceId}
 																	{chatId}
+																	{readOnly}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	sender={profile}
 																	onReply={() =>
@@ -604,7 +622,11 @@
 									{/each}
 								</div>
 							</div>
+						{:catch error}
+							<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 						{/await}
+					{:catch error}
+						<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 					{/await}
 				</ReverseScrollPage>
 

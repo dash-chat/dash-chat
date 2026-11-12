@@ -57,7 +57,13 @@ export class Messages extends TestHelper {
 		this.dividerSelector = tid(unreadDividerTestId);
 		this.root = this.el(this.messagesSelector);
 		this.unreadDivider = this.el(this.dividerSelector);
+		this.photoRetry = this.el(
+			`${this.messagesSelector} ${tid('message-attachment-photos')} ${tid('blob-image-retry')}`,
+		);
 	}
+
+	/** The reload affordance a chat photo shows once its blob failed to load. */
+	readonly photoRetry;
 
 	readonly messagesSelector: string;
 	readonly dividerSelector: string;
@@ -336,31 +342,35 @@ export class Messages extends TestHelper {
 		label: string,
 		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(messagesSel: string, photosSel: string, name: string) => {
-						const imgs =
-							document
-								.querySelector(messagesSel)
-								?.querySelectorAll(`${photosSel} img`) ?? [];
-						const img = Array.from(imgs).find(el =>
-							(el as HTMLImageElement).alt.includes(name),
-						) as HTMLImageElement | undefined;
-						if (img === undefined) return false;
-						if (img.complete && img.naturalWidth > 0) return true;
-						// Attachments render with loading="lazy", so one that is
-						// scrolled out of view never decodes and naturalWidth stays 0.
-						// Only scroll when it still needs decoding — scrolling on
-						// every poll forces a layout over the whole message list.
-						img.scrollIntoView({ block: 'center' });
-						return false;
-					},
-					this.messagesSelector,
-					tid('message-attachment-photos'),
-					label,
-				),
-			{ timeout, timeoutMsg: `Photo message "${label}" not found` },
+		await this.agent.waitUntil(() => this.isPhotoLoaded(label), {
+			timeout,
+			timeoutMsg: `Photo message "${label}" not found`,
+		});
+	}
+
+	/** Whether the photo attachment whose filename contains `label` has loaded. */
+	isPhotoLoaded(label: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				) as HTMLImageElement | undefined;
+				if (img === undefined) return false;
+				if (img.complete && img.naturalWidth > 0) return true;
+				// Attachments render with loading="lazy", so one that is
+				// scrolled out of view never decodes and naturalWidth stays 0.
+				// Only scroll when it still needs decoding — scrolling on
+				// every poll forces a layout over the whole message list.
+				img.scrollIntoView({ block: 'center' });
+				return false;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
 		);
 	}
 
@@ -495,7 +505,9 @@ export class Messages extends TestHelper {
 
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
-		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+		return this.agent.$(
+			`(//*[@data-testid="message-attachment-photos"]//button)[${index + 1}]`,
+		);
 	}
 
 	/** One entry per rendered message. A photo scrolled out of view never
@@ -653,8 +665,8 @@ export class Message extends TestHelper {
 	/** The message's wrapper element in the list. */
 	readonly wrapper;
 
-	/** Every message mounts its own (closed) actions popover, so the menu and
-	 * its actions must be resolved scoped to this message's wrapper. */
+	/** Each message hosts its own actions menu, so the menu and its actions
+	 * must be resolved scoped to this message's wrapper. */
 	get actionsMenu() {
 		return this.wrapper.$(tid('message-actions-menu'));
 	}
@@ -1041,6 +1053,73 @@ export class Message extends TestHelper {
 			this.hash,
 		);
 		await this.composeReply(replyText);
+	}
+
+	/** Tap the bubble's position with a real finger, landing on whatever is on
+	 * top of it. `.click()` refuses an element that something else covers. */
+	async tapByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x, y })
+			.down()
+			.up()
+			.perform();
+	}
+
+	/** Drag a real finger across the bubble's position toward the end edge,
+	 * landing on whatever is on top of it. `replyBySwipe` dispatches straight
+	 * to the row instead. */
+	async swipeByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x: x - 75, y })
+			.down()
+			.move({ x: x + 75, y, duration: 200 })
+			.up()
+			.perform();
+	}
+
+	/** Long-press the bubble and, without lifting the finger, drag it toward the
+	 * end edge, so the whole gesture belongs to the touch that opened the
+	 * spotlight. */
+	async holdThenDragByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x: x - 75, y })
+			.down()
+			// A move in place, not a pause: XCUITest interpolates a move from the
+			// press, so a pause before it turns the hold into one slow drag.
+			.move({ x: x - 75, y, duration: 800 })
+			.move({ x: x + 75, y, duration: 200 })
+			.up()
+			.perform();
+	}
+
+	/** Whether this message's first photo accepts focus, which is what a
+	 * keyboard or a screen reader needs to activate it. */
+	photoTakesFocus(): Promise<boolean> {
+		return this.agent.execute(
+			(cellSel: string) => {
+				const cell = document.querySelector<HTMLElement>(cellSel);
+				if (cell === null) throw new Error('Photo cell not found');
+				cell.focus();
+				return document.activeElement === cell;
+			},
+			`${this.wrapperSelector} ${tid('message-attachment-photos')} button`,
+		);
+	}
+
+	private async bubbleCentre(): Promise<{ x: number; y: number }> {
+		const bubble = this.wrapper.$('.message');
+		const { x, y } = await bubble.getLocation();
+		const { width, height } = await bubble.getSize();
+		return {
+			x: Math.round(x + width / 2),
+			y: Math.round(y + height / 2),
+		};
 	}
 
 	/** Reply via the hover toolbar's Reply shortcut rather than the actions

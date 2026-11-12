@@ -14,7 +14,11 @@
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { MAILBOX_HUNG_MS, UI_TIMEOUT } from '../helpers/timeouts';
-import { isRemoteMailbox, suspendMailbox } from '../setup/mailbox-control';
+import {
+	isRemoteMailbox,
+	resumeMailbox,
+	suspendMailbox,
+} from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Pure p2p sync (no mailbox)', function () {
@@ -86,5 +90,27 @@ describe('Pure p2p sync (no mailbox)', function () {
 			UI_TIMEOUT,
 			'the chip did not read p2p after the peer came back',
 		);
+	});
+
+	it('the home chat row badges the peer only while reachable just over p2p', async () => {
+		const { homePage } = agent1;
+		await agent1.directChatPage.back.click();
+		await homePage.ready();
+		await homePage.p2pBadge.waitForDisplayed({ timeout: UI_TIMEOUT });
+
+		await agent2.stopApp();
+		await homePage.p2pBadge.waitForExist({
+			reverse: true,
+			timeout: UI_TIMEOUT,
+		});
+
+		await agent2.startApp();
+		await homePage.p2pBadge.waitForDisplayed({ timeout: UI_TIMEOUT });
+
+		resumeMailbox();
+		await homePage.p2pBadge.waitForExist({
+			reverse: true,
+			timeout: MAILBOX_HUNG_MS,
+		});
 	});
 });

@@ -200,37 +200,20 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
     server.stop().await;
 }
 
-/// A node recovers a blob the mailbox failed to fetch, after the source node
-/// restarts.
+/// A blob published when the mailbox has no way to fetch it reaches the
+/// mailbox by upload, not by the mailbox pulling: the sender's sync loop
+/// announces it, sees the mailbox lacks it, and streams the bytes. The
+/// mailbox never had to fetch from the source — the promise of proactive
+/// blob delivery this whole feature is for.
 ///
-/// Exercises the full unfetched-blob followup feature end to end:
-/// 1. The sender publishes a media message to the mailbox. `ToyMailboxClient`
-///    announces the blob via `/blobs/store` and (because the mailbox does not
-///    yet have it) records an `unfetched_blob_hashes` row through the node's
-///    real `LocalStoreBlobTracker`.
-/// 2. The mailbox tries and *fails* to fetch the blob: its relay node has mDNS
-///    discovery disabled, so it never learns the sender's dialing address and
-///    cannot pull the blob even though the sender is online. This is the
-///    deterministic "failed fetch" condition — no timing race.
-/// 3. The sender restarts; we assert the persisted `unfetched_blob_hashes` row
-///    survives the restart.
-/// 4. The sender is now reachable: we register its fresh dialing address with
-///    the relay (as `/health` / `/peers/register` would in production) and run
-///    one deterministic `followup_unfetched_blobs_once` pass, which re-announces
-///    the still-unfetched blob to the mailbox and re-enqueues the fetch.
-/// 5. The mailbox now downloads the blob from the online sender.
-/// 6. The sender's iroh-blobs provider-event listener sees that download
-///    complete and clears the `unfetched_blob_hashes` row.
-///
-/// The mailbox rides the relay node's iroh endpoint, so its MailboxId equals the
-/// relay's EndpointId — which is exactly what the provider-event listener
-/// reconstructs from the downloading endpoint, so the cleared row matches the
-/// recorded one. The relay disables mDNS so the *only* way it can reach the
-/// sender's blob is the explicit address registration in step 4, guaranteeing
-/// the fetch cannot succeed before then.
+/// The old name/shape tested fetch-recovery: the blob reached the mailbox
+/// by the mailbox dialing back after reconnect. Proactive upload covers
+/// that outcome, so this test asserts on the outcome — mailbox ends up
+/// holding the blob — from the publish side. The unfetched tracker row
+/// lifecycle (write on announce, clear on confirm) is the side-band
+/// assertion.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "the followup now uploads the blob, so the mailbox never has to fetch it"]
-async fn recovers_unfetched_blob_after_source_restart() {
+async fn mailbox_gains_blob_without_needing_to_fetch_it() {
     dashchat_node::testing::setup_tracing(
         &[
             "dashchat=info",
@@ -261,29 +244,18 @@ async fn recovers_unfetched_blob_after_source_restart() {
         relay.blobs(),
         relay.blob_downloader(),
         relay.iroh_endpoint().await.unwrap(),
-        // Short pass interval + cooldown so the fetch loop burns through its
-        // `MAX_FETCH_FAILURES` (=10) quota quickly while alice is unreachable and
-        // *evicts* the phase-1 fetch entry. That eviction is what makes recovery
-        // genuinely depend on the followup pass re-announcing the blob: once the
-        // entry is evicted, nothing but the followup would re-enqueue it.
-        Some(mailbox_server::FetchConfig {
-            concurrency: 4,
-            attempt_timeout: Duration::from_secs(2),
-            pass_interval: Duration::from_millis(200),
-            retry_cooldown: Duration::from_millis(200),
-        }),
+        None, // default fetch config: the fetch backstop may run but the upload arrives first
         Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
     )
     .await
     .unwrap();
     let url = server.url.clone();
     wait_for_mailbox_health(&url).await;
 
-    // Sender (alice) and a contact (bobbi). Bobbi only exists so alice has a
-    // direct chat to send media into; he stays offline for the whole media
-    // exchange and is never a blob source. Alice uses the REAL unfetched-blob
-    // tracker so the persisted `unfetched_blob_hashes` table is exercised.
+    // Alice starts with the mailbox so the contact handshake can use it;
+    // she's about to lose it.
     let alice = TestNode::new(config.clone(), "alice").await;
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
@@ -305,7 +277,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         ))
         .await;
 
-    // Establish contact while both are online (no media yet), then bobbi leaves.
+    // Establish contact while both are online (no media yet).
     alice
         .behavior()
         .initiate_and_establish_contact(&bobbi)
@@ -313,10 +285,15 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .unwrap();
     let chat = alice.direct_chat_with(&bobbi);
 
+    // Bobbi goes offline before any media exists.
     bobbi.shutdown().await;
 
-    // Alice sends a photo. `publish` announces the blob to the mailbox and,
-    // because the mailbox does not have it yet, records an unfetched-blob row.
+    // Alice loses her mailbox client: the photo she's about to publish has
+    // no mailbox to go to. The publish path's fast-push announces to zero
+    // mailboxes; nothing happens.
+    alice.clear_mailboxes().await;
+
+    // Alice sends a photo; the blob stays local, the mailbox never sees it.
     let photo_bytes: Vec<u8> = (0u8..=255).cycle().take(8192).collect();
     let media = OutgoingMedia::Photos {
         photos: vec![OutgoingPhoto {
@@ -341,57 +318,10 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .expect("alice's message carries media metadata");
     let hash = meta.first().expect("at least one media item").hash();
 
-    // Alice's mailbox sync runs `publish` on a background task; `publish`
-    // announces the blob via `/blobs/store` and, because the mailbox does not
-    // yet have it, records the unfetched-blob row through the real tracker. The
-    // first sync pass depends on the mailbox becoming reachable, which can take
-    // longer than the default 10s window, so widen this specific wait.
-    PollConfig::seconds(30)
-        .wait_for(|| async {
-            let by_mailbox = alice
-                .local_store
-                .unfetched_blobs_by_mailbox()
-                .await
-                .unwrap();
-            by_mailbox
-                .get(&mailbox_id)
-                .is_some_and(|hashes| hashes.contains(&hash))
-                .then_some(())
-                .ok_or("alice has not recorded the unfetched blob row yet")
-        })
-        .await
-        .unwrap();
-
-    // The mailbox cannot fetch the blob: it has no dialing address for alice
-    // (relay mDNS is disabled). Let the fetch loop exhaust its `MAX_FETCH_FAILURES`
-    // (=10) quota so the phase-1 fetch entry is evicted from the pool — after
-    // this, only the followup re-announce can bring the blob back. Each failed
-    // attempt is bounded by the 2s `attempt_timeout`, so 10 failures need well
-    // under 25s; this is a legitimately long wait (it exists to force eviction).
-    tokio::time::sleep(Duration::from_secs(25)).await;
-    assert!(
-        !relay.blobs().has(hash).await.unwrap_or(false),
-        "mailbox should not be able to fetch the blob while it has no address for alice"
-    );
-
-    // Restart alice: her store (and the persisted unfetched-blob row) survives,
-    // but she gets a fresh endpoint address.
-    let alice_dir = alice.shutdown().await;
-
-    // Confirm the row persisted across the restart boundary (the whole point of
-    // the on-disk table): reopen alice's store in place and read it back.
-    let alice = TestNode::new_at_path(config.clone(), "alice", alice_dir).await;
-    let by_mailbox = alice
-        .local_store
-        .unfetched_blobs_by_mailbox()
-        .await
-        .unwrap();
-    assert!(
-        by_mailbox
-            .get(&mailbox_id)
-            .is_some_and(|hashes| hashes.contains(&hash)),
-        "unfetched blob row should persist across a source restart"
-    );
+    // Alice's mailbox comes back: on re-register the blob sync pass walks
+    // the chat log's new window, finds the photo's blob, announces and
+    // uploads it. The mailbox never has to pull anything from alice — the
+    // proactive sync covered it.
     alice
         .add_mailbox_client(ToyMailboxClient::<MailboxOperation>::new(
             mailbox_id.clone(),
@@ -401,21 +331,6 @@ async fn recovers_unfetched_blob_after_source_restart() {
             alice.mailboxes.upload_tracker(),
         ))
         .await;
-
-    // Make alice reachable to the mailbox by registering her fresh dialing
-    // address with the relay's address book — exactly what production does when
-    // a mailbox learns a peer's `EndpointAddr` (via `/health` / `/peers/register`).
-    // Without this the relay (mDNS disabled) still cannot dial alice.
-    let alice_addr = alice.iroh_endpoint().await.unwrap().addr();
-    relay.insert_peer_addr(alice_addr).await.unwrap();
-
-    // Alice's node will run `followup_unfetched_blobs_once` during startup
-    // which will re-announce the still-unfetched blob to the mailbox, which
-    // re-enqueues the fetch now that alice is back online.
-
-    // The mailbox downloads the blob from the now-reachable alice (bobbi, the
-    // only other possible source, is offline). Allow a couple of 2s fetch passes
-    // plus connection setup to land.
     poll.wait_for(|| async {
         relay
             .blobs()
@@ -423,23 +338,22 @@ async fn recovers_unfetched_blob_after_source_restart() {
             .await
             .unwrap_or(false)
             .then_some(())
-            .ok_or("mailbox has not fetched the blob from the restarted alice yet")
+            .ok_or("mailbox did not receive the blob from alice's proactive sync")
     })
     .await
     .unwrap();
 
-    // The provider-download event on alice's blob endpoint clears the row.
+    // The unfetched tracker row for the hash was recorded when the announce
+    // said the mailbox lacked it, and is cleared when the upload confirms.
     poll.wait_for(|| async {
-        let by_mailbox = alice
-            .local_store
-            .unfetched_blobs_by_mailbox()
+        (!alice
+            .unfetched_blob_tracker()
+            .unfetched(&mailbox_id)
             .await
-            .unwrap();
-        (!by_mailbox
-            .get(&mailbox_id)
-            .is_some_and(|hashes| hashes.contains(&hash)))
+            .unwrap()
+            .contains(&hash))
         .then_some(())
-        .ok_or("alice has not cleared the unfetched blob row after the download completed")
+        .ok_or("alice has not cleared the unfetched blob after the upload completed")
     })
     .await
     .unwrap();
@@ -536,4 +450,285 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
 
     let fetched = mailbox.blobs.get_bytes(hash).await.unwrap();
     assert_eq!(fetched.as_ref(), blob_data.as_slice());
+}
+
+/// The iroh blob push transport carries a blob to the mailbox: a client with
+/// a pusher wired pushes a blob directly (no publish, so the HTTP upload path
+/// never runs) and it lands in the mailbox's store.
+#[tokio::test(flavor = "multi_thread")]
+async fn push_blob_delivers_to_mailbox_over_iroh() {
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+
+    // Relay node hosting the in-process mailbox (shares its iroh endpoint +
+    // blob store). The mailbox's MailboxId is the relay's EndpointId.
+    let relay = TestNode::new(config.clone(), "relay").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let db_path = mailbox_dir.path().join("mailbox.redb");
+
+    let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
+    let server = mailbox_local_server::spawn_local_mailbox_server(
+        db_path,
+        relay.blobs(),
+        relay.blob_downloader(),
+        relay.iroh_endpoint().await.unwrap(),
+        None,
+        Some(common::TEST_UPLOAD_GRACE),
+        peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
+    )
+    .await
+    .unwrap();
+    let url = server.url.clone();
+    wait_for_mailbox_health(&url).await;
+
+    let alice = TestNode::new(config.clone(), "alice").await;
+    // The push dials the mailbox by EndpointId; with mDNS off in tests, teach
+    // Alice the relay's address directly.
+    teach_peers(&alice, [&relay]).await.unwrap();
+
+    // Alice holds a blob the mailbox does not.
+    let blob_data = rand::random::<[u8; 8192]>().to_vec();
+    let hash = alice
+        .blobs()
+        .add_bytes(blob_data.clone())
+        .await
+        .unwrap()
+        .hash;
+
+    let client = ToyMailboxClient::<MailboxOperation>::new(
+        mailbox_id,
+        &url,
+        alice.endpoint_id(),
+        std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        alice.mailboxes.upload_tracker(),
+    )
+    .with_blob_pusher(alice.blob_pusher().await);
+
+    use mailbox_client::MailboxClient as _;
+    client.push_blob(hash).await.unwrap();
+
+    // The pusher's send side finishes before the mailbox's import necessarily
+    // completes, so poll rather than assert immediately.
+    poll.wait_for(|| async {
+        relay
+            .blobs()
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not imported the pushed blob")
+    })
+    .await
+    .unwrap();
+
+    let pushed = relay.blobs().get_bytes(hash).await.unwrap();
+    assert_eq!(pushed.as_ref(), blob_data.as_slice());
+}
+
+/// A blob that arrives at a standalone mailbox by iroh push gets the same
+/// retention tag as an uploaded or fetched one. Without it the mailbox's GC
+/// would reclaim the pushed bytes on its next sweep while still reporting the
+/// blob as held. Uses `BlobSync::new` (owns its store, GC on) — the
+/// in-process mailbox shares the node's store, where tagging is a no-op.
+#[tokio::test(flavor = "multi_thread")]
+async fn pushed_blob_is_retention_tagged() {
+    use mailbox_server::BlobSync;
+
+    let poll = PollConfig::default();
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+
+    // Sender holding a blob the mailbox does not.
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+    let blob_data = unique_blob_bytes(b"pushed-blob-tagging-test".to_vec());
+    let hash = sender
+        .blobs
+        .add_bytes(blob_data.clone())
+        .await
+        .unwrap()
+        .hash;
+
+    // The push dials the mailbox by EndpointId; teach the sender its address.
+    sender.add_peer_addr(mailbox.endpoint_addr());
+
+    let mailbox_id = mailbox_server::encode_mailbox_id(mailbox.endpoint_id());
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let pusher = mailbox_client::IrohPusher::new(
+        sender.endpoint().clone(),
+        sender.blobs.store().clone(),
+        alpn,
+    );
+    pusher.push_blob(&mailbox_id, hash).await.unwrap();
+
+    // push_blob resolves once the mailbox reports the blob complete; the tag
+    // is set by the push-event handler on the same signal, so poll for it.
+    poll.wait_for(|| async {
+        mailbox
+            .has_retention_tag_for_test(hash)
+            .await
+            .then_some(())
+            .ok_or("mailbox has not retention-tagged the pushed blob")
+    })
+    .await
+    .unwrap();
+
+    let pushed = mailbox.blobs.get_bytes(hash).await.unwrap();
+    assert_eq!(pushed.as_ref(), blob_data.as_slice());
+}
+
+/// A pushed blob over [`MAX_BLOB_BYTES`] is imported but never retention-
+/// tagged, so the hourly GC reclaims it — the same cap the mailbox's fetch
+/// path enforces on downloads.
+#[tokio::test(flavor = "multi_thread")]
+async fn oversized_pushed_blob_is_not_retention_tagged() {
+    use mailbox_server::BlobSync;
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+    let blob_data = vec![7u8; (dashchat_utils::blob_sync::MAX_BLOB_BYTES + 1) as usize];
+    let hash = sender.blobs.add_bytes(blob_data).await.unwrap().hash;
+
+    // The push dials the mailbox by EndpointId; teach the sender its address.
+    sender.add_peer_addr(mailbox.endpoint_addr());
+
+    let mailbox_id = mailbox_server::encode_mailbox_id(mailbox.endpoint_id());
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let pusher = mailbox_client::IrohPusher::new(
+        sender.endpoint().clone(),
+        sender.blobs.store().clone(),
+        alpn,
+    );
+    pusher.push_blob(&mailbox_id, hash).await.unwrap();
+
+    // The bytes landed; the cap only withholds the retention tag.
+    assert!(mailbox.blobs.has(hash).await.unwrap());
+
+    // The tag must never appear. Two seconds is generous: the legit tagging
+    // path above completes in tens of milliseconds.
+    let tag_poll = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(2),
+    };
+    let tagged = tag_poll
+        .wait_for(|| async {
+            mailbox
+                .has_retention_tag_for_test(hash)
+                .await
+                .then_some(())
+                .ok_or("not tagged")
+        })
+        .await;
+    assert!(
+        tagged.is_err(),
+        "oversized blob must not be retention-tagged"
+    );
+}
+
+/// A node not hosting a local hub refuses blob pushes: an always-open push
+/// port would let any peer that learns its EndpointId write never-collected
+/// bytes into its store.
+///
+/// Driven below `IrohPusher` on purpose: iroh-blobs' push client stops its
+/// recv stream after sending, so a refusal is invisible to it — `push_blob`
+/// would only error when its 30s transfer-timeout floor lapses. The property
+/// under test is that the bytes never land.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_without_hub_refuses_blob_pushes() {
+    let config = NodeConfig::testing();
+    let host = TestNode::new(config.clone(), "host").await;
+    let alice = TestNode::new(config.clone(), "alice").await;
+    teach_peers(&alice, [&host]).await.unwrap();
+
+    // Kept tiny: the write side must fit the stream buffers, since the host
+    // stops reading the moment it refuses.
+    let hash = alice
+        .blobs()
+        .add_bytes(unique_blob_bytes(b"push-refusal-test".to_vec()))
+        .await
+        .unwrap()
+        .hash;
+
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let conn = alice
+        .iroh_endpoint()
+        .await
+        .unwrap()
+        .connect(host.endpoint_id(), &alpn)
+        .await
+        .unwrap();
+    let request = iroh_blobs::protocol::PushRequest::new(
+        hash,
+        iroh_blobs::protocol::ChunkRangesSeq::from_ranges([
+            iroh_blobs::protocol::ChunkRanges::all(),
+        ]),
+    );
+    // The write itself completes; the refusal shows up nowhere on the client.
+    alice
+        .blobs()
+        .remote()
+        .execute_push(conn, request)
+        .complete()
+        .await
+        .unwrap();
+
+    let tag_poll = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(2),
+    };
+    let landed = tag_poll
+        .wait_for(|| async {
+            host.blobs()
+                .has(hash)
+                .await
+                .unwrap_or(false)
+                .then_some(())
+                .ok_or("not stored")
+        })
+        .await;
+    assert!(landed.is_err(), "a refused push must never land");
 }

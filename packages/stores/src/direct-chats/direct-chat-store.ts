@@ -132,6 +132,7 @@ export class DirectChatStore {
 				event: { kind: 'message', message },
 				author: message.author,
 				timestamp: message.timestamp,
+				lamport: message.lamport,
 				type: 'Message',
 			};
 		}
@@ -142,6 +143,7 @@ export class DirectChatStore {
 				event: { kind: 'report', report },
 				author: report.author,
 				timestamp: report.timestamp,
+				lamport: 0,
 				type: 'ReportContact',
 			};
 		}
@@ -159,6 +161,7 @@ export class DirectChatStore {
 				},
 				author: block.author,
 				timestamp: block.timestamp,
+				lamport: 0,
 				type: 'Block',
 			};
 		}

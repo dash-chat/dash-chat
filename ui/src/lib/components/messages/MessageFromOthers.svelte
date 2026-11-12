@@ -24,6 +24,7 @@
 	import SwipeToReply from './SwipeToReply.svelte';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { connectedToCloudMailboxServer } from '$lib/components/connection/connection-status';
 	import { getContext } from 'svelte';
@@ -40,6 +41,7 @@
 		sender,
 		showSenderName = false,
 		showAvatar = false,
+		readOnly,
 		onReply,
 		onNavigateToMessage,
 	}: {
@@ -51,6 +53,7 @@
 		sender: Profile | undefined;
 		showSenderName?: boolean;
 		showAvatar?: boolean;
+		readOnly: boolean;
 		onReply?: () => void;
 		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
@@ -71,24 +74,22 @@
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
+	// Most of each row's DOM, so only mounted once the bubble is pressed; a
+	// finger resting on it mounts it early, so the long-press opens it animated.
+	let actionsMounted = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let slideEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
-	const readOnly = useReactiveValue(store.readOnly);
 	const hasActions = $derived(
-		hasMessageActions(
-			message,
-			myDeviceId,
-			$readOnly ?? true,
-			onReply !== undefined,
-		),
+		hasMessageActions(message, myDeviceId, readOnly, onReply !== undefined),
 	);
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
+		actionsMounted = true;
 		if (isMobile) {
 			// A writable chat's overlay always has the reaction bar to show.
-			reactionsOpened = hasActions || $readOnly === false;
+			reactionsOpened = hasActions || !readOnly;
 		} else if (hasActions && e instanceof MouseEvent) {
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
@@ -129,7 +130,15 @@
 {/snippet}
 
 {#snippet bubble()}
-	<div bind:this={messageEl} class="relative max-w-[85%]">
+	<div
+		bind:this={messageEl}
+		class={[
+			'relative',
+			isMobile && !isWideScreen.value
+				? 'max-w-[calc(100%-2rem)]'
+				: 'max-w-[85%]',
+		]}
+	>
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onReply} />
 		{/if}
@@ -139,10 +148,10 @@
 					<Avatar
 						image={sender?.avatar}
 						initials={sender?.name.slice(0, 2)}
-						size="2rem"
+						size="1.75rem"
 					/>
 				{:else}
-					<div class="shrink-0" style="width: 2rem"></div>
+					<div class="shrink-0" style="width: 1.75rem"></div>
 				{/if}
 			{/if}
 			<div bind:this={slideEl} class="column min-w-0">
@@ -155,22 +164,17 @@
 					/>
 				{:else}
 					<Card
-						raised
-						contentWrapPadding="p-2"
+						contentWrapPadding="px-2 py-(--message-padding-y)"
 						class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
 					>
-						<div class="flex flex-col gap-1">
-							<MessageContent
-								{message}
-								{searchQuery}
-								senderName={senderDisplayName}
-								{showSenderName}
-								{onNavigateToMessage}
-								metadata={isLast || editHistory.length > 0
-									? metadata
-									: undefined}
-							/>
-						</div>
+						<MessageContent
+							{message}
+							{searchQuery}
+							senderName={senderDisplayName}
+							{showSenderName}
+							{onNavigateToMessage}
+							metadata={isLast || editHistory.length > 0 ? metadata : undefined}
+						/>
 					</Card>
 				{/if}
 				{#if Object.keys(reactions).length > 0}
@@ -188,7 +192,13 @@
 {/snippet}
 
 {#snippet row()}
-	<div class="group flex justify-start" use:longpress={{ onLongPress }}>
+	<div
+		class="group flex justify-start"
+		use:longpress={{
+			onLongPress,
+			onPressStart: () => (actionsMounted = true),
+		}}
+	>
 		{@render bubble()}
 	</div>
 {/snippet}
@@ -196,23 +206,27 @@
 {#if deleted}
 	<div class="group flex justify-start">{@render bubble()}</div>
 {:else if isMobile}
-	<SwipeToReply {onReply} target={slideEl}>{@render row()}</SwipeToReply>
+	<SwipeToReply {readOnly} {onReply} target={slideEl}
+		>{@render row()}</SwipeToReply
+	>
 {:else}
 	{@render row()}
 {/if}
-{#if isMobile}
-	<MessageActionsOverlay
-		{message}
-		{myDeviceId}
-		{onReply}
-		bind:opened={reactionsOpened}
-		target={messageEl}
-	/>
-{:else}
-	<MessageContextMenu
-		{message}
-		{myDeviceId}
-		{onReply}
-		bind:point={contextMenuPoint}
-	/>
+{#if actionsMounted}
+	{#if isMobile}
+		<MessageActionsOverlay
+			{message}
+			{myDeviceId}
+			{onReply}
+			bind:opened={reactionsOpened}
+			target={messageEl}
+		/>
+	{:else}
+		<MessageContextMenu
+			{message}
+			{myDeviceId}
+			{onReply}
+			bind:point={contextMenuPoint}
+		/>
+	{/if}
 {/if}

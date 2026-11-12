@@ -1,6 +1,6 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.21.2",
+	"version": "0.22.0",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
@@ -68,6 +68,10 @@
 					"host": "dashchat.org",
 					"pathPrefix": ["/add-contact"],
 					"appLink": true
+				},
+				{
+					"scheme": ["dash-chat"],
+					"appLink": false
 				}
 			],
 			"desktop": {

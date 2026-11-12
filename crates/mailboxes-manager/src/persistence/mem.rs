@@ -50,6 +50,7 @@ where
 {
     status: RwLock<HashMap<MailboxId, SyncStatus>>,
     sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, SeqNum>>>>,
+    blob_sync_state: RwLock<HashMap<MailboxId, HashMap<T, HashMap<A, SeqNum>>>>,
 }
 
 impl<T, A> MemSyncStore<T, A>
@@ -61,6 +62,7 @@ where
         Self {
             status: RwLock::new(HashMap::new()),
             sync_state: RwLock::new(HashMap::new()),
+            blob_sync_state: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -88,6 +90,7 @@ where
     async fn drop_mailbox(&self, id: &MailboxId) -> anyhow::Result<()> {
         self.status.write().unwrap().remove(id);
         self.sync_state.write().unwrap().remove(id);
+        self.blob_sync_state.write().unwrap().remove(id);
         Ok(())
     }
 
@@ -151,6 +154,29 @@ where
         let state = self.sync_state.read().unwrap();
         Ok(state.keys().cloned().collect())
     }
+
+    async fn record_blob_synced(
+        &self,
+        id: &MailboxId,
+        heights: &[(T, A, SeqNum)],
+    ) -> anyhow::Result<()> {
+        let mut state = self.blob_sync_state.write().unwrap();
+        let mailbox_state = state.entry(id.clone()).or_default();
+        for (topic, author, seq) in heights {
+            let author_state = mailbox_state.entry(*topic).or_default();
+            let current = author_state.entry(*author).or_insert(0);
+            *current = (*current).max(*seq);
+        }
+        Ok(())
+    }
+
+    async fn get_blob_sync_state(
+        &self,
+        id: &MailboxId,
+    ) -> anyhow::Result<HashMap<T, HashMap<A, SeqNum>>> {
+        let state = self.blob_sync_state.read().unwrap();
+        Ok(state.get(id).cloned().unwrap_or_default())
+    }
 }
 
 /// In-memory persistence implementation.
@@ -161,6 +187,7 @@ where
 {
     mailbox_store: Arc<MemMailboxUrlStore>,
     sync_store: Arc<MemSyncStore<T, A>>,
+    blob_store: Arc<MemBlobStore>,
 }
 
 impl<T, A> MemPersistence<T, A>
@@ -172,6 +199,7 @@ where
         Self {
             mailbox_store: Arc::new(MemMailboxUrlStore::new()),
             sync_store: Arc::new(MemSyncStore::new()),
+            blob_store: Arc::new(MemBlobStore::default()),
         }
     }
 }
@@ -190,5 +218,60 @@ where
         self.sync_store.clone()
     }
 
+    fn blob_store(&self) -> Arc<dyn BlobStore> {
+        self.blob_store.clone()
+    }
+
     async fn close(&self) {}
+}
+
+/// In-memory blob store for tests.
+#[derive(Default)]
+pub struct MemBlobStore {
+    data: RwLock<BTreeMap<MailboxId, BTreeSet<iroh_blobs::Hash>>>,
+}
+
+#[async_trait::async_trait]
+impl BlobStore for MemBlobStore {
+    async fn record(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        let mut data = self.data.write().unwrap();
+        data.entry(id.clone())
+            .or_default()
+            .extend(hashes.iter().copied());
+        Ok(())
+    }
+
+    async fn remove(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        let mut data = self.data.write().unwrap();
+        if let Some(set) = data.get_mut(id) {
+            for hash in hashes {
+                set.remove(hash);
+            }
+            if set.is_empty() {
+                data.remove(id);
+            }
+        }
+        Ok(())
+    }
+
+    async fn unfetched(&self, id: &MailboxId) -> anyhow::Result<Vec<iroh_blobs::Hash>> {
+        Ok(self
+            .data
+            .read()
+            .unwrap()
+            .get(id)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default())
+    }
+
+    async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()> {
+        let mut data = self.data.write().unwrap();
+        for set in data.values_mut() {
+            for hash in hashes {
+                set.remove(hash);
+            }
+        }
+        data.retain(|_, set| !set.is_empty());
+        Ok(())
+    }
 }

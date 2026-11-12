@@ -142,6 +142,7 @@ mod tests {
                 nonce: [9; 24],
             }]),
             None,
+            0,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
         let body = payload.try_into_body().unwrap();
@@ -281,13 +282,13 @@ mod tests {
         // The mailbox should have recorded alice's message from both sides.
         let alice_sync = alice
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("alice sync state missing");
         let bobbi_sync = bobbi
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("bobbi sync state missing");

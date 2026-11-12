@@ -54,6 +54,10 @@ pub fn run() {
             .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_network_interfaces::init());
     }
+    #[cfg(all(mobile, feature = "e2e-tests"))]
+    {
+        builder = builder.plugin(tauri_plugin_wifi::init());
+    }
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
@@ -116,6 +120,16 @@ pub fn run() {
                         } else if let Err(err) = tray::show_or_create_main_window(app) {
                             log::error!("Failed to show/create main window: {err:?}");
                         }
+                    },
+                ))
+                // After single-instance, so launching a second copy from the
+                // disk image focuses the running app instead of replacing it.
+                .plugin(tauri_plugin_move_to_applications::init(
+                    tauri_plugin_move_to_applications::Prompt {
+                        title: sonix_i18n::t!("moveToApplicationsTitle"),
+                        message: sonix_i18n::t!("moveToApplicationsMessage"),
+                        move_button: sonix_i18n::t!("moveToApplicationsMove"),
+                        cancel_button: sonix_i18n::t!("moveToApplicationsNotNow"),
                     },
                 ))
                 .plugin(tauri_plugin_autostart::init(

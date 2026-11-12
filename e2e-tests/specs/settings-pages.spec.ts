@@ -127,6 +127,13 @@ describe('Settings pages', () => {
 		await agent.settingsPage.ready();
 	});
 
+	it('returns to the originating page from the banner feedback button', async () => {
+		await agent.testBanner.feedbackButton.click();
+		await agent.contactUsPage.ready();
+		await agent.contactUsPage.back.click();
+		await agent.settingsPage.ready();
+	});
+
 	it('attaches up to five screenshots to a contact-us message', async function () {
 		// iOS opens the native photo picker, which no driver can answer.
 		if (agent.platform === 'ios') this.skip();

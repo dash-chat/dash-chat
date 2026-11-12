@@ -5,12 +5,7 @@
  * over plain HTTP the connection is open the moment the proxy accepts it.
  * E2E builds trust the committed test CA the mailbox client compiles in.
  */
-import {
-	type ChildProcess,
-	execFileSync,
-	execSync,
-	spawn,
-} from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import {
 	closeSync,
@@ -28,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort } from './allocate-port';
+import { STUNNEL_BINARY, WINDOWS, isOnPath } from './host-process';
 import { waitForPortListening } from './wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,9 +38,7 @@ const CA_KEY = path.join(CA_DIR, 'ca-key.pem');
 const RUN_DIR = path.join(ROOT, '.dbs', 'e2e', 'mailbox-tls');
 
 function assertStunnelAvailable(): void {
-	try {
-		execSync('command -v stunnel', { stdio: 'ignore' });
-	} catch {
+	if (!isOnPath(STUNNEL_BINARY)) {
 		throw new Error(
 			'stunnel not found — every e2e run serves the local mailbox over TLS ' +
 				'through it. Run inside the nix dev shell, or install stunnel onto ' +
@@ -135,8 +129,8 @@ export async function startMailboxTls(upstreamPort: number): Promise<{
 	writeFileSync(
 		config,
 		[
-			'foreground = yes',
-			'pid =',
+			// Unix-only options: Windows' stunnel rejects the config over them.
+			...(WINDOWS ? [] : ['foreground = yes', 'pid =']),
 			'debug = warning',
 			'[mailbox]',
 			`accept = 127.0.0.1:${port}`,
@@ -148,7 +142,7 @@ export async function startMailboxTls(upstreamPort: number): Promise<{
 	const logFile = path.join(RUN_DIR, 'stunnel.log');
 	const logger = startAgentLogger('mailbox-tls', logFile);
 	const logFd = openSync(logFile, 'a');
-	const proc = spawn('stunnel', [config], {
+	const proc = spawn(STUNNEL_BINARY, [config], {
 		stdio: ['ignore', logFd, logFd],
 		detached: true,
 		// The checkout-scoped cleanup tells this run's stunnel from another

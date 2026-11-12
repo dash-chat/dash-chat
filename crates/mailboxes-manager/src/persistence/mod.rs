@@ -7,6 +7,17 @@ use std::sync::Arc;
 pub mod mem;
 pub mod sqlite;
 
+/// Repository for per-mailbox outstanding blob hashes.
+#[async_trait]
+pub trait BlobStore: Send + Sync {
+    async fn record(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
+    async fn remove(&self, id: &MailboxId, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
+    async fn unfetched(&self, id: &MailboxId) -> anyhow::Result<Vec<iroh_blobs::Hash>>;
+    /// Drop every row for these hashes across all mailboxes — the node
+    /// deleted the blob locally and can no longer serve it.
+    async fn remove_all_mailboxes(&self, hashes: &[iroh_blobs::Hash]) -> anyhow::Result<()>;
+}
+
 /// Repository for mailbox identity and location.
 #[async_trait]
 pub trait MailboxUrlStore: Send + Sync {
@@ -47,6 +58,21 @@ where
         author: &A,
     ) -> anyhow::Result<std::collections::BTreeMap<MailboxId, SeqNum>>;
     async fn load_all_ids(&self) -> anyhow::Result<BTreeSet<MailboxId>>;
+    /// Record the highest op seq in each log whose referenced blobs this
+    /// mailbox is confirmed to hold. Same `max()` upsert semantics as
+    /// `record_synced` — the height only moves forward.
+    async fn record_blob_synced(
+        &self,
+        id: &MailboxId,
+        heights: &[(T, A, SeqNum)],
+    ) -> anyhow::Result<()>;
+    /// Every `(topic, author)`'s blob-confirmed height for one mailbox;
+    /// absent entries mean no blob has ever been confirmed for that log on
+    /// this mailbox (equivalent to height 0).
+    async fn get_blob_sync_state(
+        &self,
+        id: &MailboxId,
+    ) -> anyhow::Result<std::collections::HashMap<T, std::collections::HashMap<A, SeqNum>>>;
 }
 
 /// Unified persistence manager that provides access to the underlying stores.
@@ -58,6 +84,7 @@ where
 {
     fn mailbox_store(&self) -> Arc<dyn MailboxUrlStore>;
     fn sync_store(&self) -> Arc<dyn SyncStore<T, A>>;
+    fn blob_store(&self) -> Arc<dyn BlobStore>;
 
     /// Release the underlying storage (e.g. the SQLite pool and its file
     /// lock). No-op for in-memory persistence.

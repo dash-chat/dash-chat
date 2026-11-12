@@ -39,12 +39,14 @@ export class HomePage extends TestHelper {
 		`${tid('home-settings-link')} ${tid('warning-badge')}`,
 	);
 	newMessageButton = this.el(tid('home-new-message-btn'));
+	addContactButton = this.el(tid('home-add-contact-btn'));
 	firstChatTooltip = this.el(tid('first-chat-tooltip'));
 	chatList = this.el(tid(CHAT_LIST_ID));
 	chatRow = this.el(tid('all-chats-row'));
 	emptyState = this.el(tid('all-chats-empty'));
 	blockedRowIcon = this.el(tid('blocked-row-icon'));
 	unreadBadge = this.el(tid('chat-row-unread-badge'));
+	p2pBadge = this.el(tid('chat-row-p2p-badge'));
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {
@@ -67,6 +69,10 @@ export class HomePage extends TestHelper {
 		return this.agent.$(
 			`//*[@data-testid="${CHAT_LIST_ID}"]//a[contains(., ${xpathLiteral(contactName)})]`,
 		);
+	}
+
+	chatRowP2pBadge(contactName: string) {
+		return this.chatListItem(contactName).$(tid('chat-row-p2p-badge'));
 	}
 
 	hasChatListItem(contactName: string) {

@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort } from './allocate-port';
+import { WINDOWS, exe, signalGroup } from './host-process';
 import { waitForMailboxReady } from './mailbox-server';
 import { E2E_NETWORK_ID } from './network-id';
 
@@ -45,7 +46,7 @@ export async function spawnLocalHub(
 	name: string,
 	port?: number,
 ): Promise<LocalHub> {
-	const bin = path.join(ROOT, 'target', 'debug', LOCAL_HUB_PACKAGE);
+	const bin = path.join(ROOT, 'target', 'debug', exe(LOCAL_HUB_PACKAGE));
 	if (!existsSync(bin)) {
 		throw new Error(
 			`${bin} not found — the suite builds it against a local mailbox; ` +
@@ -57,25 +58,17 @@ export async function spawnLocalHub(
 	mkdirSync(dir, { recursive: true });
 	const logFile = path.join(dir, 'hub.log');
 	const logger = startAgentLogger(`hub-${name}`, logFile);
-	// The log goes to a file rather than a pipe for the same reason the cloud
-	// mailbox's does: nothing must block the hub's writes if the spec worker
-	// that spawned it is gone.
-	const logFd = openSync(logFile, 'a');
-	// `detached: true` puts it in its own process group so stopLocalHub can
-	// signal -pid without touching the test runner.
-	const proc = spawn(
-		bin,
-		[
-			'--db-path',
-			path.join(dir, 'mailbox.redb'),
-			'--port',
-			String(port),
-			'--network-id',
-			E2E_NETWORK_ID,
-		],
-		{ cwd: ROOT, stdio: ['ignore', logFd, logFd], detached: true },
-	);
-	closeSync(logFd);
+	const args = [
+		'--db-path',
+		path.join(dir, 'mailbox.redb'),
+		'--port',
+		String(port),
+		'--network-id',
+		E2E_NETWORK_ID,
+	];
+	const proc = WINDOWS
+		? spawnOnOwnConsole(bin, args, logFile)
+		: spawnInOwnGroup(bin, args, logFile);
 	const url = `http://127.0.0.1:${port}`;
 	try {
 		await waitForMailboxReady(url);
@@ -93,6 +86,46 @@ export async function spawnLocalHub(
 	return { name, id: health.endpoint_id, url, port, proc, logger };
 }
 
+/** The log goes to a file rather than a pipe for the same reason the cloud
+ *  mailbox's does: nothing must block the hub's writes if the spec worker that
+ *  spawned it is gone. `detached: true` puts it in its own process group so
+ *  stopLocalHub can signal -pid without touching the test runner. */
+function spawnInOwnGroup(
+	bin: string,
+	args: string[],
+	logFile: string,
+): ChildProcess {
+	const logFd = openSync(logFile, 'a');
+	const proc = spawn(bin, args, {
+		cwd: ROOT,
+		stdio: ['ignore', logFd, logFd],
+		detached: true,
+	});
+	closeSync(logFd);
+	return proc;
+}
+
+/** stopLocalHub's Ctrl-C goes to everything on a console, so the hub needs one
+ *  away from the test runner. Node only gives a child its own hidden console
+ *  when it inherits no handles, which leaves the log redirect to cmd.exe. */
+function spawnOnOwnConsole(
+	bin: string,
+	args: string[],
+	logFile: string,
+): ChildProcess {
+	const command = [bin, ...args].map(arg => `"${arg}"`).join(' ');
+	return spawn(
+		'cmd.exe',
+		['/d', '/s', '/c', `"${command} >> "${logFile}" 2>&1"`],
+		{
+			cwd: ROOT,
+			stdio: 'ignore',
+			windowsHide: true,
+			windowsVerbatimArguments: true,
+		},
+	);
+}
+
 /** Bring a stopped hub back as the same hub: same db, so same key, MailboxId
  *  and port. */
 export function restartLocalHub(hub: LocalHub): Promise<LocalHub> {
@@ -101,9 +134,11 @@ export function restartLocalHub(hub: LocalHub): Promise<LocalHub> {
 
 function signalHub(hub: LocalHub, signal: NodeJS.Signals): void {
 	try {
-		process.kill(-hub.proc.pid!, signal);
-	} catch {
-		/* already gone */
+		signalGroup(hub.proc.pid!, signal);
+	} catch (err) {
+		if (hub.proc.exitCode === null) {
+			console.warn(`[hub-${hub.name}] ${signal} failed: ${String(err)}`);
+		}
 	}
 }
 
@@ -126,6 +161,12 @@ export function stopLocalHub(
 			return;
 		}
 		const timer = setTimeout(() => {
+			if (WINDOWS && signal === 'SIGINT') {
+				console.warn(
+					`[hub-${hub.name}] ignored Ctrl-C for ${timeoutMs / 1_000}s, so it left without its goodbye. ` +
+						`A process started through sh has Ctrl-C disabled: run the suite from PowerShell or cmd.`,
+				);
+			}
 			signalHub(hub, 'SIGKILL');
 			resolve();
 		}, timeoutMs);

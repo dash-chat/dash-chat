@@ -28,6 +28,9 @@ pub struct AppNodeManager {
     /// extension via the app-group container.
     notified_operations_store: NotifiedOperationsStore,
     sqlite_gate: SqliteGate,
+    /// Shared with every node build and with the local mailbox server: a hub
+    /// outlives node rebuilds, so the registry must too.
+    local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     /// Held only so that it runs for as long as the app does.
     #[cfg(mobile)]
     _push_notifications_token_registration:
@@ -60,6 +63,7 @@ impl AppNodeManager {
             notification_tx,
             notified_operations_store,
             sqlite_gate,
+            local_hub_registry: Default::default(),
             #[cfg(mobile)]
             _push_notifications_token_registration: Arc::new(
                 crate::notifications::push_notifications::RegisterPushNotificationsTokenTask::spawn(
@@ -78,7 +82,17 @@ impl AppNodeManager {
     /// Build the [`NodeContext`](crate::node::node_context::NodeContext) for the
     /// running app: full networking and notification channels enabled.
     fn app_context(&self, app: &AppHandle) -> NodeContext {
-        NodeContext::for_app(app, self.notification_tx.clone(), self.sqlite_gate.clone())
+        NodeContext::for_app(
+            app,
+            self.notification_tx.clone(),
+            self.sqlite_gate.clone(),
+            self.local_hub_registry.clone(),
+        )
+    }
+
+    /// The app-lifetime hub registry, for spawning the local mailbox server.
+    pub(crate) fn local_hub_registry(&self) -> dashchat_utils::local_hub::LocalHubRegistry {
+        self.local_hub_registry.clone()
     }
 
     /// Persist the peer-to-peer switch and rebuild the node in that mode; off,

@@ -6,6 +6,7 @@
 		"core:default",
 		"process:default",
 		"updater:default",
+		"move-to-applications:default",
 		"mcp-bridge:default",
 		"dialog:allow-save",
 		"fs:allow-write-file"

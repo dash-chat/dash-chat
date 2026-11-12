@@ -3,16 +3,16 @@ import { subscribe } from 'tauri-plugin-subscriptions';
 
 import type { DeviceId, LogId, TopicId } from '../p2panda/types';
 import {
-	type MailboxConnectionState,
+	type MailboxConnectionHealth,
 	type MailboxId,
-	type MailboxSyncState,
+	type OperationSyncState,
 	mailboxLogKey,
 } from './types';
 
 export interface AllMailboxesConnectionState {
 	/** Null while the cloud mailbox is not registered. */
-	cloudMailbox: MailboxConnectionState | null;
-	localMailboxes: MailboxConnectionState[];
+	cloudMailbox: MailboxConnectionHealth | null;
+	localMailboxes: MailboxConnectionHealth[];
 }
 
 export interface IMailboxTrackerStore {
@@ -20,9 +20,9 @@ export interface IMailboxTrackerStore {
 	allMailboxIds(): ReactivePromise<MailboxId[]>;
 	connectionState(
 		mailboxId: MailboxId,
-	): ReactivePromise<MailboxConnectionState>;
+	): ReactivePromise<MailboxConnectionHealth>;
 	connectionStatusForAllMailboxes(): ReactivePromise<AllMailboxesConnectionState>;
-	syncState(mailboxId: MailboxId): ReactivePromise<MailboxSyncState>;
+	syncState(mailboxId: MailboxId): ReactivePromise<OperationSyncState>;
 	syncStateForLog(
 		topicId: TopicId,
 		author: DeviceId,
@@ -55,7 +55,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	connectionState = reactive((mailboxId: MailboxId) =>
-		subscribe<MailboxConnectionState>('mailbox_subscribe_connection_state', {
+		subscribe<MailboxConnectionHealth>('mailbox_subscribe_connection_state', {
 			mailboxId,
 		}),
 	);
@@ -86,7 +86,7 @@ export class MailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	syncState = reactive((mailboxId: MailboxId) =>
-		subscribe<MailboxSyncState>('mailbox_subscribe_sync_state', {
+		subscribe<OperationSyncState>('mailbox_subscribe_sync_state', {
 			mailboxId,
 		}),
 	);
