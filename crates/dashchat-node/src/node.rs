@@ -137,6 +137,9 @@ pub struct NodeConfig {
     /// Every pool the node opens must connect through it, or iOS can suspend
     /// the app in the middle of that pool's writes.
     pub sqlite_gate: sqlite_gate::SqliteGate,
+    /// Consulted by the blob push-authorization loop. Created above the node
+    /// (and shared with hub spawns) because a hub outlives node rebuilds.
+    pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 }
 
 impl NodeConfig {
@@ -190,6 +193,7 @@ impl NodeConfig {
             record_processed_operations: false,
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -220,6 +224,7 @@ impl Default for NodeConfig {
             record_processed_operations: false,
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 }
@@ -446,6 +451,7 @@ impl Node {
                     blob_fetch,
                     source_lookup,
                     mailboxes.blob_tracker().clone(),
+                    config.local_hub_registry.clone(),
                 )
                 .await?,
             )

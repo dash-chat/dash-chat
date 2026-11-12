@@ -56,6 +56,7 @@ impl BlobSync {
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
         unfetched_tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
+        local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
 
@@ -73,7 +74,12 @@ impl BlobSync {
         };
         let (events, rx) = EventSender::channel(256, mask);
         let iroh_endpoint = endpoint.endpoint().await?;
-        spawn_download_event_listener(rx, unfetched_tracker, iroh_endpoint.id());
+        spawn_download_event_listener(
+            rx,
+            unfetched_tracker,
+            iroh_endpoint.id(),
+            local_hub_registry,
+        );
 
         let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
@@ -274,13 +280,14 @@ fn spawn_download_event_listener(
     mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
     tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
     own_endpoint_id: iroh::EndpointId,
+    local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 ) {
     tokio::spawn(async move {
         let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
         while let Some(msg) = rx.recv().await {
             match msg {
                 ProviderMessage::PushRequestReceived(msg) => {
-                    let allowed = dashchat_utils::local_hub::hosts_local_hub(own_endpoint_id);
+                    let allowed = local_hub_registry.hosts(own_endpoint_id);
                     if !allowed {
                         tracing::info!(
                             hash = %msg.inner.request.hash,

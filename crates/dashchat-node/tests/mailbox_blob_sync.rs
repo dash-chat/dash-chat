@@ -247,6 +247,7 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
         None, // default fetch config: the fetch backstop may run but the upload arrives first
         Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
     )
     .await
     .unwrap();
@@ -477,6 +478,7 @@ async fn push_blob_delivers_to_mailbox_over_iroh() {
         None,
         Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
     )
     .await
     .unwrap();

@@ -2253,6 +2253,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "ciborium",
+ "dashmap 6.2.1",
  "futures",
  "iroh",
  "iroh-blobs",
