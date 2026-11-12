@@ -281,12 +281,12 @@ pub struct Node {
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
 
-/// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
-/// node never references a blob that the fetcher's own cap would reject.
 /// How long a send waits for the chat space's encryption secrets to become established
 /// before failing.
 const BLOB_ENCRYPT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// Refuse to publish an encrypted media item larger than [`MAX_BLOB_BYTES`] so an honest
+/// node never references a blob that the fetcher's own cap would reject.
 fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
     if size + BLOB_ENCRYPTION_OVERHEAD > MAX_BLOB_BYTES {
         anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
