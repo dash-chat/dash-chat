@@ -111,7 +111,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
 tauri-plugin-view = "0.0.5"
 tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "daf9678" }
-tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "9c50b47eab93202a55f0374fe9c70bb2016c8a2f" }
+tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "201d708769ff2d3892eef5de1d0bcb665ff447a1" }
+tauri-plugin-wifi = { git = "https://github.com/dash-chat/tauri-plugin-wifi", rev = "54b4cad0efdb41be5d508413c3fd14fec085dbff" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
@@ -153,7 +154,6 @@ e2e-tests = [
   "dashchat-node/testing",
   "mailbox-client/e2e-test-ca",
   "dep:tauri-plugin-wdio-webdriver",
-  "tauri-plugin-network-interfaces/wifi-control",
 ]
 
 [dev-dependencies]

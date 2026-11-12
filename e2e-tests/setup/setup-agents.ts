@@ -207,7 +207,7 @@ export type Agent = WebdriverIO.Browser & {
 	 *  the one test network saved on the device: any other is forgotten once
 	 *  the device is on this one, so a killed run can strand a phone on at
 	 *  most the network it was on. iOS goes through the app (the
-	 *  network-interfaces plugin), with the app on screen throughout; Android
+	 *  tauri-plugin-wifi), with the app on screen throughout; Android
 	 *  through adb. */
 	joinWifi(ssid: string, passphrase: string): Promise<string>;
 	/** Get onto the host's LAN from wherever the device is, and resolve with

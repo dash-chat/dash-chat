@@ -54,6 +54,10 @@ pub fn run() {
             .plugin(tauri_plugin_view::init())
             .plugin(tauri_plugin_network_interfaces::init());
     }
+    #[cfg(all(mobile, feature = "e2e-tests"))]
+    {
+        builder = builder.plugin(tauri_plugin_wifi::init());
+    }
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());

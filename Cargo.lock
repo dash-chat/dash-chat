@@ -2169,6 +2169,7 @@ dependencies = [
  "tauri-plugin-view",
  "tauri-plugin-virtual-keyboard",
  "tauri-plugin-wdio-webdriver",
+ "tauri-plugin-wifi",
  "tempfile",
  "thiserror 2.0.20",
  "time",
@@ -11619,7 +11620,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-network-interfaces"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=9c50b47eab93202a55f0374fe9c70bb2016c8a2f#9c50b47eab93202a55f0374fe9c70bb2016c8a2f"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=201d708769ff2d3892eef5de1d0bcb665ff447a1#201d708769ff2d3892eef5de1d0bcb665ff447a1"
 dependencies = [
  "serde",
  "tauri",
@@ -11914,6 +11915,17 @@ dependencies = [
  "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
+]
+
+[[package]]
+name = "tauri-plugin-wifi"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-wifi?rev=54b4cad0efdb41be5d508413c3fd14fec085dbff#54b4cad0efdb41be5d508413c3fd14fec085dbff"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
