@@ -1,10 +1,9 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { page } from '$app/state';
-	import { mdiChat, mdiChatOutline, mdiCog, mdiCogOutline } from '@mdi/js';
 	import { Tabbar, TabbarLink, ToolbarPane } from 'konsta/svelte';
+	import chatsSvg from '$lib/assets/main-tabbar/chats.svg?raw';
+	import settingsSvg from '$lib/assets/main-tabbar/settings.svg?raw';
 	import { m } from '$lib/paraglide/messages.js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
 	import HubWarningBadge from '../HubWarningBadge.svelte';
 
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
@@ -19,10 +18,9 @@
 			data-testid="main-tab-chats"
 		>
 			{#snippet icon()}
-				<wa-icon
-					src={wrapPathInSvg(isSettings ? mdiChatOutline : mdiChat)}
-					style="font-size: 24px"
-				></wa-icon>
+				<span class="block size-6 *:size-full">
+					{@html chatsSvg}
+				</span>
 			{/snippet}
 		</TabbarLink>
 		<TabbarLink
@@ -33,10 +31,9 @@
 		>
 			{#snippet icon()}
 				<HubWarningBadge>
-					<wa-icon
-						src={wrapPathInSvg(isSettings ? mdiCog : mdiCogOutline)}
-						style="font-size: 24px"
-					></wa-icon>
+					<span class="block size-6 *:size-full">
+						{@html settingsSvg}
+					</span>
 				</HubWarningBadge>
 			{/snippet}
 		</TabbarLink>
