@@ -613,7 +613,7 @@ mod tests {
         let header = node.send_message(chat, text, None, None).await.unwrap();
         let op = node
             .op_store
-            .get_log(&node.device_id(), &LogId::from_topic(chat.into()), None)
+            .get_log(&node.device_id(), &LogId::from(chat), None)
             .await
             .unwrap()
             .into_iter()

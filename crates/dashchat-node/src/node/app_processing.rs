@@ -276,9 +276,15 @@ impl Node {
         };
 
         if let Some(processed_tx) = processed_tx
-            && let Err(err) = processed_tx.send(result.clone())
+            && processed_tx
+                .send(
+                    result
+                        .clone()
+                        .map(|()| operation.processed().header().clone()),
+                )
+                .is_err()
         {
-            error!(?err, "processed_tx send error");
+            error!("processed_tx send error");
         }
 
         if let Err(err) = result {

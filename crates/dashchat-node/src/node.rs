@@ -415,7 +415,7 @@ impl Node {
         // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
         // can reduce the need for these wrappers by either moving generally useful methods into
         // p2panda or finding alternative routes to achieve the same queries.
-        let op_store = OpStore::from_sqlite(store.clone());
+        let op_store = OpStore::from_sqlite(store.clone(), Some(streams.clone()));
 
         // === mailboxes === //
 
@@ -846,7 +846,7 @@ impl Node {
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
-        self.create_space(topic, initial_members).await?;
+        Box::pin(self.create_space(topic, initial_members)).await?;
         self.publish_my_profile_to(topic).await?;
 
         tracing::info!(
@@ -869,7 +869,7 @@ impl Node {
         chat_id: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<()> {
-        self.create_space(chat_id, initial_members).await?;
+        Box::pin(self.create_space(chat_id, initial_members)).await?;
         Ok(())
     }
 
@@ -912,7 +912,7 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        let added = self.create_space(chat_id, initial_members).await?;
+        let added = Box::pin(self.create_space(chat_id, initial_members)).await?;
         self.publish_my_profile_to(chat_id).await?;
 
         // Ensure that future non-contact members can see every initial member's
@@ -935,6 +935,8 @@ impl Node {
 
     /// Create a space with the given members, returning for each member other than us the
     /// hash of the operation that admits it.
+    /// Callers box this future: p2panda's space futures are large enough to overflow the
+    /// stack when inlined into every caller up the chain.
     async fn create_space(
         &self,
         topic: ChatId,
@@ -1724,7 +1726,7 @@ impl Node {
         &self,
         topic_id: TopicId,
     ) -> anyhow::Result<Option<crate::GroupInfo>> {
-        let log_id = LogId::from_topic(topic_id);
+        let log_id = crate::topic::application_log_id(topic_id);
         let authors = self.op_store.get_authors(log_id).await?;
         let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
@@ -2374,10 +2376,13 @@ impl Node {
         let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
         for (hash, topic) in self.local_store.extension_processed_operations().await? {
             // Without a body there is nothing left for the app layer to see.
-            match self.op_store.get_operation(&hash).await? {
-                Some(operation) if operation.body.is_some() => {
-                    by_topic.entry(topic).or_default().push(operation)
-                }
+            let readable = self
+                .op_store
+                .get_operation(&hash)
+                .await?
+                .is_some_and(|operation| operation.body.is_some());
+            match self.op_store.get_stored_operation(&hash).await? {
+                Some(operation) if readable => by_topic.entry(topic).or_default().push(operation),
                 _ => {
                     if let Err(err) = self
                         .local_store

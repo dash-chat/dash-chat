@@ -10,9 +10,9 @@
 use std::time::Duration;
 
 use dashchat_node::stores::TombstoneReason;
+use dashchat_node::topic::application_log_id;
 use dashchat_node::{testing::*, *};
 use p2panda::Hash;
-use p2panda::operation::LogId;
 
 fn setup() {
     dashchat_node::testing::setup_tracing(
@@ -38,7 +38,7 @@ async fn payload_present(
 ) -> Option<bool> {
     let logs = node
         .op_store
-        .get_interleaved_logs(LogId::from_topic(topic), vec![author])
+        .get_interleaved_logs(application_log_id(topic), vec![author])
         .await
         .unwrap();
     logs.into_iter()

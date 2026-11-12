@@ -1,5 +1,5 @@
+use dashchat_node::topic::application_log_id;
 use dashchat_node::{testing::*, *};
-use p2panda::operation::LogId;
 
 const TRACING_FILTER: [&str; 4] = [
     "dashchat=info",
@@ -131,7 +131,7 @@ fn named(name: &str) -> Profile {
 /// The profiles `node` itself published to `topic`, oldest first.
 async fn published_profiles(node: &TestNode, topic: TopicId) -> Vec<Profile> {
     node.op_store
-        .get_log(&node.device_id(), &LogId::from_topic(topic), None)
+        .get_log(&node.device_id(), &application_log_id(topic), None)
         .await
         .unwrap()
         .into_iter()

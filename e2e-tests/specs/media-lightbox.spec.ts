@@ -19,7 +19,9 @@ describe('Photo lightbox', () => {
 		await exchangeContacts([agent1, agent2]);
 
 		for (let i = 0; i < 3; i++) {
-			await agent1.directChatPage.composer.attachPhotos('lightbox');
+			// Distinct names: forcing an error targets images by alt, and each
+			// photo's blob is retried separately.
+			await agent1.directChatPage.composer.attachPhotos(`lightbox-${i}`);
 		}
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('lightbox');

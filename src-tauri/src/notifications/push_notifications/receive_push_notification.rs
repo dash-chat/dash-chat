@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
+use dashchat_node::topic::application_log_id;
 use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
-use p2panda::operation::{Header, LogId};
+use p2panda::operation::Header;
 use p2panda_core::Hash;
 use tauri_plugin_notification::*;
 
@@ -229,7 +230,7 @@ async fn handle_push_notification(
 
     // Space, group and key bundle logs reach the mailbox too, but only the
     // chat log holds anything worth a notification.
-    let chat_log = dashchat_node::LogId::from(LogId::from_topic(topic_id));
+    let chat_log = dashchat_node::LogId::from(application_log_id(topic_id));
     if !log_hex.is_empty() && log_hex != chat_log.to_hex() {
         log::debug!("Ignoring a push for a control log of {topic_hex}.");
         return Ok(None);
@@ -322,12 +323,16 @@ async fn wait_for_pushed_operation_notification(
         }
         let log = node
             .op_store
-            .get_log(&device_id, &LogId::from_topic(topic_id), from)
+            .get_log(&device_id, &application_log_id(topic_id), from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         if let Some(first) = log.into_iter().next() {
+            // An encrypted operation is stored before its payload is decrypted.
+            let readable = first.body.is_some();
             entry = Some(first);
-            break;
+            if readable {
+                break;
+            }
         }
         tokio::time::sleep(OP_POLL_INTERVAL).await;
     }
