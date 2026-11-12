@@ -493,36 +493,60 @@ impl OpProjection {
                 self.reduce_profile(author, profile, operation).await?
             }
 
-            Payload::DeviceGroup(p) => match p {
-                // Only my own devices write to my device group.
-                DeviceGroupPayload::SetProfile(profile) => {
-                    self.save_agent_mapping(author, me).await?;
-                    self.reduce_profile(author, profile, operation).await?
+            Payload::DeviceGroup(p) => {
+                // Only my own devices write to my device group, and the device
+                // group space's membership is the authority on which devices are
+                // mine. An op on any other topic (e.g. a chat space, whose
+                // members are not my devices) or from a non-member must never
+                // affect my state, above all not map its author onto my agent.
+                let device_group_topic: TopicId = Topic::device_group(me).into();
+                if topic != device_group_topic {
+                    return Err(ProjectionError::invalid(format!(
+                        "device group payload on non-device-group topic {:?}",
+                        topic.aliased()
+                    )));
                 }
-                DeviceGroupPayload::AddContact { agent_id, .. } => {
-                    self.ensure_agent(*agent_id).await?;
-                    None
+                let is_member = node
+                    .space_members(topic)
+                    .await?
+                    .iter()
+                    .any(|(member, _)| *member == author);
+                if !is_member {
+                    return Err(ProjectionError::invalid(format!(
+                        "device group op authored by non-member {:?}",
+                        author.aliased()
+                    )));
                 }
-                DeviceGroupPayload::BlockAgent(agent_id) => {
-                    self.block_agent(*agent_id).await?;
-                    None
+                match p {
+                    DeviceGroupPayload::SetProfile(profile) => {
+                        self.save_agent_mapping(author, me).await?;
+                        self.reduce_profile(author, profile, operation).await?
+                    }
+                    DeviceGroupPayload::AddContact { agent_id, .. } => {
+                        self.ensure_agent(*agent_id).await?;
+                        None
+                    }
+                    DeviceGroupPayload::BlockAgent(agent_id) => {
+                        self.block_agent(*agent_id).await?;
+                        None
+                    }
+                    DeviceGroupPayload::UnblockAgent(agent_id) => {
+                        self.unblock_agent(*agent_id).await?;
+                        None
+                    }
+                    DeviceGroupPayload::DeleteForMe(delete) => {
+                        let hashes = self
+                            .tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
+                            .await?;
+                        Some(SystemNotification::Tombstones {
+                            topic: delete.chat_id.into(),
+                            hashes,
+                            reason: TombstoneReason::DeletedForMe,
+                        })
+                    }
+                    _ => None,
                 }
-                DeviceGroupPayload::UnblockAgent(agent_id) => {
-                    self.unblock_agent(*agent_id).await?;
-                    None
-                }
-                DeviceGroupPayload::DeleteForMe(delete) => {
-                    let hashes = self
-                        .tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
-                        .await?;
-                    Some(SystemNotification::Tombstones {
-                        topic: delete.chat_id.into(),
-                        hashes,
-                        reason: TombstoneReason::DeletedForMe,
-                    })
-                }
-                _ => None,
-            },
+            }
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
