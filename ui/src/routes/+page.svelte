@@ -43,20 +43,14 @@
 	<Navbar
 		title={m.chats()}
 		titleClass="opacity1"
-		rightClass="order-1"
 		right={theme === 'ios' ? composeActions : undefined}
 		transparent={true}
 	>
-		<!-- A navbar child, not part of the right slot that Konsta wraps in one
-			glass capsule on iOS: the status gets its own bubble before the capsule
-			(rightClass orders the slot last). -->
-		<div
-			class="ms-auto grid size-11 place-items-center {theme === 'ios'
-				? 'rounded-full bg-ios-light-glass shadow-ios-light-glass backdrop-blur-lg dark:bg-ios-dark-glass dark:shadow-ios-dark-glass'
-				: 'me-2'}"
-		>
-			<ConnectionStatusIndicator />
-		</div>
+		{#snippet left()}
+			<div class="grid size-11 place-items-center">
+				<ConnectionStatusIndicator />
+			</div>
+		{/snippet}
 	</Navbar>
 
 	<UpdaterBanner />
