@@ -176,6 +176,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=debug",
+                "mailboxes_manager=debug",
                 "p2panda_stream=warn",
                 "p2panda_auth=warn",
                 "p2panda_spaces=warn",
@@ -229,6 +230,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=info",
+                "mailboxes_manager=info",
                 "p2panda_stream=warn",
             ],
             true,

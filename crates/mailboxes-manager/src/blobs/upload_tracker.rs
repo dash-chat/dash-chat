@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
+use mailbox_client::BlobUploadLifecycle;
+
 const MIN_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5);
 const MAX_UPLOAD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// Tracks in-flight blob uploads and retry backoffs so an upload still crawling
 /// out isn't started a second time, and one the mailbox keeps refusing isn't
 /// resent in full on every followup pass.
+#[derive(Default)]
 pub struct BlobUploadTracker {
     uploads: std::sync::Mutex<HashMap<(String, iroh_blobs::Hash), UploadAttempt>>,
     next_claim: std::sync::atomic::AtomicU64,
@@ -24,10 +27,7 @@ enum UploadAttempt {
 
 impl BlobUploadTracker {
     pub fn new() -> Self {
-        Self {
-            uploads: std::sync::Mutex::new(HashMap::new()),
-            next_claim: std::sync::atomic::AtomicU64::new(0),
-        }
+        Self::default()
     }
 
     /// Mark an upload of `hash` to `base_url` in flight if it may start now,
@@ -102,18 +102,6 @@ impl BlobUploadTracker {
             uploads.insert(key, UploadAttempt::Failed { retry_at, backoff });
         }
     }
-}
-
-/// Lifecycle callbacks used by blob upload tasks to coordinate with a shared
-/// upload tracker without depending on its concrete type.
-pub trait BlobUploadLifecycle: Send + Sync + 'static {
-    /// Mark an upload of `hash` to `base_url` in flight if it may start now,
-    /// returning a claim to release it with.
-    fn claim_upload(&self, base_url: &str, hash: iroh_blobs::Hash) -> Option<u64>;
-
-    /// Release `claim`; `succeeded` determines whether the next attempt must
-    /// wait out a backoff.
-    fn finish_upload(&self, base_url: &str, hash: iroh_blobs::Hash, claim: u64, succeeded: bool);
 }
 
 impl BlobUploadLifecycle for BlobUploadTracker {

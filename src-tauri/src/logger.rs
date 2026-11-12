@@ -27,6 +27,7 @@ const LEVELS: &[(&str, LevelFilter)] = &[
     ("p2panda_net::gossip", LevelFilter::Debug),
     ("p2panda_net::iroh_mdns", LevelFilter::Debug),
     ("mailbox_client", LevelFilter::Debug),
+    ("mailboxes_manager", LevelFilter::Debug),
     ("mailbox_server", LevelFilter::Debug),
     ("mailbox_local_server", LevelFilter::Debug),
     ("local_hub_discovery", LevelFilter::Debug),
