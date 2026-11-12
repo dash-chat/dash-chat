@@ -14,11 +14,12 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         return Ok(());
     }
 
-    let node = handle
-        .state::<AppNodeManager>()
+    let app_node_manager = handle.state::<AppNodeManager>();
+    let node = app_node_manager
         .get()
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
+    let local_hub_registry = app_node_manager.local_hub_registry();
     let endpoint = node.iroh_endpoint().await?;
     let path = FileSystem::new(handle)?.local_mailbox_db_path();
 
@@ -44,6 +45,7 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
         None,
         None,
         peer_addr_tx,
+        local_hub_registry,
     )
     .await?;
 

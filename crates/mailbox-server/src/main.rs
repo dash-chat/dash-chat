@@ -1,7 +1,7 @@
 use clap::Parser;
 use dashchat_utils::{NETWORK_ID, RELAY_URL};
 use futures::FutureExt;
-use mailbox_server::spawn_server;
+use mailbox_server::{spawn_server, ServerConfig};
 use p2panda_net::NetworkId;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -24,6 +24,16 @@ struct Args {
     /// P2P network id, as 64 hex characters (defaults to the production network)
     #[arg(long, value_parser = mailbox_server::parse_network_id)]
     network_id: Option<NetworkId>,
+
+    /// Reject HTTP blob uploads with 410 Gone (e2e knob for proving blob
+    /// delivery goes over iroh push)
+    #[arg(long)]
+    disable_blob_http_upload: bool,
+
+    /// Never fetch announced blobs from their sources (e2e knob for proving
+    /// blob delivery goes over iroh push, not mailbox pull)
+    #[arg(long)]
+    disable_blob_fetch: bool,
 }
 
 #[tokio::main]
@@ -50,6 +60,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         Some(RELAY_URL.clone()),
         args.network_id.unwrap_or(*NETWORK_ID),
+        Some(ServerConfig {
+            disable_blob_http_upload: args.disable_blob_http_upload,
+            disable_blob_fetch: args.disable_blob_fetch,
+        }),
         signal,
     )
     .await?;

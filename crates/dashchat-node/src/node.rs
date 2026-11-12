@@ -137,6 +137,9 @@ pub struct NodeConfig {
     /// Every pool the node opens must connect through it, or iOS can suspend
     /// the app in the middle of that pool's writes.
     pub sqlite_gate: sqlite_gate::SqliteGate,
+    /// Consulted by the blob push-authorization loop. Created above the node
+    /// (and shared with hub spawns) because a hub outlives node rebuilds.
+    pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 }
 
 impl NodeConfig {
@@ -190,6 +193,7 @@ impl NodeConfig {
             record_processed_operations: false,
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -220,6 +224,7 @@ impl Default for NodeConfig {
             record_processed_operations: false,
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 }
@@ -445,8 +450,8 @@ impl Node {
                     filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
-                    local_store.clone(),
                     mailboxes.blob_tracker().clone(),
+                    config.local_hub_registry.clone(),
                 )
                 .await?,
             )
@@ -646,6 +651,33 @@ impl Node {
         std::sync::Arc::new(NodeBlobReader {
             blob_sync: self.blob_sync.clone(),
         })
+    }
+
+    /// A pusher backed by this node's iroh endpoint and blob store, for the toy
+    /// mailbox client to push blobs to a mailbox over iroh. `None` when the node
+    /// has no networking layer or blob sync is disabled.
+    pub async fn blob_pusher(&self) -> Option<mailbox_client::IrohPusher> {
+        if self.endpoint.is_none() {
+            return None;
+        }
+        let blob_sync = self.blob_sync.clone()?;
+        let endpoint = match self.iroh_endpoint().await {
+            Ok(endpoint) => endpoint,
+            Err(err) => {
+                // A networked node whose endpoint can't be read is a real
+                // degradation: without a pusher the client silently runs on
+                // the HTTP fallback alone.
+                tracing::warn!(?err, "blob pusher unavailable");
+                return None;
+            }
+        };
+        let alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, self.config.network_id);
+        Some(mailbox_client::IrohPusher::new(
+            endpoint,
+            blob_sync.blobs.store().clone(),
+            alpn,
+        ))
     }
 
     /// Tell the manager the set of things-that-might-be-owed-to-mailboxes has

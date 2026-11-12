@@ -40,6 +40,7 @@ pub async fn spawn_relay_mailbox(
         Some(fetch_config),
         Some(TEST_UPLOAD_GRACE),
         peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
     )
     .await
     .unwrap();
@@ -82,6 +83,7 @@ pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
             None,
             None,
             *dashchat_utils::NETWORK_ID,
+            None,
             signal,
         )
         .await

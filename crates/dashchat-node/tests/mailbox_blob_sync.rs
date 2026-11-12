@@ -247,6 +247,7 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
         None, // default fetch config: the fetch backstop may run but the upload arrives first
         Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
     )
     .await
     .unwrap();
@@ -450,4 +451,285 @@ async fn blob_fetch_succeeds_after_peer_addr_registration() {
 
     let fetched = mailbox.blobs.get_bytes(hash).await.unwrap();
     assert_eq!(fetched.as_ref(), blob_data.as_slice());
+}
+
+/// The iroh blob push transport carries a blob to the mailbox: a client with
+/// a pusher wired pushes a blob directly (no publish, so the HTTP upload path
+/// never runs) and it lands in the mailbox's store.
+#[tokio::test(flavor = "multi_thread")]
+async fn push_blob_delivers_to_mailbox_over_iroh() {
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing();
+
+    // Relay node hosting the in-process mailbox (shares its iroh endpoint +
+    // blob store). The mailbox's MailboxId is the relay's EndpointId.
+    let relay = TestNode::new(config.clone(), "relay").await;
+    let mailbox_id = mailbox_server::encode_mailbox_id(relay.endpoint_id());
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let db_path = mailbox_dir.path().join("mailbox.redb");
+
+    let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
+    let server = mailbox_local_server::spawn_local_mailbox_server(
+        db_path,
+        relay.blobs(),
+        relay.blob_downloader(),
+        relay.iroh_endpoint().await.unwrap(),
+        None,
+        Some(common::TEST_UPLOAD_GRACE),
+        peer_addr_tx,
+        relay.config.local_hub_registry.clone(),
+    )
+    .await
+    .unwrap();
+    let url = server.url.clone();
+    wait_for_mailbox_health(&url).await;
+
+    let alice = TestNode::new(config.clone(), "alice").await;
+    // The push dials the mailbox by EndpointId; with mDNS off in tests, teach
+    // Alice the relay's address directly.
+    teach_peers(&alice, [&relay]).await.unwrap();
+
+    // Alice holds a blob the mailbox does not.
+    let blob_data = rand::random::<[u8; 8192]>().to_vec();
+    let hash = alice
+        .blobs()
+        .add_bytes(blob_data.clone())
+        .await
+        .unwrap()
+        .hash;
+
+    let client = ToyMailboxClient::<MailboxOperation>::new(
+        mailbox_id,
+        &url,
+        alice.endpoint_id(),
+        std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        alice.mailboxes.upload_tracker(),
+    )
+    .with_blob_pusher(alice.blob_pusher().await);
+
+    use mailbox_client::MailboxClient as _;
+    client.push_blob(hash).await.unwrap();
+
+    // The pusher's send side finishes before the mailbox's import necessarily
+    // completes, so poll rather than assert immediately.
+    poll.wait_for(|| async {
+        relay
+            .blobs()
+            .has(hash)
+            .await
+            .unwrap_or(false)
+            .then_some(())
+            .ok_or("mailbox has not imported the pushed blob")
+    })
+    .await
+    .unwrap();
+
+    let pushed = relay.blobs().get_bytes(hash).await.unwrap();
+    assert_eq!(pushed.as_ref(), blob_data.as_slice());
+}
+
+/// A blob that arrives at a standalone mailbox by iroh push gets the same
+/// retention tag as an uploaded or fetched one. Without it the mailbox's GC
+/// would reclaim the pushed bytes on its next sweep while still reporting the
+/// blob as held. Uses `BlobSync::new` (owns its store, GC on) — the
+/// in-process mailbox shares the node's store, where tagging is a no-op.
+#[tokio::test(flavor = "multi_thread")]
+async fn pushed_blob_is_retention_tagged() {
+    use mailbox_server::BlobSync;
+
+    let poll = PollConfig::default();
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+
+    // Sender holding a blob the mailbox does not.
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+    let blob_data = unique_blob_bytes(b"pushed-blob-tagging-test".to_vec());
+    let hash = sender
+        .blobs
+        .add_bytes(blob_data.clone())
+        .await
+        .unwrap()
+        .hash;
+
+    // The push dials the mailbox by EndpointId; teach the sender its address.
+    sender.add_peer_addr(mailbox.endpoint_addr());
+
+    let mailbox_id = mailbox_server::encode_mailbox_id(mailbox.endpoint_id());
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let pusher = mailbox_client::IrohPusher::new(
+        sender.endpoint().clone(),
+        sender.blobs.store().clone(),
+        alpn,
+    );
+    pusher.push_blob(&mailbox_id, hash).await.unwrap();
+
+    // push_blob resolves once the mailbox reports the blob complete; the tag
+    // is set by the push-event handler on the same signal, so poll for it.
+    poll.wait_for(|| async {
+        mailbox
+            .has_retention_tag_for_test(hash)
+            .await
+            .then_some(())
+            .ok_or("mailbox has not retention-tagged the pushed blob")
+    })
+    .await
+    .unwrap();
+
+    let pushed = mailbox.blobs.get_bytes(hash).await.unwrap();
+    assert_eq!(pushed.as_ref(), blob_data.as_slice());
+}
+
+/// A pushed blob over [`MAX_BLOB_BYTES`] is imported but never retention-
+/// tagged, so the hourly GC reclaims it — the same cap the mailbox's fetch
+/// path enforces on downloads.
+#[tokio::test(flavor = "multi_thread")]
+async fn oversized_pushed_blob_is_not_retention_tagged() {
+    use mailbox_server::BlobSync;
+
+    let mailbox_dir = tempfile::tempdir().unwrap();
+    let mailbox = BlobSync::new(
+        iroh::SecretKey::generate(),
+        mailbox_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+
+    let sender_dir = tempfile::tempdir().unwrap();
+    let sender = BlobSync::new(
+        iroh::SecretKey::generate(),
+        sender_dir.path().join("blobs"),
+        None,
+        *dashchat_utils::NETWORK_ID,
+    )
+    .await
+    .unwrap();
+    let blob_data = vec![7u8; (dashchat_utils::blob_sync::MAX_BLOB_BYTES + 1) as usize];
+    let hash = sender.blobs.add_bytes(blob_data).await.unwrap().hash;
+
+    // The push dials the mailbox by EndpointId; teach the sender its address.
+    sender.add_peer_addr(mailbox.endpoint_addr());
+
+    let mailbox_id = mailbox_server::encode_mailbox_id(mailbox.endpoint_id());
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let pusher = mailbox_client::IrohPusher::new(
+        sender.endpoint().clone(),
+        sender.blobs.store().clone(),
+        alpn,
+    );
+    pusher.push_blob(&mailbox_id, hash).await.unwrap();
+
+    // The bytes landed; the cap only withholds the retention tag.
+    assert!(mailbox.blobs.has(hash).await.unwrap());
+
+    // The tag must never appear. Two seconds is generous: the legit tagging
+    // path above completes in tens of milliseconds.
+    let tag_poll = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(2),
+    };
+    let tagged = tag_poll
+        .wait_for(|| async {
+            mailbox
+                .has_retention_tag_for_test(hash)
+                .await
+                .then_some(())
+                .ok_or("not tagged")
+        })
+        .await;
+    assert!(
+        tagged.is_err(),
+        "oversized blob must not be retention-tagged"
+    );
+}
+
+/// A node not hosting a local hub refuses blob pushes: an always-open push
+/// port would let any peer that learns its EndpointId write never-collected
+/// bytes into its store.
+///
+/// Driven below `IrohPusher` on purpose: iroh-blobs' push client stops its
+/// recv stream after sending, so a refusal is invisible to it — `push_blob`
+/// would only error when its 30s transfer-timeout floor lapses. The property
+/// under test is that the bytes never land.
+#[tokio::test(flavor = "multi_thread")]
+async fn node_without_hub_refuses_blob_pushes() {
+    let config = NodeConfig::testing();
+    let host = TestNode::new(config.clone(), "host").await;
+    let alice = TestNode::new(config.clone(), "alice").await;
+    teach_peers(&alice, [&host]).await.unwrap();
+
+    // Kept tiny: the write side must fit the stream buffers, since the host
+    // stops reading the moment it refuses.
+    let hash = alice
+        .blobs()
+        .add_bytes(unique_blob_bytes(b"push-refusal-test".to_vec()))
+        .await
+        .unwrap()
+        .hash;
+
+    let alpn = p2panda_net::hash_protocol_id_with_network_id(
+        iroh_blobs::ALPN,
+        *dashchat_utils::NETWORK_ID,
+    );
+    let conn = alice
+        .iroh_endpoint()
+        .await
+        .unwrap()
+        .connect(host.endpoint_id(), &alpn)
+        .await
+        .unwrap();
+    let request = iroh_blobs::protocol::PushRequest::new(
+        hash,
+        iroh_blobs::protocol::ChunkRangesSeq::from_ranges([
+            iroh_blobs::protocol::ChunkRanges::all(),
+        ]),
+    );
+    // The write itself completes; the refusal shows up nowhere on the client.
+    alice
+        .blobs()
+        .remote()
+        .execute_push(conn, request)
+        .complete()
+        .await
+        .unwrap();
+
+    let tag_poll = PollConfig {
+        poll_interval: Duration::from_millis(100),
+        poll_timeout: Duration::from_secs(2),
+    };
+    let landed = tag_poll
+        .wait_for(|| async {
+            host.blobs()
+                .has(hash)
+                .await
+                .unwrap_or(false)
+                .then_some(())
+                .ok_or("not stored")
+        })
+        .await;
+    assert!(landed.is_err(), "a refused push must never land");
 }

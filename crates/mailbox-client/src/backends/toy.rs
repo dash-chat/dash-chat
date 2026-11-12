@@ -8,16 +8,10 @@ use mailbox_server::{
 
 use crate::blobs::blob_delivery::BlobDelivery;
 use crate::{
-    BlobUploadLifecycle, FetchRequest, FetchResponse, FetchTopicResponse, HTTP_CLIENT,
-    MailboxClient, MailboxId, MailboxItem, MailboxKey, PublishResponse,
+    BlobReader, BlobUploadError, BlobUploadLifecycle, FetchRequest, FetchResponse,
+    FetchTopicResponse, HTTP_CLIENT, IrohPusher, MailboxClient, MailboxId, MailboxItem, MailboxKey,
+    PublishResponse, UnfetchedBlobTracker, blob_transfer_timeout,
 };
-
-/// Client-side timeout for a single blob upload, larger than the default HTTP
-/// timeout because a blob can be big.
-const UPLOAD_BLOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-/// The slowest uplink an upload is given time to finish over, so a big blob
-/// from a phone on a weak connection isn't cut off by [`UPLOAD_BLOB_TIMEOUT`].
-const SLOWEST_UPLINK_BYTES_PER_SEC: f64 = 32.0 * 1024.0;
 
 /// A client for the toy mailbox server.
 #[derive(Clone)]
@@ -25,8 +19,9 @@ pub struct ToyMailboxClient<Item: MailboxItem> {
     id: MailboxId,
     base_url: String,
     sender_pubkey: iroh::EndpointId,
-    tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
-    blob_reader: Option<std::sync::Arc<dyn crate::BlobReader>>,
+    tracker: std::sync::Arc<dyn UnfetchedBlobTracker>,
+    blob_reader: Option<std::sync::Arc<dyn BlobReader>>,
+    pusher: Option<IrohPusher>,
     lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
     phantom: std::marker::PhantomData<Item>,
 }
@@ -36,7 +31,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         id: MailboxId,
         base_url: impl Into<String>,
         sender_pubkey: iroh::EndpointId,
-        tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
+        tracker: std::sync::Arc<dyn UnfetchedBlobTracker>,
         lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
     ) -> Self {
         Self {
@@ -45,6 +40,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
             sender_pubkey,
             tracker,
             blob_reader: None,
+            pusher: None,
             lifecycle,
             phantom: std::marker::PhantomData,
         }
@@ -54,8 +50,17 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
     /// (best-effort, in a spawned task) after announcing their hashes. Without a
     /// reader the client only announces hashes and the mailbox fetches the bytes
     /// from us.
-    pub fn with_blob_reader(mut self, blob_reader: std::sync::Arc<dyn crate::BlobReader>) -> Self {
+    pub fn with_blob_reader(mut self, blob_reader: std::sync::Arc<dyn BlobReader>) -> Self {
         self.blob_reader = Some(blob_reader);
+        self
+    }
+
+    /// Attach an iroh pusher so blobs are pushed to the mailbox's iroh
+    /// endpoint (chunk-validated, resumable) before falling back to the HTTP
+    /// upload. `None` (e.g. a node with no networking layer) leaves delivery
+    /// on the HTTP path.
+    pub fn with_blob_pusher(mut self, pusher: Option<IrohPusher>) -> Self {
+        self.pusher = pusher;
         self
     }
 
@@ -65,7 +70,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
 
     fn blob_delivery_with(
         &self,
-        tracker: std::sync::Arc<dyn crate::UnfetchedBlobTracker>,
+        tracker: std::sync::Arc<dyn UnfetchedBlobTracker>,
     ) -> BlobDelivery<Item> {
         BlobDelivery::new(
             Arc::new(self.clone()),
@@ -181,30 +186,37 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         Ok(response.already_stored)
     }
 
-    async fn upload_blob(&self, bytes: bytes::Bytes) -> Result<(), crate::BlobUploadError> {
+    async fn upload_blob(&self, bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
         let response = HTTP_CLIENT
             .post(format!("{}/blobs/upload", self.base_url))
-            .timeout(UPLOAD_BLOB_TIMEOUT.max(std::time::Duration::from_secs_f64(
-                bytes.len() as f64 / SLOWEST_UPLINK_BYTES_PER_SEC,
-            )))
+            .timeout(blob_transfer_timeout(bytes.len() as u64))
             .body(bytes)
             .send()
             .await
             .map_err(|err| {
                 if err.is_connect() {
-                    crate::BlobUploadError::MailboxUnavailable(err.into())
+                    BlobUploadError::MailboxUnavailable(err.into())
                 } else {
-                    crate::BlobUploadError::Blob(err.into())
+                    BlobUploadError::Blob(err.into())
                 }
             })?;
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(crate::BlobUploadError::Blob(anyhow::anyhow!(
+            return Err(BlobUploadError::Blob(anyhow::anyhow!(
                 "Failed to upload blob: {status} - {body}"
             )));
         }
         Ok(())
+    }
+
+    async fn push_blob(&self, hash: iroh_blobs::Hash) -> Result<(), BlobUploadError> {
+        match &self.pusher {
+            Some(pusher) => pusher.push_blob(&self.id, hash).await,
+            None => Err(BlobUploadError::Blob(anyhow::anyhow!(
+                "no iroh pusher configured"
+            ))),
+        }
     }
 
     async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
@@ -560,7 +572,7 @@ mod tests {
             .upload_blob(bytes::Bytes::from_static(b"x"))
             .await
             .unwrap_err();
-        assert!(matches!(err, crate::BlobUploadError::MailboxUnavailable(_)));
+        assert!(matches!(err, BlobUploadError::MailboxUnavailable(_)));
     }
 
     #[tokio::test]
@@ -582,7 +594,7 @@ mod tests {
             .upload_blob(bytes::Bytes::from_static(b"x"))
             .await
             .unwrap_err();
-        assert!(matches!(err, crate::BlobUploadError::Blob(_)));
+        assert!(matches!(err, BlobUploadError::Blob(_)));
     }
 
     #[tokio::test]
@@ -591,7 +603,7 @@ mod tests {
 
         struct StubReader(bytes::Bytes);
         #[async_trait::async_trait]
-        impl crate::BlobReader for StubReader {
+        impl BlobReader for StubReader {
             async fn read_blob(&self, _hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
                 Ok(self.0.clone())
             }
