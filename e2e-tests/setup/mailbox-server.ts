@@ -59,6 +59,18 @@ export function buildCargoPackages(packages: string[]): Promise<void> {
 	});
 }
 
+/** Dev flags the mailbox binary takes (see its `--help`). All off by default;
+ *  a spec turns one on through restartMailboxWithFlags. */
+export interface MailboxFlags {
+	/** Reject HTTP blob uploads with 410 Gone, so a run can prove blob
+	 *  delivery went over iroh push. */
+	disableBlobHttpUpload?: boolean;
+	/** Never run the blob fetch loop, so announced blobs are never pulled
+	 *  from their sources — with upload also off, only a client-side iroh
+	 *  push can put a blob on the mailbox. */
+	disableBlobFetch?: boolean;
+}
+
 /** Spawn the mailbox server in its own process group, bound to loopback on
  * `bindPort` — agents reach it through the link on its public port. When
  * `pushNotificationsUrl` is given, the server forwards blob arrivals to that
@@ -67,6 +79,7 @@ export function spawnMailboxServer(
 	bindPort: number,
 	dbPath: string,
 	pushNotificationsUrl?: string,
+	flags?: MailboxFlags,
 ): ChildProcess {
 	// The prebuilt binary (built by wdio.conf's onPrepare) is spawned
 	// directly: `cargo run` here would rebuild with whatever toolchain is on
@@ -94,6 +107,12 @@ export function spawnMailboxServer(
 	if (pushNotificationsUrl !== undefined) {
 		args.push('--push-notifications-url', pushNotificationsUrl);
 	}
+	if (flags?.disableBlobHttpUpload === true) {
+		args.push('--disable-blob-http-upload');
+	}
+	if (flags?.disableBlobFetch === true) {
+		args.push('--disable-blob-fetch');
+	}
 	// `detached: true` puts it in its own process group so lifecycle helpers
 	// can signal -pid without touching the test runner.
 	const server = spawn(bin, args, {
@@ -114,6 +133,7 @@ export function spawnMailboxServer(
  */
 export async function startLocalMailboxServer(
 	pushNotificationsUrl?: string,
+	flags?: MailboxFlags,
 ): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
@@ -134,7 +154,12 @@ export async function startLocalMailboxServer(
 	// Tail the server's log file (its tracing output, redirected there by
 	// spawnMailboxServer) and echo it with a prefix, like the agent logs.
 	const logger = startAgentLogger('mailbox-server', mailboxLogFile(dbPath));
-	const proc = spawnMailboxServer(bindPort, dbPath, pushNotificationsUrl);
+	const proc = spawnMailboxServer(
+		bindPort,
+		dbPath,
+		pushNotificationsUrl,
+		flags,
+	);
 	console.log(`[mailbox-server] spawned (pid=${proc.pid})`);
 	proc.on('exit', (code, signal) => {
 		console.error(
@@ -158,6 +183,8 @@ export async function startLocalMailboxServer(
 			url,
 			dbPath,
 			pushNotificationsUrl,
+			disableBlobHttpUpload: flags?.disableBlobHttpUpload,
+			disableBlobFetch: flags?.disableBlobFetch,
 		}),
 	);
 

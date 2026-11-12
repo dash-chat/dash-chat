@@ -3,12 +3,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{blob_sync::MAX_BLOB_BYTES, fetch_loop, FetchConfig, FetchPool};
 use futures::StreamExt;
 use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::api::downloader::{Downloader, Shuffled};
+use iroh_blobs::provider::events::{
+    EventMask as IrohBlobsEventMask, EventSender as IrohBlobsEventSender, ProviderMessage,
+    RequestMode as IrohBlobsRequestMode, RequestUpdate,
+};
 use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
@@ -274,7 +278,17 @@ impl BlobSync {
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, network_id);
         let store = iroh_blobs::store::fs::FsStore::load_with_opts(db_path, options).await?;
-        let blobs = iroh_blobs::BlobsProtocol::new(&store, None);
+        // Accept blob pushes: iroh-blobs disables them by default because they
+        // write to the store. Pushed data is chunk-validated against the
+        // requested hash, but lands untagged — InterceptLog lets the push
+        // handler retention-tag each blob as its push completes, or the
+        // retention GC would reclaim it on the next sweep.
+        let mask = IrohBlobsEventMask {
+            push: IrohBlobsRequestMode::InterceptLog,
+            ..IrohBlobsEventMask::DEFAULT
+        };
+        let (events_tx, events_rx) = IrohBlobsEventSender::channel(32, mask);
+        let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events_tx));
         let downloader = Downloader::builder(&store, &endpoint)
             .alpn(mixed_alpn.as_slice())
             .build();
@@ -282,7 +296,7 @@ impl BlobSync {
             .accept(mixed_alpn, blobs.clone())
             .spawn();
 
-        Ok(Self {
+        let this = Self {
             blobs,
             fetch_pool: BlobFetchPool::default(),
             downloader,
@@ -292,7 +306,9 @@ impl BlobSync {
             enable_gc: true,
             _router: Some(router),
             peer_addr_registry: PeerAddrRegistry::Memory(peer_addr_lookup),
-        })
+        };
+        this.spawn_push_handler(events_rx);
+        Ok(this)
     }
 
     /// Build a mailbox BlobSync that shares an existing iroh endpoint and blob
@@ -342,6 +358,12 @@ impl BlobSync {
         self.endpoint.id()
     }
 
+    /// The endpoint blobs are served from; clients pushing to this mailbox
+    /// dial it.
+    pub fn endpoint(&self) -> &iroh::Endpoint {
+        &self.endpoint
+    }
+
     /// The endpoint's current dialing address (relay + direct addresses),
     /// served via `/health` so clients can reach this mailbox by its EndpointId.
     pub fn endpoint_addr(&self) -> iroh::EndpointAddr {
@@ -368,6 +390,21 @@ impl BlobSync {
         self.fetch_pool.clone()
     }
 
+    /// Whether `hash` currently carries a `mailbox/` retention tag.
+    #[cfg(feature = "test_utils")]
+    pub async fn has_retention_tag_for_test(&self, hash: iroh_blobs::Hash) -> bool {
+        let tags = self.blobs.store().tags();
+        let Ok(mut stream) = tags.list_prefix(BLOB_TAG_PREFIX.as_bytes()).await else {
+            return false;
+        };
+        while let Some(info) = stream.next().await {
+            if info.is_ok_and(|info| info.hash == hash) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn spawn_fetch_loop(&self, config: FetchConfig) -> JoinHandle<()> {
         let this = self.clone();
         let pool = self.fetch_pool.clone();
@@ -375,6 +412,61 @@ impl BlobSync {
             let this = this.clone();
             async move { this.try_fetch(hash, sources, timeout).await }
         }))
+    }
+
+    /// Consume push-request events: authorize every push (the mask enables
+    /// them, so an unanswered authorization would hang the pusher) and, for
+    /// each one that completes, run the arrival tail. Without the tag, the
+    /// retention GC would reclaim a pushed blob the mailbox keeps reporting
+    /// as held.
+    fn spawn_push_handler(&self, mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                let ProviderMessage::PushRequestReceived(msg) = msg else {
+                    continue;
+                };
+                let hash = msg.inner.request.hash;
+                if msg.tx.send(Ok(())).await.is_err() {
+                    continue;
+                }
+                let this = this.clone();
+                let mut updates = msg.rx;
+                tokio::spawn(async move {
+                    // Latch, don't track the last event: a Completed means the
+                    // import finished, whatever the stream does afterwards.
+                    let mut completed = false;
+                    while let Ok(Some(update)) = updates.recv().await {
+                        if matches!(update, RequestUpdate::Completed(_)) {
+                            completed = true;
+                        }
+                    }
+                    if completed {
+                        this.finish_push(hash).await;
+                    }
+                });
+            }
+        });
+    }
+
+    /// Arrival tail for a completed push, matching the HTTP upload's:
+    /// retention-tag the blob and retire its fetch-backstop entry. Blobs over
+    /// [`MAX_BLOB_BYTES`] are left untagged for the GC to sweep — the same cap
+    /// the fetch path enforces ([`download_capped`]) and the HTTP upload
+    /// rejects outright. The transfer itself can't be capped: a push request
+    /// carries no size, and iroh-blobs emits no abortable progress events for
+    /// pushes.
+    async fn finish_push(&self, hash: iroh_blobs::Hash) {
+        let size = match self.blobs.store().status(hash).await {
+            Ok(iroh_blobs::api::proto::BlobStatus::Complete { size }) => size,
+            _ => return,
+        };
+        if size > MAX_BLOB_BYTES {
+            tracing::warn!(%hash, size, "pushed blob exceeds size cap; leaving it for the GC");
+            return;
+        }
+        self.protect_blob(hash).await;
+        self.note_upload(hash).await;
     }
 
     async fn try_fetch(
@@ -517,6 +609,51 @@ fn tag_fetch_secs(name: &[u8]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The push arrival tail matches the HTTP upload's: the blob is
+    /// retention-tagged, its own fetch-pool entry is retired, and a
+    /// still-deferred sibling from the same sender gets its grace restarted
+    /// (what keeps a serial push batch ahead of the fetch backstop).
+    #[tokio::test]
+    async fn finish_push_tags_and_retires_fetch_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let sync = BlobSync::new(
+            iroh::SecretKey::generate(),
+            dir.path().join("blobs"),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
+
+        // The state a push arrives into: the blob in the store but untagged,
+        // and two announced hashes from the same sender sitting out their
+        // upload grace in the fetch pool.
+        let tt = sync
+            .blobs
+            .add_bytes(bytes::Bytes::from_static(b"pushed blob"))
+            .temp_tag()
+            .await
+            .unwrap();
+        let pushed = tt.hash();
+        drop(tt);
+        let sibling = hash(9);
+        let source = endpoint_id(3);
+        sync.add_fetch_source(pushed, source, true).await;
+        sync.add_fetch_source(sibling, source, true).await;
+
+        // Distance the sibling's original deadline from the bump it is about
+        // to get.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let deadline_before = sync.fetch_pool.entries.lock().await[&sibling].not_before;
+
+        sync.finish_push(pushed).await;
+
+        assert!(sync.has_retention_tag_for_test(pushed).await);
+        let entries = sync.fetch_pool.entries.lock().await;
+        assert!(!entries.contains_key(&pushed));
+        assert!(entries[&sibling].not_before.unwrap() > deadline_before.unwrap());
+    }
 
     #[tokio::test]
     async fn endpoint_id_matches_secret_key() {
