@@ -296,7 +296,7 @@ impl TopicStreams {
         let (publisher, subscriber) = match space {
             StreamIntent::CreateSpace => {
                 let (space, subscriber) = self
-                    .with_node(async |node| node.create_space(topic).await)
+                    .with_node(async |node| node.create_space_with_id(topic).await)
                     .await?;
                 (
                     Publisher::Space(Space::created(topic, space)),
