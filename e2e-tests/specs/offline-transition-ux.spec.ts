@@ -24,7 +24,7 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 async function openOfflineSettings(agent: Agent): Promise<void> {
 	await agent.directChatPage.back.click();
 	await agent.homePage.ready();
-	await agent.homePage.settingsLink.click();
+	await agent.mainTabbar.settingsTab.click();
 	await agent.settingsPage.ready();
 	await agent.settingsPage.offlineLink.click();
 	await agent.offlinePage.ready();
@@ -35,8 +35,8 @@ async function returnToChat(agent: Agent, chatName: string): Promise<void> {
 		await agent.offlinePage.back.click();
 		await agent.settingsPage.ready();
 	}
-	if (await agent.settingsPage.back.isExisting()) {
-		await agent.settingsPage.back.click();
+	if (await agent.mainTabbar.chatsTab.isExisting()) {
+		await agent.mainTabbar.chatsTab.click();
 	}
 	await agent.homePage.ready();
 	await agent.homePage.openChat(chatName);
