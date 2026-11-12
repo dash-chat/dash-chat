@@ -24,8 +24,10 @@
 	>
 		{@render children()}
 		{#if isTabRoot}
+			<!-- The shell stops above the system navigation bar; the tab bar reaches
+				down behind it so its own surface, not the page's, shows there. -->
 			<div
-				class="absolute bottom-0 inset-x-0 z-20"
+				class="absolute inset-x-0 bottom-[calc(-1*var(--k-safe-area-bottom))] z-20"
 				bind:clientHeight={tabbarHeight}
 			>
 				<MainTabbar />
@@ -50,6 +52,6 @@
 	}
 
 	.has-main-tabbar :global(.k-page) {
-		padding-bottom: var(--main-tabbar-height);
+		padding-bottom: calc(var(--main-tabbar-height) - var(--k-safe-area-bottom));
 	}
 </style>
