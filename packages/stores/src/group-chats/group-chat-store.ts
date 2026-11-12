@@ -61,6 +61,7 @@ export class GroupChatStore {
 			chatId,
 			messagesClient,
 			reactive(async () => !(await this.me()).member),
+			() => this.controlOps(),
 		);
 		this.client.onGroupMembersChanged(this.chatId, () => {
 			this.membersVersion.value++;
@@ -120,12 +121,18 @@ export class GroupChatStore {
 		},
 	);
 
+	/** Just the group control ops, which live in their own log. */
+	private controlOps = reactive(async () => {
+		void this.membersVersion.value;
+		return await this.client.getControlOps(this.chatId);
+	});
+
 	controlEvents = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const ops = await this.controlOps();
 		const myDeviceId = await this.contactsStore.myDeviceId();
 
 		const events: Record<Hash, GroupControlEvent> = {};
-		for (const op of Object.values(logs).flat()) {
+		for (const op of ops) {
 			const event = await buildGroupControlEvent(
 				op,
 				myDeviceId,
@@ -156,10 +163,9 @@ export class GroupChatStore {
 			};
 		}
 
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 		const opAuthorByHash: Record<Hash, DeviceId> = {};
-		for (const ops of Object.values(logs)) {
-			for (const op of ops) opAuthorByHash[op.hash] = op.header.verifying_key;
+		for (const op of await this.controlOps()) {
+			opAuthorByHash[op.hash] = op.header.verifying_key;
 		}
 
 		for (const [hash, event] of Object.entries(controlEvents)) {

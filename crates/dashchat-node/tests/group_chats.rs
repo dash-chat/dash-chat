@@ -865,3 +865,127 @@ async fn test_invitation_names_the_operation_adding_the_invitee() {
     assert_ne!(re_add, create);
     assert!(adds_member(&alice, re_add, bobbi.device_id()).await);
 }
+
+/// The kinds of group-control actions in `node`'s view of `chat_id`, in log order per author.
+async fn control_action_kinds(node: &TestNode, chat_id: ChatId) -> Vec<String> {
+    node.get_group_control_ops(chat_id)
+        .await
+        .unwrap()
+        .iter()
+        .filter_map(|op| membership_action(&op.header))
+        .map(|action| match action {
+            p2panda_auth::group::GroupAction::Create { .. } => "create".to_string(),
+            p2panda_auth::group::GroupAction::Add { .. } => "add".to_string(),
+            p2panda_auth::group::GroupAction::Remove { .. } => "remove".to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_control_ops_are_served_to_every_member() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    let expected = vec!["create".to_string(), "add".to_string()];
+    poll.wait_for(|| async {
+        let kinds = [
+            control_action_kinds(&alice, chat_id).await,
+            control_action_kinds(&bobbi, chat_id).await,
+        ];
+        kinds
+            .iter()
+            .all(|k| *k == expected)
+            .then_some(())
+            .ok_or(kinds)
+    })
+    .await
+    .unwrap();
+
+    let ops = alice.get_group_control_ops(chat_id).await.unwrap();
+    assert!(
+        ops.iter()
+            .all(|op| op.header.verifying_key == *alice.device_id())
+    );
+    assert!(ops.iter().all(|op| op.body.is_none()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_members_of_a_left_group_survive_restart() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    let expected = btreeset![(alice.device_id(), Access::manage())];
+    assert_group_members(&poll, &[(&bobbi, "bobbi")], chat_id, expected.clone()).await;
+
+    let bobbi_dir = bobbi.shutdown().await;
+    let bobbi = TestNode::new_at_path(NodeConfig::testing(), "bobbi", bobbi_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    let started = std::time::Instant::now();
+    let members = bobbi.get_group_members(chat_id).await.unwrap();
+    assert_eq!(members, expected);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "members of a left group must not wait for a join that never comes"
+    );
+}
