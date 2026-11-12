@@ -250,7 +250,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await deleteAccount(sender);
 		await sender.createProfilePage.createProfile('Ben', 'Test');
 		// The group test below needs a photo for Ben as well as for the group.
-		await sender.homePage.settingsLink.click();
+		await sender.mainTabbar.settingsTab.click();
 		await sender.settingsPage.ready();
 		await sender.settingsPage.profileLink.click();
 		await sender.profilePage.ready();
@@ -264,7 +264,7 @@ describe('Push notifications (real device, end-to-end)', () => {
 		await sender.editPhotoPage.save();
 		await sender.profilePage.ready();
 		await sender.profilePage.back.click();
-		await sender.settingsPage.back.click();
+		await sender.mainTabbar.chatsTab.click();
 		await navigateToAddContact(sender);
 		await sender.addContactPage.enterAddContactLink(receiverLink);
 		await sender.directChatPage.ready();

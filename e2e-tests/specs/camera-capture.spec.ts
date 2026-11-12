@@ -19,7 +19,7 @@ describe('Camera capture', () => {
 	before(async function () {
 		[agent] = await setupAgents(this, [{ platform: 'mobile' }]);
 		await agent.createProfilePage.createProfile('Camera', 'Test');
-		await agent.homePage.settingsLink.click();
+		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
 		await agent.settingsPage.profileLink.click();
 		await agent.profilePage.ready();

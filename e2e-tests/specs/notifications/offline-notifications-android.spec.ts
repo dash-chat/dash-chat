@@ -58,7 +58,7 @@ describe('Offline notifications on Android (background mode)', () => {
 
 		await receiver.directChatPage.back.click();
 		await receiver.homePage.ready();
-		await receiver.homePage.settingsLink.click();
+		await receiver.mainTabbar.settingsTab.click();
 		await receiver.settingsPage.ready();
 		await receiver.settingsPage.offlineLink.click();
 		await receiver.offlinePage.ready();

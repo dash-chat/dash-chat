@@ -1,8 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { type ContactsStore } from 'dash-chat-stores';
-	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
@@ -12,11 +9,7 @@
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
-	import Avatar from '../profiles/Avatar.svelte';
-	import HubWarningBadge from '../HubWarningBadge.svelte';
 
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const theme = $derived(useTheme());
 </script>
 
@@ -27,20 +20,6 @@
 		rightClass="order-1"
 		transparent={true}
 	>
-		{#snippet left()}
-			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<HubWarningBadge>
-						<Avatar
-							image={myProfile?.avatar}
-							initials={myProfile?.name.slice(0, 2)}
-							size={42}
-						/>
-					</HubWarningBadge>
-				</Link>
-			{/await}
-		{/snippet}
-
 		{#if theme === 'ios'}
 			<!-- A navbar child, not part of the right slot that Konsta wraps in one
 				glass capsule: it gets its own bubble before the capsule (rightClass

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
+	import type { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
 	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -14,15 +14,10 @@
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import HubWarningBadge from '$lib/components/HubWarningBadge.svelte';
 
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myProfile = useReactivePromise(contactsStore.myProfile);
-
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 </script>
@@ -56,20 +51,6 @@
 		right={theme === 'ios' ? composeActions : addContactAction}
 		transparent={true}
 	>
-		{#snippet left()}
-			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<HubWarningBadge>
-						<Avatar
-							image={myProfile?.avatar}
-							initials={myProfile?.name.slice(0, 2)}
-							size={42}
-						/>
-					</HubWarningBadge>
-				</Link>
-			{/await}
-		{/snippet}
-
 		{#if theme === 'ios'}
 			<!-- A navbar child, not part of the right slot that Konsta wraps in one
 				glass capsule: it gets its own bubble before the capsule (rightClass
@@ -88,7 +69,7 @@
 
 	{#if !isWideScreen.value}
 		<div
-			class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none"
+			class="flex flex-col fixed bottom-[calc(var(--main-tabbar-height)+1rem)] inset-x-0 z-10 pointer-events-none"
 		>
 			{#if theme == 'material'}
 				{#await $chatSummaries then chats}
