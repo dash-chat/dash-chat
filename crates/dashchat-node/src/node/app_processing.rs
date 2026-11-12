@@ -58,6 +58,13 @@ pub enum SystemNotification {
     GroupChatAdded { chat_id: ChatId },
     /// Members of a group chat were added, removed, promoted or demoted.
     GroupMembersChanged { chat_id: ChatId },
+    /// A group-auth op on `topic`'s space. It lives on the group log, not the
+    /// chat log the frontend reads, so it is never announced as an operation.
+    Membership {
+        topic: TopicId,
+        #[serde(with = "crate::header_serde")]
+        header: Header,
+    },
     /// Devices were introduced as belonging to agents.
     AgentsIntroduced { agents: BTreeMap<DeviceId, AgentId> },
     /// A device published a newer profile. `agent_id` is absent while the
@@ -220,6 +227,9 @@ impl Node {
                                 node.process_operation(operation, source, processed_tx),
                             )
                             .await;
+                        }
+                        Some(ProcessorEvent::GroupMembershipOp { topic, header }) => {
+                            node.notify(SystemNotification::Membership { topic: topic.into(), header }.into());
                         }
                         Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
                             if let Err(err) = node.notify_group_members_changed(topic).await {

@@ -11,7 +11,7 @@ use futures::future::{BoxFuture, Shared, join};
 use futures::{FutureExt, Stream, StreamExt};
 use p2panda::network::NetworkError;
 use p2panda::node::{CreateSpaceError, CreateStreamError, SubscribeSpaceError};
-use p2panda::operation::{Extensions, LogId, Operation};
+use p2panda::operation::{Extensions, Header, LogId, Operation};
 use p2panda::spaces::{PendingSpace, SpaceSubscription};
 use p2panda::streams::{
     EphemeralStreamPublisher, EphemeralStreamSubscription, ImportError, ProcessedOperation,
@@ -124,6 +124,12 @@ pub enum ProcessorEvent {
     /// A space's membership changed.
     SpaceMembersChanged {
         topic: Topic,
+    },
+
+    /// A group-auth operation on `topic`'s space was processed.
+    GroupMembershipOp {
+        topic: Topic,
+        header: Header,
     },
 }
 
@@ -535,8 +541,8 @@ impl TopicDrain {
                     };
                     self.handle_command(command);
                 }
-                Some((_, event)) = self.streams.next() => {
-                    if let Some(event) = self.processor_event(event) {
+                Some((topic, event)) = self.streams.next() => {
+                    if let Some(event) = self.processor_event(topic, event) {
                         return Some(event);
                     }
                 }
@@ -585,7 +591,11 @@ impl TopicDrain {
     }
 
     /// The event to hand to the application processor, logging any system event instead.
-    fn processor_event(&mut self, event: StreamEvent<Payload>) -> Option<ProcessorEvent> {
+    fn processor_event(
+        &mut self,
+        topic: Topic,
+        event: StreamEvent<Payload>,
+    ) -> Option<ProcessorEvent> {
         match event {
             StreamEvent::Processed { operation, source } => {
                 let processed_tx = self.processed.lock().unwrap().remove(&operation.id());
@@ -616,6 +626,10 @@ impl TopicDrain {
             }
             StreamEvent::Space { space_id, .. } => Some(ProcessorEvent::SpaceMembersChanged {
                 topic: Topic::from(space_id),
+            }),
+            StreamEvent::Group { event, .. } => Some(ProcessorEvent::GroupMembershipOp {
+                topic,
+                header: event.header().clone(),
             }),
             _ => None,
         }
