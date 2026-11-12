@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::blob_crypto::{BLOB_AUX_INFO, BlobDecryptIndex};
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{
@@ -23,15 +24,18 @@ use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
+use dashchat_utils::blob_sync::{BLOB_ENCRYPTION_OVERHEAD, MAX_BLOB_BYTES};
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
 use p2panda::{AccessLevel, Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_encryption::crypto::xchacha20::XAeadNonce;
+use p2panda_encryption::data_scheme::GroupSecretId;
 use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
+use p2panda_spaces::SecretsError;
 use tokio::sync::{Mutex, mpsc};
 
 use mailbox_client::MailboxesConfig;
@@ -264,6 +268,7 @@ pub struct Node {
     /// `redb` metadata store — whose exclusive single-process lock the always-on
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
+    blob_decrypt_index: BlobDecryptIndex,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// `None` when p2panda was spawned with no networking layer, which happens
     /// once nothing needs the endpoint (see [`Self::init`]).
@@ -276,10 +281,14 @@ pub struct Node {
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
 
-/// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
+/// How long a send waits for the chat space's encryption secrets to become established
+/// before failing.
+const BLOB_ENCRYPT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Refuse to publish an encrypted media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
 fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
-    if size as u64 > MAX_BLOB_BYTES {
+    if size + BLOB_ENCRYPTION_OVERHEAD > MAX_BLOB_BYTES {
         anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
     Ok(())
@@ -417,6 +426,7 @@ impl Node {
         // single-process lock the always-on main app already holds, which would
         // deadlock this build. It reads the operation and builds a notification
         // from its payload only, so blob sync is skipped entirely.
+        let blob_decrypt_index = BlobDecryptIndex::default();
         let blob_sync = if config.enable_blob_sync {
             let endpoint = endpoint
                 .clone()
@@ -437,6 +447,7 @@ impl Node {
             let blob_fetch = BlobFetchPool::from_ops(
                 op_store.get_all_operations_not_fully_sorted(),
                 op_store.store.clone(),
+                &blob_decrypt_index,
             )
             .await?;
             Some(
@@ -476,6 +487,7 @@ impl Node {
             stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
+            blob_decrypt_index,
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
@@ -2492,12 +2504,16 @@ impl Node {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
+                for photo in &photos {
+                    ensure_blob_size(photo.data.len() as u64, &photo.name)?;
+                }
                 for photo in photos {
                     let size = photo.data.len() as u64;
-                    ensure_blob_size(size, &photo.name)?;
+                    let (group_secret_id, nonce, ciphertext) =
+                        self.encrypt_blob(topic, photo.data).await?;
                     let hash = self
                         .require_blob_sync()?
-                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
+                        .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                         .await?;
                     items.push(MediaMetadata::Photo {
                         name: photo.name,
@@ -2506,30 +2522,38 @@ impl Node {
                         width: photo.width,
                         height: photo.height,
                         hash,
+                        group_secret_id,
+                        nonce,
                     });
                 }
             }
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
+                let (group_secret_id, nonce, ciphertext) =
+                    self.encrypt_blob(topic, file.data).await?;
                 let hash = self
                     .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, file.data)
+                    .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                     .await?;
                 items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
                     hash,
+                    group_secret_id,
+                    nonce,
                 });
             }
             OutgoingMedia::VoiceNote { voice_note } => {
                 let size = voice_note.data.len() as u64;
                 ensure_blob_size(size, "voice note")?;
 
+                let (group_secret_id, nonce, ciphertext) =
+                    self.encrypt_blob(topic, voice_note.data).await?;
                 let hash = self
                     .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
+                    .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                     .await?;
                 items.push(MediaMetadata::VoiceNote {
                     mime_type: voice_note.mime_type,
@@ -2537,10 +2561,50 @@ impl Node {
                     duration_ms: voice_note.duration_ms,
                     waveform: voice_note.waveform,
                     hash,
+                    group_secret_id,
+                    nonce,
                 });
             }
         }
+        self.blob_decrypt_index.insert_blobs(topic, &items);
         Ok(MediaBundle::from(items))
+    }
+
+    /// Encrypt a media blob towards the chat space on `topic`, under the space's current
+    /// group secret.
+    ///
+    /// Waits up to [`BLOB_ENCRYPT_WAIT`] for the space's encryption state to become
+    /// established (a freshly accepted contact or joined group may not have been welcomed
+    /// yet), then fails the send.
+    async fn encrypt_blob(
+        &self,
+        topic: TopicId,
+        data: Vec<u8>,
+    ) -> anyhow::Result<(GroupSecretId, XAeadNonce, Vec<u8>)> {
+        let space = self.streams.space(topic).await?;
+        let data = Arc::new(data);
+        let deadline = std::time::Instant::now() + BLOB_ENCRYPT_WAIT;
+        loop {
+            let data = data.clone();
+            let result = space
+                .run(move |space| async move {
+                    space
+                        .with_secrets(|secrets| secrets.encrypt_aux(BLOB_AUX_INFO, &data))
+                        .await
+                        .map_err(anyhow::Error::from)
+                })
+                .await??;
+            match result {
+                Ok(encrypted) => return Ok(encrypted),
+                Err(SecretsError::NotEstablished) if std::time::Instant::now() < deadline => {
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                Err(err) => {
+                    return Err(anyhow::Error::from(err)
+                        .context("failed to encrypt media towards the chat space"));
+                }
+            }
+        }
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
@@ -2561,7 +2625,8 @@ impl Node {
         let hash: iroh_blobs::Hash = hash.parse()?;
         let blob_sync = self.require_blob_sync()?;
         let Some(timeout) = timeout else {
-            return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            let ciphertext = blob_sync.blobs.get_bytes(hash).await?;
+            return self.decrypt_blob(hash, ciphertext, None).await;
         };
 
         if !blob_sync.blobs.has(hash).await.unwrap_or(false) {
@@ -2577,7 +2642,8 @@ impl Node {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if blob_sync.blobs.has(hash).await.unwrap_or(false) {
-                return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
+                let ciphertext = blob_sync.blobs.get_bytes(hash).await?;
+                return self.decrypt_blob(hash, ciphertext, Some(deadline)).await;
             }
             if std::time::Instant::now() >= deadline {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
@@ -2586,15 +2652,66 @@ impl Node {
         }
     }
 
+    /// Decrypt a media blob with the space secret pinned in its message metadata.
+    ///
+    /// A blob with no decrypt-index entry was stored outside a chat message (only possible
+    /// internally, e.g. in tests) and is returned as-is. An unknown secret id means the
+    /// space's key agreement hasn't caught up with the message yet, so with a `deadline` the
+    /// decrypt is retried until then; failure to decrypt with a known secret is permanent.
+    async fn decrypt_blob(
+        &self,
+        hash: iroh_blobs::Hash,
+        ciphertext: bytes::Bytes,
+        deadline: Option<std::time::Instant>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let Some(info) = self.blob_decrypt_index.get(&hash) else {
+            return Ok(ciphertext.to_vec());
+        };
+        let space = self.streams.space(info.topic).await?;
+        loop {
+            let ciphertext = ciphertext.clone();
+            let result = space
+                .run(move |space| async move {
+                    space
+                        .with_secrets(|secrets| {
+                            secrets.decrypt_aux(
+                                info.group_secret_id,
+                                BLOB_AUX_INFO,
+                                info.nonce,
+                                &ciphertext,
+                            )
+                        })
+                        .await
+                        .map_err(anyhow::Error::from)
+                })
+                .await??;
+            match result {
+                Ok(plaintext) => return Ok(plaintext),
+                Err(err @ SecretsError::UnknownSecret(_))
+                    if deadline.is_some_and(|d| std::time::Instant::now() < d) =>
+                {
+                    tracing::debug!(%hash, %err, "waiting for space secret to decrypt blob");
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                Err(err) => {
+                    return Err(
+                        anyhow::Error::from(err).context(format!("failed to decrypt blob {hash}"))
+                    );
+                }
+            }
+        }
+    }
+
     pub async fn load_media(&self, meta: Vec<MediaMetadata>) -> anyhow::Result<OutgoingMedia> {
         let mut items = vec![];
         for item in meta {
-            let data = self
+            let ciphertext = self
                 .require_blob_sync()?
                 .blobs
                 .get_bytes(item.hash())
                 .await
                 .context(format!("failed to load blob: {item:?}"))?;
+            let data = self.decrypt_blob(item.hash(), ciphertext, None).await?;
             items.push((item, data));
         }
 

@@ -267,7 +267,7 @@ impl TopicStreams {
             .await?)
     }
 
-    #[deprecated = "direct p2panda node access is bad encapsulation for TopicStreams"]
+    #[deprecated = "direct p2panda node access is bad encapsulation for TopicStreams (private access is fine, public access needs to be removed)"]
     pub(crate) async fn with_node<T, E>(
         &self,
         f: impl AsyncFnOnce(&p2panda::Node) -> Result<T, E>,

@@ -116,8 +116,18 @@ export type MediaMetadata =
 			width: number;
 			height: number;
 			hash: Hash;
+			group_secret_id: string;
+			nonce: string;
 	  }
-	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'File';
+			name: string;
+			mime_type: string;
+			size: number;
+			hash: Hash;
+			group_secret_id: string;
+			nonce: string;
+	  }
 	| {
 			kind: 'VoiceNote';
 			mime_type: string;
@@ -125,6 +135,8 @@ export type MediaMetadata =
 			duration_ms: number;
 			waveform: Uint8Array;
 			hash: Hash;
+			group_secret_id: string;
+			nonce: string;
 	  };
 
 /** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */

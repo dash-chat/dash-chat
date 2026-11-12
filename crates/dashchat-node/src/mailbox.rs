@@ -138,6 +138,8 @@ mod tests {
                 width: 640,
                 height: 480,
                 hash: media_hash,
+                group_secret_id: [7; 32],
+                nonce: [9; 24],
             }]),
             None,
         );

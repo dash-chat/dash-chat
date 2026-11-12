@@ -37,6 +37,10 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // `nodes=[]` stays readable: it says nobody was found, which is what a
         // discovery failure looks like, and it names no one.
         r"\b[a-z_]*(node|endpoint)(_id)?s?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
+        // Media blob decrypt parameters as Debug output prints them (decimal
+        // byte arrays), which the hex rules above miss. Hex-encoded forms are
+        // already caught by the 40-char hex rule.
+        r"\b(group_secret_id|nonce):\s*\[[0-9][0-9,\s]*\]",
         // Socket addresses of peers and of this device, as the address book
         // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
         // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
@@ -129,6 +133,14 @@ mod tests {
     /// Assert the patterns through the same function that runs at egress.
     fn redact(input: &str) -> String {
         tauri_plugin_sentry_reporting::redact(&REDACTION_REGEXES, input)
+    }
+
+    #[test]
+    fn redacts_media_decrypt_params_debug_output() {
+        let line = "failed to load blob: Photo { name: ..., group_secret_id: [7, 7, 200], nonce: [9, 0, 13] }";
+        let redacted = redact(line);
+        assert!(!redacted.contains("[7, 7, 200]"), "{redacted}");
+        assert!(!redacted.contains("[9, 0, 13]"), "{redacted}");
     }
 
     #[test]
