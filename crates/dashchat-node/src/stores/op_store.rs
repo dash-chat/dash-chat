@@ -1,11 +1,9 @@
 pub mod queries;
 
 use std::collections::{BTreeMap, HashSet};
+use std::sync::Arc;
 #[cfg(feature = "testing")]
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, sync::RwLock};
 
 use dashchat_utils::SeqNum;
 use futures::TryStreamExt;
@@ -18,6 +16,7 @@ use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 use p2panda_store::topics::TopicStore;
 
+use crate::node::streams::{EncryptedMessage, TopicStreams};
 use crate::{mailbox::MailboxOperation, topic::TopicId, *};
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
@@ -25,6 +24,9 @@ pub struct OpStore {
     #[deref]
     #[deref_mut]
     pub(crate) store: SqliteStore,
+
+    /// Decrypts encrypted operations for reading. `None` for a store with no node behind it.
+    streams: Option<Arc<TopicStreams>>,
 
     #[cfg(feature = "testing")]
     pub processed_ops: Arc<RwLock<HashMap<TopicId, HashSet<Hash>>>>,
@@ -47,18 +49,13 @@ impl OpStore {
             pool.close().await;
             panic!("Database migration failed");
         }
-        let store = SqliteStore::from_pool(pool);
-        let store = Self {
-            store,
-            #[cfg(feature = "testing")]
-            processed_ops: Arc::new(RwLock::new(HashMap::new())),
-        };
-        Ok(store)
+        Ok(Self::from_sqlite(SqliteStore::from_pool(pool), None))
     }
 
-    pub fn from_sqlite(store: SqliteStore) -> Self {
+    pub fn from_sqlite(store: SqliteStore, streams: Option<Arc<TopicStreams>>) -> Self {
         Self {
             store,
+            streams,
             #[cfg(feature = "testing")]
             processed_ops: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -66,8 +63,7 @@ impl OpStore {
 
     #[cfg(feature = "testing")]
     pub async fn temporary_sqlite() -> anyhow::Result<Self> {
-        let store = SqliteStore::temporary().await;
-        Ok(Self::from_sqlite(store))
+        Ok(Self::from_sqlite(SqliteStore::temporary().await, None))
     }
 
     /// Highest sequence number the node has acknowledged for `author`'s log in
@@ -103,13 +99,40 @@ impl OpStore {
         self.store.pool().close().await;
     }
 
+    /// Give each encrypted operation its decrypted payload as its body. p2panda stores such
+    /// a payload only as ciphertext in the header. An operation whose secret we do not hold
+    /// (yet) keeps no body.
+    async fn decrypt_bodies(&self, ops: &mut [Operation]) -> anyhow::Result<()> {
+        let Some(streams) = &self.streams else {
+            return Ok(());
+        };
+        let mut by_space: BTreeMap<TopicId, Vec<(usize, EncryptedMessage)>> = BTreeMap::new();
+        for (index, op) in ops.iter().enumerate() {
+            if let Some((space, message)) = encrypted_message(op) {
+                by_space.entry(space).or_default().push((index, message));
+            }
+        }
+        for (space, messages) in by_space {
+            let (indices, messages): (Vec<_>, Vec<_>) = messages.into_iter().unzip();
+            let plaintexts = streams.decrypt_messages(space, messages).await?;
+            for (index, plaintext) in indices.into_iter().zip(plaintexts) {
+                ops[index].body = plaintext.map(Into::into);
+            }
+        }
+        Ok(())
+    }
+
+    /// One author's log as the app reads it: an encrypted operation carries
+    /// its decrypted payload as its body. Never send these onward: mailbox sync
+    /// reads the stored operations instead.
     pub async fn get_log(
         &self,
         author: &DeviceId,
         log_id: &LogId,
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
-        let log = self.log_operations(author, log_id, from).await?;
+        let mut log = self.log_operations(author, log_id, from).await?;
+        self.decrypt_bodies(&mut log).await?;
         if log.is_empty()
             && tracing::enabled!(tracing::Level::WARN)
             && !self.log_exists(author, log_id).await?
@@ -148,18 +171,35 @@ impl OpStore {
             .await
     }
 
-    pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
+    /// An operation exactly as it was signed and stored, safe to send onward.
+    pub async fn get_stored_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
         use p2panda_store::operations::OperationStore;
         OperationStore::<Operation, Hash>::get_operation(&self.store, hash)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
     }
 
+    /// An operation as the app reads it, see [`Self::get_log`].
+    pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
+        let Some(operation) = self.get_stored_operation(hash).await? else {
+            return Ok(None);
+        };
+        let mut operations = [operation];
+        self.decrypt_bodies(&mut operations).await?;
+        let [operation] = operations;
+        Ok(Some(operation))
+    }
+
     #[deprecated = "will be replace by proper use of p2panda-streams"]
     pub fn get_all_operations_not_fully_sorted(
         &self,
     ) -> impl futures::Stream<Item = Result<Operation, anyhow::Error>> + '_ {
-        queries::get_all_operations_not_fully_sorted(&self.store)
+        queries::get_all_operations_not_fully_sorted(&self.store).and_then(async |operation| {
+            let mut operations = [operation];
+            self.decrypt_bodies(&mut operations).await?;
+            let [operation] = operations;
+            Ok(operation)
+        })
     }
 
     /// Get the "height" of each log, which is actually the highest sequence number of the log.
@@ -256,8 +296,12 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         // are ever tombstoned — and are acknowledged by p2panda before ever
         // reaching the application layer.
         let acked_height = self.acked_log_height(topic, author, &log_id).await?;
+        let mut readable = log.clone();
+        self.decrypt_bodies(&mut readable).await?;
+        let mut readable = readable.into_iter();
         let mut ops = Vec::with_capacity(log.len());
         for op in log {
+            let plaintext = readable.next().and_then(|readable| readable.body);
             if is_application(&op)
                 && op.body.is_some()
                 && acked_height.is_none_or(|h| op.header.seq_num > h)
@@ -266,6 +310,9 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
             }
             ops.push(MailboxOperation {
                 topic: *topic,
+                blob_hashes: plaintext
+                    .map(|body| crate::mailbox::media_blob_hashes(body.as_bytes()))
+                    .unwrap_or_default(),
                 header: op.header,
                 body: op.body,
             });
@@ -288,6 +335,34 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     }
 }
 
+/// The space and ciphertext of an encrypted operation that has no body to read.
+fn encrypted_message(op: &Operation) -> Option<(TopicId, EncryptedMessage)> {
+    if op.body.is_some() {
+        return None;
+    }
+    let ExtensionsVariantV1::Space(extensions) = &op.header.extensions.variant else {
+        return None;
+    };
+    let SpacesArgs::Application {
+        space_id,
+        group_secret_id,
+        nonce,
+        ciphertext,
+        ..
+    } = &extensions.args
+    else {
+        return None;
+    };
+    Some((
+        TopicId::from(*space_id),
+        EncryptedMessage {
+            group_secret_id: *group_secret_id,
+            nonce: *nonce,
+            ciphertext: ciphertext.clone(),
+        },
+    ))
+}
+
 /// Whether an operation carries an application payload, as opposed to a
 /// space, group or key bundle control message.
 fn is_application(op: &Operation) -> bool {
@@ -301,7 +376,7 @@ fn is_application(op: &Operation) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use p2panda::operation::{Extensions, Header};
+    use p2panda::operation::{Extensions, Header, LogId};
     use p2panda_core::{Body, Timestamp};
     use p2panda_store::Transaction;
     use p2panda_store::operations::OperationStore;

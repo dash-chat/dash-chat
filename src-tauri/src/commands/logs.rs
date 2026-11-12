@@ -1,5 +1,5 @@
 use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
-use p2panda::operation::{Header, LogId};
+use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::group::GroupAction;
 use p2panda_core::cbor::decode_cbor;
@@ -213,7 +213,7 @@ pub async fn get_log(
     let node = app_node_manager.get().await?;
     let log = node
         .op_store
-        .get_log(&author, &LogId::from_topic(topic_id), None)
+        .get_log(&author, &node.app_log_id(topic_id).await, None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
@@ -234,7 +234,7 @@ pub async fn get_authors(
     let node = app_node_manager.get().await?;
     let authors = node
         .op_store
-        .get_authors(LogId::from_topic(topic_id))
+        .get_authors(node.app_log_id(topic_id).await)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)
@@ -243,7 +243,7 @@ pub async fn get_authors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use p2panda::operation::Extensions;
+    use p2panda::operation::{Extensions, LogId};
     use p2panda::SigningKey;
     use p2panda_auth::group::GroupMember;
     use p2panda_auth::Access;

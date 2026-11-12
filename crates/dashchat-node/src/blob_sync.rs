@@ -8,7 +8,7 @@ use iroh_blobs::provider::events::{
     AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
 };
 use mailboxes_manager::Mailboxes;
-use p2panda::operation::{LogId, Operation};
+use p2panda::operation::Operation;
 use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
@@ -492,7 +492,7 @@ impl MixedSourceLookup {
     /// Return a list of providers for the blobs in a topic.
     /// Mailboxes come first, then peer subscribers.
     pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
-        let log_id = LogId::from_topic(topic);
+        let log_id = crate::topic::application_log_id(topic);
         let mut sources = vec![];
         sources.extend(self.mailboxes.get_sources(&topic).await?);
         sources.extend(
