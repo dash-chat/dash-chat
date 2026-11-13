@@ -391,7 +391,7 @@
     "fileDownloadFailed": "No se pudo descargar el archivo.",
     "messageStatusUnsent": "Enviar",
     "retry": "Reintentar",
-    "notificationsPermissionDenied": "Las notificaciones necesitan permiso para ser mostradas. Puede permitirlos en la configuración de su dispositivo.",
+    "notificationsPermissionDenied": "Para mostrar notificaciones, se requiere permiso. Puedes concederlo en la configuración de tu dispositivo.",
     "removeNamedAttachment": "Quitar {{name}}",
     "errorUnsupportedImage": "Sólo se pueden adjuntar imágenes JPEG, PNG, WebP y GIF.",
     "errorTooManyScreenshots": "No puedes añadir más capturas de pantalla.",
