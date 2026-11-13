@@ -518,16 +518,18 @@ async fn auth_control_op_notification(
         )
     };
 
+    // The acceptor authors the direct-chat space and admits the requester to
+    // it; neither is a group invite. The deterministic direct-chat topic with
+    // the sender tells a chat from a group.
+    if *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic {
+        return None;
+    }
+
     let added_me = match action {
-        // A Create is either the acceptor authoring a new direct-chat space,
-        // which is not a group at all, or someone creating a group with us in
-        // it. The deterministic direct-chat topic with the sender tells which.
         GroupAction::Create { initial_members } => {
-            *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
-                != topic
-                && initial_members.iter().any(|(m, _)| target_is_me(m))
+            initial_members.iter().any(|(m, _)| target_is_me(m))
         }
-        GroupAction::Add { member, .. } => target_is_me(&member),
+        GroupAction::Add { member, .. } => target_is_me(member),
         GroupAction::Remove { .. } | GroupAction::Promote { .. } | GroupAction::Demote { .. } => {
             false
         }
