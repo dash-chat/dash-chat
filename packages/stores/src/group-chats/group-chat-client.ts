@@ -14,17 +14,17 @@ export interface GroupMember {
 
 export interface IGroupChatClient {
 	getMembers(chatId: ChatId): Promise<GroupMember[]>;
-	
+
 	/** The group's control operations from every member, carrying their action in `header.auth`.
 	 *  */
 	getControlOps(chatId: ChatId): Promise<SimplifiedOperation<Payload>[]>;
-	
+
 	/** `chatId`'s members changed. */
 	onGroupMembersChanged(
 		chatId: ChatId,
 		handler: () => void,
 	): UnsubscribeFunction;
-	
+
 	addMember(chatId: ChatId, member: AgentId): Promise<void>;
 	removeMember(chatId: ChatId, member: AgentId): Promise<void>;
 
