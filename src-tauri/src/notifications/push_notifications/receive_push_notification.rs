@@ -83,35 +83,24 @@ pub fn receive_push_notification(
 
     log::info!("Received push notification: {notification:?}");
 
-    // The iOS Notification Service Extension's main thread has a ~1 MB stack —
-    // too small for the deeply-nested node-init future (iroh + sqlx + encryption
-    // polled inline by `block_on`), which overruns the stack guard page and
-    // crashes with EXC_BAD_ACCESS/SIGBUS. Run the work on a thread with a large
-    // stack. Android's handler thread has ample stack, so it runs inline.
-    #[cfg(target_os = "ios")]
-    {
-        let data_dir = context.data_dir;
-        std::thread::Builder::new()
-            .stack_size(16 * 1024 * 1024)
-            .spawn(move || {
-                tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
-                    notification,
-                    data_dir,
-                    handler_deadline,
-                ))
-            })
-            .expect("failed to spawn push-notification worker thread")
-            .join()
-            .expect("push-notification worker thread panicked")
-    }
-    #[cfg(not(target_os = "ios"))]
-    {
-        tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
-            notification,
-            context.data_dir,
-            handler_deadline,
-        ))
-    }
+    // The thread a push arrives on (the iOS Notification Service Extension's
+    // main thread, an Android executor thread) has a ~1 MB stack — too small
+    // for the deeply-nested node-init future (iroh + sqlx + encryption polled
+    // inline by `block_on`), which overruns the stack guard page and crashes
+    // the process.
+    let data_dir = context.data_dir;
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
+                notification,
+                data_dir,
+                handler_deadline,
+            ))
+        })
+        .expect("failed to spawn push-notification worker thread")
+        .join()
+        .expect("push-notification worker thread panicked")
 }
 
 #[cfg(target_os = "ios")]
