@@ -51,16 +51,6 @@ impl<R> CancelAndWait<R> {
     }
 }
 
-/// Clamp a hash to a valid ed25519 public key.
-pub fn clamp_to_ed25519_pubkey(mut hash: [u8; 32]) -> VerifyingKey {
-    hash[0] &= 248;
-    hash[31] &= 127;
-    hash[31] |= 64;
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(&hash);
-    let pubkey = signing_key.verifying_key();
-    VerifyingKey::from_bytes(pubkey.as_bytes()).unwrap()
-}
-
 pub fn setup_aliases() {
     use aliased::Aliasing;
     crate::AgentId::alias_prefix("A");

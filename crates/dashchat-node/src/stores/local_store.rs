@@ -17,18 +17,22 @@ use crate::{
 const PRIVATE_KEY_KEY: &str = "private_key";
 const IDENTITY_SECRET_KEY: &str = "identity_secret";
 const AGENT_ID_KEY: &str = "agent_id";
+const DEVICE_GROUP_TOPIC_KEY: &str = "device_group_topic";
 
 /// Distinguishes the roles an inbox topic can play for this node.
 ///
 /// Through a normal flow between Alice and Bob, the roles show
 /// up in the following order:
 ///
-/// - Alice creates a QR code for inbox X as role `Advertised`
+/// - Alice creates a QR code for inbox X as role `Advertised`, and lets her
+///   key bundle log sync along with X
 /// - Bob scans, then:
 ///     - Bob creates inbox Y as role `Reply`
-///     - Bob publishes ContactRequest (declaring Y) to X
+///     - Bob creates the direct chat space S, with only himself in it
+///     - Bob publishes ContactRequest (declaring Y and S) to X
 ///     - Bob registers X as role `Requested`
-/// - Alice receives ContactRequest on X and subscribes to the direct chat topic
+/// - Bob receives Alice's key bundle on X and admits her to S
+/// - Alice receives ContactRequest on X and subscribes to S
 /// - Alice accepts the request (either via UI or mutual request) and:
 ///     - Alice publishes ContactRequestAccept to Y
 ///     - Alice registers Y as role `Accepted`
@@ -195,9 +199,9 @@ impl LocalStore {
     /// allows. No further setup is needed for a space with a row.
     ///
     /// This store and p2panda's store are separate SQLite databases, so no transaction
-    /// spans both. The two writers (`Node::register_and_join_space`,
-    /// `Node::register_and_create_space`) are therefore ordered so that each is safe
-    /// to repeat after a failure at any step; their comments say why.
+    /// spans both. A join (`Node::register_and_join_space`) writes the row first and is
+    /// safe to repeat after a failure at any step. A create
+    /// (`Node::create_and_register_space`) writes it after p2panda made the space.
     pub async fn register_space_as_subscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
@@ -251,6 +255,28 @@ impl LocalStore {
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Agent ID field not found"))?;
         let arr: [u8; 32] = bytes32(bytes, "identity.agent_id")?;
         Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
+    }
+
+    /// The space holding this node's private device group, once it has been created.
+    pub async fn device_group_topic(&self) -> anyhow::Result<Option<DeviceGroupId>> {
+        let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT value FROM identity WHERE key = ?")
+            .bind(DEVICE_GROUP_TOPIC_KEY)
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some((bytes,)) = row else {
+            return Ok(None);
+        };
+        let arr = bytes32(bytes, "identity.device_group_topic")?;
+        Ok(Some(DeviceGroupId::from_topic_id(TopicId::from(arr))))
+    }
+
+    pub async fn set_device_group_topic(&self, topic: DeviceGroupId) -> anyhow::Result<()> {
+        sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
+            .bind(DEVICE_GROUP_TOPIC_KEY)
+            .bind(topic.to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Inbox topics this node created and advertises via its QR code.

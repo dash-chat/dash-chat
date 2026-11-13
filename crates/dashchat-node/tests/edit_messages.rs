@@ -28,8 +28,8 @@ async fn two_friends(mailbox: &MemMailbox<MailboxOperation>) -> (TestNode, TestN
         .await
         .unwrap();
 
-    let chat_id = alice.direct_chat_with(&bobbi);
-    assert_eq!(chat_id, bobbi.direct_chat_with(&alice));
+    let chat_id = alice.direct_chat_with(&bobbi).await;
+    assert_eq!(chat_id, bobbi.direct_chat_with(&alice).await);
     (alice, bobbi, chat_id)
 }
 

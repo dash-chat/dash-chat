@@ -35,7 +35,7 @@ async fn nodes_without_networking_exchange_messages_through_a_mailbox() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     alice.send_message_raw(chat, "hello".into()).await.unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await

@@ -232,6 +232,11 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 				payload: {
 					agent_id: EVE.agentId,
 					reply_topic: DEMO_IDS.INBOX_TOPIC,
+					recipient: DEMO_IDS.MY_DEVICE_ID,
+					direct_chat_id: chatIdForDevices(
+						DEMO_IDS.MY_DEVICE_ID,
+						EVE.deviceId,
+					),
 					profile: {
 						name: EVE.name,
 						surname: EVE.surname,

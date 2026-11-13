@@ -277,7 +277,9 @@ pub struct Node {
     unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    direct_chat_creation_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    direct_chat_admission_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    direct_chat_admission: Arc<Mutex<()>>,
+    device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
 
@@ -406,6 +408,16 @@ impl Node {
         let (streams, drain) = TopicStreams::new(p2panda_node, config.stream_cursor_prefix.clone());
         let streams = Arc::new(streams);
 
+        let device_group_topic = match local_store.device_group_topic().await? {
+            Some(topic) => topic,
+            None => {
+                let (topic, _) = streams.create_space().await?;
+                let topic = DeviceGroupId::from_topic_id(topic);
+                local_store.set_device_group_topic(topic).await?;
+                topic
+            }
+        };
+
         // === stores === //
 
         // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
@@ -499,7 +511,9 @@ impl Node {
             unfetched_blob_followup_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
-            direct_chat_creation_handles: Default::default(),
+            direct_chat_admission_handles: Default::default(),
+            direct_chat_admission: Default::default(),
+            device_group_topic,
             dirty_ack_topics: Default::default(),
         };
 
@@ -781,125 +795,104 @@ impl Node {
     }
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
-        Topic::device_group(self.agent_id()).into()
+        self.device_group_topic
     }
 
-    /// Get the topic for a direct chat between two public keys.
+    /// The space our direct chat with `peer` takes place in, once either of us
+    /// has requested contact.
     ///
-    /// The topic is the hashed sorted public keys.
-    /// Anyone who knows the two public keys can derive the same topic.
-    // TODO: is this a problem? Should we use a random topic instead?
-    pub fn direct_chat_topic(&self, other: FakeAgentId) -> DirectChatId {
-        let me = self.fake_agent_id();
-        // TODO: use two secrets from each party to construct the topic
-        let topic = Topic::direct_chat([me, other]);
-        if me > other {
-            topic.alias_named(&format!("direct({:?},{:?})", other.aliased(), me.aliased()))
-        } else {
-            topic.alias_named(&format!("direct({:?},{:?})", me.aliased(), other.aliased()))
-        }
+    /// When both did, each created a space. Until the two get reconciled, both
+    /// sides settle on the one requested by the lower device id.
+    pub async fn direct_chat_id(&self, peer: DeviceId) -> anyhow::Result<Option<DirectChatId>> {
+        let spaces = self.projection.direct_chat_spaces(peer).await?;
+        let preferred_requester = self.device_id().min(peer);
+        Ok(spaces
+            .iter()
+            .find(|(_, requester)| *requester == preferred_requester)
+            .or(spaces.first())
+            .map(|(space, _)| *space))
     }
 
     #[cfg(feature = "testing")]
-    pub fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
-        let other = other.fake_agent_id();
-        self.direct_chat_topic(other)
+    pub async fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
+        self.direct_chat_id(other.device_id())
+            .await
+            .unwrap()
+            .expect("no contact request was exchanged with this node")
     }
 
-    /// Create the direct chat space with `other` once their key bundle has
-    /// reached us. Does nothing if we already take part in it: we created it
-    /// before, or we joined it on their contact request and they create it.
-    pub(crate) async fn ensure_direct_chat_space(&self, other: DeviceId) -> anyhow::Result<()> {
-        self.keybundle_of(other).await?;
-        let topic = self.direct_chat_topic(FakeAgentId::from(other));
-        if self.streams.has_space(*topic).await? || self.streams.space(*topic).await.is_ok() {
+    /// [`Self::direct_chat_id`] of someone we exchanged a contact request with.
+    pub(crate) async fn known_direct_chat_id(
+        &self,
+        peer: DeviceId,
+    ) -> anyhow::Result<DirectChatId> {
+        self.direct_chat_id(peer)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("no direct chat with {:?}", peer.aliased()))
+    }
+
+    /// The space we created for our direct chat with `peer`, if we requested
+    /// contact with them before.
+    pub(crate) async fn requested_direct_chat_id(
+        &self,
+        peer: DeviceId,
+    ) -> anyhow::Result<Option<DirectChatId>> {
+        let spaces = self.projection.direct_chat_spaces(peer).await?;
+        Ok(spaces
+            .into_iter()
+            .find(|(_, requester)| *requester == self.device_id())
+            .map(|(space, _)| space))
+    }
+
+    /// Create the space for a direct chat we are requesting, with only us in
+    /// it: the other side is admitted once their key bundle has reached us.
+    async fn create_direct_chat_space(&self) -> anyhow::Result<DirectChatId> {
+        let (chat_id, _) = self.create_space(vec![]).await?;
+        self.publish_my_profile_to(chat_id).await?;
+        tracing::info!(chat_id = ?chat_id.aliased(), "created direct chat space");
+        Ok(chat_id)
+    }
+
+    /// Admit `peer` to the direct chat space we created for them, once their
+    /// key bundle has reached us.
+    pub(crate) async fn admit_to_direct_chat(
+        &self,
+        peer: DeviceId,
+        chat_id: DirectChatId,
+    ) -> anyhow::Result<()> {
+        self.keybundle_of(peer).await?;
+        let _admitting = self.direct_chat_admission.lock().await;
+        let is_member = self
+            .space_members(chat_id.into())
+            .await?
+            .iter()
+            .any(|(member, _)| *member == peer);
+        if is_member {
             return Ok(());
         }
-        match self
-            .create_direct_chat_space(FakeAgentId::from(other))
-            .await
-        {
-            Err(err)
-                if matches!(
-                    err.downcast_ref::<streams::StreamsError>(),
-                    Some(streams::StreamsError::SpaceAlreadyExists(_))
-                ) =>
-            {
-                Ok(())
-            }
-            result => result,
-        }
+        let space = self.streams.space(chat_id.into()).await?;
+        self.add_member_to_space(&space, *peer, AccessLevel::Write)
+            .await?;
+        Ok(())
     }
 
-    /// Run [`Self::ensure_direct_chat_space`] in the background, since the key
+    /// Run [`Self::admit_to_direct_chat`] in the background, since the key
     /// bundle of someone whose code we scanned only arrives once we sync
     /// their inbox.
-    pub(crate) async fn spawn_direct_chat_space_creation(&self, other: DeviceId) {
+    pub(crate) async fn spawn_direct_chat_admission(&self, peer: DeviceId, chat_id: DirectChatId) {
         let node = self.clone();
         let handle = tokio::spawn(async move {
-            if let Err(err) = node.ensure_direct_chat_space(other).await {
-                tracing::warn!(?err, other = ?other.aliased(), "failed to create direct chat space");
+            if let Err(err) = node.admit_to_direct_chat(peer, chat_id).await {
+                tracing::warn!(?err, peer = ?peer.aliased(), "failed to admit to direct chat");
             }
         });
-        self.direct_chat_creation_handles.lock().await.push(handle);
-    }
-
-    /// Create a new direct chat Space.
-    ///
-    /// The one who scanned the other's contact code creates it. When both
-    /// scanned each other's, both may: p2panda merges the two.
-    #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
-    pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
-        let topic = self.direct_chat_topic(other);
-
-        let my_actor = self.agent_id();
-
-        let other_device_id = DeviceId::from(other);
-
-        // TODO: this should use a transaction, but the race is not a big deal here
-        let initial_members = vec![
-            (GroupMember::Individual(*self.device_id()), Access::write()),
-            (GroupMember::Individual(*other_device_id), Access::write()),
-        ];
-        self.create_space(topic, initial_members).await?;
-        self.publish_my_profile_to(topic).await?;
-
-        tracing::info!(
-            my_actor = ?my_actor.aliased(),
-            other = ?other.aliased(),
-            topic = ?topic.aliased(),
-            "creating direct chat space"
-        );
-
-        tracing::info!(?topic, ?topic, "created direct chat space");
-
-        Ok(())
-    }
-
-    #[cfg(feature = "testing")]
-    /// Publish a Create for a space at a chosen id, bypassing the usual checks, to
-    /// probe what p2panda does when a space id already has a Create root elsewhere.
-    pub async fn create_space_at(
-        &self,
-        chat_id: ChatId,
-        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
-    ) -> anyhow::Result<()> {
-        self.create_space(chat_id, initial_members).await?;
-        Ok(())
+        self.direct_chat_admission_handles.lock().await.push(handle);
     }
 
     pub async fn create_chat_group(
         &self,
         mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
-        let chat_id = Topic::random();
-        tracing::info!(
-            me = ?self.device_id().aliased(),
-            chat_id = ?chat_id.aliased(),
-            member_count = initial_members.len(),
-            "creating group"
-        );
-
         let device_ids: Vec<DeviceId> = initial_members
             .keys()
             .map(|verifying_key| DeviceId::from(*verifying_key))
@@ -927,7 +920,13 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        let added = self.create_space(chat_id, initial_members).await?;
+        let (chat_id, added) = self.create_space(initial_members).await?;
+        tracing::info!(
+            me = ?self.device_id().aliased(),
+            chat_id = ?chat_id.aliased(),
+            member_count = added.len(),
+            "created group"
+        );
         self.publish_my_profile_to(chat_id).await?;
 
         // Ensure that future non-contact members can see every initial member's
@@ -948,14 +947,13 @@ impl Node {
         Ok(chat_id)
     }
 
-    /// Create a space with the given members, returning for each member other than us the
-    /// hash of the operation that admits it.
+    /// Create a space with the given members, returning its id and, for each member other
+    /// than us, the hash of the operation that admits it.
     async fn create_space(
         &self,
-        topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
-    ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
-        let space = self.register_and_create_space(topic).await?;
+    ) -> anyhow::Result<(ChatId, BTreeMap<DeviceId, Hash>)> {
+        let (chat_id, space) = self.create_and_register_space().await?;
         let mut added = BTreeMap::new();
         for (member, access) in initial_members {
             if member.id() == *self.device_id() {
@@ -968,8 +966,8 @@ impl Node {
                 .await?;
             added.insert(DeviceId::from(member.id()), add);
         }
-        self.join_presence(topic).await?;
-        Ok(added)
+        self.join_presence(chat_id).await?;
+        Ok((chat_id, added))
     }
 
     /// Add a member to a space, returning the hash of the group-auth operation that admits it.
@@ -1034,14 +1032,14 @@ impl Node {
             .lookup_contact_by_agent_id(person)
             .await?
             .ok_or_else(|| anyhow::anyhow!("Contact not found in lookup table"))?;
-        let person = FakeAgentId::from(device_id);
+        let direct_chat_id = self.known_direct_chat_id(device_id).await?;
         self.publish(
-            self.direct_chat_topic(person),
+            direct_chat_id,
             payload,
             Some(&format!(
                 "invite_to_group({:?}, {:?})",
                 chat_id.aliased(),
-                person.aliased()
+                device_id.aliased()
             )),
         )
         .await?;
@@ -1770,7 +1768,7 @@ impl Node {
             let _ = handle.await;
         }
 
-        for handle in self.direct_chat_creation_handles.lock().await.drain(..) {
+        for handle in self.direct_chat_admission_handles.lock().await.drain(..) {
             handle.abort();
         }
 
@@ -1899,8 +1897,6 @@ impl Node {
             return Err(AddContactError::CannotAddSelf);
         }
 
-        let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
-
         // If they're already a contact, or we're still serving a contact request
         // to this device, don't publish a duplicate request or pending marker.
         // Return the existing direct-chat topic id so the caller can navigate
@@ -1917,7 +1913,11 @@ impl Node {
                 .await
                 .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
         {
-            return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
+            let direct_chat_id = self
+                .known_direct_chat_id(contact.device_pubkey)
+                .await
+                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+            return Ok(AddContactResult::AlreadyRequested(direct_chat_id));
         }
 
         // Register the scanned contact as a bootstrap so p2panda discovery can
@@ -2013,6 +2013,19 @@ impl Node {
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        // A request sent again after the first expired keeps the same space.
+        let direct_chat_topic_id = match self
+            .requested_direct_chat_id(contact.device_pubkey)
+            .await
+            .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?
+        {
+            Some(direct_chat_id) => direct_chat_id,
+            None => self
+                .create_direct_chat_space()
+                .await
+                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?,
+        };
+
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
@@ -2020,6 +2033,8 @@ impl Node {
                 keybundle,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
+                recipient: contact.device_pubkey,
+                direct_chat_id: direct_chat_topic_id,
             }),
             Some(&format!(
                 "add_contact/contact_request({:?})",
@@ -2061,7 +2076,7 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        self.spawn_direct_chat_space_creation(contact.device_pubkey)
+        self.spawn_direct_chat_admission(contact.device_pubkey, direct_chat_topic_id)
             .await;
 
         Ok(AddContactResult::NewRequest(direct_chat_topic_id))
@@ -2094,7 +2109,7 @@ impl Node {
     /// — registering the requester as a bootstrap node and subscribing to their
     /// topics — replies with our profile (which also signals acceptance so the
     /// requester can complete their side), publishes the contact marker, and
-    /// creates the shared direct-chat space.
+    /// takes part in the direct chat space the requester created.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn accept_contact(&self, agent_id: AgentId) -> Result<(), AddContactError> {
         // The requester's device was mapped to their agent_id when the request
@@ -2129,28 +2144,50 @@ impl Node {
             );
         }
 
-        let fake_agent_id = FakeAgentId::from(device_pubkey);
-        self.publish_add_contact(agent_id, self.direct_chat_topic(fake_agent_id))
-            .await?;
-
-        self.ensure_direct_chat_space(device_pubkey)
+        let direct_chat_topic = self
+            .known_direct_chat_id(device_pubkey)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
-        let direct_chat_topic = self.direct_chat_topic(fake_agent_id);
-        self.join_space(direct_chat_topic.into())
+        self.publish_add_contact(agent_id, direct_chat_topic)
+            .await?;
+
+        self.join_space(direct_chat_topic)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
         let node = self.clone();
         tokio::spawn(async move {
-            if let Err(err) = node.publish_my_profile_to(direct_chat_topic.into()).await {
+            if let Err(err) = node.publish_my_profile_to(direct_chat_topic).await {
                 tracing::warn!(?err, "failed to push my profile to the new direct chat");
             }
         });
 
         // Messages the requester sent before acceptance were processed but
         // deliberately not acked; now that they are a contact, cover them.
-        self.mark_ack_topic_dirty(self.direct_chat_topic(fake_agent_id));
+        self.mark_ack_topic_dirty(direct_chat_topic);
 
+        Ok(())
+    }
+
+    /// Finish the exchange once the owner of a code we scanned has accepted:
+    /// make sure they are in the direct chat space we created, record them as
+    /// a contact, and show up in the chat.
+    pub(crate) async fn complete_accepted_request(
+        &self,
+        owner: DeviceId,
+        agent_id: AgentId,
+    ) -> anyhow::Result<()> {
+        if let Some(requested) = self.requested_direct_chat_id(owner).await? {
+            self.admit_to_direct_chat(owner, requested).await?;
+        }
+        let direct_chat_id = self.known_direct_chat_id(owner).await?;
+        self.join_space(direct_chat_id).await?;
+        self.publish_add_contact(agent_id, direct_chat_id).await?;
+        if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
+            tracing::warn!(?err, "failed to push my profile to the new direct chat");
+        }
+        // Messages they sent before we recorded the acceptance were processed
+        // but dropped by the ack filter; now that they are a contact, cover them.
+        self.mark_ack_topic_dirty(direct_chat_id);
         Ok(())
     }
 
@@ -2297,9 +2334,13 @@ impl Node {
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
-            self.online_peers
-                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)))
-                .await;
+            if let Some(direct_chat_id) = self
+                .direct_chat_id(device_id)
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            {
+                self.online_peers.leave(*direct_chat_id).await;
+            }
             self.online_peers.forget(device_id);
         }
 
@@ -2332,9 +2373,15 @@ impl Node {
                 .await
                 .map_err(|e| Error::AuthorOperation(e.to_string()))?
             {
-                self.join_presence(self.direct_chat_topic(FakeAgentId::from(device_id)))
+                if let Some(direct_chat_id) = self
+                    .direct_chat_id(device_id)
                     .await
-                    .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+                    .map_err(|e| Error::AuthorOperation(e.to_string()))?
+                {
+                    self.join_presence(direct_chat_id)
+                        .await
+                        .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+                }
             }
             // Profile updates skipped them while they were blocked.
             let direct_chat = self
@@ -2447,7 +2494,7 @@ impl Node {
         for agent_id in self.accepted_contact_agent_ids().await? {
             for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
                 if !self.projection.is_author_blocked(&device_id).await? {
-                    chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+                    chat_ids.extend(self.direct_chat_id(device_id).await?);
                 }
             }
         }
@@ -2518,7 +2565,6 @@ impl Node {
                 error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
                 failures += 1;
             }
-            self.spawn_direct_chat_space_creation(owner).await;
         }
 
         self.local_store
@@ -2548,6 +2594,17 @@ impl Node {
             }
         }
 
+        for (_, owner) in self
+            .local_store
+            .get_requested_inbox_topics_with_owner()
+            .await?
+        {
+            if let Some(direct_chat_id) = self.requested_direct_chat_id(owner).await? {
+                self.spawn_direct_chat_admission(owner, direct_chat_id)
+                    .await;
+            }
+        }
+
         match self.chat_topics().await {
             Ok(chat_ids) => {
                 for chat_id in chat_ids {
@@ -2565,9 +2622,9 @@ impl Node {
 
         // The device group is a space we own: created on this node's first
         // startup (with this device as its only member, for now) and rejoined
-        // on every later one, so publishes into it always find it subscribed.
+        // on every one, so publishes into it always find it subscribed.
         if let Err(err) = self
-            .register_and_create_space(self.device_group_topic())
+            .register_and_join_space(self.device_group_topic())
             .await
         {
             error!(?err, "failed to initialize the device group space");
@@ -3020,6 +3077,8 @@ mod forged_contact_request_tests {
                     keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
+                    recipient: alice.device_id(),
+                    direct_chat_id: Topic::random(),
                 }),
                 None,
             )
@@ -3075,6 +3134,8 @@ mod forged_contact_request_tests {
                     keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
+                    recipient: alice.device_id(),
+                    direct_chat_id: Topic::random(),
                 }),
                 None,
             )

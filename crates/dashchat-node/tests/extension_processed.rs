@@ -190,7 +190,7 @@ async fn extension_stores_a_photo() -> Stored {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let bobbi = TestNode::new_at_path(app_config(), "bobbi", bobbi.shutdown().await).await;
 
@@ -320,7 +320,7 @@ async fn an_ack_the_extension_recorded_first_is_still_announced() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     // Alice's app is running but not syncing, so the ack can only reach its
     // store through the extension.

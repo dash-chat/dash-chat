@@ -101,7 +101,7 @@ async fn media_blob_relays_through_mailbox_when_sender_offline() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     let bobbi_agent_id = bobbi.agent_id();
 
     // Bobbi goes offline before any media exists.
@@ -311,7 +311,7 @@ async fn recovers_unfetched_blob_after_source_restart() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     bobbi.shutdown().await;
 

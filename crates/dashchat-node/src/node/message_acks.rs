@@ -87,9 +87,7 @@ impl Node {
             }
         };
         for topic in topics {
-            let Ok(chat_id) = ChatId::from_topic_id(topic) else {
-                continue;
-            };
+            let chat_id = ChatId::from_topic_id(topic);
             if let Err(err) = self.publish_ack_delta(chat_id).await {
                 tracing::warn!(?err, topic = ?topic.aliased(), "startup ack reconciliation failed");
             }

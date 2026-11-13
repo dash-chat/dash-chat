@@ -71,7 +71,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     // Bobbi sends a message; Alice will delete it only for herself.
     let msg = bobbi
@@ -154,7 +154,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let msg = alice
         .send_message_raw(chat, "original".into())
@@ -233,7 +233,7 @@ async fn delete_for_me_hides_edits_arriving_after_the_delete() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     // Bobbi sends a message; Alice receives it and deletes it just for herself.
     let msg = bobbi.send_message_raw(chat, "hi".into()).await.unwrap();
@@ -312,7 +312,7 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     // Bobbi sends a message, then deletes it for everyone.
     let msg = bobbi.send_message_raw(chat, "oops".into()).await.unwrap();
@@ -390,7 +390,7 @@ async fn delete_for_me_notification_covers_the_whole_edit_chain() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let msg = alice
         .send_message_raw(chat, "original".into())

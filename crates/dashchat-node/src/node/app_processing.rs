@@ -109,22 +109,15 @@ impl Node {
     }
 
     /// Create a space we own, persist it for restart, and import its mailbox stream.
-    ///
-    /// Idempotent, safe to repeat at any point of failure.
-    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn register_and_create_space<K: AutoRegisteredTopic>(
-        &self,
-        topic: Topic<K>,
-    ) -> anyhow::Result<Space> {
-        let space = if self.streams.has_space(*topic).await? {
-            self.streams.join_space(*topic).await?
-        } else {
-            self.streams.create_space(*topic).await?
-        };
-        self.local_store.register_space_as_subscribed(topic).await?;
-        self.import_mailbox_stream(*topic).await?;
-        self.notify_topic_subscribed(*topic).await;
-        Ok(space)
+    pub(crate) async fn create_and_register_space(&self) -> anyhow::Result<(ChatId, Space)> {
+        let (topic, space) = self.streams.create_space().await?;
+        let chat_id = ChatId::from_topic_id(topic);
+        self.local_store
+            .register_space_as_subscribed(chat_id)
+            .await?;
+        self.import_mailbox_stream(topic).await?;
+        self.notify_topic_subscribed(topic).await;
+        Ok((chat_id, space))
     }
 
     pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
@@ -462,7 +455,12 @@ impl Node {
         // but still allow it to be acknowledged as processed.
         match self
             .projection
-            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
+            .reduce(
+                self.agent_id(),
+                self.device_id(),
+                operation,
+                BadUseOfNode::from(self.clone()),
+            )
             .await
         {
             // Continue processing.
@@ -537,6 +535,7 @@ impl Node {
                     InboxPayload::ContactRequest {
                         agent_id,
                         keybundle,
+                        direct_chat_id,
                         ..
                     } => {
                         // A request arrived on our advertised inbox. Perform no
@@ -569,14 +568,21 @@ impl Node {
                                         );
                                     }
                                 });
-                            } else {
-                                // Receive what the requester sends ahead of
-                                // our answer, while staying silent ourselves.
+                            }
+
+                            // Receive what the requester sends ahead of our
+                            // answer, while staying silent ourselves. Only a
+                            // space the projection took as our direct chat
+                            // with them: a request may name any id.
+                            let direct_chat_id = *direct_chat_id;
+                            if self.projection.direct_chat_peer(direct_chat_id).await?
+                                == Some(author)
+                            {
                                 let node = self.clone();
                                 tokio::spawn(async move {
-                                    let topic_id =
-                                        node.direct_chat_topic(crate::FakeAgentId::from(author));
-                                    if let Err(err) = node.register_and_join_space(topic_id).await {
+                                    if let Err(err) =
+                                        node.register_and_join_space(direct_chat_id).await
+                                    {
                                         tracing::warn!(
                                             ?err,
                                             "failed to join the requester's direct chat space"
@@ -620,39 +626,14 @@ impl Node {
                             let node = self.clone();
                             let agent_id = *agent_id;
                             tokio::spawn(async move {
-                                let topic_id =
-                                    node.direct_chat_topic(crate::FakeAgentId::from(author));
-
-                                if let Err(err) = node.ensure_direct_chat_space(author).await {
-                                    tracing::error!(
-                                        ?err,
-                                        "direct chat space could not be created, can't proceed"
-                                    );
-                                    return;
-                                }
-                                if let Err(err) = node.join_space(topic_id.into()).await {
-                                    tracing::error!(
-                                        ?err,
-                                        "direct chat space was subscribed improperly, can't proceed"
-                                    );
-                                    return;
-                                }
-                                if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
+                                if let Err(err) =
+                                    node.complete_accepted_request(author, agent_id).await
                                 {
-                                    tracing::warn!(?err, "failed to record accepted contact");
-                                    return;
-                                }
-                                if let Err(err) = node.publish_my_profile_to(topic_id).await {
-                                    tracing::warn!(
+                                    tracing::error!(
                                         ?err,
-                                        "failed to push my profile to the new direct chat"
+                                        "failed to complete our accepted contact request"
                                     );
                                 }
-                                // Messages they sent before we recorded the
-                                // acceptance were processed but dropped by the
-                                // ack filter; now that they are a contact,
-                                // cover them.
-                                node.mark_ack_topic_dirty(topic_id);
                             });
                         }
                     }
@@ -665,7 +646,7 @@ impl Node {
                 // render time (the frontend applies the same rules), while the
                 // message carrying it is still processed and shown.
                 if let Some(target) = m.reply() {
-                    let chat_id = ChatId::from_topic_id(topic)?;
+                    let chat_id = ChatId::from_topic_id(topic);
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
                     let candidate = crate::chat::ReplyCandidate {
                         target,
@@ -690,7 +671,7 @@ impl Node {
                 // Mirror the author-side validation: an edit that breaks the
                 // linear-chain / authorship / window rules is ignored (not
                 // forwarded to the frontend) with a warning.
-                let chat_id = ChatId::from_topic_id(topic)?;
+                let chat_id = ChatId::from_topic_id(topic);
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
                 let edit_ts: u64 = operation.processed().header().extensions.timestamp().into();
                 let candidate = EditCandidate {
@@ -748,11 +729,7 @@ impl Node {
         if let Payload::Chat(chat_payload) = &payload {
             if !matches!(chat_payload, ChatPayload::MessageAck { .. }) && author != self.device_id()
             {
-                // Non-fatal: failing here must not fail (and so replay) the op.
-                match ChatId::from_topic_id(topic) {
-                    Ok(chat_id) => self.mark_ack_topic_dirty(chat_id),
-                    Err(err) => warn!(?err, "chat payload on non-chat topic; not marking for ack"),
-                }
+                self.mark_ack_topic_dirty(ChatId::from_topic_id(topic));
             }
         }
 
@@ -859,12 +836,9 @@ impl Node {
     }
 
     /// Tell the frontend a group chat's membership changed. Membership changes
-    /// of other spaces (direct chats, the device group — whose topic need not
-    /// even parse as a chat id) are of no interest to it.
+    /// of other spaces (direct chats, the device group) are of no interest to it.
     async fn notify_group_members_changed(&self, topic: TopicId) -> anyhow::Result<()> {
-        let Ok(chat_id) = ChatId::from_topic_id(topic) else {
-            return Ok(());
-        };
+        let chat_id = ChatId::from_topic_id(topic);
         if self.projection.is_group_chat(chat_id).await? {
             self.notify_system_event(SystemNotification::GroupMembersChanged { chat_id })
                 .await?;

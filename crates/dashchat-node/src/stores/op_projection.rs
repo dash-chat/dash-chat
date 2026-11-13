@@ -50,6 +50,12 @@ const MIGRATIONS: &[&str] = &[
         profile BLOB NOT NULL,
         timestamp INTEGER NOT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS direct_chat_spaces (
+        peer_device_id BLOB NOT NULL,
+        space_id BLOB NOT NULL,
+        requester_device_id BLOB NOT NULL,
+        PRIMARY KEY (peer_device_id, space_id)
+    )",
     "CREATE TABLE IF NOT EXISTS message_acks (
         topic_id BLOB NOT NULL,
         acker_device_id BLOB NOT NULL,
@@ -235,14 +241,43 @@ impl OpProjection {
         Ok(row.map(|(profile,)| profile))
     }
 
+    /// The spaces a contact request between us and `peer` named for our direct
+    /// chat, each with the device that requested: at most one from each side.
+    pub async fn direct_chat_spaces(
+        &self,
+        peer: DeviceId,
+    ) -> anyhow::Result<Vec<(ChatId, DeviceId)>> {
+        let rows: Vec<(Topic<crate::topic::kind::Untyped>, DeviceId)> = sqlx::query_as(
+            "SELECT space_id, requester_device_id FROM direct_chat_spaces WHERE peer_device_id = ?",
+        )
+        .bind(peer)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, requester)| (ChatId::from_topic_id(TopicId::from(id)), requester))
+            .collect())
+    }
+
+    /// The device our direct chat in `space` is with, if it is a direct chat.
+    pub async fn direct_chat_peer(&self, space: ChatId) -> anyhow::Result<Option<DeviceId>> {
+        let row: Option<(DeviceId,)> =
+            sqlx::query_as("SELECT peer_device_id FROM direct_chat_spaces WHERE space_id = ?")
+                .bind(space.to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(peer,)| peer))
+    }
+
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
         let rows: Vec<(Topic<crate::topic::kind::Untyped>,)> =
             sqlx::query_as("SELECT chat_id FROM group_chats")
                 .fetch_all(&self.pool)
                 .await?;
-        rows.into_iter()
-            .map(|(id,)| Topic::<crate::topic::kind::Chat>::from_topic_id(crate::TopicId::from(id)))
-            .collect()
+        Ok(rows
+            .into_iter()
+            .map(|(id,)| ChatId::from_topic_id(TopicId::from(id)))
+            .collect())
     }
 
     /// Per author of `topic`, the highest operation acked by any device of a
@@ -406,6 +441,7 @@ impl OpProjection {
     pub async fn reduce(
         &self,
         me: AgentId,
+        my_device: DeviceId,
         operation: &ProcessedOperation<Payload>,
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
@@ -443,7 +479,7 @@ impl OpProjection {
             // Only group chat creation publishes this (`Node::create_chat_group`),
             // so it is what defines a topic as a group chat in the projection.
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
-                let chat_id = ChatId::from_topic_id(topic)?;
+                let chat_id = ChatId::from_topic_id(topic);
                 if self.mark_group_as_group_chat(chat_id).await? {
                     events.push(SystemNotification::GroupChatAdded { chat_id });
                 }
@@ -532,6 +568,15 @@ impl OpProjection {
             | Payload::Inbox(InboxPayload::ContactRequestAccept {
                 agent_id, profile, ..
             }) => {
+                if let Payload::Inbox(InboxPayload::ContactRequest {
+                    recipient,
+                    direct_chat_id,
+                    ..
+                }) = &payload
+                {
+                    self.register_direct_chat_space(my_device, author, *recipient, *direct_chat_id)
+                        .await?;
+                }
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(author, profile.clone(), operation_timestamp(operation))
                     .await?;
@@ -655,7 +700,7 @@ impl OpProjection {
             }
         }
 
-        let chat_id = ChatId::from_topic_id(topic)?;
+        let chat_id = ChatId::from_topic_id(topic);
         let valid_ops = node.valid_chat_ops(chat_id).await?;
         let delete_ts: u64 = header.extensions.timestamp().into();
         if let Err(err) = (DeleteCandidate {
@@ -676,6 +721,45 @@ impl OpProjection {
     }
 
     // === setters === //
+
+    /// Record the space a contact request names for the direct chat between its
+    /// requester and recipient, when we are one of the two. A space already
+    /// known as something else is not one a request may claim.
+    async fn register_direct_chat_space(
+        &self,
+        my_device: DeviceId,
+        requester: DeviceId,
+        recipient: DeviceId,
+        space: ChatId,
+    ) -> anyhow::Result<()> {
+        let peer = if requester == my_device {
+            recipient
+        } else if recipient == my_device {
+            requester
+        } else {
+            return Ok(());
+        };
+        let claimed = self
+            .direct_chat_peer(space)
+            .await?
+            .is_some_and(|known_peer| known_peer != peer);
+        if claimed || self.is_group_chat(space).await? {
+            tracing::warn!(
+                requester = ?requester.aliased(),
+                "contact request names a space already in use; ignoring it"
+            );
+            return Ok(());
+        }
+        sqlx::query(
+            "INSERT OR IGNORE INTO direct_chat_spaces (peer_device_id, space_id, requester_device_id) VALUES (?, ?, ?)",
+        )
+        .bind(peer)
+        .bind(space.to_vec())
+        .bind(requester)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 
     async fn save_agent_mapping(
         &self,

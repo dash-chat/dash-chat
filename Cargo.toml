@@ -50,15 +50,13 @@ reporting = { path = "crates/reporting" }
 #   operations before we have joined it.
 # - `encrypt_aux`/`decrypt_aux` and `Space::with_secrets` for encrypting
 #   auxiliary data (media blobs) towards a space.
-# - `Node::create_space_with_id`, an interim way to keep choosing space ids
-#   until we move to generated, shared ids.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -66,9 +64,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "6f7119ab" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "45b1d869" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.0.0", default-features = false, features = [

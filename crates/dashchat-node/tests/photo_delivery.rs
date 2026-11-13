@@ -41,7 +41,7 @@ async fn photo_reaches_receiver_when_sender_and_receiver_are_never_online_togeth
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     let bobbi_dir = bobbi.shutdown().await;
 
     link.throttle_uploads(WEAK_UPLINK_BYTES_PER_SEC);
@@ -94,7 +94,7 @@ async fn photo_reaches_receiver_when_online_senders_first_transfer_fails() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     link.throttle_uploads(WEAK_UPLINK_BYTES_PER_SEC);
     alice

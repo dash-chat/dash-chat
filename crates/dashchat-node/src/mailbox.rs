@@ -199,7 +199,7 @@ mod tests {
             .initiate_and_establish_contact(&bobbi)
             .await
             .unwrap();
-        let chat = alice.direct_chat_with(&bobbi);
+        let chat = alice.direct_chat_with(&bobbi).await;
 
         let bobbi_dir = bobbi.shutdown().await;
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
@@ -255,7 +255,7 @@ mod tests {
             .initiate_and_establish_contact(&bobbi)
             .await
             .unwrap();
-        let chat_id = alice.direct_chat_with(&bobbi);
+        let chat_id = alice.direct_chat_with(&bobbi).await;
 
         let header = alice
             .send_message_raw(chat_id, "Hello".into())

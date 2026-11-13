@@ -25,8 +25,6 @@
 
 use std::marker::PhantomData;
 
-use crate::{AgentId, FakeAgentId};
-
 use aliased::Aliasing;
 use p2panda::operation::LogId;
 use p2panda::{SigningKey, VerifyingKey};
@@ -224,25 +222,8 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn direct_chat(mut pks: [FakeAgentId; 2]) -> Self {
-        pks.sort();
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(pks[0].as_bytes());
-        hasher.update(pks[1].as_bytes());
-        let pk = crate::util::clamp_to_ed25519_pubkey(hasher.finalize().into());
-        Self::new(*pk.as_bytes())
-    }
-
-    /// Instantiate a chat topic from a TopicId.
-    ///
-    /// This can fail if the topic id bytes do not actually represent a valid Ed25519 public key.
-    pub fn from_topic_id(topic_id: TopicId) -> anyhow::Result<Self> {
-        let verifying_key = VerifyingKey::from_bytes(topic_id.as_bytes())?;
-        Ok(Self::new(*verifying_key.as_bytes()))
-    }
-
-    pub fn to_group_pubkey(self) -> anyhow::Result<VerifyingKey> {
-        Ok(VerifyingKey::from_bytes(self.as_bytes())?)
+    pub fn from_topic_id(topic_id: TopicId) -> Self {
+        Self::new(*topic_id.as_bytes())
     }
 }
 
@@ -253,22 +234,13 @@ impl Topic<kind::Inbox> {
 }
 
 impl Topic<kind::DeviceGroup> {
-    // TODO: use a random topic stored in LocalStore instead
-    pub fn device_group(agent_id: AgentId) -> Self {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(agent_id.as_bytes());
-        Self::new(hasher.finalize().into())
+    pub fn from_topic_id(topic_id: TopicId) -> Self {
+        Self::new(*topic_id.as_bytes())
     }
 }
 
 impl Topic<kind::Untyped> {
     /// Declare the actual type of an Untyped topic.
-    ///
-    /// This performs no validation of the underlying bytes against `K`'s
-    /// invariants. For kinds whose bytes must form a valid Ed25519 public key
-    /// (e.g. [`kind::Chat`]), prefer the fallible constructors
-    /// ([`Topic::<kind::Chat>::from_topic_id`]) so downstream code that relies
-    /// on that invariant can't be handed a malformed topic.
     pub fn upcast<K: TopicKind>(self) -> Topic<K> {
         Topic::new(*self.id.as_bytes())
     }
