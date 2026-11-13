@@ -1,4 +1,6 @@
 use dashchat_node::{testing::*, *};
+use p2panda_auth::Access;
+use p2panda_auth::group::GroupMember;
 
 const TRACING_FILTER: [&str; 5] = [
     "direct_chat_double_create=info",
@@ -8,9 +10,9 @@ const TRACING_FILTER: [&str; 5] = [
     "p2panda_spaces=info",
 ];
 
-/// Both sides of a mutual add create the direct-chat space before either has
-/// seen the other's creation (the crossed-requests race in
-/// `create_direct_chat_space`). Finds out what p2panda does with two Create
+/// Two nodes each create a space for their direct chat at the same id before
+/// either has seen the other's creation. Dash Chat generates a space's id, so
+/// honest nodes never do this; it finds out what p2panda does with two Create
 /// roots for the same space id once the two nodes meet.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_both_sides_create_direct_chat_space() {
@@ -29,17 +31,13 @@ async fn test_both_sides_create_direct_chat_space() {
         .await
         .unwrap();
 
-    alice
-        .create_direct_chat_space(bobbi.fake_agent_id())
-        .await
-        .unwrap();
-    bobbi
-        .create_direct_chat_space(alice.fake_agent_id())
-        .await
-        .unwrap();
-
-    let topic = alice.direct_chat_with(&bobbi);
-    assert_eq!(topic, bobbi.direct_chat_with(&alice));
+    let topic = ChatId::random();
+    let members = vec![
+        (GroupMember::Individual(*alice.device_id()), Access::write()),
+        (GroupMember::Individual(*bobbi.device_id()), Access::write()),
+    ];
+    alice.create_space_at(topic, members.clone()).await.unwrap();
+    bobbi.create_space_at(topic, members).await.unwrap();
 
     let before = (
         alice

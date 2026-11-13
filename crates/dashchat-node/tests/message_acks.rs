@@ -95,7 +95,7 @@ async fn direct_chat_message_is_acked() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     let header = alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     wait_for_delivered(&poll, &alice, chat, alice.device_id(), header.seq_num).await;
@@ -131,7 +131,7 @@ async fn acks_are_delta_encoded_and_never_cascade() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let m1 = alice.send_message_raw(chat, "one".into()).await.unwrap();
     wait_for_delivered(&poll, &alice, chat, alice.device_id(), m1.seq_num).await;
@@ -207,7 +207,7 @@ async fn burst_of_messages_coalesces_into_few_acks() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let mut headers = vec![];
     for i in 0..5 {
@@ -298,7 +298,7 @@ async fn ack_is_published_after_restart_when_debounce_never_fired() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     let header = alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     // Wait until bobbi has fully processed the message (the projection's
@@ -361,7 +361,7 @@ async fn acks_flow_without_p2p() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     let header = alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     wait_for_delivered(&poll, &alice, chat, alice.device_id(), header.seq_num).await;
@@ -395,7 +395,7 @@ async fn blocked_author_is_not_acked() {
     .await
     .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
     let header = alice.send_message_raw(chat, "Hello?".into()).await.unwrap();
 
     // Give several debounce windows; the profile alice pushed into the chat
@@ -411,12 +411,7 @@ async fn blocked_author_is_not_acked() {
     );
 }
 
-/// TODO: pre-accept: the spec for pre-accept messaging. The requester has no
-/// space to publish into until the acceptor creates it, so this cannot run
-/// until pre-accept messages are possible again; un-ignore it then and delete
-/// `direct_chat_requester_cannot_publish_before_accept`.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
 async fn direct_chat_is_not_acked_until_contact_accepted() {
     setup();
 
@@ -428,7 +423,7 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
 
-    let chat = bobbi.direct_chat_with(&alice);
+    let chat = bobbi.direct_chat_with(&alice).await;
     let header = bobbi
         .send_message_raw(chat, "Hello before accept".into())
         .await
@@ -456,46 +451,6 @@ async fn direct_chat_is_not_acked_until_contact_accepted() {
     );
 
     alice.behavior().accept_next_contact().await.unwrap();
-
-    wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
-}
-
-/// TODO: pre-accept: the stopgap while pre-accept messaging is disabled.
-/// Delete once `direct_chat_is_not_acked_until_contact_accepted` runs again.
-#[tokio::test(flavor = "multi_thread")]
-async fn direct_chat_requester_cannot_publish_before_accept() {
-    setup();
-
-    let poll = PollConfig::default();
-    let mailbox = TestMailbox::from_env();
-    let alice = make_node(&mailbox, "alice").await;
-    let bobbi = make_node(&mailbox, "bobbi").await;
-
-    let qr = alice.create_add_contact_qr_code().await.unwrap();
-    bobbi.add_contact(qr).await.unwrap();
-
-    let chat = bobbi.direct_chat_with(&alice);
-    bobbi
-        .send_message_raw(chat, "Hello before accept".into())
-        .await
-        .expect_err("the requester must not be able to publish before the contact is accepted");
-
-    alice.behavior().accept_next_contact().await.unwrap();
-
-    // Bobbi can publish once the accept has arrived and alice's space has been
-    // processed; a failed publish leaves nothing behind, so retrying is safe.
-    let sent = tokio::sync::Mutex::new(None);
-    poll.wait_for(|| async {
-        let header = bobbi
-            .send_message_raw(chat, "Hello after accept".into())
-            .await
-            .map_err(|e| e.to_string())?;
-        *sent.lock().await = Some(header);
-        Ok::<(), String>(())
-    })
-    .await
-    .unwrap();
-    let header = sent.lock().await.take().unwrap();
 
     wait_for_delivered(&poll, &bobbi, chat, bobbi.device_id(), header.seq_num).await;
 }

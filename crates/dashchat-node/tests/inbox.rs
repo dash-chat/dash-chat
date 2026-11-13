@@ -39,7 +39,7 @@ async fn test_inbox_2() {
     assert_eq!(alice.get_contacts().await.unwrap(), vec![bobbi.agent_id()]);
     assert_eq!(bobbi.get_contacts().await.unwrap(), vec![alice.agent_id()]);
 
-    let direct_chat_topic = alice.direct_chat_with(&bobbi);
+    let direct_chat_topic = alice.direct_chat_with(&bobbi).await;
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
@@ -68,7 +68,7 @@ async fn test_p2p_inbox_2() {
     assert_eq!(alice.get_contacts().await.unwrap(), vec![bobbi.agent_id()]);
     assert_eq!(bobbi.get_contacts().await.unwrap(), vec![alice.agent_id()]);
 
-    let direct_chat_topic = alice.direct_chat_with(&bobbi);
+    let direct_chat_topic = alice.direct_chat_with(&bobbi).await;
 
     tracing::info!(topic = ?direct_chat_topic.aliased(), "direct chat id");
 
@@ -145,17 +145,22 @@ async fn test_expired_unsynced_request_can_be_sent_again() {
     let bobbi_device_id = bobbi.device_id();
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
-    bobbi.add_contact(qr).await.unwrap();
+    let AddContactResult::NewRequest(first_chat) = bobbi.add_contact(qr).await.unwrap() else {
+        panic!("the first scan must send a request");
+    };
 
     let bobbi_dir = bobbi.shutdown().await;
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_dir).await;
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
-    assert!(matches!(
-        bobbi.add_contact(qr).await.unwrap(),
-        AddContactResult::NewRequest(_)
-    ));
+    let AddContactResult::NewRequest(second_chat) = bobbi.add_contact(qr).await.unwrap() else {
+        panic!("a scan after the first request expired must send a new one");
+    };
+    assert_eq!(
+        first_chat, second_chat,
+        "a repeated request must name the direct chat space of the first"
+    );
     introduce_peers([&alice, &bobbi]).await.unwrap();
 
     PollConfig::seconds(20)
@@ -396,7 +401,7 @@ async fn test_requester_messages_before_acceptance() {
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
-    let chat = bobbi.direct_chat_with(&alice);
+    let chat = bobbi.direct_chat_with(&alice).await;
 
     poll.wait_for(|| async {
         bobbi
@@ -435,4 +440,139 @@ async fn test_requester_messages_before_acceptance() {
         .await
         .unwrap();
     assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 2);
+}
+
+fn mailbox_only_config() -> NodeConfig {
+    NodeConfig::testing().no_p2p().no_blob_sync()
+}
+
+/// The requester generates the space of a direct chat and names it in the
+/// request: both sides use that one, and every pair gets its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_direct_chat_takes_place_in_the_requesters_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let carol = TestNode::new(mailbox_only_config(), "carol")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    let AddContactResult::NewRequest(bobbi_chat) = bobbi.add_contact(qr.clone()).await.unwrap()
+    else {
+        panic!("bobbi's scan must send a request");
+    };
+    let AddContactResult::NewRequest(carol_chat) = carol.add_contact(qr).await.unwrap() else {
+        panic!("carol's scan must send a request");
+    };
+    assert_ne!(bobbi_chat, carol_chat);
+
+    for (requester, chat) in [(&bobbi, bobbi_chat), (&carol, carol_chat)] {
+        poll.wait_for(|| async {
+            match alice.direct_chat_id(requester.device_id()).await.unwrap() {
+                Some(known) if known == chat => Ok(()),
+                other => Err(format!("alice knows {other:?} as the direct chat")),
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(requester.direct_chat_with(&alice).await, chat);
+    }
+    assert_eq!(bobbi.direct_chat_id(carol.device_id()).await.unwrap(), None);
+
+    alice.accept_contact(bobbi.agent_id()).await.unwrap();
+    alice
+        .send_message_raw(bobbi_chat, "hi".into())
+        .await
+        .unwrap();
+    bobbi
+        .send_message_raw(bobbi_chat, "hey".into())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[bobbi_chat.into()])
+        .await
+        .unwrap();
+    assert_eq!(alice.get_messages(bobbi_chat).await.unwrap().len(), 2);
+    assert!(carol.get_messages(bobbi_chat).await.unwrap().is_empty());
+}
+
+/// Alice and Bobbi scan each other's codes before either request arrives, so
+/// each created a space for the chat. Both must end up talking in the same one.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_crossed_requests_settle_on_one_direct_chat_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice").await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi").await;
+
+    let alice_qr = alice.create_add_contact_qr_code().await.unwrap();
+    let bobbi_qr = bobbi.create_add_contact_qr_code().await.unwrap();
+    let AddContactResult::NewRequest(alice_chat) = alice.add_contact(bobbi_qr).await.unwrap()
+    else {
+        panic!("alice's scan must send a request");
+    };
+    let AddContactResult::NewRequest(bobbi_chat) = bobbi.add_contact(alice_qr).await.unwrap()
+    else {
+        panic!("bobbi's scan must send a request");
+    };
+    assert_ne!(alice_chat, bobbi_chat);
+
+    alice.add_mailbox_client(mailbox.client()).await;
+    bobbi.add_mailbox_client(mailbox.client()).await;
+
+    poll.wait_for(|| async {
+        let alice_knows = alice
+            .get_contacts()
+            .await
+            .unwrap()
+            .contains(&bobbi.agent_id());
+        let bobbi_knows = bobbi
+            .get_contacts()
+            .await
+            .unwrap()
+            .contains(&alice.agent_id());
+        (alice_knows && bobbi_knows)
+            .then_some(())
+            .ok_or("the crossed requests have not made them contacts yet")
+    })
+    .await
+    .unwrap();
+
+    let chat = alice.direct_chat_with(&bobbi).await;
+    assert_eq!(chat, bobbi.direct_chat_with(&alice).await);
+
+    poll.wait_for(|| async {
+        alice
+            .send_message_raw(chat, "from alice".into())
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("alice cannot send yet: {err}"))
+    })
+    .await
+    .unwrap();
+    poll.wait_for(|| async {
+        bobbi
+            .send_message_raw(chat, "from bobbi".into())
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("bobbi cannot send yet: {err}"))
+    })
+    .await
+    .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+    assert_eq!(alice.get_messages(chat).await.unwrap().len(), 2);
 }

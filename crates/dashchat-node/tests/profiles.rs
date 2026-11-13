@@ -184,7 +184,7 @@ async fn profile_reaches_contacts_unless_blocked() {
         .await
         .unwrap();
 
-    let direct_chat = alice.direct_chat_with(&bobbi);
+    let direct_chat = alice.direct_chat_with(&bobbi).await;
     poll.wait_for(|| async {
         let published = published_profiles(&bobbi, direct_chat.into()).await;
         if published == vec![named("bobbi")] {
