@@ -240,9 +240,6 @@ pub trait MailboxItem:
     fn hash(&self) -> Self::Hash;
     fn log(&self) -> Self::Log;
     fn topic(&self) -> Self::Topic;
-    fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
-        Vec::new()
-    }
 }
 
 /// Extra traits for ItemTraits which are feature-dependent.

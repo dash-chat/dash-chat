@@ -14,10 +14,6 @@ pub struct MailboxOperation {
     #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub body: Option<Body>,
-    /// The media blobs this operation refers to. Known only for operations
-    /// read from our own store: the payload naming them travels encrypted.
-    #[serde(skip)]
-    pub blob_hashes: Vec<iroh_blobs::Hash>,
 }
 
 /// The media blobs an operation's plaintext payload refers to.
@@ -53,10 +49,6 @@ impl MailboxItem for MailboxOperation {
 
     fn topic(&self) -> TopicId {
         self.topic
-    }
-
-    fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
-        self.blob_hashes.clone()
     }
 }
 
@@ -116,19 +108,9 @@ impl crate::Node {
 mod tests {
 
     use crate::{testing::*, *};
-    use mailbox_client::MailboxItem as _;
-
-    fn make_header(topic: TopicId) -> p2panda::operation::Header {
-        use p2panda::operation::{Extensions, Header, LogId};
-        let signing_key = p2panda::SigningKey::from_bytes(&[0u8; 32]);
-        Header::builder().build(
-            &signing_key,
-            Extensions::builder(LogId::from_topic(topic)).build(),
-        )
-    }
 
     #[test]
-    fn mailbox_operation_exposes_media_blob_hashes() {
+    fn media_blob_hashes_reads_a_message_payload() {
         let media_hash = iroh_blobs::Hash::new([42u8; 32]);
 
         let content = ChatMessageContent::new(
@@ -149,20 +131,6 @@ mod tests {
         let payload = Payload::Chat(ChatPayload::Message(content));
         let hashes = super::media_blob_hashes(&payload.as_bytes().unwrap());
         assert_eq!(hashes, vec![media_hash]);
-    }
-
-    #[test]
-    fn mailbox_operation_blob_hashes_never_travel() {
-        let topic = TopicId::random();
-        let op = super::MailboxOperation {
-            topic,
-            header: make_header(topic),
-            body: None,
-            blob_hashes: vec![iroh_blobs::Hash::new([42u8; 32])],
-        };
-        let sent: super::MailboxOperation =
-            serde_json::from_slice(&serde_json::to_vec(&op).unwrap()).unwrap();
-        assert_eq!(sent.blob_hashes(), Vec::<iroh_blobs::Hash>::new());
     }
 
     /// A mailbox added after the fact still delivers what was sent before:

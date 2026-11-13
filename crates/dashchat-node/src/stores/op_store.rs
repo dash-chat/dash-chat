@@ -171,6 +171,45 @@ impl OpStore {
             .await
     }
 
+    /// The operations of a log from `from` that are safe to send onward, as
+    /// they were stored. `None` means the log is absent.
+    ///
+    /// Only the contiguous prefix of fully-processed operations is returned.
+    /// An operation that hasn't completed application-layer processing may
+    /// still have its payload dropped by a tombstone it is about to
+    /// enforce, so it must not be sent onward yet. Truncating (rather than
+    /// filtering) keeps the returned log dense from `from`, which callers
+    /// index by sequence number. Control operations (space, group and key
+    /// bundle logs) are always safe to transmit — only application payloads
+    /// are ever tombstoned — and are acknowledged by p2panda before ever
+    /// reaching the application layer.
+    async fn sendable_log_segment(
+        &self,
+        log: &Log,
+        topic: &TopicId,
+        from: SeqNum,
+    ) -> anyhow::Result<Option<Vec<Operation>>> {
+        let Log { author, log_id } = log;
+        let log_id: LogId = (*log_id).into();
+        let mut segment = self
+            .log_operations(author, &log_id, from.checked_sub(1))
+            .await?;
+        if segment.is_empty() && !self.log_exists(author, &log_id).await? {
+            return Ok(None);
+        }
+        let acked_height = self.acked_log_height(topic, author, &log_id).await?;
+        let sendable = segment
+            .iter()
+            .take_while(|op| {
+                !is_application(op)
+                    || op.body.is_none()
+                    || acked_height.is_some_and(|h| op.header.seq_num <= h)
+            })
+            .count();
+        segment.truncate(sendable);
+        Ok(Some(segment))
+    }
+
     /// An operation exactly as it was signed and stored, safe to send onward.
     pub async fn get_stored_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
         use p2panda_store::operations::OperationStore;
@@ -278,46 +317,43 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         topic: &TopicId,
         from: SeqNum,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
-        let Log { author, log_id } = log;
-        let log_id: LogId = (*log_id).into();
-        let from = from.checked_sub(1);
-        let log = self.log_operations(author, &log_id, from).await?;
-        if log.is_empty() && !self.log_exists(author, &log_id).await? {
+        let Some(segment) = self.sendable_log_segment(log, topic, from).await? else {
             return Ok(None);
-        }
+        };
+        Ok(Some(
+            segment
+                .into_iter()
+                .map(|op| MailboxOperation {
+                    topic: *topic,
+                    header: op.header,
+                    body: op.body,
+                })
+                .collect(),
+        ))
+    }
 
-        // Only transmit the contiguous prefix of fully-processed operations.
-        // An operation that hasn't completed application-layer processing may
-        // still have its payload dropped by a tombstone it is about to
-        // enforce, so it must not be sent onward yet. Truncating (rather than
-        // filtering) keeps the returned log dense from `from`, which callers
-        // index by sequence number. Control operations (space, group and key
-        // bundle logs) are always safe to transmit — only application payloads
-        // are ever tombstoned — and are acknowledged by p2panda before ever
-        // reaching the application layer.
-        let acked_height = self.acked_log_height(topic, author, &log_id).await?;
-        let mut readable = log.clone();
-        self.decrypt_bodies(&mut readable).await?;
-        let mut readable = readable.into_iter();
-        let mut ops = Vec::with_capacity(log.len());
-        for op in log {
-            let plaintext = readable.next().and_then(|readable| readable.body);
-            if is_application(&op)
-                && op.body.is_some()
-                && acked_height.is_none_or(|h| op.header.seq_num > h)
-            {
-                break;
-            }
-            ops.push(MailboxOperation {
-                topic: *topic,
-                blob_hashes: plaintext
-                    .map(|body| crate::mailbox::media_blob_hashes(body.as_bytes()))
-                    .unwrap_or_default(),
-                header: op.header,
-                body: op.body,
-            });
-        }
-        Ok(Some(ops))
+    async fn get_log_blob_hashes(
+        &self,
+        log: &Log,
+        topic: &TopicId,
+        from: SeqNum,
+    ) -> Result<Option<Vec<(SeqNum, Vec<iroh_blobs::Hash>)>>, anyhow::Error> {
+        let Some(mut segment) = self.sendable_log_segment(log, topic, from).await? else {
+            return Ok(None);
+        };
+        self.decrypt_bodies(&mut segment).await?;
+        Ok(Some(
+            segment
+                .into_iter()
+                .map(|op| {
+                    let blob_hashes = op
+                        .body
+                        .map(|body| crate::mailbox::media_blob_hashes(body.as_bytes()))
+                        .unwrap_or_default();
+                    (op.header.seq_num, blob_hashes)
+                })
+                .collect(),
+        ))
     }
 
     async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(Log, SeqNum)>> {
@@ -536,6 +572,63 @@ mod tests {
         op2.body = None;
         insert(&store, &op2, &log_id).await;
         assert_eq!(served(&store).await, vec![op0.hash, op1.hash, op2.hash]);
+    }
+
+    /// Blob hashes are read over the same segment `get_log` sends: an
+    /// operation still awaiting processing contributes none.
+    #[tokio::test]
+    async fn mailbox_get_log_blob_hashes_covers_the_sendable_segment() {
+        use mailbox_client::store::MailboxStore;
+
+        let store = OpStore::temporary_sqlite().await.unwrap();
+        let topic = TopicId::random();
+        let log_id = LogId::from_topic(topic);
+        let signing_key = p2panda::SigningKey::generate();
+        let author = DeviceId::from(signing_key.verifying_key());
+
+        let media_hash = iroh_blobs::Hash::new([42u8; 32]);
+        let photo = Payload::Chat(ChatPayload::Message(ChatMessageContent::new(
+            "hello",
+            Some(vec![MediaMetadata::Photo {
+                name: "photo.jpg".into(),
+                mime_type: "image/jpeg".into(),
+                size: 1024,
+                width: 640,
+                height: 480,
+                hash: media_hash,
+                group_secret_id: [7; 32],
+                nonce: [9; 24],
+            }]),
+            None,
+            0,
+        )))
+        .as_bytes()
+        .unwrap();
+
+        let op0 = signed_op(&signing_key, log_id, 0, None, b"zero");
+        let op1 = signed_op(&signing_key, log_id, 1, Some(op0.hash), &photo);
+        insert(&store, &op0, &log_id).await;
+        insert(&store, &op1, &log_id).await;
+
+        let blob_hashes = |store: &OpStore| {
+            let store = store.clone();
+            async move {
+                store
+                    .get_log_blob_hashes(&Log::new(author, log_id), &topic, 0)
+                    .await
+                    .unwrap()
+                    .unwrap()
+            }
+        };
+
+        ack_up_to(&store, &topic, &author, log_id, 0).await;
+        assert_eq!(blob_hashes(&store).await, vec![(0, vec![])]);
+
+        ack_up_to(&store, &topic, &author, log_id, 1).await;
+        assert_eq!(
+            blob_hashes(&store).await,
+            vec![(0, vec![]), (1, vec![media_hash])]
+        );
     }
 
     #[tokio::test]
