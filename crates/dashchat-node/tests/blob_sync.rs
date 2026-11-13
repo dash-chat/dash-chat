@@ -27,7 +27,7 @@ async fn media_blob_syncs_between_nodes() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -120,7 +120,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -228,7 +228,7 @@ async fn media_blob_is_stored_encrypted() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     alice
@@ -285,8 +285,8 @@ async fn same_media_in_two_chats_gets_distinct_hashes() {
         .await
         .unwrap();
 
-    let chat_b = alice.direct_chat_with(&bobbi);
-    let chat_c = alice.direct_chat_with(&cammy);
+    let chat_b = alice.direct_chat_with(&bobbi).await;
+    let chat_c = alice.direct_chat_with(&cammy).await;
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     alice

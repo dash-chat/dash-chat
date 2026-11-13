@@ -119,7 +119,7 @@ async fn chat_messages_reach_the_mailbox_only_encrypted() {
         .await
         .unwrap();
 
-    let direct = alice.direct_chat_with(&bobbi);
+    let direct = alice.direct_chat_with(&bobbi).await;
     assert_message_only_travels_encrypted(
         &alice,
         &bobbi,
@@ -169,7 +169,7 @@ async fn largest_message_reaches_the_other_member() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     let text = "x".repeat(16_000_000);
     alice

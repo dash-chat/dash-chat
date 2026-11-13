@@ -206,8 +206,14 @@ pub async fn build_notification_data(
                     return None;
                 }
             }
-            let chat_topic =
-                Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]);
+            let chat_topic = match node.direct_chat_id(sender_device_id).await {
+                Ok(Some(chat_topic)) => chat_topic,
+                Ok(None) => return None,
+                Err(err) => {
+                    log::error!("Failed to look up the direct chat of a contact request: {err:?}");
+                    return None;
+                }
+            };
             Some(NotificationData {
                 id,
                 title: Some(sonix_i18n::t!("newContactRequest")),
@@ -237,8 +243,7 @@ async fn chat_message_notification(
         }
     };
 
-    let is_direct_chat =
-        *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
+    let is_direct_chat = is_direct_chat_with(node, topic, sender_device_id).await;
     let mut qr_code_name = None;
     if is_direct_chat {
         let accepted = match sender_agent_id {
@@ -383,6 +388,20 @@ async fn in_conversation_thread(
 
 /// Whether `agent_id` is a contact we accepted. Unlike `Node::is_accepted_contact`
 /// this takes the agent id the caller already resolved for the sender's device.
+async fn is_direct_chat_with(node: &Node, topic: TopicId, peer: DeviceId) -> bool {
+    match node
+        .projection
+        .direct_chat_peer(ChatId::from_topic_id(topic))
+        .await
+    {
+        Ok(known_peer) => known_peer == Some(peer),
+        Err(err) => {
+            log::error!("Failed to look up whether {topic} is a direct chat: {err:?}");
+            false
+        }
+    }
+}
+
 async fn is_accepted_agent(node: &Node, agent_id: AgentId) -> bool {
     match node.accepted_contact_agent_ids().await {
         Ok(accepted) => accepted.contains(&agent_id),
@@ -400,13 +419,7 @@ async fn is_accepted_agent(node: &Node, agent_id: AgentId) -> bool {
 /// comes after the departure — so what is not shown in the chat must not be
 /// announced either.
 async fn is_member_of(node: &Node, topic: TopicId) -> bool {
-    let chat_id = match ChatId::from_topic_id(topic) {
-        Ok(chat_id) => chat_id,
-        Err(err) => {
-            log::error!("Failed to read a chat id off topic {topic}: {err:?}");
-            return false;
-        }
-    };
+    let chat_id = ChatId::from_topic_id(topic);
     match node.get_group_members(chat_id).await {
         Ok(members) => members
             .iter()
@@ -463,7 +476,7 @@ async fn group_avatar(node: &Node, topic_id: TopicId) -> String {
 /// How many people besides us are in the group, if that can be told.
 #[cfg(mobile)]
 async fn group_recipient_count(node: &Node, topic: TopicId) -> Option<u32> {
-    let chat_id = ChatId::from_topic_id(topic).ok()?;
+    let chat_id = ChatId::from_topic_id(topic);
     match node.get_group_members(chat_id).await {
         Ok(members) => Some(members.len().saturating_sub(1) as u32),
         Err(err) => {
@@ -522,10 +535,9 @@ async fn auth_control_op_notification(
         )
     };
 
-    // The acceptor authors the direct-chat space and admits the requester to
-    // it; neither is a group invite. The deterministic direct-chat topic with
-    // the sender tells a chat from a group.
-    if *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic {
+    // Whoever requested contact admits us to the direct chat space they
+    // created, which is not a group at all.
+    if is_direct_chat_with(node, topic, sender_device_id).await {
         return None;
     }
 
@@ -607,7 +619,7 @@ fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
-    use dashchat_node::testing::{TestMailbox, TestNode};
+    use dashchat_node::testing::{PollConfig, TestMailbox, TestNode};
     use dashchat_node::{AddContactResult, AsBody, NodeConfig, Profile};
     use p2panda::operation::LogId;
 
@@ -629,14 +641,35 @@ mod tests {
         (header, payload)
     }
 
+    async fn wait_until_member(node: &TestNode, chat: ChatId) {
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                let members = node.space_members(chat.into()).await.unwrap();
+                members
+                    .iter()
+                    .any(|(member, _)| *member == node.device_id())
+                    .then_some(())
+                    .ok_or("not admitted to the chat yet")
+            })
+            .await
+            .unwrap();
+    }
+
     /// Someone whose code we scanned writes to us before their acceptance
     /// has reached us. The chat already shows their message, so it must be
     /// announced, titled with the name their code carried (DASH-CHAT-4W).
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
     async fn announces_a_message_from_someone_we_scanned() {
-        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
-        let bob = TestNode::new(NodeConfig::testing(), "bob").await;
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
         bob.set_profile(Profile {
             name: "Bob".to_string(),
             surname: None,
@@ -646,18 +679,13 @@ mod tests {
         .await
         .unwrap();
 
-        // Each scans the other's code. Nothing travels between the two nodes,
-        // so neither acceptance ever arrives.
-        let alice_code = alice.create_add_contact_qr_code().await.unwrap();
+        // Bob never accepts, so no acceptance ever arrives. Alice admits him
+        // to the chat she created all the same, and from then on he can write.
         let bob_code = bob.create_add_contact_qr_code().await.unwrap();
         let AddContactResult::NewRequest(chat) = alice.add_contact(bob_code).await.unwrap() else {
             panic!("alice had already asked bob");
         };
-        let AddContactResult::NewRequest(bobs_chat) = bob.add_contact(alice_code).await.unwrap()
-        else {
-            panic!("bob had already asked alice");
-        };
-        assert_eq!(chat, bobs_chat);
+        wait_until_member(&bob, chat).await;
 
         let (header, payload) = message_op(&bob, chat, "are you there?").await;
         let data = build_notification_data(&alice, chat.into(), &header, Some(&payload))
@@ -759,7 +787,7 @@ mod tests {
             .await
             .unwrap();
 
-        let direct_chat = alice.direct_chat_with(&bob);
+        let direct_chat = alice.direct_chat_with(&bob).await;
         let header = alice
             .get_group_control_ops(direct_chat)
             .await
@@ -786,14 +814,30 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
     async fn stays_silent_for_someone_who_scanned_us() {
-        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
-        let carol = TestNode::new(NodeConfig::testing(), "carol").await;
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let carol = TestNode::new(NodeConfig::testing(), "carol")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
 
         let alice_code = alice.create_add_contact_qr_code().await.unwrap();
         let AddContactResult::NewRequest(chat) = carol.add_contact(alice_code).await.unwrap()
         else {
             panic!("carol had already asked alice");
         };
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match alice.direct_chat_id(carol.device_id()).await.unwrap() {
+                    Some(known) if known == chat => Ok(()),
+                    _ => Err("carol's request has not reached alice yet"),
+                }
+            })
+            .await
+            .unwrap();
 
         let (header, payload) = message_op(&carol, chat, "hello?").await;
         let data = build_notification_data(&alice, chat.into(), &header, Some(&payload)).await;

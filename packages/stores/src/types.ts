@@ -352,6 +352,8 @@ export type InboxPayload = {
 		profile: Profile;
 		agent_id: AgentId;
 		reply_topic: TopicId;
+		recipient: DeviceId;
+		direct_chat_id: ChatId;
 	};
 };
 

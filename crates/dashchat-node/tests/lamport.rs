@@ -30,7 +30,7 @@ async fn replies_carry_higher_lamports_than_the_messages_they_answer() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     alice.send_message(chat, "hello", None, None).await.unwrap();
     poll.consistency([&alice, &bobbi], &[chat.into()])
@@ -100,7 +100,7 @@ async fn peers_out_of_range_lamport_does_not_advance_the_counter(lamport: u64) {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_with(&bobbi);
+    let chat = alice.direct_chat_with(&bobbi).await;
 
     bobbi
         .send_message_raw(chat, ChatMessageContent::new("huge", None, None, lamport))

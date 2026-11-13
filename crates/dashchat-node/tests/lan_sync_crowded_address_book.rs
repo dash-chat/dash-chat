@@ -17,7 +17,7 @@ const TIME_AWAY: Duration = Duration::from_secs(30);
 async fn lan_sync_with_empty_address_book() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (_, alice, bobbi) = lan_contacts(0).await;
-    let topic = alice.direct_chat_with(&bobbi);
+    let topic = alice.direct_chat_with(&bobbi).await;
     send_and_await_delivery(&alice, &bobbi, topic, "Hello").await;
 }
 
@@ -25,7 +25,7 @@ async fn lan_sync_with_empty_address_book() {
 async fn lan_sync_with_crowded_address_book() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (_, alice, bobbi) = lan_contacts(unreachable_peers_from_env()).await;
-    let topic = alice.direct_chat_with(&bobbi);
+    let topic = alice.direct_chat_with(&bobbi).await;
     send_and_await_delivery(&alice, &bobbi, topic, "Hello").await;
 }
 
@@ -34,7 +34,7 @@ async fn lan_sync_with_crowded_address_book() {
 async fn lan_sync_keeps_going_with_crowded_address_book() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (_, alice, bobbi) = lan_contacts(unreachable_peers_from_env()).await;
-    let topic = alice.direct_chat_with(&bobbi);
+    let topic = alice.direct_chat_with(&bobbi).await;
     send_and_await_delivery(&alice, &bobbi, topic, "Hello").await;
 
     let idle_between_messages = Duration::from_secs(
@@ -60,7 +60,7 @@ async fn lan_sync_resumes_after_peer_leaves_and_returns() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let unreachable_peers = unreachable_peers_from_env();
     let (config, alice, mut bobbi) = lan_contacts(unreachable_peers).await;
-    let topic = alice.direct_chat_with(&bobbi);
+    let topic = alice.direct_chat_with(&bobbi).await;
     send_and_await_delivery(&alice, &bobbi, topic, "Hello").await;
 
     for cycle in 0..3 {
@@ -92,8 +92,8 @@ async fn lan_sync_keeps_going_while_other_peers_come_and_go() {
     establish_contact(&alice, &carol, unreachable_peers).await;
     establish_contact(&bobbi, &carol, unreachable_peers).await;
 
-    let alice_bobbi = alice.direct_chat_with(&bobbi);
-    let alice_carol = alice.direct_chat_with(&carol);
+    let alice_bobbi = alice.direct_chat_with(&bobbi).await;
+    let alice_carol = alice.direct_chat_with(&carol).await;
 
     for cycle in 0..3 {
         let store_dir = carol.shutdown().await;
@@ -120,7 +120,7 @@ async fn lan_sync_keeps_going_while_other_peers_come_and_go() {
 async fn lan_sync_stays_fast_while_contacts_leave_for_good() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
     let (config, alice, bobbi) = lan_contacts(0).await;
-    let topic = alice.direct_chat_with(&bobbi);
+    let topic = alice.direct_chat_with(&bobbi).await;
 
     for round in 0..visitor_rounds_from_env() {
         let visitor = lan_node(config.clone(), "visitor", 0).await;
@@ -129,7 +129,7 @@ async fn lan_sync_stays_fast_while_contacts_leave_for_good() {
         send_and_await_delivery(
             &visitor,
             &bobbi,
-            bobbi.direct_chat_with(&visitor),
+            bobbi.direct_chat_with(&visitor).await,
             &format!("Hello from visitor {round}"),
         )
         .await;
