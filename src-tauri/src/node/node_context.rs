@@ -80,6 +80,9 @@ pub struct NodeContext {
     pub app_handle: Option<AppHandle>,
     /// Only the app ever suspends it.
     pub sqlite_gate: sqlite_gate::SqliteGate,
+    /// Carried into the node config so the push-authorization loop sees the
+    /// same local-hub registry the app's mailbox server registers into.
+    pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 }
 
 impl NodeContext {
@@ -94,6 +97,7 @@ impl NodeContext {
             notification_tx,
             app_handle: None,
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -107,6 +111,7 @@ impl NodeContext {
             notification_tx: None,
             app_handle: Some(app.clone()),
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -116,12 +121,14 @@ impl NodeContext {
         app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
         sqlite_gate: sqlite_gate::SqliteGate,
+        local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     ) -> Self {
         Self {
             role: NodeRole::App,
             notification_tx: Some(notification_tx),
             app_handle: Some(app.clone()),
             sqlite_gate,
+            local_hub_registry,
         }
     }
 
@@ -173,6 +180,7 @@ impl NodeContext {
         // operations to build notifications; it must not author any.
         config.enable_message_acks = self.role == NodeRole::App;
         config.sqlite_gate = self.sqlite_gate.clone();
+        config.local_hub_registry = self.local_hub_registry.clone();
 
         // The push extension shares the app's database. On p2panda's default
         // per-topic cursor, whichever process fetches an operation first stops
@@ -219,6 +227,7 @@ mod tests {
             notification_tx: None,
             app_handle: None,
             sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 

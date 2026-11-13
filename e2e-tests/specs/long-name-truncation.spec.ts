@@ -94,7 +94,7 @@ describe('Long name truncation', () => {
 	it("opens agent1's settings/profile — name list item has no overflow", async () => {
 		await agent1.directChatPage.back.click();
 		await agent1.homePage.ready();
-		await agent1.homePage.settingsLink.click();
+		await agent1.mainTabbar.settingsTab.click();
 		await agent1.settingsPage.ready();
 		await agent1.settingsPage.profileLink.click();
 		await agent1.profilePage.ready();
@@ -107,7 +107,7 @@ describe('Long name truncation', () => {
 	it('agent1 creates a group with a long name — group navbar has no overflow', async () => {
 		await agent1.profilePage.back.click();
 		await agent1.settingsPage.ready();
-		await agent1.settingsPage.back.click();
+		await agent1.mainTabbar.chatsTab.click();
 		await createGroup(agent1, LONG_GROUP_NAME, []);
 		await expect(agent1.groupChatPage.infoLink).toHaveText(LONG_GROUP_NAME, {
 			containing: true,

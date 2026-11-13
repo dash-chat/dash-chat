@@ -9,3 +9,5 @@ export const CONNECTION_STATUS_TAGS = [
 ] as const;
 
 export type ConnectionStatusTag = (typeof CONNECTION_STATUS_TAGS)[number];
+
+export type ConnectionModeStatus = 'connected' | 'searching' | 'failed';

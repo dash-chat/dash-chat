@@ -284,9 +284,6 @@ name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
-dependencies = [
- "derive_arbitrary",
-]
 
 [[package]]
 name = "arboard"
@@ -1049,7 +1046,7 @@ dependencies = [
  "arrayvec",
  "cc",
  "cfg-if",
- "constant_time_eq",
+ "constant_time_eq 0.4.2",
  "cpufeatures 0.3.1",
 ]
 
@@ -1302,17 +1299,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
 dependencies = [
  "nom 7.1.3",
-]
-
-[[package]]
-name = "cfb"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
-dependencies = [
- "byteorder",
- "fnv",
- "uuid",
 ]
 
 [[package]]
@@ -1597,6 +1583,15 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "convert_case"
@@ -2090,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.21.5"
+version = "0.22.0"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -2119,7 +2114,7 @@ dependencies = [
  "mailbox-local-server",
  "mailbox-server",
  "mailboxes-manager",
- "nanoid 0.4.0",
+ "nanoid",
  "ndk-sys 0.6.0+11769913",
  "netdev 0.43.0",
  "network-watch",
@@ -2159,6 +2154,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-medialibrary",
+ "tauri-plugin-move-to-applications",
  "tauri-plugin-network-interfaces",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
@@ -2173,6 +2169,7 @@ dependencies = [
  "tauri-plugin-view",
  "tauri-plugin-virtual-keyboard",
  "tauri-plugin-wdio-webdriver",
+ "tauri-plugin-wifi",
  "tempfile",
  "thiserror 2.0.20",
  "time",
@@ -2221,7 +2218,7 @@ dependencies = [
  "mailbox-server",
  "mailboxes-manager",
  "maplit",
- "nanoid 0.4.0",
+ "nanoid",
  "network-watch",
  "p2panda",
  "p2panda-auth",
@@ -2257,6 +2254,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "ciborium",
+ "dashmap 6.2.1",
  "futures",
  "iroh",
  "iroh-blobs",
@@ -2435,17 +2433,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "derive_builder"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2607,15 +2594,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
 dependencies = [
  "dirs-sys 0.3.7",
-]
-
-[[package]]
-name = "dirs"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
-dependencies = [
- "dirs-sys 0.5.0",
 ]
 
 [[package]]
@@ -4799,20 +4777,11 @@ dependencies = [
 
 [[package]]
 name = "infer"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
-dependencies = [
- "cfb 0.7.3",
-]
-
-[[package]]
-name = "infer"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4200d433cbd5178df7797c9c2e75b348b728e39631cf14520d1e2fc424201f4"
 dependencies = [
- "cfb 0.14.0",
+ "cfb",
 ]
 
 [[package]]
@@ -4970,7 +4939,7 @@ dependencies = [
  "bytes",
  "cfg_aliases",
  "chrono",
- "constant_time_eq",
+ "constant_time_eq 0.4.2",
  "data-encoding",
  "derive_more 2.1.1",
  "genawaiter",
@@ -5807,11 +5776,12 @@ dependencies = [
  "chrono",
  "dashchat-utils",
  "derive_more 1.0.0",
+ "futures",
  "iroh",
  "iroh-blobs",
  "mailbox-client",
  "mailbox-server",
- "nanoid 0.5.0",
+ "nanoid",
  "netwatch-http-client",
  "once_cell",
  "p2panda-core",
@@ -5895,7 +5865,7 @@ dependencies = [
  "iroh-blobs",
  "mailbox-client",
  "mailbox-server",
- "nanoid 0.5.0",
+ "nanoid",
  "pretty_assertions",
  "reporting",
  "serde",
@@ -6015,9 +5985,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "minisign-verify"
-version = "0.2.5"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e"
+checksum = "871285dc19d8d0ebe0eef3d0e99a205f2a71363b122632cbbfa4a6c370a960ce"
 
 [[package]]
 name = "miniz_oxide"
@@ -6220,15 +6190,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
 dependencies = [
  "rand 0.8.8",
-]
-
-[[package]]
-name = "nanoid"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8628de41fe064cc3f0cf07f3d299ee3e73521adaff72278731d5c8cae3797873"
-dependencies = [
- "rand 0.9.5",
 ]
 
 [[package]]
@@ -9646,6 +9607,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "security-translocate"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "070ec31c4af198d2e64a55c06e52c1a09a25c2cc2125102658cfcbe453d998c3"
+dependencies = [
+ "core-foundation 0.10.1",
+ "libc",
+ "security-translocate-sys",
+]
+
+[[package]]
+name = "security-translocate-sys"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cca9b94ecd0c2cfd896fe358a4bdc82e4d566d675bc33a05b5dcf6eee3b440e2"
+dependencies = [
+ "core-foundation 0.10.1",
+ "libc",
+]
+
+[[package]]
 name = "seize"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11620,9 +11602,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-move-to-applications"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-move-to-applications?rev=271cb9183098f9e727dd1f0efdedcccd28fd8c92#271cb9183098f9e727dd1f0efdedcccd28fd8c92"
+dependencies = [
+ "core-foundation 0.10.1",
+ "libc",
+ "log",
+ "plist",
+ "security-translocate",
+ "semver",
+ "tauri",
+ "tauri-plugin",
+ "tauri-plugin-dialog",
+]
+
+[[package]]
 name = "tauri-plugin-network-interfaces"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=9c50b47eab93202a55f0374fe9c70bb2016c8a2f#9c50b47eab93202a55f0374fe9c70bb2016c8a2f"
+source = "git+https://github.com/dash-chat/tauri-plugin-network-interfaces?rev=201d708769ff2d3892eef5de1d0bcb665ff447a1#201d708769ff2d3892eef5de1d0bcb665ff447a1"
 dependencies = [
  "serde",
  "tauri",
@@ -11831,16 +11829,17 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-updater"
-version = "2.12.0"
+version = "2.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a5cad8ed5948d988e1018ecd31e27cacedbf72ce3fb972940c3e4bf51639e4b"
+checksum = "d957abbcb3f9f6c76d22a3a0f012f30880640d0bccb5634d2b12a9937e4c872b"
 dependencies = [
- "base64 0.22.1",
- "dirs 6.0.0",
+ "base64 0.23.1",
+ "dirs 7.0.0",
  "flate2",
  "futures-util",
  "http 1.5.0",
- "infer 0.19.0",
+ "infer",
+ "libc",
  "log",
  "minisign-verify",
  "osakit",
@@ -11858,7 +11857,7 @@ dependencies = [
  "time",
  "tokio",
  "url",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -11916,6 +11915,17 @@ dependencies = [
  "webview2-com",
  "windows 0.62.2",
  "windows-core 0.62.2",
+]
+
+[[package]]
+name = "tauri-plugin-wifi"
+version = "0.1.0"
+source = "git+https://github.com/dash-chat/tauri-plugin-wifi?rev=54b4cad0efdb41be5d508413c3fd14fec085dbff#54b4cad0efdb41be5d508413c3fd14fec085dbff"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -11983,7 +11993,7 @@ dependencies = [
  "dunce",
  "glob",
  "http 1.5.0",
- "infer 0.22.0",
+ "infer",
  "json-patch",
  "log",
  "memchr",
@@ -12628,6 +12638,12 @@ dependencies = [
  "thiserror 2.0.20",
  "utf-8",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typeid"
@@ -14484,14 +14500,20 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "4.6.1"
+version = "9.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
+checksum = "0700e6c427aff64acdbf02e85fbfd946c2ee12319d1af013092f3a2178914ff8"
 dependencies = [
- "arbitrary",
+ "constant_time_eq 0.6.1",
  "crc32fast",
+ "getrandom 0.4.3",
  "indexmap 2.14.2",
+ "libc",
  "memchr",
+ "nix 0.31.3",
+ "typed-path",
+ "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

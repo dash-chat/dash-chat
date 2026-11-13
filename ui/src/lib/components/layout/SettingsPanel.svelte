@@ -6,7 +6,6 @@
 		type SettingsStore,
 	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
@@ -19,14 +18,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
-	import {
-		List,
-		ListItem,
-		Navbar,
-		NavbarBackLink,
-		Preloader,
-		useTheme,
-	} from 'konsta/svelte';
+	import { List, ListItem, Navbar, Preloader, useTheme } from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isIos } from '$lib/utils/environment';
@@ -59,11 +51,9 @@
 </script>
 
 <div class="settings-panel">
-	<Navbar title={m.settings()} titleClass="opacity1" transparent={true}>
-		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')} data-testid="settings-back" />
-		{/snippet}
-	</Navbar>
+	{#if theme !== 'ios'}
+		<Navbar title={m.settings()} titleClass="opacity1" transparent={true} />
+	{/if}
 
 	{#await $myProfile}
 		<div

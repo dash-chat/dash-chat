@@ -2,7 +2,6 @@ import { tid } from '../../selectors';
 import { TestHelper } from '../test-helper';
 
 export class SettingsPage extends TestHelper {
-	back = this.el(tid('settings-back'));
 	profileLink = this.el(tid('settings-profile-link'));
 	qrLink = this.el(tid('settings-qr-link'));
 	appearanceLink = this.el(tid('settings-appearance-link'));

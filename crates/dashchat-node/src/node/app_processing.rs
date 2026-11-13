@@ -751,6 +751,18 @@ impl Node {
                             let node = self.clone();
                             let agent_id = *agent_id;
                             tokio::spawn(async move {
+                                // The accept op can be processed more than once
+                                // (it is replayed when its ack fails), and each
+                                // processing lands here; record the contact only
+                                // the first time.
+                                match node.accepted_contact_agent_ids().await {
+                                    Ok(ids) if ids.contains(&agent_id) => return,
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        tracing::warn!(?err, "failed to check recorded contacts");
+                                        return;
+                                    }
+                                }
                                 let topic_id =
                                     node.direct_chat_topic(crate::FakeAgentId::from(author));
                                 if let Err(err) = node.publish_add_contact(agent_id, topic_id).await

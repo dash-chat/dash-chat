@@ -1,9 +1,12 @@
-import type { ConnectionStatusTag as ConnectionStatus } from '../../../ui/src/lib/components/connection/connection-status-tags';
+import type {
+	ConnectionModeStatus,
+	ConnectionStatusTag as ConnectionStatus,
+} from '../../../ui/src/lib/components/connection/connection-status-tags';
 import type { ConnectionStatusSample } from '../../../ui/tests/setup-utils';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
-export type { ConnectionStatus, ConnectionStatusSample };
+export type { ConnectionModeStatus, ConnectionStatus, ConnectionStatusSample };
 
 /** `status(visibility)@+Nms`, relative to the first sample — the absolute epoch
  *  values are unreadable in a failure message, and what matters is the spacing
@@ -47,12 +50,22 @@ export function samplesOnResume(
 		.filter(sample => sample.at - visibleAt <= RESUME_PAINT_MS);
 }
 
+/** What the connection-mode dialog is expected to show; a row left out is not
+ *  checked. */
+export interface ExpectedConnectionModes {
+	isolated?: boolean;
+	internet?: ConnectionModeStatus;
+	localHub?: ConnectionModeStatus;
+	phoneToPhone?: ConnectionModeStatus;
+}
+
 export class ConnectionStatusIndicator extends TestHelper {
 	chip = this.el(tid('connection-status'));
 	dialog = this.el(tid('connection-status-dialog'));
-	dialogTitle = this.el(tid('connection-status-dialog-title'));
-	dialogDescription = this.el(tid('connection-status-dialog-description'));
-	dialogCloseButton = this.el(tid('connection-status-dialog-close'));
+	isolationMode = this.el(tid('connection-mode-isolation'));
+	internetMode = this.el(tid('connection-mode-internet'));
+	localHubMode = this.el(tid('connection-mode-local-hub'));
+	phoneToPhoneMode = this.el(tid('connection-mode-phone-to-phone'));
 
 	/** Read the chip's data-status, or null while it is not mounted. */
 	status(): Promise<ConnectionStatus | null> {
@@ -126,20 +139,20 @@ export class ConnectionStatusIndicator extends TestHelper {
 		}
 	}
 
-	/** Open the dialog and wait until its text says `count` local hubs are
-	 *  connected, then close it. The chip must be reading local. */
+	/** Open the dialog and wait until its local hub row names `count` hubs,
+	 *  then close it. The chip must be reading local. */
 	async waitForLocalHubCount(
 		count: number,
 		timeout: number,
 		timeoutMsg: string,
 	): Promise<void> {
 		await this.chip.click();
-		await this.dialogDescription.waitForExist();
+		await this.localHubMode.waitForExist();
 		let seen: number | null = null;
 		try {
 			await this.agent.waitUntil(
 				async () => {
-					const text = await this.dialogDescription.getText();
+					const text = await this.localHubMode.getText();
 					seen = Number(text.match(/\d+/)?.[0]);
 					return seen === count;
 				},
@@ -152,20 +165,46 @@ export class ConnectionStatusIndicator extends TestHelper {
 		}
 	}
 
-	/** Open the dialog, check it reads `title` and `description`, then close it. */
-	async expectDialog(title: string, description: string): Promise<void> {
+	/** Open the dialog, check the rows named in `expected`, then close it. */
+	async expectModes(expected: ExpectedConnectionModes): Promise<void> {
 		await this.chip.click();
 		await this.agent.waitUntil(() => this.isDialogOpen());
 		try {
-			await expect(this.dialogTitle).toHaveText(title);
-			await expect(this.dialogDescription).toHaveText(description);
+			if (expected.isolated === true) {
+				await expect(this.isolationMode).toExist();
+			}
+			if (expected.isolated === false) {
+				await expect(this.isolationMode).not.toExist();
+			}
+			if (expected.internet !== undefined) {
+				await expect(this.internetMode).toHaveAttribute(
+					'data-status',
+					expected.internet,
+				);
+			}
+			if (expected.localHub !== undefined) {
+				await expect(this.localHubMode).toHaveAttribute(
+					'data-status',
+					expected.localHub,
+				);
+			}
+			if (expected.phoneToPhone !== undefined) {
+				await expect(this.phoneToPhoneMode).toHaveAttribute(
+					'data-status',
+					expected.phoneToPhone,
+				);
+			}
 		} finally {
 			await this.closeDialog();
 		}
 	}
 
+	/** The dialog has no button of its own: it closes on a tap outside it. */
 	private async closeDialog(): Promise<void> {
-		await this.dialogCloseButton.click();
+		await this.agent.execute((sel: string) => {
+			const backdrop = document.querySelector(sel)?.previousElementSibling;
+			if (backdrop instanceof HTMLElement) backdrop.click();
+		}, tid('connection-status-dialog'));
 		await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
 	}
 }

@@ -15,7 +15,7 @@
 		"deep-link:default",
 		"deep-link:allow-register",
 		"view:allow-view",
-		"network-interfaces:wifi-control",
+		"wifi:default",
 		"dialog:allow-open",
 		"fs:allow-appcache-read-recursive",
 		{

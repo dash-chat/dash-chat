@@ -13,6 +13,7 @@ import { asyncExitHook } from 'exit-hook';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { ErrorPlaceholder } from '../helpers/components/error-placeholder';
+import { MainTabbar } from '../helpers/components/main-tabbar';
 import { PeerProfileSheet } from '../helpers/components/peer-profile-sheet';
 import { TestBanner } from '../helpers/components/test-banner';
 import { Toast } from '../helpers/components/toast';
@@ -117,6 +118,7 @@ export type Agent = WebdriverIO.Browser & {
 	groupInfoPage: GroupInfoPage;
 	helpPage: HelpPage;
 	homePage: HomePage;
+	mainTabbar: MainTabbar;
 	newGroupPage: NewGroupPage;
 	newMessagePage: NewMessagePage;
 	notificationsPage: NotificationsPage;
@@ -207,7 +209,7 @@ export type Agent = WebdriverIO.Browser & {
 	 *  the one test network saved on the device: any other is forgotten once
 	 *  the device is on this one, so a killed run can strand a phone on at
 	 *  most the network it was on. iOS goes through the app (the
-	 *  network-interfaces plugin), with the app on screen throughout; Android
+	 *  tauri-plugin-wifi), with the app on screen throughout; Android
 	 *  through adb. */
 	joinWifi(ssid: string, passphrase: string): Promise<string>;
 	/** Get onto the host's LAN from wherever the device is, and resolve with
@@ -287,6 +289,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.groupInfoPage = new GroupInfoPage(b);
 	agent.helpPage = new HelpPage(b);
 	agent.homePage = new HomePage(b);
+	agent.mainTabbar = new MainTabbar(b);
 	agent.newGroupPage = new NewGroupPage(b);
 	agent.newMessagePage = new NewMessagePage(b);
 	agent.notificationsPage = new NotificationsPage(b);

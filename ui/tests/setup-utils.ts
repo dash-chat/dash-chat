@@ -10,13 +10,7 @@
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { invokeAfterSetup } from 'dash-chat-stores';
-import {
-	wifiAdd,
-	wifiAddedSsids,
-	wifiCurrent,
-	wifiForget,
-	wifiRequestJoin,
-} from 'tauri-plugin-network-interfaces-api';
+import * as wifi from 'tauri-plugin-wifi-api';
 
 import {
 	CONNECTION_STATUS_TAGS,
@@ -43,7 +37,15 @@ type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
 function simulateUpdate(
-	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+	state:
+		| 'available'
+		| 'misplaced'
+		| 'moving'
+		| 'moveError'
+		| 'downloading'
+		| 'ready'
+		| 'error'
+		| 'hidden',
 ) {
 	window.dispatchEvent(
 		new CustomEvent('test-simulate-update', { detail: state }),
@@ -696,21 +698,20 @@ export const testUtils = {
 	forceBlobError,
 	swipeToReply,
 	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
-	/** Wi-Fi control on phones (the network-interfaces plugin's `wifi-control`
-	 * feature, e2e builds only): the networks the app added, and the
-	 * interface it is on. */
+	/** Wi-Fi control on phones (tauri-plugin-wifi, e2e builds only): the
+	 * networks the app added, and the interface it is on. */
 	wifi: {
-		current: wifiCurrent,
-		addedSsids: wifiAddedSsids,
-		add: wifiAdd,
-		requestJoin: wifiRequestJoin,
-		forget: wifiForget,
+		current: wifi.current,
+		addedSsids: wifi.addedSsids,
+		add: wifi.add,
+		requestJoin: wifi.requestJoin,
+		forget: wifi.forget,
 		/** Start a join request and report on it through `requestJoinOutcome`:
 		 * on iOS the request sits behind a system "join?" alert that blocks the
 		 * webview, so a driver cannot both await it and answer the alert. */
 		startRequestJoin(ssid: string, passphrase: string): void {
 			requestJoinOutcomes.delete(ssid);
-			wifiRequestJoin(ssid, passphrase).then(
+			wifi.requestJoin(ssid, passphrase).then(
 				() => requestJoinOutcomes.set(ssid, 'ok'),
 				e => requestJoinOutcomes.set(ssid, String(e)),
 			);
