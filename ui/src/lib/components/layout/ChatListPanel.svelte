@@ -14,25 +14,9 @@
 </script>
 
 <div class="flex flex-col relative h-full">
-	<Navbar
-		title={m.chats()}
-		titleClass="opacity1"
-		rightClass="order-1"
-		transparent={true}
-	>
-		{#if theme === 'ios'}
-			<!-- A navbar child, not part of the right slot that Konsta wraps in one
-				glass capsule: it gets its own bubble before the capsule (rightClass
-				orders the slot last). -->
-			<div class="ms-auto">
-				<AddContactNavbarButton />
-			</div>
-		{/if}
-
+	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
 		{#snippet right()}
-			{#if theme !== 'ios'}
-				<AddContactNavbarButton />
-			{/if}
+			<AddContactNavbarButton />
 			<Link
 				iconOnly
 				onClick={() => {

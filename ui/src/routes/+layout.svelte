@@ -172,7 +172,6 @@
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
 		mailboxTrackerStore = new MailboxTrackerStore();
-		onlinePeersStore = new OnlinePeersStore(contactsStore);
 		messageAckStore = new MessageAckStore(
 			new MessageAckClient(),
 			mailboxTrackerStore,
@@ -186,6 +185,7 @@
 			messageAckStore,
 			chatsClient,
 		);
+		onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
 
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,

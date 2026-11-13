@@ -51,7 +51,9 @@
 </script>
 
 <div class="settings-panel">
-	<Navbar title={m.settings()} titleClass="opacity1" transparent={true} />
+	{#if theme !== 'ios'}
+		<Navbar title={m.settings()} titleClass="opacity1" transparent={true} />
+	{/if}
 
 	{#await $myProfile}
 		<div

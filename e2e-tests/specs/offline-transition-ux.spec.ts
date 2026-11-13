@@ -77,10 +77,7 @@ describe('Offline UX', () => {
 			const indicator = agent1.directChatPage.connectionStatusIndicator;
 			expect(await indicator.status()).toBe('cloud');
 
-			await indicator.expectDialog(
-				await agent1.tr('connectionStatusCloudTitle'),
-				await agent1.tr('connectionStatusCloudDescription'),
-			);
+			await indicator.expectModes({ isolated: false, internet: 'connected' });
 		});
 	});
 
@@ -110,10 +107,7 @@ describe('Offline UX', () => {
 				'the chip did not read pending after the first failed poll',
 			);
 
-			await indicator.expectDialog(
-				await agent1.tr('connectionStatusPendingTitle'),
-				await agent1.tr('connectionStatusPendingDescription'),
-			);
+			await indicator.expectModes({ isolated: false, internet: 'searching' });
 		});
 
 		it('new messages start as unsent, then downgrade to sending', async () => {
@@ -150,10 +144,12 @@ describe('Offline UX', () => {
 				{ timeout: 90_000, interval: 1_000 },
 			);
 
-			await indicator.expectDialog(
-				await agent1.tr('connectionStatusDisconnectedTitle'),
-				await agent1.tr('connectionStatusDisconnectedDescription'),
-			);
+			await indicator.expectModes({
+				isolated: true,
+				internet: 'failed',
+				localHub: 'searching',
+				phoneToPhone: 'searching',
+			});
 		});
 
 		describe('with local mailbox enabled on the sender', () => {
@@ -177,9 +173,15 @@ describe('Offline UX', () => {
 					{ timeout: 60_000 },
 				);
 
-				await indicator.expectDialog(
-					await agent1.tr('connectionStatusLocalTitle'),
-					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
+				await indicator.expectModes({
+					isolated: false,
+					internet: 'failed',
+					localHub: 'connected',
+				});
+				await indicator.waitForLocalHubCount(
+					1,
+					30_000,
+					'the dialog did not name one local hub',
 				);
 			});
 
