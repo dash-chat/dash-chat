@@ -722,6 +722,59 @@ mod tests {
         );
     }
 
+    /// Alice accepts Bob's contact request, which admits his device to their
+    /// direct chat's space. That is a chat, not a group, so the membership
+    /// operation the sync loop hands Bob must announce nothing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stays_silent_for_a_contact_accepting_us() {
+        crate::i18n::init_i18n();
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .set_profile(Profile {
+                name: "Alice".to_string(),
+                surname: None,
+                avatar: None,
+                about: None,
+            })
+            .await
+            .unwrap();
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bob)
+            .await
+            .unwrap();
+
+        let direct_chat = alice.direct_chat_with(&bob);
+        let header = alice
+            .get_group_control_ops(direct_chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|op| op.header)
+            .find(|header| {
+                dashchat_node::membership::membership_action(header).is_some_and(|action| {
+                    dashchat_node::membership::action_adds_member(&action, bob.device_id())
+                })
+            })
+            .expect("alice published an operation admitting bob to their direct chat");
+
+        if let Some(data) = build_notification_data(&bob, direct_chat.into(), &header, None).await {
+            panic!(
+                "being admitted to a direct chat is not a group invite, yet it announced {:?}",
+                data.body
+            );
+        }
+    }
+
     /// Someone who scanned our code, and whom we have not accepted, writes to
     /// us. Their request is theirs to make, so nothing is announced.
     #[tokio::test(flavor = "multi_thread")]
