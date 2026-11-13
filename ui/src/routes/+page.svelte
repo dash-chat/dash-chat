@@ -31,7 +31,6 @@
 
 {#snippet materialActions()}
 	<AddContactNavbarButton />
-	<div class="me-1">{@render connectionStatus()}</div>
 {/snippet}
 
 {#snippet composeActions()}
@@ -58,7 +57,7 @@
 		titleClass={theme === 'ios' ? '' : 'opacity1'}
 		large={theme === 'ios'}
 		titleLargeFontSizeIos="mt-2 text-[34px]"
-		left={theme === 'ios' ? connectionStatus : undefined}
+		left={connectionStatus}
 		right={theme === 'ios' ? composeActions : materialActions}
 		transparent={true}
 	/>

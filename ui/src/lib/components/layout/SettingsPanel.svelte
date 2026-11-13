@@ -18,29 +18,22 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
-	import { List, ListItem, Navbar, Preloader, useTheme } from 'konsta/svelte';
+	import {
+		Link,
+		List,
+		ListItem,
+		Navbar,
+		Preloader,
+		useTheme,
+	} from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isIos } from '$lib/utils/environment';
-	import type { Action } from 'svelte/action';
 	import Avatar from '../profiles/Avatar.svelte';
 	import WarningIcon from '../WarningIcon.svelte';
 
 	const settingsStore: SettingsStore = getContext('settings-store');
 	const localHubBlocked = useReactiveValue(settingsStore.localHubBlocked);
-
-	const stopPropagation: Action = node => {
-		const stop = (e: Event) => {
-			e.stopPropagation();
-			e.preventDefault();
-		};
-		node.addEventListener('pointerdown', stop);
-		return {
-			destroy() {
-				node.removeEventListener('pointerdown', stop);
-			},
-		};
-	};
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -51,9 +44,18 @@
 </script>
 
 <div class="settings-panel">
-	{#if theme !== 'ios'}
-		<Navbar title={m.settings()} titleClass="opacity1" transparent={true} />
-	{/if}
+	<Navbar title={m.settings()} titleClass="opacity1" transparent={true}>
+		{#snippet right()}
+			<Link
+				iconOnly
+				href="/settings/profile/add-contact"
+				aria-label={m.addContact()}
+				data-testid="settings-qr-link"
+			>
+				<wa-icon src={wrapPathInSvg(mdiQrcode)}> </wa-icon>
+			</Link>
+		{/snippet}
+	</Navbar>
 
 	{#await $myProfile}
 		<div
@@ -84,23 +86,8 @@
 						initials={myProfile?.name.slice(0, 2)}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
-							: '--size: 64px; margin-inline-start: 16px'}
+							: '--size: 64px; margin-inline-start: 6px'}
 					/>
-				{/snippet}
-				{#snippet after()}
-					<a
-						href="/settings/profile/add-contact"
-						class="qr-button text-black dark:text-white"
-						data-testid="settings-qr-link"
-						use:stopPropagation
-						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 12px'}
-						aria-label={m.addContact()}
-					>
-						<span class="qr-button-disc">
-							<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 24px"
-							></wa-icon>
-						</span>
-					</a>
 				{/snippet}
 			</TitleTruncatedListItem>
 		</List>
@@ -214,31 +201,5 @@
 	.settings-panel {
 		display: flex;
 		flex-direction: column;
-	}
-
-	.qr-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 48px;
-		height: 48px;
-		border: none;
-		cursor: pointer;
-		text-decoration: none;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.qr-button-disc {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		background-color: var(--k-color-bg-300, rgba(128, 128, 128, 0.15));
-	}
-
-	.qr-button:active .qr-button-disc {
-		opacity: 0.7;
 	}
 </style>
