@@ -395,7 +395,7 @@
     "removeNamedAttachment": "Quitar {{name}}",
     "errorUnsupportedImage": "Sólo se pueden adjuntar imágenes JPEG, PNG, WebP y GIF.",
     "errorTooManyScreenshots": "No se pueden añadir más capturas de pantalla.",
-    "errorScreenshotsTooLarge": "Capturas de pantalla son demasiado grandes. El tamaño total máximo es {{max}}.",
+    "errorScreenshotsTooLarge": "Las capturas de pantalla son demasiado grandes. El tamaño total máximo es {{max}}.",
     "trayLanBlocked": "Failed to run Local Message Hub",
     "localHubCantBeFound": "Los dispositivos cercanos no pueden encontrar el centro de mensajes locales",
     "localMessageServerLanBlocked": "Los dispositivos cercanos no pueden encontrar este centro de mensajes locales. Apaga cualquier VPN, y comprueba que tu firewall permite que Dash Chat use la red local.",
