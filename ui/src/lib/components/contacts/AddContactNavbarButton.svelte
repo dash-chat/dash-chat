@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { showAddContactInContentPanel } from '$lib/utils/add-contact-content-panel';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 </script>
 
@@ -14,7 +15,7 @@
 	data-testid="home-add-contact-btn"
 	onClick={() =>
 		isWideScreen.value
-			? goto('/settings/profile/add-contact')
+			? showAddContactInContentPanel()
 			: // The sidebar's back button returns to where the user came from
 				// only for an entry carrying this state; otherwise it goes home.
 				goto('/new-message/add-contact', {
