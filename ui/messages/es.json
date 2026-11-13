@@ -415,7 +415,7 @@
     "localHubLanBlockedOther": "Comprueba que tu firewall permite que Dash Chat use la red local. Si aún así no funciona y usas una VPN, apaga la VPN.",
     "localHubLanBlockedMacosIntro": "macOS está bloqueando que Dash Chat se anuncie a la red local. Para arreglarlo:",
     "localHubLanBlockedMacosStep1": "Abre Configuración de sistema › Privacidad y Seguridad › Red local.",
-    "localHubLanBlockedMacosStep2": "En la lista de aplicaciones, encuentra Dash Chat y apaga su interruptor, y luego vuelve a encender.",
+    "localHubLanBlockedMacosStep2": "En la lista de aplicaciones, busca la opción para Dash Chat, desactivala y vuelvela a activar.",
     "localHubLanBlockedMacosStep3": "Si todavía no funciona y usas una VPN, apaga la VPN.",
     "localHubLanBlockedMacosRecurs": "Esto puede suceder de nuevo después de reiniciar su Mac. Si lo hace, repita estos pasos.",
     "openSystemSettings": "Configuración de sistema abierto",
