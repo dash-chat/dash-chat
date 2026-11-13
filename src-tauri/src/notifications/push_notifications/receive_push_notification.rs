@@ -83,13 +83,13 @@ pub fn receive_push_notification(
 
     log::info!("Received push notification: {notification:?}");
 
-    // The thread a push arrives on (the iOS Notification Service Extension's
-    // main thread, an Android executor thread) has a ~1 MB stack — too small
-    // for the deeply-nested node-init future (iroh + sqlx + encryption polled
-    // inline by `block_on`), which overruns the stack guard page and crashes
-    // the process.
+    // The thread a push arrives on has a small, platform-chosen stack (~1 MB on
+    // the iOS Notification Service Extension) — too small for the deeply-nested
+    // node-init future (iroh + sqlx + encryption polled inline by `block_on`),
+    // which overruns the stack guard page and crashes the process.
     let data_dir = context.data_dir;
-    std::thread::Builder::new()
+    let worker = std::thread::Builder::new()
+        .name("push-notification-worker".into())
         .stack_size(16 * 1024 * 1024)
         .spawn(move || {
             tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
@@ -97,10 +97,16 @@ pub fn receive_push_notification(
                 data_dir,
                 handler_deadline,
             ))
-        })
-        .expect("failed to spawn push-notification worker thread")
-        .join()
-        .expect("push-notification worker thread panicked")
+        });
+    match worker {
+        Ok(worker) => worker
+            .join()
+            .expect("push-notification worker thread panicked"),
+        Err(err) => {
+            log::error!("Failed to spawn the push-notification worker thread: {err:?}");
+            Some(notifications::new_message_generic_notification())
+        }
+    }
 }
 
 #[cfg(target_os = "ios")]
