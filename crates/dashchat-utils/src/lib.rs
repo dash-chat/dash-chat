@@ -10,6 +10,7 @@ mod retry_with_backoff;
 
 #[cfg(feature = "cbor")]
 pub mod cbor;
+pub mod futures;
 
 pub use derive_watch::derive_watch;
 pub use fetch_loop::{fetch_loop, FetchConfig, FetchPool};

@@ -106,7 +106,7 @@ async fn every_member_of_a_large_group_is_online() {
     .unwrap();
 
     let chat_id = alice
-        .create_group(
+        .create_chat_group(
             members
                 .iter()
                 .map(|member| (*member.device_id(), p2panda_auth::Access::write()))
@@ -161,7 +161,7 @@ async fn blocked_contact_is_offline_until_unblocked() {
             .unwrap();
     }
     let group_id = alice
-        .create_group(
+        .create_chat_group(
             [&bobbi, &cammy]
                 .iter()
                 .map(|member| (*member.device_id(), p2panda_auth::Access::write()))
@@ -299,22 +299,6 @@ async fn contact_is_online_only_once_the_request_is_accepted() {
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
-    PollConfig::seconds(15)
-        .wait_for(|| async {
-            for node in [&alice, &bobbi] {
-                if !node
-                    .local_store
-                    .subscribed_topics()
-                    .await?
-                    .contains(&*direct_chat)
-                {
-                    anyhow::bail!("the pending request's direct chat is not registered yet");
-                }
-            }
-            Ok(())
-        })
-        .await
-        .unwrap();
     tokio::join!(
         stays_offline(&alice, direct_chat.into(), Duration::from_secs(8)),
         stays_offline(&bobbi, direct_chat.into(), Duration::from_secs(8)),

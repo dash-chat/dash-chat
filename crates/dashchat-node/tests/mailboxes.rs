@@ -266,7 +266,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config, "alice").await;
     let chat = alice
-        .create_group(std::collections::BTreeMap::new())
+        .create_chat_group(std::collections::BTreeMap::new())
         .await
         .unwrap();
 
@@ -293,10 +293,14 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
         .await
         .unwrap();
 
+    let alice_log = Log::new(
+        alice.device_id(),
+        p2panda::operation::LogId::from_topic(*chat),
+    );
     let synced_before_send = alice
         .mailboxes
         .operation_tracker()
-        .get_synced(&mailbox_id, &chat, &alice.device_id())
+        .get_synced(&mailbox_id, &chat, &alice_log)
         .await
         .unwrap();
 
@@ -307,7 +311,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
             let synced = alice
                 .mailboxes
                 .operation_tracker()
-                .get_synced(&mailbox_id, &chat, &alice.device_id())
+                .get_synced(&mailbox_id, &chat, &alice_log)
                 .await
                 .unwrap();
             (synced > synced_before_send)

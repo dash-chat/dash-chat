@@ -24,7 +24,7 @@ pub trait BlobSource: Send + Sync + 'static {
 /// stores them.
 struct LogCandidates<Item: MailboxItem> {
     topic: Item::Topic,
-    author: Item::Author,
+    author: Item::Log,
     walked_to: SeqNum,
     candidates: Vec<(SeqNum, iroh_blobs::Hash)>,
 }
@@ -40,7 +40,7 @@ struct BlobCandidates<Item: MailboxItem> {
     /// Blob heights as read at the start of the pass, so
     /// `advance_blob_heights` can skip no-op bumps without re-reading.
     blob_heights:
-        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Author, SeqNum>>,
+        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Log, SeqNum>>,
 }
 
 impl<Item: MailboxItem> BlobCandidates<Item> {
@@ -79,17 +79,17 @@ trait CandidateSource<Item: MailboxItem>: Send + Sync {
         &self,
         mailbox_id: &mailbox_client::MailboxId,
     ) -> anyhow::Result<
-        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Author, SeqNum>>,
+        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Log, SeqNum>>,
     >;
     async fn blob_heights(
         &self,
         mailbox_id: &mailbox_client::MailboxId,
     ) -> anyhow::Result<
-        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Author, SeqNum>>,
+        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Log, SeqNum>>,
     >;
     async fn get_log(
         &self,
-        author: &Item::Author,
+        author: &Item::Log,
         topic: &Item::Topic,
         from: SeqNum,
     ) -> anyhow::Result<Option<Vec<Item>>>;
@@ -132,7 +132,7 @@ where
         &self,
         mailbox_id: &mailbox_client::MailboxId,
     ) -> anyhow::Result<
-        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Author, SeqNum>>,
+        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Log, SeqNum>>,
     > {
         self.operation_tracker()
             .get_all_for_mailbox(mailbox_id)
@@ -143,7 +143,7 @@ where
         &self,
         mailbox_id: &mailbox_client::MailboxId,
     ) -> anyhow::Result<
-        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Author, SeqNum>>,
+        std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Log, SeqNum>>,
     > {
         self.blob_tracker()
             .get_all_blob_heights_for_mailbox(mailbox_id)
@@ -152,7 +152,7 @@ where
 
     async fn get_log(
         &self,
-        author: &Item::Author,
+        author: &Item::Log,
         topic: &Item::Topic,
         from: SeqNum,
     ) -> anyhow::Result<Option<Vec<Item>>> {
@@ -258,7 +258,7 @@ async fn height_candidates_for_log<Item>(
     mailbox_id: &mailbox_client::MailboxId,
     reader: &Arc<dyn BlobReader>,
     topic: Item::Topic,
-    author: Item::Author,
+    author: Item::Log,
     blob_height: Option<SeqNum>,
     op_height: SeqNum,
 ) -> Option<LogCandidates<Item>>
@@ -312,7 +312,7 @@ async fn advance_blob_heights<Item, Store>(
     logs: Vec<LogCandidates<Item>>,
     current_blob_heights: &std::collections::HashMap<
         Item::Topic,
-        std::collections::HashMap<Item::Author, SeqNum>,
+        std::collections::HashMap<Item::Log, SeqNum>,
     >,
 ) where
     Item: MailboxItem,
@@ -329,18 +329,18 @@ async fn advance_blob_heights<Item, Store>(
 }
 
 async fn advance_blob_heights_via<Item>(
-    tracker: &crate::blobs::blob_sync_tracker::BlobSyncTracker<Item::Topic, Item::Author>,
+    tracker: &crate::blobs::blob_sync_tracker::BlobSyncTracker<Item::Topic, Item::Log>,
     mailbox_id: &mailbox_client::MailboxId,
     logs: Vec<LogCandidates<Item>>,
     current_blob_heights: &std::collections::HashMap<
         Item::Topic,
-        std::collections::HashMap<Item::Author, SeqNum>,
+        std::collections::HashMap<Item::Log, SeqNum>,
     >,
 ) where
     Item: MailboxItem,
     Item::Topic: OptionalItemTraits + std::fmt::Display,
 {
-    let mut bumps: Vec<(Item::Topic, Item::Author, SeqNum)> = Vec::new();
+    let mut bumps: Vec<(Item::Topic, Item::Log, SeqNum)> = Vec::new();
     for log in logs {
         // Any unconfirmed candidates are tracked by hash in the outstanding
         // set and re-announced on each pass, so the height can move straight
@@ -481,14 +481,14 @@ mod tests {
     }
 
     impl MailboxItem for BlobOp {
-        type Author = char;
+        type Log = char;
         type Hash = (char, SeqNum);
         type Topic = u8;
 
         fn hash(&self) -> Self::Hash {
             (self.author, self.seq)
         }
-        fn author(&self) -> Self::Author {
+        fn log(&self) -> Self::Log {
             self.author
         }
         fn seq_num(&self) -> SeqNum {

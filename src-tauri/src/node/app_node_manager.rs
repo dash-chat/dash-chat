@@ -2,7 +2,7 @@ use std::path::PathBuf;
 #[cfg(mobile)]
 use std::sync::Arc;
 
-use dashchat_node::{Node, Notification};
+use dashchat_node::{Node, Notification, OpNotification, SystemNotification};
 use p2panda_core::{cbor::encode_cbor, Body};
 use sqlite_gate::SqliteGate;
 use tauri::{AppHandle, Emitter};
@@ -181,8 +181,16 @@ async fn notification_loop(
                 crate::notifications::show_sync_notification(&app_handle, &n).await;
             }
             Notification::System(n) => {
-                if let Err(err) = app_handle.emit("dashchat://system-event", n) {
+                if let Err(err) = app_handle.emit("dashchat://system-event", &n) {
                     log::error!("Failed to emit system event: {err:?}");
+                }
+                if let SystemNotification::Membership { topic, header } = n {
+                    let op = OpNotification {
+                        topic,
+                        header,
+                        payload: None,
+                    };
+                    crate::notifications::show_sync_notification(&app_handle, &op).await;
                 }
             }
         }

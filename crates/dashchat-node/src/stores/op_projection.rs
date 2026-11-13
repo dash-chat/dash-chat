@@ -2,7 +2,6 @@ use aliased::Aliasing;
 use dashchat_utils::SeqNum;
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
-use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
@@ -10,10 +9,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::{
-    AckedOp, AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload,
-    Topic,
-};
+use crate::{AckedOp, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic};
 use crate::{
     AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
 };
@@ -27,11 +23,7 @@ const MIGRATIONS: &[&str] = &[
     )",
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
-        profile BLOB NULL,
         blocked BOOLEAN NOT NULL DEFAULT FALSE
-    )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
-        topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
         topic_id BLOB NOT NULL PRIMARY KEY,
@@ -53,6 +45,11 @@ const MIGRATIONS: &[&str] = &[
         op_hash BLOB NOT NULL,
         PRIMARY KEY (topic_id, author_device_id)
     )",
+    "CREATE TABLE IF NOT EXISTS device_profiles (
+        device_id BLOB NOT NULL PRIMARY KEY,
+        profile BLOB NOT NULL,
+        timestamp INTEGER NOT NULL
+    )",
     "CREATE TABLE IF NOT EXISTS message_acks (
         topic_id BLOB NOT NULL,
         acker_device_id BLOB NOT NULL,
@@ -66,6 +63,10 @@ const MIGRATIONS: &[&str] = &[
         lamport INTEGER NOT NULL
     )",
 ];
+
+fn operation_timestamp(operation: &ProcessedOperation<Payload>) -> u64 {
+    operation.processed().header().extensions.timestamp().into()
+}
 
 const MAX_LAMPORT: u64 = (1 << 53) - 1;
 
@@ -215,13 +216,29 @@ impl OpProjection {
         Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
     }
 
+    pub async fn is_agent_blocked(&self, agent_id: AgentId) -> anyhow::Result<bool> {
+        let row: Option<(bool,)> = sqlx::query_as("SELECT blocked FROM agents WHERE agent_id = ?")
+            .bind(agent_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|(blocked,)| blocked).unwrap_or(false))
+    }
+
+    /// The newest profile published by any device known to belong to the agent.
     pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
-        let row: Option<(Option<Profile>,)> =
-            sqlx::query_as("SELECT profile FROM agents WHERE agent_id = ?")
-                .bind(agent_id)
-                .fetch_optional(&self.pool)
-                .await?;
-        Ok(row.and_then(|(profile,)| profile))
+        let row: Option<(Profile,)> = sqlx::query_as(
+            "
+            SELECT profile FROM device_profiles
+            JOIN devices ON device_profiles.device_id = devices.device_id
+            WHERE devices.agent_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            ",
+        )
+        .bind(agent_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|(profile,)| profile))
     }
 
     pub async fn get_group_chat_ids(&self) -> anyhow::Result<Vec<ChatId>> {
@@ -399,7 +416,7 @@ impl OpProjection {
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
         node: BadUseOfNode,
-    ) -> Result<Option<SystemNotification>, ProjectionError> {
+    ) -> Result<Vec<SystemNotification>, ProjectionError> {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
@@ -407,6 +424,7 @@ impl OpProjection {
         self.enforce_blocklist(operation).await?;
         Self::enforce_lamport_bound(operation.message())?;
 
+        let mut events = Vec::new();
         let event = match &payload {
             Payload::Chat(ChatPayload::MessageAck { acks }) => {
                 let mut delivered = BTreeMap::new();
@@ -429,7 +447,13 @@ impl OpProjection {
                 })
             }
 
+            // Only group chat creation publishes this (`Node::create_chat_group`),
+            // so it is what defines a topic as a group chat in the projection.
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
+                let chat_id = ChatId::from_topic_id(topic)?;
+                if self.mark_group_as_group_chat(chat_id).await? {
+                    events.push(SystemNotification::GroupChatAdded { chat_id });
+                }
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
@@ -439,7 +463,7 @@ impl OpProjection {
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                self.validate_delete(topic, &operation.event.operation.header, hashes, node)
+                self.validate_delete(topic, &operation.processed().header(), hashes, node)
                     .await?;
                 for hash in hashes {
                     self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
@@ -460,7 +484,7 @@ impl OpProjection {
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
-                    let self_hash = operation.event.operation.header.hash();
+                    let self_hash = operation.processed().header().hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
                     Some(SystemNotification::Tombstones {
                         topic: topic.into(),
@@ -472,81 +496,79 @@ impl OpProjection {
                 }
             }
 
-            Payload::Announcements(AnnouncementsPayload::SetProfile(profile)) => {
-                // HACK: The announcements topic id IS the agent_id bytes, so we can reconstruct it here.
-                let agent_id =
-                    AgentId::from(crate::ActorId::from_bytes(topic.as_bytes()).map_err(|e| {
-                        anyhow::anyhow!("invalid agent_id bytes in announcements topic: {e}")
-                    })?);
-
-                tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
-
-                self.save_profile(agent_id, profile.clone()).await?;
-                None
+            Payload::Chat(ChatPayload::SetProfile(profile)) => {
+                self.reduce_profile(author, profile, operation).await?
             }
 
-            Payload::DeviceGroup(p) => match p {
-                DeviceGroupPayload::AddContact { agent_id, .. } => {
-                    self.save_agent_mapping(author, *agent_id).await?;
-                    None
+            Payload::DeviceGroup(p) => {
+                // Only my own devices write to my device group, and the device
+                // group space's membership is the authority on which devices are
+                // mine. An op on any other topic (e.g. a chat space, whose
+                // members are not my devices) or from a non-member must never
+                // affect my state, above all not map its author onto my agent.
+                let device_group_topic: TopicId = Topic::device_group(me).into();
+                if topic != device_group_topic {
+                    return Err(ProjectionError::invalid(format!(
+                        "device group payload on non-device-group topic {:?}",
+                        topic.aliased()
+                    )));
                 }
-                DeviceGroupPayload::BlockAgent(agent_id) => {
-                    self.block_agent(*agent_id).await?;
-                    None
+                let is_member = node
+                    .space_members(topic)
+                    .await?
+                    .iter()
+                    .any(|(member, _)| *member == author);
+                if !is_member {
+                    return Err(ProjectionError::invalid(format!(
+                        "device group op authored by non-member {:?}",
+                        author.aliased()
+                    )));
                 }
-                DeviceGroupPayload::UnblockAgent(agent_id) => {
-                    self.unblock_agent(*agent_id).await?;
-                    None
+                match p {
+                    DeviceGroupPayload::SetProfile(profile) => {
+                        self.save_agent_mapping(author, me).await?;
+                        self.reduce_profile(author, profile, operation).await?
+                    }
+                    DeviceGroupPayload::AddContact { agent_id, .. } => {
+                        self.ensure_agent(*agent_id).await?;
+                        None
+                    }
+                    DeviceGroupPayload::BlockAgent(agent_id) => {
+                        self.block_agent(*agent_id).await?;
+                        None
+                    }
+                    DeviceGroupPayload::UnblockAgent(agent_id) => {
+                        self.unblock_agent(*agent_id).await?;
+                        None
+                    }
+                    DeviceGroupPayload::DeleteForMe(delete) => {
+                        let hashes = self
+                            .tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
+                            .await?;
+                        Some(SystemNotification::Tombstones {
+                            topic: delete.chat_id.into(),
+                            hashes,
+                            reason: TombstoneReason::DeletedForMe,
+                        })
+                    }
+                    _ => None,
                 }
-                DeviceGroupPayload::DeleteForMe(delete) => {
-                    let hashes = self
-                        .tombstone_message_for_me(delete.chat_id, delete.message_hash, node)
-                        .await?;
-                    Some(SystemNotification::Tombstones {
-                        topic: delete.chat_id.into(),
-                        hashes,
-                        reason: TombstoneReason::DeletedForMe,
-                    })
-                }
-                _ => None,
-            },
+            }
 
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept {
+                agent_id, profile, ..
+            }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
-                self.save_profile(*agent_id, profile.clone()).await?;
+                self.save_profile(author, profile.clone(), operation_timestamp(operation))
+                    .await?;
                 Some(SystemNotification::AgentsIntroduced {
                     agents: BTreeMap::from([(author, *agent_id)]),
                 })
-            }
-
-            // We define group chats as topics which contain a CreateGroup that makes at least
-            // one member an admin.
-            //
-            // 1:1 chats are also group chats, but both members have only Write access,
-            // meaning nobody will ever have admin access.
-            //
-            // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
-            Payload::GroupControl(GroupsArgs { action, .. }) => {
-                let chat_id = ChatId::from_topic_id(topic)?;
-                match action {
-                    GroupAction::Create { initial_members } => {
-                        let has_admin = initial_members
-                            .iter()
-                            .any(|(_, access)| *access == p2panda_auth::Access::manage());
-                        if has_admin {
-                            self.mark_group_as_group_chat(chat_id).await?;
-                            Some(SystemNotification::GroupChatAdded { chat_id })
-                        } else {
-                            None
-                        }
-                    }
-                    _ => Some(SystemNotification::GroupMembersChanged { chat_id }),
-                }
             }
 
             _ => {
@@ -560,16 +582,37 @@ impl OpProjection {
                 self.record_chat_lamport(topic, message.lamport).await?;
             }
             if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
-                let header = &operation.event.operation.header;
+                let header = &operation.processed().header();
                 self.record_chat_log_head(topic, author, header.seq_num, header.hash())
                     .await?;
             }
         }
 
-        Ok(event)
+        events.extend(event);
+        Ok(events)
     }
 
     // === helpers === //
+
+    /// Record a profile `author` published, notifying when it is newer than
+    /// the one held for that device.
+    async fn reduce_profile(
+        &self,
+        author: DeviceId,
+        profile: &Profile,
+        operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<Option<SystemNotification>> {
+        let changed = self
+            .save_profile(author, profile.clone(), operation_timestamp(operation))
+            .await?;
+        if !changed {
+            return Ok(None);
+        }
+        Ok(Some(SystemNotification::ProfileChanged {
+            device_id: author,
+            agent_id: self.lookup_contact_by_device_id(author).await?,
+        }))
+    }
 
     /// While the contact is blocked, invalidate all operations from them except for the necessary ones.
     async fn enforce_blocklist(
@@ -579,8 +622,6 @@ impl OpProjection {
         let author = DeviceId::from(operation.author());
         if self.is_author_blocked(&author).await? {
             let allow = match operation.message() {
-                // Group control messages are necessary to maintain group chats.
-                Payload::GroupControl(_) => true,
                 // Group info messages are necessary to maintain group chats.
                 Payload::Chat(ChatPayload::GroupInfo(_)) => true,
                 // All other operations are invalid.
@@ -700,18 +741,50 @@ impl OpProjection {
         Ok(())
     }
 
-    async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
+    async fn ensure_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO agents (agent_id) VALUES (?)")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Keep the newest profile per device. The same profile reaches us once
+    /// per chat it was published to, and an older one may arrive after a newer
+    /// one, so a write only lands when `timestamp` is newer than the row's.
+    /// Returns whether the held profile differs from before.
+    async fn save_profile(
+        &self,
+        device_id: DeviceId,
+        profile: Profile,
+        timestamp: u64,
+    ) -> anyhow::Result<bool> {
+        let current: Option<(Profile, i64)> =
+            sqlx::query_as("SELECT profile, timestamp FROM device_profiles WHERE device_id = ?")
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        let timestamp = i64::try_from(timestamp)?;
+        if let Some((_, held)) = current
+            && held >= timestamp
+        {
+            return Ok(false);
+        }
+        let changed = current.is_none_or(|(held, _)| held != profile);
         sqlx::query(
             "
-            INSERT INTO agents (agent_id, profile) VALUES (?, ?) 
-            ON CONFLICT(agent_id) DO UPDATE SET profile = excluded.profile
-        ",
+            INSERT INTO device_profiles (device_id, profile, timestamp) VALUES (?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+                profile = excluded.profile,
+                timestamp = excluded.timestamp
+            ",
         )
-        .bind(agent_id)
+        .bind(device_id)
         .bind(profile)
+        .bind(timestamp)
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(changed)
     }
 
     async fn block_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
@@ -730,14 +803,23 @@ impl OpProjection {
         Ok(())
     }
 
-    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
+    /// Returns whether the chat was not a group chat before.
+    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<bool> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
+        let result = sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
             .bind(chat_id.to_vec())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(())
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn is_group_chat(&self, chat_id: ChatId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM group_chats WHERE chat_id = ?")
+            .bind(chat_id.to_vec())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
     }
 
     /// Tombstone `root` and its entire current edit chain in `chat_id` with
@@ -970,6 +1052,47 @@ mod tests {
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
         OpProjection::new(pool).await.unwrap()
+    }
+
+    fn profile(name: &str) -> Profile {
+        Profile {
+            name: name.to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        }
+    }
+
+    /// A profile only lands when newer than the device's, and an agent's
+    /// profile is the newest across its devices.
+    #[tokio::test]
+    async fn test_newest_profile_wins() {
+        let db = projection().await;
+        let agent_a = agent(1);
+        let (d1, d2) = (device(10), device(11));
+        db.save_agent_mapping(d1, agent_a).await.unwrap();
+        db.save_agent_mapping(d2, agent_a).await.unwrap();
+
+        assert!(db.save_profile(d1, profile("second"), 20).await.unwrap());
+        assert!(!db.save_profile(d1, profile("first"), 10).await.unwrap());
+        assert!(!db.save_profile(d1, profile("second"), 21).await.unwrap());
+        assert_eq!(
+            db.get_profile(agent_a).await.unwrap(),
+            Some(profile("second"))
+        );
+
+        assert!(db.save_profile(d2, profile("third"), 30).await.unwrap());
+        assert_eq!(
+            db.get_profile(agent_a).await.unwrap(),
+            Some(profile("third"))
+        );
+
+        assert!(
+            db.save_profile(device(99), profile("stranger"), 40)
+                .await
+                .unwrap()
+        );
+        assert_eq!(db.get_profile(agent(2)).await.unwrap(), None);
     }
 
     /// Blocking an agent blocks every device that maps to it, and unblocking

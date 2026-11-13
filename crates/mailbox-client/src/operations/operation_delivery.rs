@@ -24,10 +24,10 @@ use crate::{FetchRequest, FetchResponse, FetchTopicResponse, MailboxClient};
 /// have failed partway through, but any topics whose subscribers were found
 /// to be closed are always reported so the caller can unsubscribe them.
 #[derive(Debug)]
-pub struct SyncOutcome<Topic, Author> {
+pub struct SyncOutcome<Topic, Log> {
     /// Watermarks for the caller to record for the mailbox. A failed sync
     /// carries no acks: it records nothing.
-    pub result: Result<Vec<(Topic, Author, SeqNum)>, DeliveryError>,
+    pub result: Result<Vec<(Topic, Log, SeqNum)>, DeliveryError>,
     pub closed_topics: HashSet<Topic>,
 }
 
@@ -64,7 +64,7 @@ impl DeliveryError {
 
 struct SyncResult<Item: crate::MailboxItem> {
     ops_to_publish: Vec<Item>,
-    acks: Vec<(Item::Topic, Item::Author, SeqNum)>,
+    acks: Vec<(Item::Topic, Item::Log, SeqNum)>,
     closed: bool,
 }
 
@@ -96,7 +96,7 @@ where
         &self,
         topics: impl Iterator<Item = Item::Topic>,
         topic_registry: &TopicRegistry<Item>,
-    ) -> SyncOutcome<Item::Topic, Item::Author>
+    ) -> SyncOutcome<Item::Topic, Item::Log>
     where
         Item::Topic: Display + Eq + Hash + Clone,
     {
@@ -111,7 +111,7 @@ where
         };
 
         let mut ops_to_publish: Vec<Item> = vec![];
-        let mut acks: Vec<(Item::Topic, Item::Author, SeqNum)> = vec![];
+        let mut acks: Vec<(Item::Topic, Item::Log, SeqNum)> = vec![];
         let mut closed_topics: HashSet<Item::Topic> = HashSet::new();
 
         for (topic, response) in response.into_iter() {
@@ -142,9 +142,9 @@ where
             }
         }
 
-        let publish_acks: Vec<(Item::Topic, Item::Author, SeqNum)> = ops_to_publish
+        let publish_acks: Vec<(Item::Topic, Item::Log, SeqNum)> = ops_to_publish
             .iter()
-            .map(|op| (op.topic(), op.author(), op.seq_num()))
+            .map(|op| (op.topic(), op.log(), op.seq_num()))
             .collect();
 
         if !ops_to_publish.is_empty() {
@@ -194,7 +194,7 @@ where
     pub async fn publish(
         &self,
         topic: Item::Topic,
-        author: Item::Author,
+        author: Item::Log,
         synced: Option<SeqNum>,
     ) -> Result<Option<SeqNum>, DeliveryError> {
         let ops = self.fast_push_ops(synced, topic, author).await?;
@@ -225,7 +225,7 @@ where
         &self,
         synced: Option<SeqNum>,
         topic: Item::Topic,
-        author: Item::Author,
+        author: Item::Log,
     ) -> Result<Vec<Item>, DeliveryError> {
         let start = synced.map_or(0, |n| n + 1);
         Ok(self
@@ -246,7 +246,7 @@ where
     ) -> Result<
         (
             BTreeMap<Item::Topic, FetchTopicResponse<Item>>,
-            BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
+            BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>>,
         ),
         DeliveryError,
     >
@@ -254,8 +254,7 @@ where
         Item::Topic: Display,
     {
         let mut request = BTreeMap::new();
-        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>> =
-            BTreeMap::new();
+        let mut sent_heights: BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>> = BTreeMap::new();
         for topic in topics {
             let heights = BTreeMap::from_iter(
                 self.store
@@ -285,7 +284,7 @@ where
         &self,
         topic: Item::Topic,
         response: FetchTopicResponse<Item>,
-        sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Author, SeqNum>>,
+        sent_heights: &BTreeMap<Item::Topic, BTreeMap<Item::Log, SeqNum>>,
         sender: Option<tokio::sync::mpsc::Sender<Item>>,
     ) -> Result<SyncResult<Item>, DeliveryError>
     where
@@ -320,7 +319,7 @@ where
 
         // Each received item is one the mailbox already has.
         for item in &items {
-            acks.push((item.topic(), item.author(), item.seq_num()));
+            acks.push((item.topic(), item.log(), item.seq_num()));
         }
 
         if let Some(sender) = sender {
@@ -458,7 +457,7 @@ mod tests {
                     .0
                     .entry(op.topic())
                     .or_default()
-                    .insert(op.author(), Some(op.seq_num()));
+                    .insert(op.log(), Some(op.seq_num()));
             }
             self.published.lock().unwrap().push(ops);
             Ok(response)
@@ -681,7 +680,7 @@ mod tests {
                     .0
                     .entry(op.topic())
                     .or_default()
-                    .insert(op.author(), Some(short));
+                    .insert(op.log(), Some(short));
             }
             Ok(response)
         }

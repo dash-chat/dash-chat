@@ -19,6 +19,8 @@ import type {
 	PhotoAttachment,
 } from 'dash-chat-stores';
 
+import limits from './media-limits.json';
+
 /**
  * Draft voice note held in the composer before sending.
  */
@@ -29,7 +31,14 @@ export interface DraftVoiceNote {
 	waveform: Uint8Array;
 }
 
-export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+export const MAX_STAGED_PHOTOS = 32;
+
+// The backend rejects any single blob whose ciphertext (plaintext + AEAD tag)
+// exceeds max_blob_bytes, so the composer cap leaves tag room for every
+// possible attachment. media-limits.json mirrors the Rust constants and a
+// test in dashchat-utils fails if either side drifts.
+export const MAX_MESSAGE_BYTES =
+	limits.max_blob_bytes - MAX_STAGED_PHOTOS * limits.blob_encryption_overhead;
 
 export class AttachmentTooLargeError extends Error {
 	readonly totalBytes: number;
@@ -51,8 +60,6 @@ export type DraftMedia =
 	| { kind: 'photos'; items: File[] }
 	| { kind: 'file'; file: File }
 	| { kind: 'voice_note'; voice: DraftVoiceNote };
-
-export const MAX_STAGED_PHOTOS = 32;
 
 export type IngestError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
 

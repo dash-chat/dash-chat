@@ -28,8 +28,8 @@ use crate::tracked_mailbox::TrackedMailbox;
 pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     mailbox_registry: Arc<MailboxRegistry<Item, Store>>,
     topic_registry: Arc<TopicRegistry<Item>>,
-    op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
-    blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Author>>,
+    op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Log>>,
+    blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Log>>,
     upload_tracker: Arc<BlobUploadTracker>,
     config: MailboxesConfig,
     nudge: Arc<Notify>,
@@ -39,7 +39,7 @@ pub struct Mailboxes<Item: MailboxItem, Store: MailboxStore<Item>> {
     blob_sync_trigger: Arc<Notify>,
     /// Owned persistence when the manager was spawned with a database path;
     /// held so `close()` can release the underlying pool and file lock.
-    persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
+    persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Log>>>,
     /// The poll loop's handle, taken by `close()` to stop the loop before the
     /// persistence pool is released.
     poll_loop: Arc<std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
@@ -55,10 +55,10 @@ where
 {
     fn new(
         store: Store,
-        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
-        blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Author>>,
+        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Log>>,
+        blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Log>>,
         config: MailboxesConfig,
-        persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
+        persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Log>>>,
     ) -> Self {
         Self {
             blob_tracker,
@@ -82,13 +82,13 @@ where
     }
 
     /// Persistent, watch-based view over every mailbox we've ever recorded sync state for.
-    pub fn operation_tracker(&self) -> &Arc<OperationSyncTracker<Item::Topic, Item::Author>> {
+    pub fn operation_tracker(&self) -> &Arc<OperationSyncTracker<Item::Topic, Item::Log>> {
         &self.op_tracker
     }
 
     /// The blob delivery tracker: what each mailbox still lacks. Node code
     /// records through this; the reconcile pass reads from it.
-    pub fn blob_tracker(&self) -> &Arc<BlobSyncTracker<Item::Topic, Item::Author>> {
+    pub fn blob_tracker(&self) -> &Arc<BlobSyncTracker<Item::Topic, Item::Log>> {
         &self.blob_tracker
     }
 
@@ -374,7 +374,7 @@ where
         self.nudge_poll_loop();
     }
 
-    /// Deliver ops just published in `topic` by `author` (the local device) to
+    /// Deliver ops the local device just published to `log` in `topic` to
     /// every active mailbox with a direct store, skipping the fetch roundtrip.
     /// A failed store, or a watermark echo short of what was pushed,
     /// falls back to a scheduled sync.
@@ -385,7 +385,7 @@ where
     pub async fn publish_fast_push(
         &self,
         topic: Item::Topic,
-        author: Item::Author,
+        log: Item::Log,
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mailboxes = self.mailbox_registry.all().await;
 
@@ -395,7 +395,7 @@ where
             .map(|(id, tracked)| {
                 let manager = self.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = manager.store_fast_push(&id, &tracked, topic, author).await {
+                    if let Err(err) = manager.store_fast_push(&id, &tracked, topic, log).await {
                         tracing::warn!(?err, mailbox = %id, "direct store after publish failed; falling back to sync");
                         tracked.request_sync_if_active(Some(topic));
                         manager.nudge_poll_loop();
@@ -410,14 +410,14 @@ where
         id: &MailboxId,
         tracked: &TrackedMailbox<Item, Store>,
         topic: Item::Topic,
-        author: Item::Author,
+        log: Item::Log,
     ) -> anyhow::Result<()> {
-        let synced = self.op_tracker.get_synced(id, &topic, &author).await?;
+        let synced = self.op_tracker.get_synced(id, &topic, &log).await?;
         let delivery = tracked.delivery().await;
-        match delivery.publish(topic, author, synced).await {
+        match delivery.publish(topic, log, synced).await {
             Ok(Some(watermark)) => {
                 self.op_tracker
-                    .record_synced(id, &[(topic, author, watermark)])
+                    .record_synced(id, &[(topic, log, watermark)])
                     .await?;
                 Ok(())
             }
@@ -436,7 +436,7 @@ where
                 // resending the whole batch.
                 if let Some(echoed) = echoed {
                     self.op_tracker
-                        .record_synced(id, &[(topic, author, echoed)])
+                        .record_synced(id, &[(topic, log, echoed)])
                         .await?;
                 }
                 Err(anyhow::anyhow!(err))
@@ -492,12 +492,11 @@ where
     #[cfg(test)]
     pub(crate) fn spawn(
         store: Store,
-        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
+        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Log>>,
         config: MailboxesConfig,
     ) -> Self {
         use crate::persistence::Persistence as _;
-        let persistence =
-            crate::persistence::mem::MemPersistence::<Item::Topic, Item::Author>::new();
+        let persistence = crate::persistence::mem::MemPersistence::<Item::Topic, Item::Log>::new();
         let blob_tracker = Arc::new(BlobSyncTracker::new(
             persistence.blob_store(),
             persistence.sync_store(),
@@ -514,7 +513,7 @@ where
         config: MailboxesConfig,
     ) -> Result<Self, anyhow::Error> {
         let persistence =
-            Arc::new(SqlitePersistence::<Item::Topic, Item::Author>::open(path, gate).await?);
+            Arc::new(SqlitePersistence::<Item::Topic, Item::Log>::open(path, gate).await?);
         let initial_ids = persistence.sync_store().load_all_ids().await?;
         let sync_tracker = Arc::new(OperationSyncTracker::new(
             persistence.sync_store(),
@@ -536,10 +535,10 @@ where
 
     fn spawn_internal(
         store: Store,
-        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Author>>,
-        blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Author>>,
+        op_tracker: Arc<OperationSyncTracker<Item::Topic, Item::Log>>,
+        blob_tracker: Arc<BlobSyncTracker<Item::Topic, Item::Log>>,
         config: MailboxesConfig,
-        persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Author>>>,
+        persistence: Option<Arc<dyn Persistence<Item::Topic, Item::Log>>>,
     ) -> Self {
         let manager = Self::new(store, op_tracker, blob_tracker, config, persistence);
         let r = manager.clone();
@@ -1066,14 +1065,14 @@ mod tests {
     }
 
     impl mailbox_client::MailboxItem for BlobMsg {
-        type Author = char;
+        type Log = char;
         type Hash = (char, SeqNum);
         type Topic = u8;
 
         fn hash(&self) -> Self::Hash {
             (self.author, self.seq)
         }
-        fn author(&self) -> Self::Author {
+        fn log(&self) -> Self::Log {
             self.author
         }
         fn seq_num(&self) -> SeqNum {

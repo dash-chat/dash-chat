@@ -10,7 +10,7 @@
 		hasBody,
 		isDeleted,
 	} from 'dash-chat-stores';
-	import { type MessagePosition } from './message-helpers';
+	import { type MessagePosition, hasMessageActions } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
@@ -75,11 +75,16 @@
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
+	const hasActions = $derived(
+		hasMessageActions(message, myDeviceId, readOnly, onReply !== undefined),
+	);
+
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		actionsMounted = true;
 		if (isMobile) {
-			reactionsOpened = true;
-		} else if (e instanceof MouseEvent) {
+			// A writable chat's overlay always has the reaction bar to show.
+			reactionsOpened = hasActions || !readOnly;
+		} else if (hasActions && e instanceof MouseEvent) {
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
@@ -93,6 +98,7 @@
 			mailboxTrackerStore.syncStatusForOp,
 			chatId,
 			message.author,
+			message.logId,
 			message.seqNum,
 		),
 	);
