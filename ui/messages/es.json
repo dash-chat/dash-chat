@@ -394,7 +394,7 @@
     "notificationsPermissionDenied": "Para mostrar notificaciones, se requiere permiso. Puedes concederlo en la configuración de tu dispositivo.",
     "removeNamedAttachment": "Quitar {{name}}",
     "errorUnsupportedImage": "Sólo se pueden adjuntar imágenes JPEG, PNG, WebP y GIF.",
-    "errorTooManyScreenshots": "No puedes añadir más capturas de pantalla.",
+    "errorTooManyScreenshots": "No se pueden añadir más capturas de pantalla.",
     "errorScreenshotsTooLarge": "Capturas de pantalla son demasiado grandes. El tamaño total máximo es {{max}}.",
     "trayLanBlocked": "Failed to run Local Message Hub",
     "localHubCantBeFound": "Los dispositivos cercanos no pueden encontrar el centro de mensajes locales",
