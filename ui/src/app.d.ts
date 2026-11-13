@@ -1,6 +1,7 @@
 declare namespace App {
 	interface PageState {
 		sidebarPanel?: 'new-message';
+		contentPanel?: 'add-contact';
 		stagedMedia?: true;
 		lightbox?: true;
 	}

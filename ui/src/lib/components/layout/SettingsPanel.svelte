@@ -18,6 +18,8 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { showAddContactInContentPanel } from '$lib/utils/add-contact-content-panel';
 	import {
 		Link,
 		List,
@@ -48,9 +50,12 @@
 		{#snippet right()}
 			<Link
 				iconOnly
-				href="/settings/profile/add-contact"
 				aria-label={m.addContact()}
 				data-testid="settings-qr-link"
+				onClick={() =>
+					isWideScreen.value
+						? showAddContactInContentPanel()
+						: goto('/settings/profile/add-contact')}
 			>
 				<wa-icon src={wrapPathInSvg(mdiQrcode)}> </wa-icon>
 			</Link>

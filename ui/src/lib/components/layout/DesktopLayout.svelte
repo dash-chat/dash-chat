@@ -4,6 +4,7 @@
 	import ChatListPanel from './ChatListPanel.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
+	import AddContactPanel from './AddContactPanel.svelte';
 	import MainTabbar from './MainTabbar.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
@@ -55,7 +56,9 @@
 			{/if}
 		</div>
 		<div class="desktop-content" class:desktop-content-settings={isSettings}>
-			{#if isSidebarRoute}
+			{#if page.state.contentPanel === 'add-contact'}
+				<AddContactPanel />
+			{:else if isSidebarRoute}
 				<EmptyState />
 				{#if isHome}
 					<div class="absolute bottom-3 inset-x-0 z-10">
