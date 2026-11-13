@@ -5,7 +5,6 @@ use p2panda::NodeId;
 use p2panda::operation::Header;
 use p2panda::streams::{ProcessedOperation, Source};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::error::TrySendError;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, warn};
 
@@ -875,12 +874,8 @@ impl Node {
         let Some(notification_tx) = &self.notification_tx else {
             return;
         };
-        match notification_tx.try_send(notification) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) => {
-                warn!("notification channel full (frontend not draining), dropping notification")
-            }
-            Err(TrySendError::Closed(_)) => warn!("notification channel closed"),
+        if notification_tx.send(notification).is_err() {
+            warn!("notification channel closed")
         }
     }
 }
