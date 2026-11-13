@@ -23,7 +23,7 @@ use crate::notifications::NotifiedOperationsStore;
 #[derive(Clone)]
 pub struct AppNodeManager {
     data_path: PathBuf,
-    notification_tx: mpsc::Sender<dashchat_node::Notification>,
+    notification_tx: mpsc::UnboundedSender<dashchat_node::Notification>,
     /// App-lifetime record of already-notified operations, shared with the push
     /// extension via the app-group container.
     notified_operations_store: NotifiedOperationsStore,
@@ -48,7 +48,7 @@ impl AppNodeManager {
     pub async fn spawn(app: &AppHandle, data_path: PathBuf) -> anyhow::Result<Self> {
         // The notification channel is owned here: the sender is reused across node
         // rebuilds, and the receiver drives the app-lifetime notification loop.
-        let (notification_tx, notification_rx) = mpsc::channel(100);
+        let (notification_tx, notification_rx) = mpsc::unbounded_channel();
         let sqlite_gate = SqliteGate::new();
         let notified_operations_store = NotifiedOperationsStore::open(
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),
@@ -148,7 +148,7 @@ impl AppNodeManager {
 /// spawned once (detached) rather than tracked in a node's task set.
 async fn notification_loop(
     app_handle: AppHandle,
-    mut notification_rx: mpsc::Receiver<Notification>,
+    mut notification_rx: mpsc::UnboundedReceiver<Notification>,
 ) {
     while let Some(notification) = notification_rx.recv().await {
         log::info!("Received notification: {:?}", notification);

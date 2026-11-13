@@ -8,7 +8,7 @@ use aliased::Aliasing;
 use p2panda::operation::{Header, Operation};
 use p2panda_store::operations::OperationStore;
 use tempfile::TempDir;
-use tokio::sync::{Mutex, mpsc::Receiver};
+use tokio::sync::{Mutex, mpsc::UnboundedReceiver};
 
 use mailbox_client::MailboxClient;
 
@@ -38,7 +38,7 @@ impl TestNode {
         let config = config.into();
         let dir = tempfile::tempdir().unwrap();
         tracing::info!("temp storage dir: {}", dir.path().display());
-        let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
+        let (notification_tx, notification_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let filesystem = Filesystem::new(dir.path().to_path_buf());
         let pool = crate::stores::create_sqlite_pool(
@@ -92,7 +92,7 @@ impl TestNode {
     /// Skips profile creation since it already exists in the persisted op store.
     /// Re-registers named IDs for debug output since the in-memory registry is lost on drop.
     pub async fn new_at_path(config: NodeConfig, name: &str, store_dir: Arc<TempDir>) -> Self {
-        let (notification_tx, notification_rx) = tokio::sync::mpsc::channel(100);
+        let (notification_tx, notification_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let filesystem = Filesystem::new(store_dir.path().to_path_buf());
         let pool = crate::stores::create_sqlite_pool(
@@ -435,7 +435,7 @@ impl PartialEq for ConsistencyReport {
 }
 
 #[derive(derive_more::Deref, derive_more::DerefMut)]
-pub struct Watcher<T>(Receiver<T>);
+pub struct Watcher<T>(UnboundedReceiver<T>);
 
 impl<T: std::fmt::Debug> Watcher<T> {
     pub async fn watch_mapped<R>(
