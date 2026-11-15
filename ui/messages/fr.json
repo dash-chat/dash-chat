@@ -420,6 +420,6 @@
     "openSystemSettings": "Réglages Open System",
     "chatRowP2pBadgeLabel": "Connected peer-to-peer",
     "connectedPeersCount_one": "{{count}} connecté",
-    "connectedPeersCount_many": "",
+    "connectedPeersCount_many": "{{count}} connecté",
     "connectedPeersCount_other": "{{count}} connecté"
 }
