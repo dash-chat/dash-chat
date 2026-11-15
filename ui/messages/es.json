@@ -421,6 +421,6 @@
     "openSystemSettings": "Configuración de sistema abierto",
     "chatRowP2pBadgeLabel": "Conectado entre pares",
     "connectedPeersCount_one": "{{count}}",
-    "connectedPeersCount_many": "",
+    "connectedPeersCount_many": "{{count}}",
     "connectedPeersCount_other": "{{count}}"
 }
