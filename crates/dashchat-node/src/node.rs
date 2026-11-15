@@ -2114,27 +2114,11 @@ impl Node {
                 .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?,
         };
 
-        self.publish(
-            inbox_topic.topic,
-            Payload::Inbox(InboxPayload::ContactRequest {
-                profile,
-                keybundle,
-                agent_id: self.agent_id(),
-                reply_topic: reply_inbox.topic.clone(),
-                recipient: contact.device_pubkey,
-                direct_chat_id: direct_chat_topic_id,
-            }),
-            Some(&format!(
-                "add_contact/contact_request({:?})",
-                contact.device_pubkey.aliased()
-            )),
-        )
-        .await
-        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-
         // Our request lives only on this (possibly shared) inbox, so we keep
         // serving it across restarts — but only until the owner accepts or the
         // first restart after the code expires, not for good like the owner does.
+        // Recorded before publishing: processing our own request looks up
+        // whose inbox it is on.
         // TODO: make this more private. Rejoining the inbox's gossip overlay
         // shows us to (and syncs us the requests of) everyone else who scanned
         // the same QR; sync the topic only with its owner's node instead, and
@@ -2143,6 +2127,31 @@ impl Node {
             .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+
+        let published = self
+            .publish(
+                inbox_topic.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile,
+                    keybundle,
+                    agent_id: self.agent_id(),
+                    reply_topic: reply_inbox.topic.clone(),
+                    direct_chat_id: direct_chat_topic_id,
+                }),
+                Some(&format!(
+                    "add_contact/contact_request({:?})",
+                    contact.device_pubkey.aliased()
+                )),
+            )
+            .await;
+        if let Err(err) = published {
+            // Or the next scan would take the request as already sent.
+            self.local_store
+                .remove_requested_inbox_topics_of(contact.device_pubkey)
+                .await
+                .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
+            return Err(Error::AuthorOperation(err.to_string()).into());
+        }
 
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
@@ -3219,7 +3228,6 @@ mod forged_contact_request_tests {
                     keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
-                    recipient: alice.device_id(),
                     direct_chat_id: Topic::random(),
                 }),
                 None,
@@ -3276,7 +3284,6 @@ mod forged_contact_request_tests {
                     keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
-                    recipient: alice.device_id(),
                     direct_chat_id: Topic::random(),
                 }),
                 None,

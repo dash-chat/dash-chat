@@ -42,7 +42,7 @@ pub enum InboxPayload {
     /// advertised inbox, so other scanners of the same QR code never see it.
     /// `agent_id` is the sender's agent id; the recipient records it against the
     /// op author (device_pubkey). `direct_chat_id` is the space the sender
-    /// created for their direct chat with `recipient`.
+    /// created for their direct chat with the owner of the inbox it is sent to.
     ContactRequest {
         profile: Profile,
         /// The sender's spaces key bundle. It has to travel here: p2panda only
@@ -51,7 +51,6 @@ pub enum InboxPayload {
         keybundle: p2panda::spaces::Member,
         agent_id: AgentId,
         reply_topic: Topic<kind::Inbox>,
-        recipient: DeviceId,
         direct_chat_id: ChatId,
     },
     /// Sent by the inbox owner back to the scanner over the scanner's private

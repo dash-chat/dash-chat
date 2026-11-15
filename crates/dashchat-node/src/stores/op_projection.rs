@@ -448,6 +448,9 @@ impl OpProjection {
         &self,
         me: AgentId,
         my_device: DeviceId,
+        // The device whose contact code advertises the inbox the operation is
+        // on, when it is on one we know.
+        inbox_owner: Option<DeviceId>,
         operation: &ProcessedOperation<Payload>,
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
@@ -599,14 +602,18 @@ impl OpProjection {
             | Payload::Inbox(InboxPayload::ContactRequestAccept {
                 agent_id, profile, ..
             }) => {
-                if let Payload::Inbox(InboxPayload::ContactRequest {
-                    recipient,
-                    direct_chat_id,
-                    ..
-                }) = &payload
+                if let (
+                    Payload::Inbox(InboxPayload::ContactRequest { direct_chat_id, .. }),
+                    Some(inbox_owner),
+                ) = (&payload, inbox_owner)
                 {
-                    self.register_direct_chat_space(my_device, author, *recipient, *direct_chat_id)
-                        .await?;
+                    self.register_direct_chat_space(
+                        my_device,
+                        author,
+                        inbox_owner,
+                        *direct_chat_id,
+                    )
+                    .await?;
                 }
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(author, profile.clone(), operation_timestamp(operation))
@@ -769,18 +776,19 @@ impl OpProjection {
     // === setters === //
 
     /// Record the space a contact request names for the direct chat between its
-    /// requester and recipient, when we are one of the two. A space already
-    /// known as something else is not one a request may claim.
+    /// requester and the owner of the inbox it was sent to, when we are one of
+    /// the two. A space already known as something else is not one a request
+    /// may claim.
     async fn register_direct_chat_space(
         &self,
         my_device: DeviceId,
         requester: DeviceId,
-        recipient: DeviceId,
+        inbox_owner: DeviceId,
         space: ChatId,
     ) -> anyhow::Result<()> {
         let peer = if requester == my_device {
-            recipient
-        } else if recipient == my_device {
+            inbox_owner
+        } else if inbox_owner == my_device {
             requester
         } else {
             return Ok(());
