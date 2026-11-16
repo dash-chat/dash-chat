@@ -18,6 +18,18 @@ pub struct ChatMessageContentV1 {
     /// existing messages are ordered after them, regardless of wall timestamp.
     #[serde(default)]
     pub lamport: u64,
+    /// Set when the author moved this message here from the other space of a
+    /// direct chat both sides had requested. Absent on the wire otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved: Option<MovedMessage>,
+}
+
+/// Where a moved message was first published: its operation in the space
+/// that lost out, and that operation's timestamp in microseconds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct MovedMessage {
+    pub hash: Hash,
+    pub timestamp: u64,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -250,6 +262,7 @@ impl ChatMessageContent {
             media,
             reply,
             lamport,
+            moved: None,
         }
     }
 
@@ -259,6 +272,7 @@ impl ChatMessageContent {
             media: None,
             reply: None,
             lamport: 0,
+            moved: None,
         }
     }
 
@@ -272,6 +286,10 @@ impl ChatMessageContent {
 
     pub fn reply(&self) -> Option<Hash> {
         self.reply
+    }
+
+    pub fn moved(&self) -> Option<MovedMessage> {
+        self.moved
     }
 }
 

@@ -242,6 +242,14 @@ async fn chat_message_notification(
         }
     };
 
+    // A message we already hold from before its author moved it to this
+    // space was announced then.
+    if let Some(moved) = content.moved() {
+        if matches!(node.op_store.get_operation(&moved.hash).await, Ok(Some(_))) {
+            return None;
+        }
+    }
+
     let is_direct_chat = is_direct_chat_with(node, topic, sender_device_id).await;
     let mut qr_code_name = None;
     if is_direct_chat {
