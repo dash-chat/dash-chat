@@ -651,6 +651,80 @@ mod tests {
             .unwrap();
     }
 
+    /// A chat message stored by a node that holds none of the chat's secrets is left out of
+    /// what the app reads, though the store has it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn operation_without_its_secret_is_not_read() {
+        let (alice, _bobbi, chat) = contacts().await;
+        let carol = TestNode::new(NodeConfig::testing().no_p2p(), "carol").await;
+        let log_id = crate::topic::application_log_id(*chat);
+
+        let message = alice.send_message(chat, "hello", None, None).await.unwrap();
+        let hash = message.hash();
+        let op = alice
+            .op_store
+            .get_stored_operation(&hash)
+            .await
+            .unwrap()
+            .unwrap();
+        insert(&carol.op_store, &op, &log_id).await;
+
+        assert!(
+            carol
+                .op_store
+                .get_stored_operation(&hash)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(carol.op_store.get_operation(&hash).await.unwrap().is_none());
+        let log = carol
+            .op_store
+            .get_log(&alice.device_id(), &log_id, None)
+            .await
+            .unwrap();
+        assert!(log.is_empty(), "{log:?}");
+    }
+
+    /// A chat message whose ciphertext was tampered with reads as undecryptable rather than
+    /// being dropped or failing the read.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn tampered_ciphertext_reads_as_undecryptable() {
+        let (alice, _bobbi, chat) = contacts().await;
+        let log_id = crate::topic::application_log_id(*chat);
+
+        let message = alice.send_message(chat, "hello", None, None).await.unwrap();
+        let original = alice
+            .op_store
+            .get_stored_operation(&message.hash())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut extensions = original.header.extensions.clone();
+        let ExtensionsVariantV1::Space(space) = &mut extensions.variant else {
+            panic!("a chat message is published into a space");
+        };
+        let SpacesArgs::Application { ciphertext, .. } = &mut space.args else {
+            panic!("a chat message is an application message");
+        };
+        ciphertext[0] ^= 1;
+        let header = Header::builder().build(&p2panda::SigningKey::generate(), extensions);
+        let tampered = Operation {
+            hash: header.hash(),
+            header,
+            body: None,
+        };
+        insert(&alice.op_store, &tampered, &log_id).await;
+
+        let read = alice
+            .op_store
+            .get_operation(&tampered.hash)
+            .await
+            .unwrap()
+            .expect("the tampered operation is read");
+        assert_eq!(read.body.unwrap_err(), Undecryptable);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
     async fn delete_body_drops_payload_keeps_header() {
