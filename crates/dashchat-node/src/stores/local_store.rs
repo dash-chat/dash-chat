@@ -33,11 +33,15 @@ const DEVICE_GROUP_TOPIC_KEY: &str = "device_group_topic";
 ///     - Bob registers X as role `Requested`
 /// - Bob receives Alice's key bundle on X and admits her to S
 /// - Alice receives ContactRequest on X and subscribes to S
-/// - Alice accepts the request (either via UI or mutual request) and:
+/// - Alice accepts the request (via UI, or by scanning Bob's code) and:
 ///     - Alice publishes ContactRequestAccept to Y
 ///     - Alice registers Y as role `Accepted`
 /// - Bob receives ContactRequestAccept on Y, finishing contact request flow
 /// - Bob drops X
+///
+/// When Alice had scanned Bob's code as well before his request reached her,
+/// each has the other's request for an answer: no ContactRequestAccept is
+/// published, and both keep serving their `Requested` inbox until it expires.
 ///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[repr(i64)]

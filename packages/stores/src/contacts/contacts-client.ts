@@ -8,7 +8,8 @@ import { onSystemEvent } from '../utils/system-events';
 
 export type AddContactResult =
 	| { kind: 'NewRequest'; chatId: ChatId }
-	| { kind: 'AlreadyRequested'; chatId: ChatId };
+	| { kind: 'AlreadyRequested'; chatId: ChatId }
+	| { kind: 'Accepted'; chatId: ChatId };
 
 export interface Profile {
 	name: string;

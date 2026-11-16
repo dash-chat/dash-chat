@@ -103,7 +103,12 @@ export class ChatsStore {
 		const chatIds = new Set<ChatId>();
 		for (const contact of Object.values(contacts)) chatIds.add(contact.chatId);
 		for (const request of requests) chatIds.add(request.chatId);
-		for (const request of outgoing) chatIds.add(request.chatId);
+		for (const request of outgoing) {
+			// Once the peer is a contact the chat is theirs, even where it
+			// carries on in another space than the one our request named.
+			const moved = await this.directChats(request.chatId).movedTo();
+			if (moved === undefined) chatIds.add(request.chatId);
+		}
 		return Array.from(chatIds);
 	});
 

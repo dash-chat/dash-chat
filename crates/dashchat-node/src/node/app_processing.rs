@@ -595,24 +595,12 @@ impl Node {
                         //
                         // TODO: maybe find a way to not rely on `source`?
                         if is_advertised_topic && !source.is_local() {
-                            // Mutual add: if we also sent this peer a contact
-                            // request, their incoming request is an implicit
-                            // acceptance — complete the exchange automatically
-                            // rather than waiting for a manual tap. Spawned so we
-                            // don't await publishing (which needs this same
-                            // processor) and deadlock.
-                            if self.has_outgoing_pending_request(author).await? {
-                                let node = self.clone();
-                                let agent_id = *agent_id;
-                                tokio::spawn(async move {
-                                    if let Err(err) = node.accept_contact(agent_id).await {
-                                        tracing::warn!(
-                                            ?err,
-                                            "failed to auto-accept mutual contact request"
-                                        );
-                                    }
-                                });
-                            }
+                            // If we also sent this peer a contact request,
+                            // theirs is an implicit acceptance: no manual tap,
+                            // and no reply either way.
+                            let crossed = self.has_outgoing_pending_request(author).await?;
+
+                            self.save_keybundle(keybundle.clone()).await?;
 
                             // Receive what the requester sends ahead of our
                             // answer, while staying silent ourselves. Only a
@@ -635,7 +623,22 @@ impl Node {
                                 });
                             }
 
-                            self.save_keybundle(keybundle.clone()).await?;
+                            // Spawned so we don't await publishing (which
+                            // needs this same processor) and deadlock.
+                            if crossed {
+                                let node = self.clone();
+                                let agent_id = *agent_id;
+                                tokio::spawn(async move {
+                                    if let Err(err) =
+                                        node.complete_crossed_request(author, agent_id).await
+                                    {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to complete crossed contact requests"
+                                        );
+                                    }
+                                });
+                            }
                         }
                     }
                     InboxPayload::ContactRequestAccept {
@@ -661,6 +664,12 @@ impl Node {
                                     ?expected,
                                     "ContactRequestAccept author does not match expected; ignoring"
                                 );
+                                return Ok(());
+                            }
+
+                            // Crossed requests made us contacts already: an
+                            // honest peer does not also answer ours.
+                            if self.is_accepted_contact(author).await? {
                                 return Ok(());
                             }
 
@@ -782,6 +791,14 @@ impl Node {
             if !matches!(chat_payload, ChatPayload::MessageAck { .. }) && author != self.device_id()
             {
                 self.mark_ack_topic_dirty(ChatId::from_topic_id(topic));
+                if self.projection.direct_chat_spaces(author).await?.len() > 1 {
+                    let node = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = node.drop_moved_direct_chat_space(author).await {
+                            warn!(?err, "failed to drop a moved direct chat space");
+                        }
+                    });
+                }
             }
         }
 

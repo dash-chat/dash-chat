@@ -41,8 +41,29 @@ export class DirectChatStore {
 			messagesClient,
 			reactive(async () => await this.isBlocked()),
 			reactive(async () => []),
+			() => this.contactsStore.directChatSpaces(chatId),
 		);
 	}
+
+	/** The chat this one carries on in, when both sides requested contact and
+	 * this is the space of the two that is not the one to show the chat under:
+	 * the one both settled on once they are contacts, ours until then. */
+	movedTo = reactive(async (): Promise<ChatId | undefined> => {
+		const spaces = await this.contactsStore.directChatSpaces(this.chatId);
+		const requests = await this.contactsStore.outgoingContactRequests();
+		const request = requests.find(request => spaces.includes(request.chatId));
+		if (request === undefined) return undefined;
+		const agents = await this.contactsStore.agentsForDevices(
+			new Set([request.devicePubkey]),
+		);
+		const agentId = agents[request.devicePubkey];
+		const contact =
+			agentId === undefined
+				? undefined
+				: (await this.contactsStore.contacts())[agentId];
+		const shownAs = contact?.chatId ?? request.chatId;
+		return shownAs === this.chatId ? undefined : shownAs;
+	});
 
 	/** The established contact on the other side, if any. */
 	private contact = reactive(async () => {

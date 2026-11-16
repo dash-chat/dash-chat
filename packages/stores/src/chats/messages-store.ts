@@ -25,6 +25,7 @@ import {
 } from '../types';
 import { orderEventsAscending } from '../utils/group-events-in-days';
 import { type IMessagesClient } from './messages-client';
+import { foldMovedMessages, movedMessages } from './moved-messages';
 import { dropOpsAuthoredWhileNotAMember } from './op-visibility';
 import { type MessageReply } from './replies';
 
@@ -79,20 +80,48 @@ export class MessagesStore {
 		public readOnly: () => ReactivePromise<boolean>,
 		/** The chat's group-control ops, which decide when we were a member. */
 		public controlOps: () => ReactivePromise<SimplifiedOperation<Payload>[]>,
+		/** Every space the chat is spread over: more than `chatId` alone only
+		 * for a direct chat both sides requested at once. */
+		public spaces: () => ReactivePromise<ChatId[]>,
 	) {}
+
+	/** Every author's log, across the chat's spaces. */
+	private logs = reactive(async () => {
+		const spaces = await this.spaces();
+		const logsBySpace = await Promise.all(
+			spaces.map(space => this.logsStore.logsForAllAuthors(space)),
+		);
+		const logs: Record<DeviceId, SimplifiedOperation<Payload>[]> = {};
+		for (const spaceLogs of logsBySpace) {
+			for (const [author, ops] of Object.entries(spaceLogs)) {
+				logs[author] = [...(logs[author] ?? []), ...ops];
+			}
+		}
+		return logs;
+	});
+
+	private tombstones = reactive(async (): Promise<Tombstones> => {
+		const spaces = await this.spaces();
+		const tombstonesBySpace = await Promise.all(
+			spaces.map(space => this.tombstoneStore.tombstones(space)),
+		);
+		return Object.assign({}, ...tombstonesBySpace);
+	});
 
 	/** The chat's visible ops, each after the ops it references. Reactions sit at
 	 * the end, so this is an order to apply them in, not to display them in. */
 	causalOps = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const logs = await this.logs();
 
-		const opsByTimestamp = Object.values(logs)
-			.flat()
-			.sort(
-				(a, b) =>
-					a.header.timestamp - b.header.timestamp ||
-					a.hash.localeCompare(b.hash),
-			);
+		const opsByTimestamp = foldMovedMessages(
+			Object.values(logs)
+				.flat()
+				.sort(
+					(a, b) =>
+						a.header.timestamp - b.header.timestamp ||
+						a.hash.localeCompare(b.hash),
+				),
+		);
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
@@ -107,9 +136,9 @@ export class MessagesStore {
 	});
 
 	messages = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const logs = await this.logs();
 		const causalOps = await this.causalOps();
-		const tombstones = await this.tombstoneStore.tombstones(this.chatId);
+		const tombstones = await this.tombstones();
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
@@ -177,7 +206,7 @@ export class MessagesStore {
 	/** Profile name of each device that has authored in this chat, for the
 	 * devices whose author's profile is known. */
 	deviceNames = reactive(async (): Promise<Record<DeviceId, string>> => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const logs = await this.logs();
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
@@ -193,7 +222,7 @@ export class MessagesStore {
 	});
 
 	members = reactive(async (): Promise<Array<AgentId>> => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const logs = await this.logs();
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
@@ -219,19 +248,26 @@ export class MessagesStore {
 	readMessageHashes = reactive(async () => {
 		const myDeviceGroupTopic =
 			await this.contactsStore.devicesStore.myDeviceGroupTopic();
+		const spaces = await this.spaces();
 		const readHashes: Set<Hash> = new Set();
 
 		for (const [_, ops] of Object.entries(myDeviceGroupTopic)) {
 			for (const op of ops) {
 				if (
 					op.body?.payload?.type === 'ReadMessages' &&
-					op.body.payload.payload.chat_id === this.chatId
+					spaces.includes(op.body.payload.payload.chat_id)
 				) {
 					for (const hash of op.body.payload.payload.message_hashes) {
 						readHashes.add(hash);
 					}
 				}
 			}
+		}
+
+		// A message read before it was moved stays read as its copy.
+		const copies = movedMessages(Object.values(await this.logs()).flat());
+		for (const [original, copy] of Object.entries(copies)) {
+			if (readHashes.has(original)) readHashes.add(copy.hash);
 		}
 
 		return readHashes;
