@@ -4,6 +4,8 @@
 	import ChatListPanel from './ChatListPanel.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
+	import AddContactPanel from './AddContactPanel.svelte';
+	import MainTabbar from './MainTabbar.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import TestBanner from './TestBanner.svelte';
@@ -38,16 +40,25 @@
 	<TestBanner />
 	<div class="desktop-layout no-safe-areas-top">
 		<div class="desktop-sidebar">
-			{#if isSettings}
-				<SettingsPanel />
-			{:else if isNewMessage}
-				<NewMessagePanel />
-			{:else}
-				<ChatListPanel />
+			<div class="desktop-sidebar-panel">
+				{#if isSettings}
+					<SettingsPanel />
+				{:else if isNewMessage}
+					<NewMessagePanel />
+				{:else}
+					<ChatListPanel />
+				{/if}
+			</div>
+			{#if isSettings || !isNewMessage}
+				<div class="desktop-sidebar-tabbar">
+					<MainTabbar />
+				</div>
 			{/if}
 		</div>
 		<div class="desktop-content" class:desktop-content-settings={isSettings}>
-			{#if isSidebarRoute}
+			{#if page.state.contentPanel === 'add-contact'}
+				<AddContactPanel />
+			{:else if isSidebarRoute}
 				<EmptyState />
 				{#if isHome}
 					<div class="absolute bottom-3 inset-x-0 z-10">
@@ -79,10 +90,21 @@
 	.desktop-sidebar {
 		width: 280px;
 		min-width: 280px;
+		display: flex;
+		flex-direction: column;
 		border-inline-end: 1px solid var(--k-hairline-color);
+		background-color: var(--color-desktop-sidebar-bg);
+	}
+
+	.desktop-sidebar-panel {
+		flex: 1;
+		min-height: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
-		background-color: var(--color-desktop-sidebar-bg);
+	}
+
+	.desktop-sidebar-tabbar {
+		border-top: 1px solid var(--k-hairline-color);
 	}
 
 	.desktop-content {

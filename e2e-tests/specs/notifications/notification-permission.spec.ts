@@ -23,7 +23,7 @@ describe('Notification permission', () => {
 			await new PermissionDialog(agent).allow();
 		}
 
-		await agent.homePage.settingsLink.click();
+		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
 		await agent.settingsPage.notificationsLink.click();
 		await agent.notificationsPage.ready();
@@ -37,7 +37,7 @@ describe('Notification permission', () => {
 		await agent.denyNotificationPermission();
 		await agent.startApp();
 
-		await agent.homePage.settingsLink.click();
+		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
 		await agent.settingsPage.notificationsLink.click();
 		await agent.notificationsPage.ready();

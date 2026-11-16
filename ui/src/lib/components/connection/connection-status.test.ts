@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	connectedToCloudMailboxServer,
+	connectionModes,
 	connectionStatus,
 } from './connection-status';
 
@@ -59,7 +60,29 @@ afterEach(() => {
 
 describe('connectionStatus', () => {
 	it('reads cloud once the cloud answered since the resume', () => {
-		expect(status({ cloudMailbox: answering() })).toEqual({ status: 'cloud' });
+		expect(status({ cloudMailbox: answering() })).toEqual({
+			status: 'cloud',
+			hasAnotherRoute: false,
+		});
+	});
+
+	it('reads cloud with another route while a hub is reachable too', () => {
+		expect(
+			status({ cloudMailbox: answering(), localMailboxes: [answering()] }),
+		).toEqual({ status: 'cloud', hasAnotherRoute: true });
+	});
+
+	it('reads cloud with another route while a peer is online too', () => {
+		expect(status({ cloudMailbox: answering() }, true)).toEqual({
+			status: 'cloud',
+			hasAnotherRoute: true,
+		});
+	});
+
+	it('reads local with another route while a peer is online too', () => {
+		expect(
+			status({ cloudMailbox: failing(2), localMailboxes: [answering()] }, true),
+		).toEqual({ status: 'local', count: 1, hasAnotherRoute: true });
 	});
 
 	it('reads pending while the cloud has only answered before the resume', () => {
@@ -86,7 +109,7 @@ describe('connectionStatus', () => {
 				cloudMailbox: failing(2),
 				localMailboxes: [answering(), failing(3)],
 			}),
-		).toEqual({ status: 'local', count: 1 });
+		).toEqual({ status: 'local', count: 1, hasAnotherRoute: false });
 	});
 
 	it('reads disconnected as soon as the cloud failed since the resume', () => {
@@ -137,5 +160,56 @@ describe('connectedToCloudMailboxServer', () => {
 				localMailboxes: [],
 			}),
 		).toBe(false);
+	});
+});
+
+describe('connectionModes', () => {
+	function modes(
+		mailboxes: Partial<AllMailboxesConnectionState>,
+		onlinePeersCount = 0,
+	) {
+		return connectionModes(
+			{ cloudMailbox: null, localMailboxes: [], ...mailboxes },
+			onlinePeersCount,
+			RESUMED_AT,
+		);
+	}
+
+	it('judges every mode on its own', () => {
+		expect(
+			modes(
+				{
+					cloudMailbox: answering(),
+					localMailboxes: [answering(), failing(1), failing(2)],
+				},
+				3,
+			),
+		).toEqual({
+			internet: 'connected',
+			reachableLocalHubsCount: 2,
+			onlinePeersCount: 3,
+		});
+	});
+
+	it('reads the internet as pending until the cloud is confirmed', () => {
+		expect(modes({ cloudMailbox: answering(BEFORE_RESUME) }).internet).toBe(
+			'pending',
+		);
+	});
+
+	it('reads the internet as disconnected with a hub standing in', () => {
+		expect(
+			modes({ cloudMailbox: failing(2), localMailboxes: [answering()] }),
+		).toEqual({
+			internet: 'disconnected',
+			reachableLocalHubsCount: 1,
+			onlinePeersCount: 0,
+		});
+	});
+
+	it('reads the internet as pending while settling, then disconnected', () => {
+		expect(modes({}).internet).toBe('pending');
+		vi.setSystemTime(SETTLED_AT);
+		expect(modes({}).internet).toBe('disconnected');
 	});
 });

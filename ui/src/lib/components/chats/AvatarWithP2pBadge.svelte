@@ -8,7 +8,6 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { useReactivePromises } from '$lib/stores/use-signal';
-	import p2pSvg from '$lib/assets/connection-status/p2p.svg?raw';
 	import { connectionStatus } from '../connection/connection-status';
 	import Avatar from '../profiles/Avatar.svelte';
 
@@ -36,13 +35,11 @@
 	{#await $inputs then [mailboxes, onlinePeers]}
 		{#if connectionStatus(mailboxes, onlinePeers.length > 0, renderingResumedAt.value).status === 'p2p'}
 			<span
-				class="badge absolute end-0 -bottom-[4.5px] grid size-[18px] place-items-center text-[#525252] *:size-[13.5px] dark:text-white"
+				class="badge absolute end-0 bottom-0 size-[9px] rounded-full bg-[#22C55E]"
 				role="img"
 				aria-label={m.chatRowP2pBadgeLabel()}
 				data-testid="chat-row-p2p-badge"
-			>
-				{@html p2pSvg}
-			</span>
+			></span>
 		{/if}
 	{:catch}
 		<!-- A store that stalls rejects here, and can still resolve later. -->
@@ -54,16 +51,16 @@
 	   behind it changes colour: page, desktop sidebar, selected row. */
 	.avatar-with-p2p-badge:has(.badge) .avatar {
 		mask-image: radial-gradient(
-			circle at calc(100% - 9px) calc(100% - 4.5px),
-			transparent 12px,
-			black 12.5px
+			circle at calc(100% - 4.5px) calc(100% - 4.5px),
+			transparent 6.75px,
+			black 7.25px
 		);
 	}
 	:global([dir='rtl']) .avatar-with-p2p-badge:has(.badge) .avatar {
 		mask-image: radial-gradient(
-			circle at 9px calc(100% - 4.5px),
-			transparent 12px,
-			black 12.5px
+			circle at 4.5px calc(100% - 4.5px),
+			transparent 6.75px,
+			black 7.25px
 		);
 	}
 </style>

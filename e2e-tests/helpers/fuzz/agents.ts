@@ -367,7 +367,7 @@ export async function waitForApp(sa: StressAgent): Promise<void> {
 	const { homePage, directChatPage, groupChatPage } = sa.agent;
 	await sa.agent.waitUntil(
 		async () =>
-			(await homePage.settingsLink.isExisting()) ||
+			(await homePage.newMessageButton.isExisting()) ||
 			(await directChatPage.page.isExisting()) ||
 			(await groupChatPage.page.isExisting()),
 		{ timeoutMsg: `${sa.name}'s app never came back` },
@@ -388,7 +388,7 @@ export async function ensureHome(
 			return;
 		}
 	}
-	if (await sa.agent.homePage.settingsLink.isExisting()) {
+	if (await sa.agent.homePage.newMessageButton.isExisting()) {
 		await sa.agent.homePage.ready();
 		return;
 	}
