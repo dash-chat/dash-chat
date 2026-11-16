@@ -36,7 +36,7 @@ describe('Local hub LAN warning', function () {
 	});
 
 	it('warns that phones cannot find the hub while macOS keeps it off the LAN', async () => {
-		await agent.homePage.settingsLink.click();
+		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
 		await agent.settingsPage.offlineLink.click();
 		await agent.offlinePage.ready();
@@ -51,20 +51,20 @@ describe('Local hub LAN warning', function () {
 		await agent.offlinePage.back.click();
 		await agent.settingsPage.ready();
 		await agent.settingsPage.offlineHubWarning.waitForDisplayed();
-		await agent.settingsPage.back.click();
+		await agent.mainTabbar.chatsTab.click();
 		await agent.homePage.ready();
-		await agent.homePage.settingsHubWarning.waitForDisplayed();
+		await agent.mainTabbar.settingsHubWarning.waitForDisplayed();
 	});
 
 	it('clears the warning once the user allows local network access', async () => {
 		allowLocalNetworkAlerts();
 
-		await agent.homePage.settingsHubWarning.waitForDisplayed({
+		await agent.mainTabbar.settingsHubWarning.waitForDisplayed({
 			reverse: true,
 			timeout: PROBE_TIMEOUT_MS,
 			timeoutMsg: 'the LAN warning stayed after allowing local network access',
 		});
-		await agent.homePage.settingsLink.click();
+		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
 		await agent.settingsPage.offlineLink.click();
 		await agent.offlinePage.ready();

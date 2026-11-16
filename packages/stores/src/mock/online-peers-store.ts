@@ -11,4 +11,12 @@ export class MockOnlinePeersStore implements IOnlinePeersStore {
 				return () => {};
 			}),
 	);
+
+	onlinePeersInAnyChat = reactive(
+		(): ReactivePromise<AgentId[]> =>
+			relay<AgentId[]>(state => {
+				state.value = [];
+				return () => {};
+			}),
+	);
 }

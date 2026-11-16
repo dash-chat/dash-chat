@@ -7,7 +7,7 @@ import type { Agent } from '../../setup/setup-agents';
  * a fresh identity.
  */
 export async function deleteAccount(agent: Agent): Promise<void> {
-	await agent.homePage.settingsLink.click();
+	await agent.mainTabbar.settingsTab.click();
 	await agent.settingsPage.ready();
 	await agent.settingsPage.accountLink.click();
 	await agent.accountPage.ready();

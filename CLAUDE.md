@@ -174,7 +174,7 @@ Create Profile (first launch only)
   └─ / (Home — chat list)
 
 / (Home)
-  ├─ [avatar] ──────────── /settings
+  ├─ [settings tab] ────── /settings          (bottom tab bar: Chats / Settings)
   ├─ [contacts icon] ───── /contacts
   ├─ [new message] ─────── /new-message        (FAB on Material, navbar link on iOS)
   └─ [chat item] ──────── /direct-chats/{chatId}  or  /group-chat/{chatId}

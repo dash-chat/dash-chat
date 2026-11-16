@@ -17,8 +17,8 @@ const SETTLING_MS = 10_000;
 const DISCONNECTED_ERROR_THRESHOLD = 2;
 
 export type ConnectionStatus =
-	| { status: 'cloud' }
-	| { status: 'local'; count: number }
+	| { status: 'cloud'; hasAnotherRoute: boolean }
+	| { status: 'local'; count: number; hasAnotherRoute: boolean }
 	| { status: 'p2p' }
 	| { status: 'disconnected' }
 	| { status: 'pending' };
@@ -40,36 +40,94 @@ export function connectedToCloudMailboxServer(
 	return mailboxes.cloudMailbox !== null && reachable(mailboxes.cloudMailbox);
 }
 
-/** What the user is told about their connection: 'pending' while no verdict
- * has been earned yet.
- *
- * The cloud takes precedence: a local hub is only worth mentioning while it
- * stands in for an unreachable cloud, so a cloud that is still reachable but
- * not vouched for reads pending even with a hub up. Vouching takes a poll
+type CloudVerdict = 'confirmed' | 'unconfirmed' | 'settling' | 'down';
+
+/** What is known about the cloud mailbox right now. Confirming takes a poll
  * answered since `resumedAt` with none failed after it; anything measured
  * before `resumedAt` happened while the app was away and says nothing about
  * the connection now, so neither a stale success nor a stale failure settles
  * the verdict. Reactive through `withinWindow`, so the settling deadline
  * re-renders the caller when it expires. */
-export function connectionStatus(
+function cloudVerdict(
 	mailboxes: AllMailboxesConnectionState,
-	peerOnline: boolean,
 	resumedAt: number,
-): ConnectionStatus {
+): CloudVerdict {
 	const { cloudMailbox } = mailboxes;
 	if (cloudMailbox !== null && reachable(cloudMailbox)) {
-		const vouched =
+		const confirmed =
 			cloudMailbox.consecutive_errors === 0 &&
 			happenedAfter(cloudMailbox.last_success_at, resumedAt);
-		return { status: vouched ? 'cloud' : 'pending' };
+		return confirmed ? 'confirmed' : 'unconfirmed';
 	}
-	const count = mailboxes.localMailboxes.filter(reachable).length;
-	if (count > 0) return { status: 'local', count };
 	const failedSinceResume = happenedAfter(
 		cloudMailbox?.last_error?.at,
 		resumedAt,
 	);
 	if (!failedSinceResume && withinWindow(resumedAt, SETTLING_MS))
-		return { status: 'pending' };
+		return 'settling';
+	return 'down';
+}
+
+function reachableLocalHubsCount(
+	mailboxes: AllMailboxesConnectionState,
+): number {
+	return mailboxes.localMailboxes.filter(reachable).length;
+}
+
+/** What the user is told about their connection: 'pending' while no verdict
+ * has been earned yet.
+ *
+ * The cloud takes precedence: a local hub is only worth mentioning while it
+ * stands in for an unreachable cloud, so a cloud that is still reachable but
+ * unconfirmed reads pending even with a hub up. `hasAnotherRoute` says a route
+ * the status does not name is up too: a hub or an online peer under the cloud,
+ * an online peer under a hub. */
+export function connectionStatus(
+	mailboxes: AllMailboxesConnectionState,
+	peerOnline: boolean,
+	resumedAt: number,
+): ConnectionStatus {
+	const cloud = cloudVerdict(mailboxes, resumedAt);
+	const count = reachableLocalHubsCount(mailboxes);
+	if (cloud === 'confirmed')
+		return { status: 'cloud', hasAnotherRoute: count > 0 || peerOnline };
+	if (cloud === 'unconfirmed') return { status: 'pending' };
+	if (count > 0) return { status: 'local', count, hasAnotherRoute: peerOnline };
+	if (cloud === 'settling') return { status: 'pending' };
 	return { status: peerOnline ? 'p2p' : 'disconnected' };
+}
+
+export type InternetStatus = 'connected' | 'pending' | 'disconnected';
+
+/** Every way of reaching others, each judged on its own, where
+ * [`connectionStatus`] names only the one that matters most. */
+export interface ConnectionModes {
+	internet: InternetStatus;
+	reachableLocalHubsCount: number;
+	onlinePeersCount: number;
+}
+
+export const UNKNOWN_CONNECTION_MODES: ConnectionModes = {
+	internet: 'pending',
+	reachableLocalHubsCount: 0,
+	onlinePeersCount: 0,
+};
+
+const internetStatuses: Record<CloudVerdict, InternetStatus> = {
+	confirmed: 'connected',
+	unconfirmed: 'pending',
+	settling: 'pending',
+	down: 'disconnected',
+};
+
+export function connectionModes(
+	mailboxes: AllMailboxesConnectionState,
+	onlinePeersCount: number,
+	resumedAt: number,
+): ConnectionModes {
+	return {
+		internet: internetStatuses[cloudVerdict(mailboxes, resumedAt)],
+		reachableLocalHubsCount: reachableLocalHubsCount(mailboxes),
+		onlinePeersCount,
+	};
 }
