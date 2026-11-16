@@ -5,8 +5,9 @@
 //! JoinGroup in.
 
 use dashchat_node::membership::{action_adds_member, membership_action};
+use dashchat_node::stores::ReadOperation;
 use dashchat_node::{ChatId, DeviceId, Node};
-use p2panda::operation::{Header, Operation};
+use p2panda::operation::Header;
 use p2panda_core::{Hash, VerifyingKey};
 use push_notifications_client::types::TopicId as PushTopicId;
 use tauri_plugin_notification::NotificationData;
@@ -62,7 +63,7 @@ async fn wait_for_operation(
     node: &Node,
     hash: Hash,
     deadline: tokio::time::Instant,
-) -> Option<Operation> {
+) -> Option<ReadOperation> {
     let mut next_probe = tokio::time::Instant::now();
     loop {
         if let Ok(Some(operation)) = node.op_store.get_operation(&hash).await {
@@ -105,7 +106,7 @@ async fn wait_for_group_name(node: &Node, chat_id: ChatId, deadline: tokio::time
 
 /// Whether `operation` is `inviter`'s and admits this device to a group, as
 /// the operation a JoinGroup names must be.
-fn is_inviter_adding_us(operation: &Operation, inviter: VerifyingKey, me: DeviceId) -> bool {
+fn is_inviter_adding_us(operation: &ReadOperation, inviter: VerifyingKey, me: DeviceId) -> bool {
     operation.header.verifying_key == inviter
         && membership_action(&operation.header)
             .is_some_and(|action| action_adds_member(&action, me))

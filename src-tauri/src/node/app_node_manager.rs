@@ -168,7 +168,7 @@ async fn notification_loop(
                     None => None,
                 };
                 let simplified_operation =
-                    match simplify(n.topic.into(), n.header.hash(), n.header.clone(), body) {
+                    match simplify(n.topic.into(), n.header.hash(), n.header.clone(), Ok(body)) {
                         Ok(o) => o,
                         Err(err) => {
                             log::error!("Failed to simplify operation: {err:?}");

@@ -1,3 +1,4 @@
+use dashchat_node::stores::Unreadable;
 use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
@@ -28,6 +29,9 @@ pub struct SimplifiedOperation {
     pub hash: Hash,
     pub header: SimplifiedHeader,
     pub body: Option<serde_json::Value>,
+    /// Why there is no `body`, when the operation has a payload we can not read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreadable: Option<Unreadable>,
 }
 
 // #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -161,10 +165,11 @@ pub fn simplify(
     topic: TopicId,
     hash: Hash,
     header: Header,
-    body: Option<p2panda_core::Body>,
+    body: Result<Option<p2panda_core::Body>, Unreadable>,
 ) -> anyhow::Result<SimplifiedOperation> {
+    let unreadable = body.as_ref().err().copied();
     let body: Option<serde_json::Value> = match body {
-        Some(b) => {
+        Ok(Some(b)) => {
             let payload: Payload = decode_cbor(&b.to_bytes()[..])?;
 
             // if let Payload::Chat(dashchat_node::ChatPayload::Space(spaces_messages)) = payload {
@@ -192,13 +197,14 @@ pub fn simplify(
             Some(serde_json::to_value(payload)?)
             // }
         }
-        _ => None,
+        Ok(None) | Err(_) => None,
     };
 
     let operation = SimplifiedOperation {
         hash,
         header: SimplifiedHeader::from_header(topic, header),
         body,
+        unreadable,
     };
 
     Ok(operation)

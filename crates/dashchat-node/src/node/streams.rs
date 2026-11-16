@@ -112,14 +112,26 @@ pub(crate) struct EncryptedMessage {
     pub ciphertext: Vec<u8>,
 }
 
+/// Why the payload of an operation published into a space can not be read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error, Serialize, Deserialize)]
+pub enum Unreadable {
+    /// Expected while the space's key agreement lags behind its messages.
+    #[error("we do not hold the secret this payload was encrypted with (yet)")]
+    SecretMissing,
+
+    /// Permanent: the ciphertext is corrupt, or was not encrypted with the secret it names.
+    #[error("the payload does not decrypt with the secret it names")]
+    DecryptionFailed,
+}
+
 impl EncryptedMessage {
-    fn decrypt(&self, secrets: &SpaceSecrets<'_>) -> Option<Vec<u8>> {
+    fn decrypt(&self, secrets: &SpaceSecrets<'_>) -> Result<Vec<u8>, Unreadable> {
         match secrets.decrypt(self.group_secret_id, self.nonce, &self.ciphertext) {
-            Ok(plaintext) => Some(plaintext),
-            Err(SecretsError::UnknownSecret(_)) => None,
+            Ok(plaintext) => Ok(plaintext),
+            Err(SecretsError::UnknownSecret(_)) => Err(Unreadable::SecretMissing),
             Err(err) => {
-                warn!(?err, "failed to decrypt a space message");
-                None
+                error!(?err, "failed to decrypt a space message");
+                Err(Unreadable::DecryptionFailed)
             }
         }
     }
@@ -409,21 +421,21 @@ impl TopicStreams {
     }
 
     /// Decrypt messages published into a space, with the secrets p2panda holds for it.
-    /// Works for a space we have left as well. `None` for each message whose secret we do
-    /// not hold (yet).
+    /// Works for a space we have left as well.
     pub(crate) async fn decrypt_messages(
         &self,
         space: Topic,
         messages: Vec<EncryptedMessage>,
-    ) -> anyhow::Result<Vec<Option<Vec<u8>>>> {
+    ) -> anyhow::Result<Vec<Result<Vec<u8>, Unreadable>>> {
         if self.shut_down.load(Ordering::Acquire) {
-            return Ok(vec![None; messages.len()]);
+            return Err(StreamsError::ShutDown.into());
         }
         #[allow(deprecated)]
         self.with_node(async |node| {
             let manager = node.spaces_manager();
+            // A space's messages can reach us before the control messages that create it.
             if !manager.has_space(space).await? {
-                return Ok(vec![None; messages.len()]);
+                return Ok(vec![Err(Unreadable::SecretMissing); messages.len()]);
             }
             let space = manager.space(space).created().await?;
             let plaintexts = space

@@ -27,7 +27,9 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{
-    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore,
+    AsBody, ChatPayload, DeviceId, Payload, TopicId,
+    mailbox::MailboxOperation,
+    stores::{OpStore, ReadOperation},
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
@@ -436,7 +438,7 @@ impl BlobFetchPool {
     ///
     /// TODO: find a way to avoid re-streaming all operations on startup
     pub async fn from_ops(
-        ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
+        ops: impl Stream<Item = Result<ReadOperation, anyhow::Error>> + '_,
         topic_store: SqliteStore,
         decrypt_index: &crate::blob_crypto::BlobDecryptIndex,
     ) -> anyhow::Result<Self> {
@@ -444,7 +446,8 @@ impl BlobFetchPool {
         let mut s = store.stack.lock().await;
         tokio::pin!(ops);
         while let Some(op) = ops.try_next().await? {
-            let Some(body) = op.body else {
+            // Processing an operation that becomes readable later adds its media then.
+            let Ok(Some(body)) = op.body else {
                 continue;
             };
             let Ok(payload) = Payload::try_from_body(&body) else {

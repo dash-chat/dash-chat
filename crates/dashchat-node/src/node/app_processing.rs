@@ -381,19 +381,16 @@ impl Node {
     /// fact.
     //
     // TODO: when device groups exist, test that tombstones are enforced across devices.
-    async fn enforce_tombstone(
-        &self,
-        topic: TopicId,
-        tombstoned_op: &Operation,
-    ) -> anyhow::Result<bool> {
-        let hash = tombstoned_op.hash;
-        if self.projection.is_tombstoned(topic, hash).await? {
-            self.unprocess_app(tombstoned_op).await?;
-            self.op_store.delete_body(&hash).await?;
-            Ok(true)
-        } else {
-            Ok(false)
+    async fn enforce_tombstone(&self, topic: TopicId, hash: Hash) -> anyhow::Result<bool> {
+        if !self.projection.is_tombstoned(topic, hash).await? {
+            return Ok(false);
         }
+        let Some(tombstoned_op) = self.op_store.get_operation(&hash).await? else {
+            return Ok(false);
+        };
+        self.unprocess_app(&tombstoned_op).await?;
+        self.op_store.delete_body(&hash).await?;
+        Ok(true)
     }
 
     /// Filter out operations whose payloads are not able to be deleted.
@@ -408,10 +405,12 @@ impl Node {
     /// reverting to a state as if the operation were never processed.
     /// This is done when an operation payload is deleted.
     /// Only tombstoneable operations can be unprocessed.
-    pub(crate) async fn unprocess_app(&self, operation: &Operation) -> anyhow::Result<()> {
-        let Some(payload) = Payload::try_from_body_opt(operation.body.as_ref())? else {
+    pub(crate) async fn unprocess_app(&self, operation: &ReadOperation) -> anyhow::Result<()> {
+        // An operation we can not read was never processed.
+        let Ok(Some(body)) = &operation.body else {
             return Ok(());
         };
+        let payload = Payload::try_from_body(body)?;
         if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
@@ -493,10 +492,7 @@ impl Node {
 
         // If a receiver is processing this, the tombstone may have been processed prior,
         // so we want to drop the payload now and not process it.
-        if self
-            .enforce_tombstone(topic, &operation.processed().operation)
-            .await?
-        {
+        if self.enforce_tombstone(topic, operation.id()).await? {
             // The payload is tombstoned, so we must not process it. Return early.
             self.notify_header(topic, header).await?;
             return Ok(());
@@ -710,9 +706,7 @@ impl Node {
                 // `notify_payload` below: the frontend needs it to learn which
                 // messages were deleted and render their placeholders.
                 for hash in hashes {
-                    if let Some(op) = self.op_store.get_operation(hash).await? {
-                        self.enforce_tombstone(topic, &op).await?;
-                    }
+                    self.enforce_tombstone(topic, *hash).await?;
                 }
             }
 
@@ -726,9 +720,7 @@ impl Node {
                 let chat_topic: TopicId = delete.chat_id.into();
                 let valid_ops = self.valid_chat_ops(delete.chat_id).await?;
                 for hash in forward_edit_closure(&valid_ops, delete.message_hash) {
-                    if let Some(op) = self.op_store.get_operation(&hash).await? {
-                        self.enforce_tombstone(chat_topic, &op).await?;
-                    }
+                    self.enforce_tombstone(chat_topic, hash).await?;
                 }
             }
 

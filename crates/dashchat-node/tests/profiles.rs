@@ -135,7 +135,7 @@ async fn published_profiles(node: &TestNode, topic: TopicId) -> Vec<Profile> {
         .await
         .unwrap()
         .into_iter()
-        .filter_map(|op| Payload::try_from_body(op.body.as_ref()?).ok())
+        .filter_map(|op| Payload::try_from_body(&op.body.unwrap()?).ok())
         .filter_map(|payload| match payload {
             Payload::Chat(ChatPayload::SetProfile(profile))
             | Payload::DeviceGroup(DeviceGroupPayload::SetProfile(profile)) => Some(profile),

@@ -51,7 +51,7 @@ use crate::chat::{
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{ChatPayload, InboxPayload, Payload};
-use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore};
+use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore, ReadOperation};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
@@ -415,7 +415,7 @@ impl Node {
         // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
         // can reduce the need for these wrappers by either moving generally useful methods into
         // p2panda or finding alternative routes to achieve the same queries.
-        let op_store = OpStore::from_sqlite(store.clone(), Some(streams.clone()));
+        let op_store = OpStore::from_sqlite(store.clone(), streams.clone());
 
         // === mailboxes === //
 
@@ -1131,7 +1131,10 @@ impl Node {
     }
 
     /// Every author's group-control operations for `chat_id`'s space
-    pub async fn get_group_control_ops(&self, chat_id: ChatId) -> anyhow::Result<Vec<Operation>> {
+    pub async fn get_group_control_ops(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Vec<ReadOperation>> {
         let log_id = p2panda::spaces::group_log_id(space_group_id(chat_id.into()));
         let mut ops = Vec::new();
         for author in self.op_store.get_authors(log_id).await? {
@@ -1272,7 +1275,7 @@ impl Node {
         let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
         for author in self.op_store.get_authors(log_id).await? {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Some(body) = op.body? else { continue };
                 let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
                     Payload::try_from_body(&body)
                 else {
@@ -1600,7 +1603,7 @@ impl Node {
         let mut ops = std::collections::HashMap::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
@@ -1645,7 +1648,7 @@ impl Node {
         let mut edits = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
@@ -1684,7 +1687,7 @@ impl Node {
         let mut replies = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
@@ -1739,7 +1742,7 @@ impl Node {
         let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body)
                 else {
                     continue;
@@ -2159,7 +2162,7 @@ impl Node {
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
             for op in self.op_store.get_log(&device_id, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Some(body) = op.body? else { continue };
                 let Ok(Payload::Inbox(InboxPayload::ContactRequest {
                     agent_id: req_agent,
                     reply_topic,
@@ -2388,7 +2391,7 @@ impl Node {
                 .op_store
                 .get_operation(&hash)
                 .await?
-                .is_some_and(|operation| operation.body.is_some());
+                .is_some_and(|operation| matches!(operation.body, Ok(Some(_))));
             match self.op_store.get_stored_operation(&hash).await? {
                 Some(operation) if readable => by_topic.entry(topic).or_default().push(operation),
                 _ => {

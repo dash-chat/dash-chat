@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
+use dashchat_node::stores::Unreadable;
 use dashchat_node::topic::application_log_id;
 use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
@@ -327,10 +328,10 @@ async fn wait_for_pushed_operation_notification(
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         if let Some(first) = log.into_iter().next() {
-            // An encrypted operation is stored before its payload is decrypted.
-            let readable = first.body.is_some();
+            // An encrypted operation is stored before its secret arrives.
+            let awaiting_secret = matches!(first.body, Err(Unreadable::SecretMissing));
             entry = Some(first);
-            if readable {
+            if !awaiting_secret {
                 break;
             }
         }
@@ -344,12 +345,16 @@ async fn wait_for_pushed_operation_notification(
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
-    let payload = match operation.body.as_ref() {
-        Some(body) => Some(
+    let payload = match &operation.body {
+        Ok(Some(body)) => Some(
             Payload::try_from_body(body)
                 .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
         ),
-        None => None,
+        Ok(None) => None,
+        Err(err) => {
+            log::warn!("Operation {op_id} is unreadable, showing generic notification: {err}");
+            None
+        }
     };
 
     let Some((data, notified)) = notification_for_pushed_operation(
