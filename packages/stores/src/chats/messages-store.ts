@@ -166,7 +166,7 @@ export class MessagesStore {
 		return ops.filter(op => {
 			if (op.body?.type === 'Chat' && op.body.payload.type === 'GroupInfo')
 				return true;
-			if (op.body?.type !== 'Chat' && !op.unreadable) return true;
+			if (op.body?.type !== 'Chat' && !op.undecryptable) return true;
 			const agentId = deviceAgents[op.header.verifying_key];
 			const history = agentId === undefined ? undefined : histories[agentId];
 			if (history === undefined) return true;
@@ -375,28 +375,25 @@ export function logsToMessages(
 	// Map of EditMessage -> the target they reference
 	const editTargets: Record<Hash, Hash> = {};
 
-	const unreadablePositions = new Set(
-		causalOps.filter(op => op.unreadable).map(op => logPosition(op.header)),
+	const undecryptablePositions = new Set(
+		causalOps.filter(op => op.undecryptable).map(op => logPosition(op.header)),
 	);
 
 	for (const op of causalOps) {
 		const author = op.header.verifying_key;
 		const body = op.body;
 
-		if (op.unreadable && !tombstones[op.hash]) {
+		if (op.undecryptable && !tombstones[op.hash]) {
 			// We can not tell a message from a reaction or an acknowledgement, so a
-			// run of unreadable ops in a log stands for one message.
+			// run of undecryptable ops in a log stands for one message.
 			const previous = logPosition({
 				...op.header,
 				seq_num: op.header.seq_num - 1,
 			});
-			if (!unreadablePositions.has(previous)) {
+			if (!undecryptablePositions.has(previous)) {
 				messages[op.hash] = {
 					hash: op.hash,
-					content:
-						op.unreadable === 'SecretMissing'
-							? 'awaiting-decryption'
-							: 'undecryptable',
+					content: 'undecryptable',
 					author,
 					logId: op.header.log_id,
 					seqNum: op.header.seq_num,

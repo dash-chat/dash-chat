@@ -1,4 +1,4 @@
-use dashchat_node::stores::Unreadable;
+use dashchat_node::stores::Undecryptable;
 use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
@@ -29,9 +29,9 @@ pub struct SimplifiedOperation {
     pub hash: Hash,
     pub header: SimplifiedHeader,
     pub body: Option<serde_json::Value>,
-    /// Why there is no `body`, when the operation has a payload we can not read.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unreadable: Option<Unreadable>,
+    /// The operation has a payload, which does not decrypt.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub undecryptable: bool,
 }
 
 // #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -165,9 +165,9 @@ pub fn simplify(
     topic: TopicId,
     hash: Hash,
     header: Header,
-    body: Result<Option<p2panda_core::Body>, Unreadable>,
+    body: Result<Option<p2panda_core::Body>, Undecryptable>,
 ) -> anyhow::Result<SimplifiedOperation> {
-    let unreadable = body.as_ref().err().copied();
+    let undecryptable = body.is_err();
     let body: Option<serde_json::Value> = match body {
         Ok(Some(b)) => {
             let payload: Payload = decode_cbor(&b.to_bytes()[..])?;
@@ -204,7 +204,7 @@ pub fn simplify(
         hash,
         header: SimplifiedHeader::from_header(topic, header),
         body,
-        unreadable,
+        undecryptable,
     };
 
     Ok(operation)

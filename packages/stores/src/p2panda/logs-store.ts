@@ -60,13 +60,8 @@ export class LogsStore<PAYLOAD> {
 					try {
 						const log = await this.logsClient.getLog(topicId, author);
 						const current = state.value;
-						// Logs are append-only per author; same length means same content,
-						// unless an operation we could not read has become readable.
-						const unchanged =
-							current &&
-							current.length === log.length &&
-							!current.some(op => op.unreadable);
-						if (!unchanged) {
+						// Logs are append-only per author; same length means same content.
+						if (!(current && current.length === log.length)) {
 							state.value = log;
 						}
 						return log;
@@ -81,18 +76,15 @@ export class LogsStore<PAYLOAD> {
 						if (topicId !== operationTopicId) return;
 						if (author !== operation.header.verifying_key) return;
 
-						const log = state.value || [];
-						const known = log.findIndex(
-							op => op.header.seq_num === operation.header.seq_num,
-						);
-						if (known === -1) {
-							state.value = [...log, operation];
-						} else if (log[known].unreadable) {
-							// Its secret arrived since we fetched the log.
-							state.value = log.map((op, index) =>
-								index === known ? operation : op,
-							);
-						}
+						// We already have this operation
+						if (
+							state.value?.find(
+								op => op.header.seq_num === operation.header.seq_num,
+							)
+						)
+							return;
+
+						state.value = [...(state.value || []), operation];
 					},
 				);
 				return () => unsubs();

@@ -55,7 +55,7 @@ export function dropOpsAuthoredWhileNotAMember(
 	const windows = membershipWindows(controlOps, myDeviceId);
 	if (windows.length === 0) return opsOrdered;
 	return opsOrdered.filter(op => {
-		if (op.body?.type !== 'Chat' && !op.unreadable) return true;
+		if (op.body?.type !== 'Chat' && !op.undecryptable) return true;
 		return stateAt(windows, op.header.timestamp, true);
 	});
 }

@@ -113,8 +113,8 @@ pub(crate) struct EncryptedMessage {
 }
 
 /// Why the payload of an operation published into a space can not be read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Error, Serialize, Deserialize)]
-pub enum Unreadable {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+pub(crate) enum Unreadable {
     /// Expected while the space's key agreement lags behind its messages.
     #[error("we do not hold the secret this payload was encrypted with (yet)")]
     SecretMissing,

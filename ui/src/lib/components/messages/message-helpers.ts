@@ -22,8 +22,6 @@ export function messagePlaceholderText(
 	switch (content) {
 		case 'deleted-for-everyone':
 			return m.messageDeleted();
-		case 'awaiting-decryption':
-			return m.waitingForThisMessage();
 		case 'undecryptable':
 			return m.messageNotDecrypted();
 	}

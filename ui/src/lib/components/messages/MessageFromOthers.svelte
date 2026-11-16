@@ -4,7 +4,7 @@
 		fullName,
 		hasBody,
 		isDeleted,
-		isUnreadable,
+		isUndecryptable,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -16,7 +16,7 @@
 	import { type MessagePosition, hasMessageActions } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import DeletedMessage from './DeletedMessage.svelte';
-	import UnreadableMessage from './UnreadableMessage.svelte';
+	import UndecryptableMessage from './UndecryptableMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -62,6 +62,7 @@
 
 	const isLast = $derived(position === 'last' || position === 'single');
 	const deleted = $derived(isDeleted(message.content));
+	const undecryptable = $derived(isUndecryptable(message.content));
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
@@ -164,13 +165,8 @@
 						{myDeviceId}
 						senderName={senderDisplayName}
 					/>
-				{:else if isUnreadable(message.content)}
-					<UnreadableMessage
-						{message}
-						reason={message.content}
-						{position}
-						{myDeviceId}
-					/>
+				{:else if undecryptable}
+					<UndecryptableMessage {message} {position} {myDeviceId} />
 				{:else}
 					<Card
 						contentWrapPadding="px-2 py-(--message-padding-y)"
@@ -212,7 +208,7 @@
 	</div>
 {/snippet}
 
-{#if deleted || isUnreadable(message.content)}
+{#if deleted || undecryptable}
 	<div class="group flex justify-start">{@render bubble()}</div>
 {:else if isMobile}
 	<SwipeToReply {readOnly} {onReply} target={slideEl}

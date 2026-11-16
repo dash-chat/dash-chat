@@ -8,7 +8,6 @@ use iroh_blobs::provider::events::{
     AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
 };
 use mailboxes_manager::Mailboxes;
-use p2panda::operation::Operation;
 use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
@@ -446,7 +445,6 @@ impl BlobFetchPool {
         let mut s = store.stack.lock().await;
         tokio::pin!(ops);
         while let Some(op) = ops.try_next().await? {
-            // Processing an operation that becomes readable later adds its media then.
             let Ok(Some(body)) = op.body else {
                 continue;
             };

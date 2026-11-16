@@ -16,9 +16,14 @@ use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 use p2panda_store::topics::TopicStore;
 
-pub use crate::node::streams::Unreadable;
-use crate::node::streams::{EncryptedMessage, TopicStreams};
+use crate::node::streams::{EncryptedMessage, TopicStreams, Unreadable};
 use crate::{mailbox::MailboxOperation, topic::TopicId, *};
+
+/// The payload of an encrypted operation does not decrypt with the secret it names: the
+/// ciphertext is corrupt, or was encrypted with something else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the payload does not decrypt with the secret it names")]
+pub struct Undecryptable;
 
 /// An operation as the app reads it, see [`OpStore::get_log`]. Never send one onward: mailbox
 /// sync reads the stored operations instead.
@@ -28,7 +33,14 @@ pub struct ReadOperation {
     pub header: p2panda::operation::Header,
     /// The payload, decrypted if the operation was published into a space. `Ok(None)` is an
     /// operation that carries none: a control message, or one whose payload was deleted.
-    pub body: Result<Option<p2panda_core::Body>, Unreadable>,
+    pub body: Result<Option<p2panda_core::Body>, Undecryptable>,
+}
+
+/// A stored operation with what decrypting its payload gave.
+struct Decrypted {
+    hash: Hash,
+    header: p2panda::operation::Header,
+    body: Result<Option<p2panda_core::Body>, Unreadable>,
 }
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
@@ -87,18 +99,43 @@ impl OpStore {
         self.store.pool().close().await;
     }
 
-    /// Read stored operations, decrypting the payload of each encrypted one. p2panda stores
-    /// such a payload only as ciphertext in the header.
+    /// Stored operations as the app reads them.
+    ///
+    /// An encrypted operation whose secret has not arrived is left out. p2panda stores it on
+    /// arrival but only hands it over for processing once it decrypts, so until then the app
+    /// has not received it.
+    //
+    // TODO: every other stored operation is returned, whether or not it has been processed
+    // or has passed validation. Reading should move to a projection of valid, processed
+    // operations that caches their plaintext, which replaces decrypting here on every read.
     async fn read(&self, ops: Vec<Operation>) -> anyhow::Result<Vec<ReadOperation>> {
+        let read = self.decrypt(ops).await?.into_iter().filter_map(|op| {
+            let body = match op.body {
+                Ok(body) => Ok(body),
+                Err(Unreadable::SecretMissing) => return None,
+                Err(Unreadable::DecryptionFailed) => Err(Undecryptable),
+            };
+            Some(ReadOperation {
+                hash: op.hash,
+                header: op.header,
+                body,
+            })
+        });
+        Ok(read.collect())
+    }
+
+    /// Decrypt the payload of each encrypted operation. p2panda stores such a payload only
+    /// as ciphertext in the header.
+    async fn decrypt(&self, ops: Vec<Operation>) -> anyhow::Result<Vec<Decrypted>> {
         let mut by_space: BTreeMap<TopicId, Vec<(usize, EncryptedMessage)>> = BTreeMap::new();
         for (index, op) in ops.iter().enumerate() {
             if let Some((space, message)) = encrypted_message(op) {
                 by_space.entry(space).or_default().push((index, message));
             }
         }
-        let mut read: Vec<ReadOperation> = ops
+        let mut read: Vec<Decrypted> = ops
             .into_iter()
-            .map(|op| ReadOperation {
+            .map(|op| Decrypted {
                 hash: op.hash,
                 header: op.header,
                 body: Ok(op.body),
@@ -212,12 +249,7 @@ impl OpStore {
         let Some(operation) = self.get_stored_operation(hash).await? else {
             return Ok(None);
         };
-        Ok(Some(self.read_one(operation).await?))
-    }
-
-    async fn read_one(&self, operation: Operation) -> anyhow::Result<ReadOperation> {
-        let mut read = self.read(vec![operation]).await?;
-        Ok(read.pop().expect("reading one operation gives one back"))
+        Ok(self.read(vec![operation]).await?.pop())
     }
 
     #[deprecated = "will be replace by proper use of p2panda-streams"]
@@ -225,7 +257,7 @@ impl OpStore {
         &self,
     ) -> impl futures::Stream<Item = Result<ReadOperation, anyhow::Error>> + '_ {
         queries::get_all_operations_not_fully_sorted(&self.store)
-            .and_then(|operation| self.read_one(operation))
+            .try_filter_map(async |operation| Ok(self.read(vec![operation]).await?.pop()))
     }
 
     /// Get the "height" of each log, which is actually the highest sequence number of the log.
@@ -258,9 +290,7 @@ impl OpStore {
                         }
                     }
                     Ok(None) => logs.push((op.header, None)),
-                    // As far as a reader can tell, this operation has not arrived yet.
-                    Err(Unreadable::SecretMissing) => {}
-                    Err(err @ Unreadable::DecryptionFailed) => return Err(err.into()),
+                    Err(err) => return Err(err.into()),
                 }
             }
         }
@@ -333,7 +363,7 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
             return Ok(None);
         };
         let mut blob_hashes = Vec::new();
-        for op in self.read(segment).await? {
+        for op in self.decrypt(segment).await? {
             let hashes = match &op.body {
                 Ok(Some(body)) => crate::mailbox::media_blob_hashes(body.as_bytes()),
                 Ok(None) | Err(Unreadable::DecryptionFailed) => Vec::new(),

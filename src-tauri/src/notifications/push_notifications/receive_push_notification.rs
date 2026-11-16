@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::stores::Unreadable;
 use dashchat_node::topic::application_log_id;
 use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
@@ -327,13 +326,10 @@ async fn wait_for_pushed_operation_notification(
             .get_log(&device_id, &application_log_id(topic_id), from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
-        if let Some(first) = log.into_iter().next() {
-            // An encrypted operation is stored before its secret arrives.
-            let awaiting_secret = matches!(first.body, Err(Unreadable::SecretMissing));
-            entry = Some(first);
-            if !awaiting_secret {
-                break;
-            }
+        // An encrypted operation is not read until its secret arrives, and a later one may be.
+        entry = log.into_iter().find(|op| op.header.seq_num == seq_num);
+        if entry.is_some() {
+            break;
         }
         tokio::time::sleep(OP_POLL_INTERVAL).await;
     }
