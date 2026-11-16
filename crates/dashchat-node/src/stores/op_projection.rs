@@ -56,6 +56,9 @@ const MIGRATIONS: &[&str] = &[
         requester_device_id BLOB NOT NULL,
         PRIMARY KEY (peer_device_id, space_id)
     )",
+    "CREATE TABLE IF NOT EXISTS dropped_direct_chat_spaces (
+        space_id BLOB NOT NULL PRIMARY KEY
+    )",
     "CREATE TABLE IF NOT EXISTS message_acks (
         topic_id BLOB NOT NULL,
         acker_device_id BLOB NOT NULL,
@@ -247,14 +250,17 @@ impl OpProjection {
         Ok(row.map(|(profile,)| profile))
     }
 
-    /// The spaces a contact request between us and `peer` named for our direct
-    /// chat, each with the device that requested: at most one from each side.
+    /// The spaces our direct chat with `peer` is spread over, each with the
+    /// device whose contact request named it: at most one from each side, less
+    /// the one given up once its messages were moved to the other.
     pub async fn direct_chat_spaces(
         &self,
         peer: DeviceId,
     ) -> anyhow::Result<Vec<(ChatId, DeviceId)>> {
         let rows: Vec<(Topic<crate::topic::kind::Untyped>, DeviceId)> = sqlx::query_as(
-            "SELECT space_id, requester_device_id FROM direct_chat_spaces WHERE peer_device_id = ?",
+            "SELECT space_id, requester_device_id FROM direct_chat_spaces
+             WHERE peer_device_id = ?
+             AND space_id NOT IN (SELECT space_id FROM dropped_direct_chat_spaces)",
         )
         .bind(peer)
         .fetch_all(&self.pool)
@@ -265,7 +271,29 @@ impl OpProjection {
             .collect())
     }
 
-    /// The device our direct chat in `space` is with, if it is a direct chat.
+    /// The devices our direct chat with is spread over two spaces.
+    pub async fn split_direct_chat_peers(&self) -> anyhow::Result<Vec<DeviceId>> {
+        let rows: Vec<(DeviceId,)> = sqlx::query_as(
+            "SELECT peer_device_id FROM direct_chat_spaces
+             WHERE space_id NOT IN (SELECT space_id FROM dropped_direct_chat_spaces)
+             GROUP BY peer_device_id HAVING COUNT(*) > 1",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|(peer,)| peer).collect())
+    }
+
+    /// Stop counting `space` among the spaces of a direct chat.
+    pub async fn drop_direct_chat_space(&self, space: ChatId) -> anyhow::Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO dropped_direct_chat_spaces (space_id) VALUES (?)")
+            .bind(space.to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The device our direct chat in `space` is with, if it is a direct chat,
+    /// whether or not the space is still in use.
     pub async fn direct_chat_peer(&self, space: ChatId) -> anyhow::Result<Option<DeviceId>> {
         let row: Option<(DeviceId,)> =
             sqlx::query_as("SELECT peer_device_id FROM direct_chat_spaces WHERE space_id = ?")
@@ -797,10 +825,20 @@ impl OpProjection {
             .direct_chat_peer(space)
             .await?
             .is_some_and(|known_peer| known_peer != peer);
-        if claimed || self.is_group_chat(space).await? {
+        // An honest requester names one space for a peer, for good.
+        let renamed: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM direct_chat_spaces
+             WHERE peer_device_id = ? AND requester_device_id = ? AND space_id != ?",
+        )
+        .bind(peer)
+        .bind(requester)
+        .bind(space.to_vec())
+        .fetch_optional(&self.pool)
+        .await?;
+        if claimed || renamed.is_some() || self.is_group_chat(space).await? {
             tracing::warn!(
                 requester = ?requester.aliased(),
-                "contact request names a space already in use; ignoring it"
+                "contact request names a space it may not; ignoring it"
             );
             return Ok(());
         }

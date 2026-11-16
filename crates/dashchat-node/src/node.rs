@@ -1,5 +1,6 @@
 mod app_processing;
 mod device_group;
+mod direct_chat;
 mod message_acks;
 mod profile;
 pub(crate) mod publish;
@@ -294,6 +295,7 @@ pub struct Node {
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     direct_chat_admission_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     direct_chat_admission: Arc<Mutex<()>>,
+    direct_chat_move: Arc<Mutex<()>>,
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
@@ -526,6 +528,7 @@ impl Node {
             message_ack_handle: Default::default(),
             direct_chat_admission_handles: Default::default(),
             direct_chat_admission: Default::default(),
+            direct_chat_move: Default::default(),
             device_group_topic,
             dirty_ack_topics: Default::default(),
         };
@@ -1431,7 +1434,7 @@ impl Node {
         media: Option<OutgoingMedia>,
         reply: Option<Hash>,
     ) -> Result<Header, SendMessageError> {
-        let chat_id: ChatId = topic.into();
+        let chat_id = self.chat_write_target(topic.into()).await?;
 
         if let Some(target) = reply {
             let valid_ops = self.valid_chat_ops(chat_id).await?;
@@ -1693,33 +1696,15 @@ impl Node {
     // edit operation. We can improve this by building up the parallel ChatOp list
     // reduced state as part of the ACID refactors.
     pub(crate) async fn valid_chat_ops(&self, topic: ChatId) -> anyhow::Result<ValidChatOps> {
-        let log_id = LogId::from(topic);
-        let authors = self.op_store.get_authors(log_id).await?;
-
         let mut ops = std::collections::HashMap::new();
-        for author in authors {
-            for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Ok(Some(body)) = &op.body else {
-                    continue;
-                };
-                let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
-                    continue;
-                };
-                let kind = match chat {
-                    ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
-                    ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
-                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
-                    _ => ChatOpKind::Other,
-                };
-                ops.insert(
-                    op.header.hash(),
-                    ChatOp {
-                        author: DeviceId::from(op.header.verifying_key),
-                        timestamp: op.header.extensions.timestamp().into(),
-                        seq_num: op.header.seq_num,
-                        kind,
-                    },
-                );
+        for space in self.chat_spaces(topic).await? {
+            let log_id = LogId::from(space);
+            for author in self.op_store.get_authors(log_id).await? {
+                for op in self.op_store.get_log(&author, &log_id, None).await? {
+                    if let Some((hash, chat_op)) = chat_op(&op) {
+                        ops.insert(hash, chat_op);
+                    }
+                }
             }
         }
 
@@ -2018,6 +2003,21 @@ impl Node {
             return Ok(AddContactResult::AlreadyRequested(direct_chat_id));
         }
 
+        // They asked first: scanning their code is our answer, not a request
+        // of our own with a second space for the same chat.
+        if let Some(agent_id) = self
+            .unanswered_request_from(contact.device_pubkey)
+            .await
+            .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?
+        {
+            self.accept_contact(agent_id).await?;
+            let direct_chat_id = self
+                .known_direct_chat_id(contact.device_pubkey)
+                .await
+                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+            return Ok(AddContactResult::Accepted(direct_chat_id));
+        }
+
         // Register the scanned contact as a bootstrap so p2panda discovery can
         // reach it directly over the internet (relay + pkarr), rather than
         // depending on a mutually-reachable mailbox to introduce the two nodes.
@@ -2261,12 +2261,9 @@ impl Node {
         self.join_space(direct_chat_topic)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
-        let node = self.clone();
-        tokio::spawn(async move {
-            if let Err(err) = node.publish_my_profile_to(direct_chat_topic).await {
-                tracing::warn!(?err, "failed to push my profile to the new direct chat");
-            }
-        });
+        if let Err(err) = self.publish_my_profile_to(direct_chat_topic).await {
+            tracing::warn!(?err, "failed to push my profile to the new direct chat");
+        }
 
         // Messages the requester sent before acceptance were processed but
         // deliberately not acked; now that they are a contact, cover them.
@@ -2296,6 +2293,21 @@ impl Node {
         // but dropped by the ack filter; now that they are a contact, cover them.
         self.mark_ack_topic_dirty(direct_chat_id);
         Ok(())
+    }
+
+    /// The agent behind `device`, if they requested contact and we neither
+    /// answered nor blocked them.
+    async fn unanswered_request_from(&self, device: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let requested_us = self
+            .projection
+            .direct_chat_spaces(device)
+            .await?
+            .iter()
+            .any(|(_, requester)| *requester == device);
+        if !requested_us || self.projection.is_author_blocked(&device).await? {
+            return Ok(None);
+        }
+        self.lookup_contact(device).await
     }
 
     /// Returns true if we have an unexpired outgoing contact request to
@@ -2713,6 +2725,11 @@ impl Node {
                 self.spawn_direct_chat_admission(owner, direct_chat_id)
                     .await;
             }
+        }
+
+        if let Err(err) = self.resume_split_direct_chats().await {
+            error!(?err, "failed to resume moving a direct chat to one space");
+            failures += 1;
         }
 
         match self.chat_topics().await {
@@ -3323,6 +3340,30 @@ mod forged_contact_request_tests {
                 .any(|inbox| inbox.topic == alice_inbox.topic)
         );
     }
+}
+
+fn chat_op(op: &ReadOperation) -> Option<(Hash, ChatOp)> {
+    let Ok(Some(body)) = &op.body else {
+        return None;
+    };
+    let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
+        return None;
+    };
+    let kind = match chat {
+        ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
+        ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+        ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
+        _ => ChatOpKind::Other,
+    };
+    Some((
+        op.header.hash(),
+        ChatOp {
+            author: DeviceId::from(op.header.verifying_key),
+            timestamp: op.header.extensions.timestamp().into(),
+            seq_num: op.header.seq_num,
+            kind,
+        },
+    ))
 }
 
 fn space_group_id(topic: TopicId) -> p2panda::spaces::GroupId {

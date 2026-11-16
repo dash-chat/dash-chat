@@ -207,6 +207,10 @@ export type MessageContentV1 = {
 	 * ordering criterion (timestamp and author tie-break). Absent on messages
 	 * from clients that predate the field. */
 	lamport?: number;
+	/** Set when the author moved this message here from the other space of a
+	 * direct chat both sides had requested: the original operation and its
+	 * timestamp in microseconds. */
+	moved?: { hash: Hash; timestamp: number };
 };
 export type MessageContent = MessageContentV1;
 

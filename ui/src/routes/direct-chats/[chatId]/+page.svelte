@@ -90,6 +90,16 @@
 
 	const peerAgentId = useReactiveValue(store.peerAgentId);
 
+	const movedTo = useReactiveValue(store.movedTo);
+	$effect(() => {
+		if ($movedTo !== undefined) {
+			goto(`/direct-chats/${$movedTo}`, {
+				replaceState: true,
+				keepFocus: true,
+			});
+		}
+	});
+
 	const readTracker = createReadMessagesTracker(store.messages, useDeviceId());
 	const readMessageOnObserve = readTracker.observe;
 

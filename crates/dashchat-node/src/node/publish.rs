@@ -13,7 +13,24 @@ impl Node {
         _alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
         let payload: Payload = payload.into();
+        let topic: TopicId = topic.into();
+        let topic = match &payload {
+            Payload::Chat(_) => self
+                .chat_write_target(ChatId::from_topic_id(topic))
+                .await?
+                .into(),
+            _ => topic,
+        };
+        self.publish_unguarded(topic, payload).await
+    }
 
+    /// Publish into exactly `topic`, where [`Self::publish`] may redirect a
+    /// chat operation to the space its direct chat settled on.
+    pub(super) async fn publish_unguarded(
+        &self,
+        topic: TopicId,
+        payload: Payload,
+    ) -> Result<Header, anyhow::Error> {
         // A read-only node (the push extension) must never land here: what it
         // publishes under the shared key the running app never processes.
         if self.config.read_only {
@@ -28,7 +45,7 @@ impl Node {
             "awaiting publish",
             // Boxed: this future is inlined into every caller of `publish`, and p2panda's
             // space futures make it large enough to overflow their stacks.
-            Box::pin(self.streams.publish(topic.into(), payload)),
+            Box::pin(self.streams.publish(topic, payload)),
         )
         .await?;
 

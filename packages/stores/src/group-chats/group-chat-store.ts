@@ -62,6 +62,7 @@ export class GroupChatStore {
 			messagesClient,
 			reactive(async () => !(await this.me()).member),
 			() => this.controlOps(),
+			reactive(async () => [chatId]),
 		);
 		this.client.onGroupMembersChanged(this.chatId, () => {
 			this.membersVersion.value++;

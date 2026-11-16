@@ -289,6 +289,44 @@ export class ContactsStore {
 		this.client.directChatId(devicePubkey),
 	);
 
+	/** The direct chat space each device named when requesting contact with
+	 * us, whether or not its request is still shown as one. */
+	private requestedChatIds = reactive(
+		async (): Promise<Record<DeviceId, ChatId>> => {
+			const activeInboxTopics = await this.activeInboxTopics();
+			const allLogs = await Promise.all(
+				activeInboxTopics.map(topicId =>
+					this.logsStore.logsForAllAuthors(topicId),
+				),
+			);
+			const chatIds: Record<DeviceId, ChatId> = {};
+			for (const operation of allLogs.flatMap(log =>
+				Object.values(log).flat(),
+			)) {
+				if (operation.body?.type !== 'Inbox') continue;
+				if (operation.body.payload.type !== 'ContactRequest') continue;
+				chatIds[operation.header.verifying_key] =
+					operation.body.payload.payload.direct_chat_id;
+			}
+			return chatIds;
+		},
+	);
+
+	/** Every space of the direct chat `chatId` is one of. When both sides
+	 * requested contact at once each created one, and the chat is spread over
+	 * both until one side has moved its messages into the other's. */
+	directChatSpaces = reactive(async (chatId: ChatId): Promise<ChatId[]> => {
+		const requested = await this.requestedChatIds();
+		for (const request of await this.outgoingContactRequests()) {
+			const theirs = requested[request.devicePubkey];
+			if (theirs === undefined || theirs === request.chatId) continue;
+			if (chatId === request.chatId || chatId === theirs) {
+				return [request.chatId, theirs];
+			}
+		}
+		return [chatId];
+	});
+
 	contactRequests = reactive(async () => {
 		const activeInboxTopics = await this.activeInboxTopics();
 

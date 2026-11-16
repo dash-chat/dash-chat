@@ -61,6 +61,8 @@ pub enum AddContactError {
 pub enum AddContactResult {
     NewRequest(Topic<Chat>),
     AlreadyRequested(Topic<Chat>),
+    /// They had requested contact with us: scanning their code accepted it.
+    Accepted(Topic<Chat>),
 }
 
 #[derive(Debug, Error, Serialize)]

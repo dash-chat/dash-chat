@@ -269,7 +269,8 @@ mod tests {
                 .get(&*chat_id)
                 .and_then(|m| m.get(&alice_log))
                 .copied();
-            if alice_seq == Some(header.seq_num) && bobbi_seq == Some(header.seq_num) {
+            // Alice may have published acks after the message by now.
+            if alice_seq >= Some(header.seq_num) && bobbi_seq >= Some(header.seq_num) {
                 Ok(())
             } else {
                 Err("watermark not recorded")
