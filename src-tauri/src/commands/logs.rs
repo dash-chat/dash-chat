@@ -219,7 +219,7 @@ pub async fn get_log(
     let node = app_node_manager.get().await?;
     let log = node
         .op_store
-        .get_log(&author, &node.app_log_id(topic_id).await, None)
+        .get_log(&author, &node.app_message_log_id(topic_id).await, None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
@@ -240,7 +240,7 @@ pub async fn get_authors(
     let node = app_node_manager.get().await?;
     let authors = node
         .op_store
-        .get_authors(node.app_log_id(topic_id).await)
+        .get_authors(node.app_message_log_id(topic_id).await)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)
