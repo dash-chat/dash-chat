@@ -846,7 +846,7 @@ impl Node {
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
-        Box::pin(self.create_space(topic, initial_members)).await?;
+        self.create_space(topic, initial_members).await?;
         self.publish_my_profile_to(topic).await?;
 
         tracing::info!(
@@ -869,7 +869,7 @@ impl Node {
         chat_id: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<()> {
-        Box::pin(self.create_space(chat_id, initial_members)).await?;
+        self.create_space(chat_id, initial_members).await?;
         Ok(())
     }
 
@@ -912,7 +912,7 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        let added = Box::pin(self.create_space(chat_id, initial_members)).await?;
+        let added = self.create_space(chat_id, initial_members).await?;
         self.publish_my_profile_to(chat_id).await?;
 
         // Ensure that future non-contact members can see every initial member's
@@ -935,9 +935,17 @@ impl Node {
 
     /// Create a space with the given members, returning for each member other than us the
     /// hash of the operation that admits it.
-    /// Callers box this future: p2panda's space futures are large enough to overflow the
-    /// stack when inlined into every caller up the chain.
     async fn create_space(
+        &self,
+        topic: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
+        // Boxed: p2panda's space futures are large enough to overflow the stack when
+        // inlined into every caller up the chain.
+        Box::pin(self.create_space_unboxed(topic, initial_members)).await
+    }
+
+    async fn create_space_unboxed(
         &self,
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
