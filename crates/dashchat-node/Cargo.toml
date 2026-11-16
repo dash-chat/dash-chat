@@ -71,3 +71,7 @@ default = ["instrument"]
 instrument = []
 testing = ["tempfile", "nanoid", "p2panda-store/test_utils", "mailbox-client/testing"]
 p2p = []
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+patchbay = "0.7"
+ctor = "1"
