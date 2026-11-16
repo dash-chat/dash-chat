@@ -126,6 +126,10 @@ impl OpStore {
 
     /// Decrypt the payload of each encrypted operation. p2panda stores such a payload only
     /// as ciphertext in the header.
+    //
+    // TODO: once we have a projection of valid, processed operations that caches their plaintext,
+    // we can afford to decrypt one message at a time instead of in a batch, which simplifies
+    // the logic and types.
     async fn decrypt(&self, ops: Vec<Operation>) -> anyhow::Result<Vec<Decrypted>> {
         let mut by_space: BTreeMap<TopicId, Vec<(usize, EncryptedMessage)>> = BTreeMap::new();
         for (index, op) in ops.iter().enumerate() {

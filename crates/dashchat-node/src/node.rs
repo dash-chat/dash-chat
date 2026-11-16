@@ -1160,7 +1160,7 @@ impl Node {
                 let group = manager.group(group_id).created().await?;
                 Ok(group.members().await?)
             })
-            .await?;
+            .await??;
         Ok(members
             .into_iter()
             .map(|(member, access)| {
@@ -1219,13 +1219,16 @@ impl Node {
     }
 
     pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
-        Ok(self.streams.with_node(async |node| node.me().await).await?)
+        Ok(self
+            .streams
+            .with_node(async |node| node.me().await)
+            .await??)
     }
 
     pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
         self.streams
             .with_node(async |node| node.register_member(keybundle).await)
-            .await?;
+            .await??;
         Ok(())
     }
 

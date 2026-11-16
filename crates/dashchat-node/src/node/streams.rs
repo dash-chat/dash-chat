@@ -298,17 +298,25 @@ impl TopicStreams {
                 node.stream_from(topic, StreamFrom::Frontier, cursor_name)
                     .await
             })
-            .await?)
+            .await??)
     }
 
     #[deprecated = "direct p2panda node access is bad encapsulation for TopicStreams (private access is fine, public access needs to be removed)"]
-    pub(crate) async fn with_node<T, E>(
+    pub(crate) async fn with_node<T>(
         &self,
-        f: impl AsyncFnOnce(&p2panda::Node) -> Result<T, E>,
-    ) -> Result<T, E> {
+        f: impl AsyncFnOnce(&p2panda::Node) -> T,
+    ) -> Result<T, StreamsError> {
         let node = RwLockReadGuard::try_map(self.node.read().await, Option::as_ref)
-            .expect("tokio docs say this is infallible...");
-        Ok(Box::pin(f(&node)).await?)
+            .map_err(|_| StreamsError::ShutDown)?;
+        Ok(Box::pin(f(&node)).await)
+    }
+
+    fn ensure_node(&self) -> Result<(), StreamsError> {
+        if self.shut_down.load(Ordering::Acquire) {
+            return Err(StreamsError::ShutDown);
+        } else {
+            Ok(())
+        }
     }
 
     /// The topic's publisher, creating the stream/space if this is the first use of the topic.
@@ -319,10 +327,8 @@ impl TopicStreams {
         topic: Topic,
         space: StreamIntent,
     ) -> Result<(Publisher, bool), StreamsError> {
+        self.ensure_node()?;
         let mut pubs = self.publishers.lock().await;
-        if self.shut_down.load(Ordering::Acquire) {
-            return Err(StreamsError::ShutDown);
-        }
         if let Some(sub) = pubs.get(&topic) {
             return Ok((sub.clone(), false));
         }
@@ -331,15 +337,16 @@ impl TopicStreams {
             StreamIntent::CreateSpace => {
                 let (space, subscriber) = self
                     .with_node(async |node| node.create_space_with_id(topic).await)
-                    .await?;
+                    .await??;
                 (
                     Publisher::Space(Space::created(topic, space)),
                     Subscriber::Space(subscriber),
                 )
             }
             StreamIntent::JoinSpace => {
-                let (space, subscriber) =
-                    self.with_node(async |node| node.space(topic).await).await?;
+                let (space, subscriber) = self
+                    .with_node(async |node| node.space(topic).await)
+                    .await??;
                 (
                     Publisher::Space(Space::pending(topic, space)),
                     Subscriber::Space(subscriber),
@@ -384,7 +391,7 @@ impl TopicStreams {
         #[allow(deprecated)]
         let has_space = self
             .with_node(async |node| node.spaces_manager().has_space(topic).await)
-            .await
+            .await?
             .map_err(SubscribeSpaceError::from)?;
         Ok(has_space)
     }
@@ -422,14 +429,15 @@ impl TopicStreams {
 
     /// Decrypt messages published into a space, with the secrets p2panda holds for it.
     /// Works for a space we have left as well.
+    //
+    // TODO: once we have a projection of valid, processed operations that caches their plaintext,
+    // we can afford to decrypt one message at a time instead of in a batch, which simplifies
+    // the logic and types.
     pub(crate) async fn decrypt_messages(
         &self,
         space: Topic,
         messages: Vec<EncryptedMessage>,
     ) -> anyhow::Result<Vec<Result<Vec<u8>, Unreadable>>> {
-        if self.shut_down.load(Ordering::Acquire) {
-            return Err(StreamsError::ShutDown.into());
-        }
         #[allow(deprecated)]
         self.with_node(async |node| {
             let manager = node.spaces_manager();
@@ -448,7 +456,7 @@ impl TopicStreams {
                 .await?;
             Ok(plaintexts)
         })
-        .await
+        .await?
     }
 
     pub(crate) async fn space(&self, topic: Topic) -> Result<Space, StreamsError> {
@@ -567,7 +575,7 @@ impl TopicStreams {
     {
         Ok(self
             .with_node(async |node| node.ephemeral_stream(topic).await)
-            .await?)
+            .await??)
     }
 
     pub(crate) async fn register_bootstrap(
@@ -581,12 +589,12 @@ impl TopicStreams {
             .with_relay_url(relay_url);
         let known = self
             .with_node(async |node| node.node_addr_known(&addr).await)
-            .await?;
+            .await??;
         if known {
             return Ok(());
         }
         self.with_node(async |node| node.insert_node_addr(addr).await)
-            .await?;
+            .await??;
         Ok(())
     }
 
@@ -613,7 +621,7 @@ impl TopicStreams {
         addr: iroh::EndpointAddr,
     ) -> Result<(), StreamsError> {
         self.with_node(async |node| node.insert_node_addr(addr).await)
-            .await?;
+            .await??;
         Ok(())
     }
 
