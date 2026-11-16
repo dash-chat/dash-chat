@@ -149,3 +149,43 @@ async fn chat_messages_reach_the_mailbox_only_encrypted() {
     )
     .await;
 }
+
+/// A message as large as the composer allows a message to be (16 MB, the cap on its media)
+/// still reaches the other member. Its whole ciphertext travels in the operation's header.
+#[tokio::test(flavor = "multi_thread")]
+async fn largest_message_reaches_the_other_member() {
+    setup();
+
+    let mb = TestMailbox::from_env();
+    // No p2p: bobbi can only read what the mailbox holds.
+    let config = NodeConfig::testing().no_p2p();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config, "bobbi").await.add_mailbox(&mb).await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    let text = "x".repeat(16_000_000);
+    alice
+        .send_message(chat, text.clone(), None, None)
+        .await
+        .unwrap();
+
+    let poll = PollConfig {
+        poll_timeout: std::time::Duration::from_secs(90),
+        ..PollConfig::default()
+    };
+    poll.wait_for(|| async {
+        let messages = bobbi.get_messages(chat).await.unwrap();
+        let received = messages.iter().any(|m| m.content.message() == text);
+        received.then_some(()).ok_or(messages.len())
+    })
+    .await
+    .expect("bobbi receives the message");
+}
