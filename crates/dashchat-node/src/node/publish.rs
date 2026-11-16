@@ -20,7 +20,7 @@ impl Node {
         // published or processed yet.
         let process_fut = warn_if_slow(
             "awaiting publish",
-            self.streams.publish(topic.into(), payload),
+            Box::pin(self.streams.publish(topic.into(), payload)),
         )
         .await?;
 
