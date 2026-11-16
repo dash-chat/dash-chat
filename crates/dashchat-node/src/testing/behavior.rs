@@ -42,7 +42,36 @@ impl Behavior {
                 }
             })
             .await?;
-        Ok(())
+        self.settle_direct_chat(other).await
+    }
+
+    /// Becoming contacts makes each side publish into the chat on its own: a
+    /// profile, then acks of what the other wrote. Wait until that is done on
+    /// both sides, so it does not land in between what a test publishes.
+    async fn settle_direct_chat(&self, other: &TestNode) -> anyhow::Result<()> {
+        let chat: TopicId = self.node.direct_chat_with(other).await.into();
+        let nodes = [&self.node, other];
+        // A test may hold a node's acks back on purpose.
+        let acks_promptly = |node: &TestNode| {
+            node.config.enable_message_acks
+                && node.config.message_ack_debounce < Duration::from_secs(5)
+        };
+        PollConfig::seconds(15)
+            .wait_for(|| async {
+                let mut processed = vec![];
+                for node in nodes {
+                    let unacked = node.projection.ack_delta(chat, node.device_id()).await?;
+                    anyhow::ensure!(
+                        unacked.is_empty() || !acks_promptly(node),
+                        "an ack is still to be published"
+                    );
+                    let ops = node.op_store.processed_ops.read().unwrap();
+                    processed.push(ops.get(&chat).cloned().unwrap_or_default());
+                }
+                anyhow::ensure!(processed[0] == processed[1], "the chat is still syncing");
+                Ok(())
+            })
+            .await
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.node.device_id().aliased())))]
