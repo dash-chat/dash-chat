@@ -27,20 +27,19 @@ pub struct Undecryptable;
 
 /// An operation as the app reads it, see [`OpStore::get_log`]. Never send one onward: mailbox
 /// sync reads the stored operations instead.
+///
+/// The app only ever sees the default `E`, which cannot express a missing secret. Within the
+/// crate, `ReadOperation<Unreadable>` keeps that case for callers that must wait for it.
+//
+// TODO: once we have a projection of valid, processed operations that caches their plaintext,
+// nothing reads an operation whose secret is missing and `E` can go.
 #[derive(Clone, Debug)]
-pub struct ReadOperation {
+pub struct ReadOperation<E = Undecryptable> {
     pub hash: Hash,
     pub header: p2panda::operation::Header,
     /// The payload, decrypted if the operation was published into a space. `Ok(None)` is an
     /// operation that carries none: a control message, or one whose payload was deleted.
-    pub body: Result<Option<p2panda_core::Body>, Undecryptable>,
-}
-
-/// A stored operation with what decrypting its payload gave.
-struct Decrypted {
-    hash: Hash,
-    header: p2panda::operation::Header,
-    body: Result<Option<p2panda_core::Body>, Unreadable>,
+    pub body: Result<Option<p2panda_core::Body>, E>,
 }
 
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
@@ -130,16 +129,16 @@ impl OpStore {
     // TODO: once we have a projection of valid, processed operations that caches their plaintext,
     // we can afford to decrypt one message at a time instead of in a batch, which simplifies
     // the logic and types.
-    async fn decrypt(&self, ops: Vec<Operation>) -> anyhow::Result<Vec<Decrypted>> {
+    async fn decrypt(&self, ops: Vec<Operation>) -> anyhow::Result<Vec<ReadOperation<Unreadable>>> {
         let mut by_space: BTreeMap<TopicId, Vec<(usize, EncryptedMessage)>> = BTreeMap::new();
         for (index, op) in ops.iter().enumerate() {
             if let Some((space, message)) = encrypted_message(op) {
                 by_space.entry(space).or_default().push((index, message));
             }
         }
-        let mut read: Vec<Decrypted> = ops
+        let mut read: Vec<ReadOperation<Unreadable>> = ops
             .into_iter()
-            .map(|op| Decrypted {
+            .map(|op| ReadOperation {
                 hash: op.hash,
                 header: op.header,
                 body: Ok(op.body),

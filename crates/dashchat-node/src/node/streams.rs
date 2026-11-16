@@ -534,19 +534,17 @@ impl TopicStreams {
         payload: Payload,
     ) -> Result<ProcessFuture, StreamsError> {
         let (processed_tx, processed_rx) = oneshot::channel();
-        let registered = Arc::new(std::sync::Mutex::new(None));
         let in_process = self.in_process.clone();
         let published = space
-            .run({
-                let registered = registered.clone();
-                move |space| async move {
-                    space
-                        .publish_with(payload, |hash| {
-                            in_process.lock().unwrap().insert(hash, processed_tx);
-                            *registered.lock().unwrap() = Some(hash);
-                        })
-                        .await
-                }
+            .run(move |space| async move {
+                let mut registered = None;
+                space
+                    .publish_with(payload, |hash| {
+                        in_process.lock().unwrap().insert(hash, processed_tx);
+                        registered = Some(hash);
+                    })
+                    .await
+                    .map_err(|err| (err, registered))
             })
             .await?;
 
@@ -556,8 +554,10 @@ impl TopicStreams {
                 space_fut.map(|published| published.map_err(|err| err.to_string())),
                 processed_rx,
             )),
-            Err(err) => {
-                if let Some(hash) = registered.lock().unwrap().take() {
+            Err((err, registered)) => {
+                // Remove the operation from the in-process map if it was registered
+                // before returning.
+                if let Some(hash) = registered {
                     self.in_process.lock().unwrap().remove(&hash);
                 }
                 Err(Box::new(err).into())
