@@ -21,9 +21,8 @@
 		/** Rendered in a pill-shaped popover above the target; omit to show no
 		 * popover there. */
 		above?: Snippet;
-		/** Rendered in a popover below the target; omit to show no popover
-		 * there. */
-		below?: Snippet;
+		/** Rendered in a popover below the target. */
+		below: Snippet;
 	}
 
 	let {
@@ -255,16 +254,14 @@
 	</Popover>
 {/if}
 
-{#if below}
-	<Popover
-		opened={panelsShown && belowAnchor !== undefined}
-		target={belowAnchor}
-		backdrop={false}
-		style={edgeStyle}
-		class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
-	>
-		<div bind:offsetHeight={belowHeight}>
-			{@render below()}
-		</div>
-	</Popover>
-{/if}
+<Popover
+	opened={panelsShown && belowAnchor !== undefined}
+	target={belowAnchor}
+	backdrop={false}
+	style={edgeStyle}
+	class="!z-[36] !w-auto !min-w-44 !origin-top [&>div]:!rounded-2xl [&>div]:!translate-y-0 {panelDelay}"
+>
+	<div bind:offsetHeight={belowHeight}>
+		{@render below()}
+	</div>
+</Popover>

@@ -13,7 +13,6 @@
 	import ExpandedReactionsSheet from './ExpandedReactionsSheet.svelte';
 	import { toggleReaction } from '$lib/utils/reactions';
 	import { writeText } from '$lib/utils/clipboard';
-	import { hasMessageActions } from './message-helpers';
 
 	interface Props {
 		message: Message;
@@ -81,17 +80,6 @@
 	/>
 {/snippet}
 
-{#snippet actionsMenu()}
-	<MessageActionsMenu
-		{message}
-		{myDeviceId}
-		onEdit={edit}
-		onReply={onReply ? reply : undefined}
-		onCopy={copy}
-		onDelete={close}
-	/>
-{/snippet}
-
 {#await $readOnly then readOnly}
 	<SpotlightOverlay
 		{opened}
@@ -99,15 +87,18 @@
 		onClose={close}
 		contentHidden={expanded}
 		above={readOnly ? undefined : reactionBar}
-		below={hasMessageActions(
-			message,
-			myDeviceId,
-			readOnly,
-			onReply !== undefined,
-		)
-			? actionsMenu
-			: undefined}
-	/>
+	>
+		{#snippet below()}
+			<MessageActionsMenu
+				{message}
+				{myDeviceId}
+				onEdit={edit}
+				onReply={onReply ? reply : undefined}
+				onCopy={copy}
+				onDelete={close}
+			/>
+		{/snippet}
+	</SpotlightOverlay>
 {/await}
 
 {#if opened || expanded}
