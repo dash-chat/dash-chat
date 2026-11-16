@@ -518,16 +518,18 @@ async fn auth_control_op_notification(
         )
     };
 
+    // The acceptor authors the direct-chat space and admits the requester to
+    // it; neither is a group invite. The deterministic direct-chat topic with
+    // the sender tells a chat from a group.
+    if *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic {
+        return None;
+    }
+
     let added_me = match action {
-        // A Create is either the acceptor authoring a new direct-chat space,
-        // which is not a group at all, or someone creating a group with us in
-        // it. The deterministic direct-chat topic with the sender tells which.
         GroupAction::Create { initial_members } => {
-            *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
-                != topic
-                && initial_members.iter().any(|(m, _)| target_is_me(m))
+            initial_members.iter().any(|(m, _)| target_is_me(m))
         }
-        GroupAction::Add { member, .. } => target_is_me(&member),
+        GroupAction::Add { member, .. } => target_is_me(member),
         GroupAction::Remove { .. } | GroupAction::Promote { .. } | GroupAction::Demote { .. } => {
             false
         }
@@ -720,6 +722,59 @@ mod tests {
             data.route.as_deref(),
             Some(format!("/group-chat/{}", group.to_hex()).as_str())
         );
+    }
+
+    /// Alice accepts Bob's contact request, which admits his device to their
+    /// direct chat's space. That is a chat, not a group, so the membership
+    /// operation the sync loop hands Bob must announce nothing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stays_silent_for_a_contact_accepting_us() {
+        crate::i18n::init_i18n();
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .set_profile(Profile {
+                name: "Alice".to_string(),
+                surname: None,
+                avatar: None,
+                about: None,
+            })
+            .await
+            .unwrap();
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bob)
+            .await
+            .unwrap();
+
+        let direct_chat = alice.direct_chat_with(&bob);
+        let header = alice
+            .get_group_control_ops(direct_chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|op| op.header)
+            .find(|header| {
+                dashchat_node::membership::membership_action(header).is_some_and(|action| {
+                    dashchat_node::membership::action_adds_member(&action, bob.device_id())
+                })
+            })
+            .expect("alice published an operation admitting bob to their direct chat");
+
+        if let Some(data) = build_notification_data(&bob, direct_chat.into(), &header, None).await {
+            panic!(
+                "being admitted to a direct chat is not a group invite, yet it announced {:?}",
+                data.body
+            );
+        }
     }
 
     /// Someone who scanned our code, and whom we have not accepted, writes to
