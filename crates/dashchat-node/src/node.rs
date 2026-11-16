@@ -2729,19 +2729,20 @@ impl Node {
 
     /// Decrypt a media blob with the space secret pinned in its message metadata.
     ///
-    /// A blob with no decrypt-index entry was stored outside a chat message (only possible
-    /// internally, e.g. in tests) and is returned as-is. An unknown secret id means the
-    /// space's key agreement hasn't caught up with the message yet, so with a `deadline` the
-    /// decrypt is retried until then; failure to decrypt with a known secret is permanent.
+    /// Fails for a blob no readable message names: nothing says how to decrypt it. An unknown
+    /// secret id means the space's key agreement hasn't caught up with the message yet, so
+    /// with a `deadline` the decrypt is retried until then; failure to decrypt with a known
+    /// secret is permanent.
     async fn decrypt_blob(
         &self,
         hash: iroh_blobs::Hash,
         ciphertext: bytes::Bytes,
         deadline: Option<std::time::Instant>,
     ) -> anyhow::Result<Vec<u8>> {
-        let Some(info) = self.blob_decrypt_index.get(&hash) else {
-            return Ok(ciphertext.to_vec());
-        };
+        let info = self
+            .blob_decrypt_index
+            .get(&hash)
+            .with_context(|| format!("no readable message names blob {hash}"))?;
         let space = self.streams.space(info.topic).await?;
         loop {
             let ciphertext = ciphertext.clone();
@@ -2909,18 +2910,74 @@ mod config_validation_tests {
 
 #[cfg(test)]
 mod blob_load_tests {
-    use crate::NodeConfig;
-    use crate::testing::TestNode;
+    use crate::testing::*;
+    use crate::*;
     use std::time::Duration;
+
+    /// Alice sends bobbi a photo. Gives both, the photo's bytes and its blob hash.
+    async fn sent_photo() -> (TestNode, TestNode, Vec<u8>, iroh_blobs::Hash) {
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat = alice.direct_chat_with(&bobbi);
+
+        let bytes = rand::random::<[u8; 1024]>().to_vec();
+        let photo = OutgoingMedia::Photos {
+            photos: vec![OutgoingPhoto {
+                data: bytes.clone(),
+                name: "pic.png".into(),
+                mime_type: "image/png".into(),
+                width: 640,
+                height: 480,
+            }],
+        };
+        alice
+            .send_message(chat, "look at this", Some(photo), None)
+            .await
+            .unwrap();
+        let hash = alice
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .find_map(|m| m.content.media().cloned())
+            .expect("the sent message has media")
+            .first()
+            .expect("one media item")
+            .hash();
+
+        PollConfig::default()
+            .wait_for(|| async {
+                let received = bobbi
+                    .get_messages(chat)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|m| m.content.media().is_some());
+                received.then_some(()).ok_or("photo message not received")
+            })
+            .await
+            .unwrap();
+        (alice, bobbi, bytes, hash)
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn load_blob_present_returns_bytes_without_timeout() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let tag = node.blobs().add_bytes(b"hello".to_vec()).await.unwrap();
-        let hash = tag.hash.to_string();
+        let (alice, _bobbi, bytes, hash) = sent_photo().await;
 
-        let got = node.load_blob(&hash, None).await.unwrap();
-        assert_eq!(got, b"hello");
+        let got = alice.load_blob(&hash.to_string(), None).await.unwrap();
+        assert_eq!(got, bytes);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2946,23 +3003,14 @@ mod blob_load_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn load_blob_with_timeout_returns_blob_that_lands_mid_wait() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let content = b"arrives-late".to_vec();
-        let hash = iroh_blobs::Hash::new(&content);
+    async fn load_blob_with_timeout_fetches_a_received_photo() {
+        let (_alice, bobbi, bytes, hash) = sent_photo().await;
 
-        let blobs = node.blobs();
-        let content2 = content.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-            blobs.add_bytes(content2).await.unwrap();
-        });
-
-        let got = node
-            .load_blob(&hash.to_string(), Some(Duration::from_secs(3)))
+        let got = bobbi
+            .load_blob(&hash.to_string(), Some(Duration::from_secs(30)))
             .await
             .unwrap();
-        assert_eq!(got, content);
+        assert_eq!(got, bytes);
     }
 }
 
