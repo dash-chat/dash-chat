@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js';
 import { withinWindow } from '$lib/utils/time';
 import {
 	DELETE_FOR_EVERYONE_WINDOW_MS,
@@ -6,11 +7,27 @@ import {
 	EDIT_WINDOW_MS,
 	type Hash,
 	type Message,
+	type MessageBody,
+	type MessageDisplay,
 	hasBody,
 } from 'dash-chat-stores';
 import { find } from 'linkifyjs';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
+
+/** What a message with no body to show says in its place. */
+export function messagePlaceholderText(
+	content: Exclude<MessageDisplay, MessageBody>,
+): string {
+	switch (content) {
+		case 'deleted-for-everyone':
+			return m.messageDeleted();
+		case 'awaiting-decryption':
+			return m.waitingForThisMessage();
+		case 'undecryptable':
+			return m.messageNotDecrypted();
+	}
+}
 
 export function canEditMessage(
 	message: Message,

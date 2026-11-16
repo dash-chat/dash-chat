@@ -1,9 +1,15 @@
 import type { Hash, VerifyingKey } from './types';
 
+/** Why an encrypted operation has no `body`: the secret it was encrypted with
+ * has not arrived (yet), or it is held and the payload still does not decrypt. */
+export type Unreadable = 'SecretMissing' | 'DecryptionFailed';
+
 export interface SimplifiedOperation<B> {
 	hash: Hash;
 	header: SimplifiedHeader;
 	body: B | undefined;
+	/** Set when the operation has a payload we can not read. */
+	unreadable?: Unreadable;
 }
 
 export interface SimplifiedHeader {

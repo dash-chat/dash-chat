@@ -4,6 +4,7 @@
 		fullName,
 		hasBody,
 		isDeleted,
+		isUnreadable,
 		type ChatId,
 		type DeviceId,
 		type MailboxTrackerStore,
@@ -15,6 +16,7 @@
 	import { type MessagePosition, hasMessageActions } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import DeletedMessage from './DeletedMessage.svelte';
+	import UnreadableMessage from './UnreadableMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -162,6 +164,13 @@
 						{myDeviceId}
 						senderName={senderDisplayName}
 					/>
+				{:else if isUnreadable(message.content)}
+					<UnreadableMessage
+						{message}
+						reason={message.content}
+						{position}
+						{myDeviceId}
+					/>
 				{:else}
 					<Card
 						contentWrapPadding="px-2 py-(--message-padding-y)"
@@ -203,7 +212,7 @@
 	</div>
 {/snippet}
 
-{#if deleted}
+{#if deleted || isUnreadable(message.content)}
 	<div class="group flex justify-start">{@render bubble()}</div>
 {:else if isMobile}
 	<SwipeToReply {readOnly} {onReply} target={slideEl}

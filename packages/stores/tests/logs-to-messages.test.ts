@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { logsToMessages, opsInCausalOrder } from '../src/chats/messages-store';
-import type { SimplifiedOperation } from '../src/p2panda/simplified-types';
+import type {
+	SimplifiedOperation,
+	Unreadable,
+} from '../src/p2panda/simplified-types';
 import type { DeviceId, Hash } from '../src/p2panda/types';
 import { type ChatPayload, type Payload, hasBody } from '../src/types';
 
@@ -107,5 +110,55 @@ describe('logsToMessages under clock skew', () => {
 		const { replyQuote } = messages.reply;
 		assert.equal(replyQuote?.kind, 'content');
 		assert.equal(replyQuote?.text, 'text of target');
+	});
+});
+
+describe('logsToMessages with operations we can not decrypt', () => {
+	function atSeqNum(
+		op: SimplifiedOperation<Payload>,
+		seqNum: number,
+	): SimplifiedOperation<Payload> {
+		return { ...op, header: { ...op.header, seq_num: seqNum } };
+	}
+
+	function unreadable(
+		hash: Hash,
+		seqNum: number,
+		reason: Unreadable,
+	): SimplifiedOperation<Payload> {
+		const op = message(hash, FAST_CLOCK, BASE_TS + seqNum, 0);
+		return { ...atSeqNum(op, seqNum), body: undefined, unreadable: reason };
+	}
+
+	it('shows a placeholder saying why the message can not be read', () => {
+		const messages = logsToMessages(
+			opsInCausalOrder([
+				unreadable('waiting', 0, 'SecretMissing'),
+				atSeqNum(message('readable', FAST_CLOCK, BASE_TS + 1, 1), 1),
+				unreadable('corrupt', 2, 'DecryptionFailed'),
+			]),
+			{},
+			DEVICE_AGENTS,
+			DEVICE_NAMES,
+		);
+
+		assert.equal(messages['waiting'].content, 'awaiting-decryption');
+		assert.equal(messages['corrupt'].content, 'undecryptable');
+		assert.ok(hasBody(messages['readable'].content));
+	});
+
+	it('shows one placeholder for a run of unreadable operations', () => {
+		const messages = logsToMessages(
+			opsInCausalOrder([
+				unreadable('first', 0, 'SecretMissing'),
+				unreadable('second', 1, 'SecretMissing'),
+				unreadable('third', 2, 'SecretMissing'),
+			]),
+			{},
+			DEVICE_AGENTS,
+			DEVICE_NAMES,
+		);
+
+		assert.deepEqual(Object.keys(messages), ['first']);
 	});
 });
