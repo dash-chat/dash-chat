@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -81,6 +81,10 @@
 	let showEmojiPicker = $state(false);
 	let sending = false;
 	let loadingMedia = $state(false);
+	let pendingStages = $state(0);
+	let mediaBusy = $derived(loadingMedia || pendingStages > 0);
+	let unmounted = false;
+	onDestroy(() => (unmounted = true));
 
 	let showMediaPanel = $state(false);
 
@@ -177,7 +181,7 @@
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
 		if (!hasContent || sending) return false;
-		if (loadingMedia && media?.kind !== 'voice_note') return false;
+		if (mediaBusy && media?.kind !== 'voice_note') return false;
 		sending = true;
 		const message = value;
 		const draft = media;
@@ -222,31 +226,45 @@
 		oneFileAtATime: () => m.errorOneFileAtATime(),
 	};
 
-	/** Add files to the draft, toasting if a photo is damaged or a Signal
-	 * mixing rule was violated. */
+	/** Add files to the draft, leaving out damaged photos, and toast why
+	 * anything was left out. */
 	async function stage(files: FileList | File[]) {
-		const decodable = await dropUndecodablePhotos(files);
-		const result = ingestFiles(media, decodable);
-		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
-		if (result.media?.kind === 'photos') {
-			startPreparingPhotos(result.media.items);
-		}
-		media = result.media;
-		if (isMobile && media && !page.state.stagedMedia) {
-			pushState('', { stagedMedia: true });
+		pendingStages++;
+		try {
+			const picked = Array.from(files);
+			const decodable = await withoutUndecodablePhotos(picked);
+			if (unmounted) return;
+			const result = ingestFiles(media, decodable);
+			showStagingToast(result.error, picked.length - decodable.length);
+			if (result.media?.kind === 'photos') {
+				startPreparingPhotos(result.media.items);
+			}
+			media = result.media;
+			if (isMobile && media && !page.state.stagedMedia) {
+				pushState('', { stagedMedia: true });
+			}
+		} finally {
+			pendingStages--;
 		}
 	}
 
-	async function dropUndecodablePhotos(
-		files: FileList | File[],
-	): Promise<File[]> {
-		const picked = Array.from(files);
-		const decodable = await withoutUndecodablePhotos(picked);
-		const dropped = picked.length - decodable.length;
-		if (dropped > 0) {
-			showToast(m.errorUndecodablePhotos({ count: dropped }), 'error');
+	// One toast at a time: a rule error explains more than the damaged count.
+	function showStagingToast(
+		error: IngestError | undefined,
+		undecodable: number,
+	) {
+		if (error) {
+			showToast(ingestErrorMessages[error](), 'error');
+		} else if (undecodable > 0) {
+			showToast(m.errorUndecodablePhotos({ count: undecodable }), 'error');
 		}
-		return decodable;
+	}
+
+	function stageOrToast(files: FileList | File[]) {
+		stage(files).catch(e => {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to stage files', e);
+		});
 	}
 
 	async function stageWhenLoaded(
@@ -360,7 +378,7 @@
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
 		event.preventDefault();
-		stage(files);
+		stageOrToast(files);
 	}
 
 	// Test-only: the native recorder can’t capture in the headless e2e harness.
@@ -383,7 +401,7 @@
 	});
 </script>
 
-<MediaDropOverlay onFiles={stage} />
+<MediaDropOverlay onFiles={stageOrToast} />
 
 {#snippet emojiButton()}
 	<EmojiButton onClick={openEmojiPicker} />
@@ -505,12 +523,12 @@
 							class:ios-send-hidden={!drafting}
 							aria-hidden={!drafting}
 						>
-							<SendButton onSend={send} disabled={loadingMedia} />
+							<SendButton onSend={send} disabled={mediaBusy} />
 						</div>
 					{:else}
 						<div class="toggle-slot shrink-0">
 							<div class="toggle-child" class:toggle-hidden={!drafting}>
-								<SendButton onSend={send} disabled={loadingMedia} />
+								<SendButton onSend={send} disabled={mediaBusy} />
 							</div>
 							<div class="toggle-child" class:toggle-hidden={drafting}>
 								<StandaloneAttachButton

@@ -111,10 +111,6 @@ export function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
 
-/**
- * `files` without the photos the webview can't decode — damaged files the
- * recipient couldn't render either. Non-photo files pass through.
- */
 export async function withoutUndecodablePhotos(files: File[]): Promise<File[]> {
 	const decodable: File[] = [];
 	// Sequential: decoding a batch of full-size photos at once can exhaust
@@ -240,7 +236,26 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return { kind: 'file', file };
 }
 
-async function imageDimensions(
+const measuredDimensions = new WeakMap<
+	File,
+	Promise<{ width: number; height: number }>
+>();
+
+// Staging measures each photo to reject damaged ones; preparing it for send
+// measures it again whenever compression keeps the original file.
+function imageDimensions(
+	file: File,
+): Promise<{ width: number; height: number }> {
+	let dimensions = measuredDimensions.get(file);
+	if (!dimensions) {
+		dimensions = decodeDimensions(file);
+		dimensions.catch(() => measuredDimensions.delete(file));
+		measuredDimensions.set(file, dimensions);
+	}
+	return dimensions;
+}
+
+async function decodeDimensions(
 	file: File,
 ): Promise<{ width: number; height: number }> {
 	try {
