@@ -55,6 +55,7 @@ dashchat-utils = { workspace = true }
 sqlite-gate = { workspace = true }
 panic-policy = { workspace = true }
 opus-transcode = { workspace = true }
+text-avatar = { workspace = true }
 
 p2panda = { workspace = true }
 iroh = { workspace = true }
@@ -75,6 +76,7 @@ regex = "1"
 hex = "0.4.3"
 nanoid = "0"
 image = "0.25"
+base64 = "0.22"
 
 log = "0.4"
 netdev = "0.43"

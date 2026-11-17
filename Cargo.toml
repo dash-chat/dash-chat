@@ -34,6 +34,7 @@ netwatch-http-client = { path = "crates/netwatch-http-client" }
 mailbox-client = { path = "crates/mailbox-client" }
 mailboxes-manager = { path = "crates/mailboxes-manager" }
 opus-transcode = { path = "crates/opus-transcode" }
+text-avatar = { path = "crates/text-avatar" }
 tauri-plugin-sentry-reporting = { path = "crates/tauri-plugin-sentry-reporting" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }

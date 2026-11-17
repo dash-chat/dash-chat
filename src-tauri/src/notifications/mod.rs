@@ -1,4 +1,5 @@
 mod notified_operations_store;
+mod sender_avatar;
 
 #[cfg(any(mobile, test))]
 pub mod push_notifications;
@@ -277,9 +278,10 @@ async fn chat_message_notification(
         .map(|p| p.name.clone())
         .filter(|name| !name.is_empty())
         .or(qr_code_name);
-    let sender_avatar = sender_profile
-        .and_then(|p| p.avatar)
-        .filter(|s| s.starts_with("data:image/"));
+    let sender_avatar = sender_avatar::sender_avatar_image(
+        sender_profile.and_then(|p| p.avatar).as_deref(),
+        sender_name.as_deref(),
+    );
 
     let chat_route = if is_direct_chat {
         format!("/direct-chats/{}", topic)
@@ -553,9 +555,10 @@ async fn auth_control_op_notification(
         .as_ref()
         .map(|profile| profile.name.clone())
         .filter(|name| !name.is_empty());
-    let sender_avatar = sender_profile
-        .and_then(|profile| profile.avatar)
-        .filter(|avatar| avatar.starts_with("data:image/"));
+    let sender_avatar = sender_avatar::sender_avatar_image(
+        sender_profile.and_then(|profile| profile.avatar).as_deref(),
+        sender_name.as_deref(),
+    );
     let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
 
     // Signal writes the add into the group's thread, as a line from whoever

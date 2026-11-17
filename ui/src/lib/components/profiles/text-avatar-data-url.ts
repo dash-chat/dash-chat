@@ -1,5 +1,6 @@
 const AVATAR_DATA_URL_PREFIX = 'data:application/x-dashchat-avatar,';
 const TEXT_AVATAR_TYPE_NAME = 'TextAvatarData';
+// Notifications parse this format in Rust too: src-tauri/src/notifications/sender_avatar.rs.
 const TEXT_AVATAR_VERSION = '1';
 const COLOR_REGEX = /^#[0-9a-fA-F]{6}$/i;
 const TEXT_REGEX = /^[A-Z0-9]{1,3}$/;
