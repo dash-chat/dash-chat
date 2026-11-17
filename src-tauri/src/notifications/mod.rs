@@ -281,10 +281,8 @@ async fn chat_message_notification(
         .map(|p| p.name.clone())
         .filter(|name| !name.is_empty())
         .or(qr_code_name);
-    let (sender_avatar, sender_letter_tile) = notification_avatar::notification_avatar(
-        sender_profile.and_then(|p| p.avatar),
-        sender_name.as_deref(),
-    );
+    let (sender_avatar, sender_letter_tile) =
+        notification_avatar::notification_avatar(sender_profile);
 
     let chat_route = if is_direct_chat {
         format!("/direct-chats/{}", topic)
@@ -559,10 +557,8 @@ async fn auth_control_op_notification(
         .as_ref()
         .map(|profile| profile.name.clone())
         .filter(|name| !name.is_empty());
-    let (sender_avatar, sender_letter_tile) = notification_avatar::notification_avatar(
-        sender_profile.and_then(|profile| profile.avatar),
-        sender_name.as_deref(),
-    );
+    let (sender_avatar, sender_letter_tile) =
+        notification_avatar::notification_avatar(sender_profile);
     let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
 
     // Signal writes the add into the group's thread, as a line from whoever

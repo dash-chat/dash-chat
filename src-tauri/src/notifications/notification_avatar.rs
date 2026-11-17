@@ -1,3 +1,4 @@
+use dashchat_node::Profile;
 use tauri_plugin_notification::LetterTile;
 
 /// Keep in sync with `text-avatar-data-url.ts`.
@@ -8,14 +9,20 @@ const GENERIC_AVATAR_GREY: &str = "#8e8e93";
 const WHITE: &str = "#ffffff";
 
 /// The sender's photo as `large_icon_bytes`, or else, like Signal, what the
-/// app draws for them as `large_icon_letter_tile`.
+/// app draws for them as `large_icon_letter_tile`. Without their profile yet,
+/// the app draws a silhouette, not the initials of the name in their code.
 pub(super) fn notification_avatar(
-    avatar: Option<String>,
-    name: Option<&str>,
+    profile: Option<Profile>,
 ) -> (Option<String>, Option<LetterTile>) {
-    match avatar {
+    let Some(profile) = profile else {
+        return (None, Some(sender_letter_tile(None, None)));
+    };
+    match profile.avatar {
         Some(photo) if photo.starts_with("data:image/") => (Some(photo), None),
-        avatar => (None, Some(sender_letter_tile(avatar.as_deref(), name))),
+        avatar => (
+            None,
+            Some(sender_letter_tile(avatar.as_deref(), Some(&profile.name))),
+        ),
     }
 }
 
@@ -60,7 +67,7 @@ mod tests {
     #[test]
     fn keeps_a_photo() {
         let photo = "data:image/jpeg;base64,AAAA".to_string();
-        let (bytes, tile) = notification_avatar(Some(photo.clone()), Some("Bob"));
+        let (bytes, tile) = notification_avatar(Some(profile("Bob", Some(&photo))));
         assert_eq!(bytes, Some(photo));
         assert!(tile.is_none());
     }
@@ -99,7 +106,18 @@ mod tests {
     }
 
     #[test]
-    fn leaves_the_text_out_without_a_name() {
-        assert_eq!(sender_letter_tile(None, None).text, None);
+    fn draws_a_silhouette_while_waiting_for_the_profile() {
+        let (bytes, tile) = notification_avatar(None);
+        assert_eq!(bytes, None);
+        assert_eq!(tile.unwrap().text, None);
+    }
+
+    fn profile(name: &str, avatar: Option<&str>) -> Profile {
+        Profile {
+            name: name.to_string(),
+            surname: None,
+            avatar: avatar.map(str::to_string),
+            about: None,
+        }
     }
 }
