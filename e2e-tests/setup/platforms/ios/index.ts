@@ -34,7 +34,11 @@ import {
 } from '../../claims';
 import { deviceHasBuild, recordInstalled } from '../../device-installs';
 import { envWithoutWdioLoader } from '../../harness-env';
-import { lanHostAddress, nonInternalIpv4s } from '../../host-ip';
+import {
+	assertHostStillHolds,
+	lanHostAddress,
+	nonInternalIpv4s,
+} from '../../host-ip';
 import { E2E_NETWORK_ID } from '../../network-id';
 import { E2E_RELAY_URL } from '../../relay';
 import {
@@ -124,26 +128,6 @@ function detectHostIp(): string {
 	}
 	console.log(`[ios] baking mailbox host ip ${host.address} (${host.name})`);
 	return host.address;
-}
-
-/** Fail the moment the address baked into the app stops being ours.
- *
- *  The mailbox url is fixed at build time, so a DHCP lease moving the host mid
- *  run leaves every device pointed at an address nobody answers on. Nothing
- *  surfaces that: the apps just show their offline state and each cross-device
- *  wait burns its full timeout, so a run can rot for half an hour and the
- *  failures all look like unrelated sync bugs. */
-function assertBakedHostIpIsStillOurs(): void {
-	const baked = process.env._WDIO_IOS_HOST_IP;
-	if (baked === undefined) return;
-	const current = nonInternalIpv4s().map(({ address }) => address);
-	if (current.includes(baked)) return;
-	throw new Error(
-		`The mailbox url baked into the app points at ${baked}, which this host ` +
-			`no longer holds (now: ${current.join(', ') || 'no LAN address'}). The ` +
-			'devices cannot reach the mailbox, so every cross-device wait would ' +
-			'time out. Rebuild, or pin E2E_HOST_IP and rerun.',
-	);
 }
 
 function connectedDevices(): string[] {
@@ -796,7 +780,9 @@ export class IosPlatform implements AgentPlatform {
 	}
 
 	async beforeSession() {
-		assertBakedHostIpIsStillOurs();
+		const bakedHostIp = process.env._WDIO_IOS_HOST_IP;
+		if (bakedHostIp !== undefined)
+			assertHostStillHolds(bakedHostIp, 'mailbox url');
 		for (const logger of this.loggers.values()) logger.kill();
 		this.loggers.clear();
 		// No reinstall here: onPrepare installed the build once for the whole

@@ -42,6 +42,23 @@ function interfaceRank(name: string): number {
 	return nic === null ? 1000 : Number(nic[1]);
 }
 
+/** Fail the moment an address baked into the apps stops being the host's.
+ *
+ *  A url fixed at build time goes dead when a DHCP lease or a spec moving the
+ *  host's Wi-Fi changes its address mid run. Nothing surfaces that: the apps
+ *  just lose what they reach there and each cross-device wait burns its full
+ *  timeout, so a run can rot for half an hour and the failures all look like
+ *  unrelated sync bugs. */
+export function assertHostStillHolds(address: string, what: string): void {
+	const current = nonInternalIpv4s().map(h => h.address);
+	if (current.includes(address)) return;
+	throw new Error(
+		`The ${what} baked into the apps points at ${address}, which this host ` +
+			`no longer holds (now: ${current.join(', ') || 'no LAN address'}). The ` +
+			`devices cannot reach the ${what}. Rebuild, or pin E2E_HOST_IP and rerun.`,
+	);
+}
+
 /** The host's IPv4 on the LAN, which phones reach the host's servers at, or
  *  `null` when it has none. `E2E_HOST_IP` overrides the detection. */
 export function lanHostAddress(): HostAddress | null {

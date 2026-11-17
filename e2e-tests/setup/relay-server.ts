@@ -17,8 +17,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
+import { assertHostStillHolds } from './host-ip';
 import { exe, signalGroup } from './host-process';
-import { localRelayPort } from './relay';
+import { E2E_RELAY_URL, localRelayPort } from './relay';
 import { waitForPortListening } from './wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,6 @@ export async function startLocalRelay(): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
 }> {
-	mkdirSync(RELAY_DIR, { recursive: true });
 	const logger = startAgentLogger('relay', RELAY_LOG);
 	try {
 		return { proc: await spawnRelay(), logger };
@@ -48,6 +48,8 @@ export async function startLocalRelay(): Promise<{
  *  (wdio.conf.ts), so none runs with connectivity other than it was written
  *  for. */
 export async function ensureHealthyRelay(): Promise<void> {
+	const host = new URL(E2E_RELAY_URL).hostname;
+	if (host !== '127.0.0.1') assertHostStillHolds(host, 'relay url');
 	const pid = relayPid();
 	if (isAlive(pid)) {
 		signalGroup(pid, 'SIGCONT');
@@ -71,6 +73,7 @@ async function spawnRelay(): Promise<ChildProcess> {
 		);
 	}
 	const port = localRelayPort();
+	mkdirSync(RELAY_DIR, { recursive: true });
 	const logFd = openSync(RELAY_LOG, 'a');
 	const proc = spawn(bin, ['--addr', `0.0.0.0:${port}`], {
 		cwd: ROOT,

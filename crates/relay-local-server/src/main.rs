@@ -8,8 +8,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[command(name = "relay-local-server")]
 #[command(about = "A plain-HTTP iroh relay for the e2e harness, so a run controls whether peers can reach each other through a relay", long_about = None)]
 struct Args {
-    /// Address to serve on
-    #[arg(long, default_value = "0.0.0.0:3340")]
+    /// Address to serve on (the e2e harness's relay port, past the range a
+    /// checkout's mailbox and push ports come from)
+    #[arg(long, default_value = "0.0.0.0:5400")]
     addr: SocketAddr,
 }
 
@@ -34,8 +35,9 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => server.shutdown().await?,
-        // Already stopped: there is nothing left to shut down.
-        _ = server.join() => {}
+        // Stopped on its own: say why, and exit non-zero so whoever spawned it
+        // can tell.
+        result = server.join() => anyhow::bail!("relay stopped: {result:?}"),
     }
     Ok(())
 }

@@ -14,7 +14,11 @@ const PUBLIC_RELAY_URL = 'https://e90mqanwh7cec3zww.aps1.relay.iroh-svc.com/';
 export function localRelayPort(): number {
 	// A relay an interrupted run left behind would push this run onto the next
 	// port, and the run after back again, each a rebuild of every app.
-	if (process.env._WDIO_RELAY_PORT === undefined) killLeftoverRelay();
+	if (
+		process.env._WDIO_RELAY_PORT === undefined &&
+		process.env.WDIO_WORKER_ID === undefined
+	)
+		killLeftoverRelay();
 	return allocatePinnedPortFrom('_WDIO_RELAY_PORT', 5400);
 }
 
@@ -22,7 +26,9 @@ export function localRelayPort(): number {
  *  the production one (`RELAY_URL` in dashchat-utils). Every agent bakes the
  *  same one, since a node registers its peers under its own relay: with a
  *  local mailbox it is the run's own relay at the host's LAN address, which
- *  phones and desktops alike reach, so a spec can take it down. */
+ *  phones and desktops alike reach, so a spec can take it down. That relay is
+ *  plain HTTP: only runs against a remote mailbox go through an HTTPS relay,
+ *  as production does. */
 export const E2E_RELAY_URL = pinnedRelayUrl();
 
 /** Worked out once, by the launcher, and pinned in the env its workers
