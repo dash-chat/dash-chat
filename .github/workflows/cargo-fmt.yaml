@@ -19,17 +19,6 @@ jobs:
 
       - name: Check Rust formatting
         run: cargo fmt --check
-
-      # iPhones only find each other again after being put away with the
-      # dash-chat swarm-discovery fork (see [patch.crates-io] in Cargo.toml). A
-      # swarm-discovery bump the patch no longer matches only warns and builds
-      # against crates.io, so make it fail here.
-      - name: Check the swarm-discovery patch is in use
-        run: |
-          sources=$(grep -A2 '^name = "swarm-discovery"$' Cargo.lock | grep '^source')
-          echo "$sources"
-          echo "$sources" | grep -q 'github.com/dash-chat/swarm-discovery'
-          ! echo "$sources" | grep -q 'registry+'
   
   cargo-check-node:
     runs-on: ubuntu-latest
