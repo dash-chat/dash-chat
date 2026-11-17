@@ -89,6 +89,12 @@ tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-w
 # installs the context from JNI_OnLoad and tao 0.37 installs it again when the
 # activity is created.
 ndk-context = { git = "https://github.com/dash-chat/ndk-context", rev = "4ed51f9e864f4b380fb4a495637543a785a9d115" }
+# swarm-discovery 0.6.4 + a guardian that rebinds a receiver's socket when it
+# fails instead of stopping discovery for good: iOS tears down every socket of
+# a suspended app once the phone may idle-sleep. Used by iroh's mDNS lookup and
+# local-hub-discovery (dash-chat/swarm-discovery branch
+# dashchat-rebind-defunct-sockets).
+swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "b00611c4d2b2364e421b4fc3beed9b6f6bb7b268" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
