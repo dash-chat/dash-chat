@@ -17,6 +17,12 @@ impl Node {
         // Construct a node actor command.
         let payload: Payload = payload.into();
 
+        // A read-only node (the push extension) must never land here: what it
+        // publishes under the shared key the running app never processes.
+        if self.config.read_only {
+            tracing::warn!(topic = ?topic.aliased(), payload = ?payload.aliased(), "read-only node publishing an operation");
+        }
+
         debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
         let command = Command::Publish {
