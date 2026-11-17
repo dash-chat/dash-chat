@@ -68,30 +68,27 @@ export async function requestPermission(): Promise<RecentPhotosPermission> {
 export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 	const result = await getImages(imagesRequest(limit));
 	const items = result?.items ?? [];
-	const photos = await Promise.all(items.map(toRecentPhoto));
-	return photos.filter(photo => photo !== undefined);
+	const photos = await Promise.allSettled(items.map(toRecentPhoto));
+	// An image Android can't make a thumbnail of (a damaged file, for one) is
+	// left out instead of failing the whole strip.
+	return photos.flatMap(photo =>
+		photo.status === 'fulfilled' ? [photo.value] : [],
+	);
 }
 
 export async function readPhotoBytes(contentUri: string): Promise<Uint8Array> {
 	return AndroidFs.readFile(uri(contentUri));
 }
 
-/** `undefined` for an image Android can't make a thumbnail of (a damaged
- * file, for one), so it is left out instead of failing the whole strip. */
 async function toRecentPhoto(
 	item: ImageInfo,
 	index: number,
-): Promise<RecentPhoto | undefined> {
-	let dataUrl: string | null;
-	try {
-		dataUrl = await AndroidFs.getThumbnailAsDataURL(
-			uri(item.contentUri),
-			THUMBNAIL_PX,
-			THUMBNAIL_PX,
-		);
-	} catch {
-		return undefined;
-	}
+): Promise<RecentPhoto> {
+	const dataUrl = await AndroidFs.getThumbnailAsDataURL(
+		uri(item.contentUri),
+		THUMBNAIL_PX,
+		THUMBNAIL_PX,
+	);
 	return {
 		id: item.contentUri,
 		thumbnail: dataUrl ?? '',
