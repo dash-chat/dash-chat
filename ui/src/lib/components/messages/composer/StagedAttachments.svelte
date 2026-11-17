@@ -3,7 +3,8 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose } from '@mdi/js';
-	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import { MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import type { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from '$lib/components/StagedThumb.svelte';
@@ -11,27 +12,18 @@
 	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
-		media: DraftMedia | undefined;
+		draft: MediaDraft;
 		loadingMedia: boolean;
 		onAddMore: () => void;
 	}
 
-	let { media = $bindable(), loadingMedia, onAddMore }: Props = $props();
+	let { draft, loadingMedia, onAddMore }: Props = $props();
+
+	const media = $derived(draft.media);
 
 	const showClearAll = $derived(
 		media?.kind === 'photos' && media.items.length > 1,
 	);
-
-	function clear() {
-		media = undefined;
-	}
-
-	function removePhoto(index: number) {
-		if (!media || media.kind !== 'photos') return;
-		const remaining = media.items.filter((_, i) => i !== index);
-		media =
-			remaining.length > 0 ? { kind: 'photos', items: remaining } : undefined;
-	}
 </script>
 
 {#if media && media.kind !== 'voice_note'}
@@ -39,7 +31,7 @@
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">
 				<IconButton
-					onClick={clear}
+					onClick={() => draft.clear()}
 					label={m.removeAllAttachments()}
 					testid="message-input-clear-attachments"
 					class="!h-7 !w-7"
@@ -53,12 +45,12 @@
 				{#each media.items as photo, i (photo)}
 					<StagedThumb
 						removeLabel={m.removeAttachment()}
-						onRemove={() => removePhoto(i)}
+						onRemove={() => draft.removePhoto(i)}
 						removeTestId="message-input-remove-attachment-{i}"
 						class="h-[120px] w-[120px]"
 					>
 						<img
-							use:objectUrl={photo}
+							use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 							alt={photo.name}
 							class="block h-full w-full object-cover"
 						/>
@@ -76,7 +68,7 @@
 			{:else}
 				<StagedThumb
 					removeLabel={m.removeAttachment()}
-					onRemove={clear}
+					onRemove={() => draft.clear()}
 					removeTestId="message-input-remove-attachment-0"
 					class="flex h-[120px] w-[120px] flex-col items-center justify-center gap-2 p-2"
 				>

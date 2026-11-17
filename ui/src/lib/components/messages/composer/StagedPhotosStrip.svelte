@@ -4,45 +4,43 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiTrashCanOutline, mdiPlusBoxOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import { MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import type { OutgoingPhoto } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
 	import IconButton from '$lib/components/IconButton.svelte';
 
 	interface Props {
-		/** The staged draft. Only the `photos` variant is rendered. */
-		media: DraftMedia | undefined;
+		photos: OutgoingPhoto[];
 		/** Index of the currently shown photo. */
 		index?: number;
 		loadingMedia: boolean;
 		onAddMore: () => void;
+		onRemove: (index: number) => void;
 		/** Called when the last photo is removed and nothing remains to show. */
 		onClose: () => void;
 	}
 
 	let {
-		media = $bindable(),
+		photos,
 		index = $bindable(0),
 		loadingMedia,
 		onAddMore,
+		onRemove,
 		onClose,
 	}: Props = $props();
-
-	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
 	}
 
 	async function removePhoto(i: number) {
-		if (media?.kind !== 'photos') return;
-		const remaining = media.items.filter((_, j) => j !== i);
-		if (remaining.length === 0) {
+		if (photos.length <= 1) {
 			onClose();
 			return;
 		}
-		media = { kind: 'photos', items: remaining };
+		onRemove(i);
 		await tick();
-		index = Math.min(index, remaining.length - 1);
+		index = Math.min(index, photos.length - 1);
 	}
 </script>
 
@@ -64,7 +62,7 @@
 					onclick={() => select(i)}
 				>
 					<img
-						use:objectUrl={photo}
+						use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 						alt={photo.name}
 						class="block h-full w-full object-cover"
 					/>

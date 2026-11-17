@@ -2,21 +2,16 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
 	import { onDestroy, onMount } from 'svelte';
+	import { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
-		type DraftMedia,
-		type IngestError,
+		type StagingError,
 		capturePhoto,
 		draftToMedia,
-		ingestFiles,
 		pickMedia,
-		startPreparingPhotos,
-		findDamagedPhotos,
-		addedPhotos,
-		type IngestResult,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -77,16 +72,15 @@
 
 	const theme = $derived(useTheme());
 
-	let media: DraftMedia | undefined = $state(undefined);
+	const mediaDraft = new MediaDraft(openStagedMediaPage);
+	onDestroy(() => mediaDraft.clear());
+	const media = $derived(mediaDraft.media);
 	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let sending = false;
 	let loadingMedia = $state(false);
-	let pendingStages = $state(0);
-	let mediaBusy = $derived(loadingMedia || pendingStages > 0);
-	let unmounted = false;
-	onDestroy(() => (unmounted = true));
+	let mediaBusy = $derived(loadingMedia || mediaDraft.busy);
 
 	let showMediaPanel = $state(false);
 
@@ -102,7 +96,7 @@
 	 * new message. Media attachments are disabled while editing. Asks to
 	 * discard first when a draft (text or staged media) would be lost. */
 	export function editMessage(message: Message) {
-		if (!editing && hasContent) {
+		if (!editing && (hasContent || mediaDraft.busy)) {
 			discardDialog?.confirm(message);
 			return;
 		}
@@ -118,7 +112,7 @@
 	}
 
 	function discardDraftAndEdit(message: Message) {
-		media = undefined;
+		mediaDraft.clear();
 		startEdit(message);
 	}
 
@@ -186,10 +180,10 @@
 		if (mediaBusy && media?.kind !== 'voice_note') return false;
 		sending = true;
 		const message = value;
-		const draft = media;
+		const stagedMedia = media;
 		const replyTo = replying;
 		try {
-			const wireMedia = draft ? await draftToMedia(draft) : null;
+			const wireMedia = stagedMedia ? await draftToMedia(stagedMedia) : null;
 			const hash = await store.sendMessage({
 				message,
 				media: wireMedia,
@@ -198,9 +192,7 @@
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
-			if (media === draft) {
-				media = undefined;
-			}
+			if (stagedMedia) mediaDraft.discardSent(stagedMedia);
 			if (replying === replyTo) replying = null;
 			onSent?.(hash);
 			return true;
@@ -222,55 +214,31 @@
 		}
 	}
 
-	const ingestErrorMessages: Record<IngestError, () => string> = {
+	const stagingErrorMessages: Record<StagingError, () => string> = {
 		tooMany: () => m.errorTooManyAttachments(),
 		filesWithPhotos: () => m.errorFilesWithPhotos(),
 		oneFileAtATime: () => m.errorOneFileAtATime(),
 	};
 
-	/** Add files to the draft, leaving out damaged photos, and toast why
-	 * anything was left out. */
+	/** Add files to the draft and toast why anything was left out. */
 	async function stage(files: FileList | File[]) {
-		const picked = Array.from(files);
-		const planned = ingestFiles(media, picked);
-		const candidates = addedPhotos(media, planned.media);
-		if (candidates.length === 0) {
-			commitStaging(planned, 0);
-			return;
-		}
-		pendingStages++;
-		try {
-			const damaged = await findDamagedPhotos(candidates);
-			if (unmounted) return;
-			// Only checked photos go in, even if the draft gained room meanwhile.
-			const result = ingestFiles(
-				media,
-				candidates.filter(f => !damaged.has(f)),
-			);
-			const error = planned.error ?? result.error;
-			commitStaging({ media: result.media, error }, damaged.size);
-		} finally {
-			pendingStages--;
-		}
-	}
-
-	function commitStaging(result: IngestResult, damaged: number) {
-		showStagingToast(result.error, damaged);
-		if (result.media?.kind === 'photos') {
-			startPreparingPhotos(result.media.items);
-		}
-		media = result.media;
-		if (isMobile && media && !page.state.stagedMedia) {
-			pushState('', { stagedMedia: true });
-		}
-	}
-
-	// One toast at a time: a rule error explains more than the damaged count.
-	function showStagingToast(error: IngestError | undefined, damaged: number) {
+		const { error, undecodablePhotos } = await mediaDraft.add(
+			Array.from(files),
+		);
+		// One toast at a time: a rule error explains more than the damaged count.
 		if (error) {
-			showToast(ingestErrorMessages[error](), 'error');
-		} else if (damaged > 0) {
-			showToast(m.errorUndecodablePhotos({ count: damaged }), 'error');
+			showToast(stagingErrorMessages[error](), 'error');
+		} else if (undecodablePhotos > 0) {
+			showToast(
+				m.errorUndecodablePhotos({ count: undecodablePhotos }),
+				'error',
+			);
+		}
+	}
+
+	function openStagedMediaPage() {
+		if (isMobile && !page.state.stagedMedia) {
+			pushState('', { stagedMedia: true });
 		}
 	}
 
@@ -348,7 +316,7 @@
 			media.kind !== 'voice_note' &&
 			!page.state.stagedMedia
 		)
-			media = undefined;
+			mediaDraft.clear();
 	});
 
 	$effect(() => {
@@ -362,7 +330,7 @@
 	let sendingVoiceNote = $state(false);
 
 	const voice = new VoiceRecorder(async draft => {
-		media = { kind: 'voice_note', voice: draft };
+		mediaDraft.setVoiceNote(draft);
 		sendingVoiceNote = true;
 		try {
 			await send();
@@ -399,15 +367,12 @@
 	onMount(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent).detail;
-			media = {
-				kind: 'voice_note',
-				voice: {
-					bytes: new Uint8Array(detail.bytes),
-					mimeType: detail.mimeType ?? 'audio/wav',
-					durationMs: detail.durationMs,
-					waveform: new Uint8Array(detail.waveform),
-				},
-			};
+			mediaDraft.setVoiceNote({
+				bytes: new Uint8Array(detail.bytes),
+				mimeType: detail.mimeType ?? 'audio/wav',
+				durationMs: detail.durationMs,
+				waveform: new Uint8Array(detail.waveform),
+			});
 		};
 		window.addEventListener('test-inject-voice-message', handler);
 		return () =>
@@ -475,7 +440,7 @@
 	>
 		{#if !editing && !isMobile}
 			<StagedAttachments
-				bind:media
+				draft={mediaDraft}
 				loadingMedia={mediaBusy}
 				onAddMore={pickPhotos}
 			/>
@@ -586,7 +551,7 @@
 
 {#if isMobile && media && page.state.stagedMedia}
 	<StagedMediaPage
-		bind:media
+		draft={mediaDraft}
 		bind:value
 		{destinationName}
 		loadingMedia={mediaBusy}

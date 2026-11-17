@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
-	import { type DraftMedia } from '$lib/utils/media';
+	import type { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
 	import { isAndroid, isIos } from '$lib/utils/environment';
 	import { lightSystemBars } from '$lib/actions/light-system-bars';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
@@ -20,7 +20,7 @@
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface Props {
-		media: DraftMedia | undefined;
+		draft: MediaDraft;
 		value?: string;
 		/** Name of the chat the media will be sent to, shown in the header. */
 		destinationName?: string;
@@ -31,7 +31,7 @@
 	}
 
 	let {
-		media = $bindable(),
+		draft,
 		value = $bindable(''),
 		destinationName,
 		loadingMedia,
@@ -43,6 +43,7 @@
 	let index = $state(0);
 	let showEmojiPicker = $state(false);
 
+	const media = $derived(draft.media);
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 	const ariaLabel = $derived(
 		media?.kind === 'file' ? media.file.name : (photos[index]?.name ?? ''),
@@ -116,7 +117,7 @@
 		</div>
 
 		{#if media?.kind === 'photos'}
-			<StagedPhotosCarousel bind:media bind:index />
+			<StagedPhotosCarousel {photos} bind:index />
 		{:else if media?.kind === 'file'}
 			<div
 				class="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center"
@@ -139,8 +140,9 @@
 	>
 		{#if media?.kind === 'photos'}
 			<StagedPhotosStrip
-				bind:media
+				{photos}
 				bind:index
+				onRemove={i => draft.removePhoto(i)}
 				{loadingMedia}
 				{onAddMore}
 				{onClose}

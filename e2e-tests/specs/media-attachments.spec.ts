@@ -178,13 +178,32 @@ describe('Media attachments', () => {
 
 	it('drops a damaged photo when staging, keeping the valid ones', async () => {
 		const composer = agent1.directChatPage.composer;
-		await composer.pasteDamagedAndValidPhoto('broken', 'survivor');
+		await composer.pasteDamagedPhotos(['broken'], ['survivor']);
 		await agent1.toast.expectMessage(
 			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
 		);
 		await composer.expectStagedPhotoCount(1);
 		await composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('survivor');
+	});
+
+	it('counts every damaged photo in the toast', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['broken-1', 'broken-2'], ['kept']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 2 }),
+		);
+		await composer.expectStagedPhotoCount(1);
+		await composer.removeDraft();
+	});
+
+	it('stages nothing when the only photo is damaged', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['alone']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
+		);
+		expect(await composer.hasMediaPreview()).toBe(false);
 	});
 
 	it('stages dropped images, appending to the draft', async () => {

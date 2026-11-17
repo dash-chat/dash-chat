@@ -268,28 +268,32 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
-	/** Paste a damaged `${damagedLabel}.jpg` (a JPEG header with no image
-	 * data) together with a valid `${validLabel}.png`. Doesn't wait for anything
-	 * to stage: the composer is expected to drop the damaged one. */
-	async pasteDamagedAndValidPhoto(
-		damagedLabel: string,
-		validLabel: string,
+	/** Paste one batch of damaged `${label}.jpg` photos (a JPEG header with no
+	 * image data) followed by valid `${label}.png` ones. Doesn't wait for
+	 * anything to stage: the composer is expected to drop the damaged ones. */
+	async pasteDamagedPhotos(
+		damagedLabels: string[],
+		validLabels: string[] = [],
 	): Promise<void> {
 		await this.messageInput.waitForExist();
 		await this.agent.execute(
-			(pngBytes: number[], damaged: string, valid: string) => {
+			(pngBytes: number[], damaged: string[], valid: string[]) => {
 				window.__test.pasteFiles([
-					{
-						name: `${damaged}.jpg`,
+					...damaged.map(name => ({
+						name: `${name}.jpg`,
 						mimeType: 'image/jpeg',
 						bytes: [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46],
-					},
-					{ name: `${valid}.png`, mimeType: 'image/png', bytes: pngBytes },
+					})),
+					...valid.map(name => ({
+						name: `${name}.png`,
+						mimeType: 'image/png',
+						bytes: pngBytes,
+					})),
 				]);
 			},
 			TINY_PNG_BYTES,
-			damagedLabel,
-			validLabel,
+			damagedLabels,
+			validLabels,
 		);
 	}
 
