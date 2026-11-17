@@ -64,7 +64,7 @@
 
 	<UpdaterBanner />
 
-	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+	<AllChats class="flex min-h-[70vh] flex-col pb-22"></AllChats>
 
 	{#if !isWideScreen.value}
 		<div
