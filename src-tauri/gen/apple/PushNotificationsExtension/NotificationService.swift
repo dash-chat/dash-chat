@@ -117,6 +117,7 @@ class NotificationService: UNNotificationServiceExtension {
         let letterTileText = notification_large_icon_letter_tile_text(n).asString()
         let letterTileBackgroundColor = notification_large_icon_letter_tile_background_color(n).asString()
         let letterTileTextColor = notification_large_icon_letter_tile_text_color(n).asString()
+        let hasConversationStyle = notification_has_conversation_style(n)
         let conversationSenderId = notification_conversation_sender_id(n).asString()
         let conversationTitle = notification_conversation_title(n).asString()
         let recipientCount = Int(notification_conversation_recipient_count(n))
@@ -150,7 +151,7 @@ class NotificationService: UNNotificationServiceExtension {
         // body + route, on a chat message; anything else takes the legacy
         // attachment path, as does an intent the system rejects.
         if #available(iOS 15.0, *),
-           conversationSenderId?.isEmpty == false || conversationTitle?.isEmpty == false,
+           hasConversationStyle,
            let title, !title.isEmpty,
            let body, !body.isEmpty,
            let route, !route.isEmpty {
