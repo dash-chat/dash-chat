@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { mdiAccountOutline } from '@mdi/js';
 	import type { Profile } from 'dash-chat-stores';
 	import Avatar from './Avatar.svelte';
 
@@ -19,7 +20,7 @@
 <Avatar
 	image={profile?.avatar}
 	initials={profile?.name.slice(0, 2)}
-	waitingForProfile={!profile}
+	fallbackIcon={profile ? undefined : mdiAccountOutline}
 	{size}
 	{style}
 	{testId}
