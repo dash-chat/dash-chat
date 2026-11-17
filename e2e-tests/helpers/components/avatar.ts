@@ -1,11 +1,10 @@
 import { TestHelper } from '../pages/test-helper';
-import { tid } from '../selectors';
 
 /** An avatar rendered by `wa-avatar`, wherever in the app it appears. */
 export class Avatar extends TestHelper {
-	constructor(agent: WebdriverIO.Browser, hostTestId: string) {
+	constructor(agent: WebdriverIO.Browser, hostSelector: string) {
 		super(agent);
-		this.selector = `${tid(hostTestId)} wa-avatar`;
+		this.selector = `${hostSelector} wa-avatar`;
 	}
 
 	readonly selector: string;
@@ -32,18 +31,23 @@ export class Avatar extends TestHelper {
 		return src!;
 	}
 
+	/** `initials` is a non-reflecting property of `wa-avatar`, so it is read as one. */
 	async initials(): Promise<string | null> {
-		return this.agent.execute(
-			(sel: string) =>
-				document.querySelector(sel)?.getAttribute('initials') ?? null,
-			this.selector,
-		);
+		return this.agent.execute((sel: string) => {
+			const avatar = document.querySelector(sel) as
+				| (Element & { initials?: string })
+				| null;
+			return avatar?.initials || null;
+		}, this.selector);
 	}
 
+	/** True when `wa-avatar` renders the icon the app slotted in, not an image, initials or its own default glyph. */
 	async showsFallbackIcon(): Promise<boolean> {
-		return this.agent.execute(
-			(sel: string) => !!document.querySelector(`${sel} wa-icon[slot="icon"]`),
-			this.selector,
-		);
+		return this.agent.execute((sel: string) => {
+			const slot = document
+				.querySelector(sel)
+				?.shadowRoot?.querySelector<HTMLSlotElement>('slot[name="icon"]');
+			return (slot?.assignedElements().length ?? 0) > 0;
+		}, this.selector);
 	}
 }

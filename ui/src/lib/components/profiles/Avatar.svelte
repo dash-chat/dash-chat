@@ -8,7 +8,6 @@
 	import { mdiAccountOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { TextAvatarData } from './text-avatar-data-url';
-	import type { Snippet } from 'svelte';
 
 	let {
 		waitingForProfile,
@@ -20,7 +19,6 @@
 		style,
 		id,
 		testId,
-		children,
 	}: {
 		waitingForProfile?: boolean | undefined;
 		image?: string | undefined;
@@ -31,7 +29,6 @@
 		style?: string | undefined;
 		id?: string | undefined;
 		testId?: string | undefined;
-		children?: Snippet | undefined;
 	} = $props();
 
 	const textAvatarData = $derived(TextAvatarData.deserialize(image));
@@ -44,9 +41,7 @@
 	const avatarInitials = $derived(
 		waitingForProfile
 			? undefined
-			: textAvatarData?.text ||
-					(fallbackIcon ? undefined : initials) ||
-					undefined,
+			: textAvatarData?.text || initials || undefined,
 	);
 	const sizeValue = $derived(
 		size !== undefined
@@ -92,6 +87,5 @@
 				style="font-size: calc(var(--size, 3rem) * 0.5)"
 			></wa-icon>
 		{/if}
-		{@render children?.()}
 	</wa-avatar>
 </span>
