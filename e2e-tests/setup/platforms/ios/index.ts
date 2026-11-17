@@ -12,7 +12,7 @@ import {
 	rmSync,
 	statSync,
 } from 'node:fs';
-import { networkInterfaces, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,7 @@ import {
 } from '../../claims';
 import { deviceHasBuild, recordInstalled } from '../../device-installs';
 import { envWithoutWdioLoader } from '../../harness-env';
-import { lanHostIp } from '../../host-ip';
+import { lanHostAddress, nonInternalIpv4s } from '../../host-ip';
 import { E2E_NETWORK_ID } from '../../network-id';
 import { E2E_RELAY_URL } from '../../relay';
 import {
@@ -112,20 +112,18 @@ function assertIosToolsAvailable() {
  *  picking a wrong-but-plausible one costs a whole run: every cross-device
  *  assertion times out with the app quietly showing its offline state. */
 function detectHostIp(): string {
-	const ip = lanHostIp();
-	if (ip === null) {
-		const seen = Object.entries(networkInterfaces())
-			.flatMap(([name, addrs]) => (addrs ?? []).map(addr => ({ name, addr })))
-			.filter(({ addr }) => addr.family === 'IPv4' && !addr.internal)
-			.map(f => `${f.name}=${f.addr.address}`)
+	const host = lanHostAddress();
+	if (host === null) {
+		const seen = nonInternalIpv4s()
+			.map(({ name, address }) => `${name}=${address}`)
 			.join(', ');
 		throw new Error(
 			'No private LAN IPv4 for the iOS devices to reach the mailbox on — ' +
 				`set E2E_HOST_IP. Non-internal IPv4 seen: ${seen || 'none'}`,
 		);
 	}
-	console.log(`[ios] baking mailbox host ip ${ip}`);
-	return ip;
+	console.log(`[ios] baking mailbox host ip ${host.address} (${host.name})`);
+	return host.address;
 }
 
 /** Fail the moment the address baked into the app stops being ours.
@@ -138,10 +136,7 @@ function detectHostIp(): string {
 function assertBakedHostIpIsStillOurs(): void {
 	const baked = process.env._WDIO_IOS_HOST_IP;
 	if (baked === undefined) return;
-	const current = Object.values(networkInterfaces())
-		.flatMap(addrs => addrs ?? [])
-		.filter(addr => addr.family === 'IPv4' && !addr.internal)
-		.map(addr => addr.address);
+	const current = nonInternalIpv4s().map(({ address }) => address);
 	if (current.includes(baked)) return;
 	throw new Error(
 		`The mailbox url baked into the app points at ${baked}, which this host ` +
@@ -241,8 +236,9 @@ export function killIosPushExtension(udid: string): void {
 }
 
 /** How many times [`backgroundIosApp`] backgrounds the app before giving up on
- *  iOS reclaiming its sockets. */
-const RECLAIM_ATTEMPTS = 4;
+ *  iOS reclaiming its sockets. Each costs up to a minute (the reclaim wait and
+ *  a runner restart), which spec timeouts have to leave room for. */
+const RECLAIM_ATTEMPTS = 3;
 /** What the transition into the background gets before the runner goes: iOS
  *  holds the phone awake for about a second around it. */
 const BACKGROUND_TRANSITION_MS = 1_500;
@@ -273,6 +269,8 @@ export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
 	// in it once the app is back on screen, as after a plain home-button press.
 	const onWebview = await isOnWebview(b);
 	for (let attempt = 1; attempt <= RECLAIM_ATTEMPTS; attempt++) {
+		// Not waited on to attach: the reclaim comes after the runner is killed,
+		// well over a second later.
 		const reclaim = watchRunningboardd(udid, SOCKETS_RECLAIMED);
 		let reclaimed: string | null;
 		try {

@@ -10899,7 +10899,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "swarm-discovery"
 version = "0.6.4"
-source = "git+https://github.com/dash-chat/swarm-discovery?rev=b00611c4d2b2364e421b4fc3beed9b6f6bb7b268#b00611c4d2b2364e421b4fc3beed9b6f6bb7b268"
+source = "git+https://github.com/dash-chat/swarm-discovery?rev=b6cbbc61445132fbc326ec4b9181576fdd884843#b6cbbc61445132fbc326ec4b9181576fdd884843"
 dependencies = [
  "acto",
  "hickory-proto",

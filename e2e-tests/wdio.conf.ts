@@ -49,7 +49,7 @@ import {
 	pushTestingEnabled,
 	startLocalPushServer,
 } from './setup/push-server';
-import { resumeRelay, startLocalRelay } from './setup/relay-server';
+import { ensureHealthyRelay, startLocalRelay } from './setup/relay-server';
 import { specAgents } from './setup/setup-agents';
 import {
 	type PhonePlatformName,
@@ -355,8 +355,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		expect.extend(notificationMatchers);
 		killLeftoverLocalHubs();
 		await ensureHealthyMailbox();
-		// A spec that took the relay down does not hand it down to the next one.
-		if (!isRemoteMailbox()) resumeRelay();
+		if (!isRemoteMailbox()) await ensureHealthyRelay();
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes

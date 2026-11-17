@@ -26,12 +26,37 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const RELAY_DIR = path.join(ROOT, '.dbs', 'e2e', 'relay');
 const RELAY_INFO_PATH = path.join(ROOT, '.dbs', 'e2e', 'relay-info.json');
 
-/** Spawn the relay in its own process group on every interface, wait until it
- *  accepts connections, and record its pid for the spec helpers below. */
+const RELAY_LOG = path.join(RELAY_DIR, 'relay.log');
+
+/** Start the run's relay and echo its log, for wdio.conf's `onPrepare`. */
 export async function startLocalRelay(): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
 }> {
+	mkdirSync(RELAY_DIR, { recursive: true });
+	const logger = startAgentLogger('relay', RELAY_LOG);
+	const proc = await spawnRelay();
+	return { proc, logger };
+}
+
+/** Back to a running relay, whatever a spec left it in: resumed if it was
+ *  suspended, started again if it died. Every spec file starts here
+ *  (wdio.conf.ts), so none runs with connectivity other than it was written
+ *  for. */
+export async function ensureHealthyRelay(): Promise<void> {
+	const pid = relayPid();
+	if (isAlive(pid)) {
+		signalGroup(pid, 'SIGCONT');
+		return;
+	}
+	console.error(`[relay] pid ${pid} is gone; starting the relay again`);
+	await spawnRelay();
+}
+
+/** Spawn the relay in its own process group on every interface, wait until it
+ *  accepts connections, and record its pid for the helpers here. Its output
+ *  goes to the log file `startLocalRelay` echoes. */
+async function spawnRelay(): Promise<ChildProcess> {
 	// The prebuilt binary (built by wdio.conf alongside the mailbox server):
 	// `cargo run` here could rebuild with another toolchain.
 	const bin = path.join(ROOT, 'target', 'debug', exe('relay-local-server'));
@@ -41,24 +66,32 @@ export async function startLocalRelay(): Promise<{
 				`it) or 'cargo build -p relay-local-server'`,
 		);
 	}
-	mkdirSync(RELAY_DIR, { recursive: true });
-	const logFile = path.join(RELAY_DIR, 'relay.log');
-	const logger = startAgentLogger('relay', logFile);
 	const port = localRelayPort();
-	const logFd = openSync(logFile, 'a');
+	const logFd = openSync(RELAY_LOG, 'a');
 	const proc = spawn(bin, ['--addr', `0.0.0.0:${port}`], {
 		cwd: ROOT,
 		stdio: ['ignore', logFd, logFd],
 		detached: true,
 	});
 	closeSync(logFd);
+	// A relay respawned from a spec worker outlives it.
+	proc.unref();
 	proc.on('exit', (code, signal) => {
 		console.error(`[relay] EXITED code=${code} signal=${signal}`);
 	});
 	await waitForPortListening(port);
 	writeFileSync(RELAY_INFO_PATH, JSON.stringify({ pid: proc.pid }));
 	console.log(`Relay ready on port ${port} (pid=${proc.pid})`);
-	return { proc, logger };
+	return proc;
+}
+
+function isAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function relayPid(): number {
@@ -74,13 +107,4 @@ function relayPid(): number {
 /** Suspend the relay, so connections through it hang. */
 export function suspendRelay(): void {
 	signalGroup(relayPid(), 'SIGSTOP');
-}
-
-/** Resume a relay [`suspendRelay`] suspended. */
-export function resumeRelay(): void {
-	try {
-		signalGroup(relayPid(), 'SIGCONT');
-	} catch (err) {
-		console.error(`[relay] could not resume the relay: ${String(err)}`);
-	}
 }

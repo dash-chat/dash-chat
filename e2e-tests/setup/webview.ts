@@ -21,6 +21,8 @@ export function returnToWebviewBeforeDrivingIt(
 	agent: WebdriverIO.Browser,
 	platform: AgentPlatformName,
 ): void {
+	// Chained lookups (`element.$(…)`) start from a lookup of their parent,
+	// which goes back first; only element handles held from before do not.
 	const returnIfPending = async () => {
 		if (!webviewPending.has(agent)) return;
 		if (!(await isOnWebview(agent))) await switchToWebview(agent, platform);
