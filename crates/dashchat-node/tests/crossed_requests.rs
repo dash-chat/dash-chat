@@ -43,15 +43,15 @@ async fn test_crossed_requests_merge_into_one_space() {
     else {
         panic!("bobbi's scan must send a request");
     };
-    alice
+    let alice_1 = alice
         .send_message_raw(alice_space, "alice 1".into())
         .await
         .unwrap();
-    bobbi
+    let bobbi_1 = bobbi
         .send_message_raw(bobbi_space, "bobbi 1".into())
         .await
         .unwrap();
-    bobbi
+    let bobbi_2 = bobbi
         .send_message_raw(bobbi_space, "bobbi 2".into())
         .await
         .unwrap();
@@ -79,10 +79,10 @@ async fn test_crossed_requests_merge_into_one_space() {
 
     let chat = alice.direct_chat_with(&bobbi).await;
     assert_eq!(chat, bobbi.direct_chat_with(&alice).await);
-    let (loser, losing_space) = if chat == alice_space {
-        (&bobbi, bobbi_space)
+    let (loser, losing_space, written_before) = if chat == alice_space {
+        (&bobbi, bobbi_space, vec![bobbi_1, bobbi_2])
     } else {
-        (&alice, alice_space)
+        (&alice, alice_space, vec![alice_1])
     };
 
     for node in [&alice, &bobbi] {
@@ -106,28 +106,32 @@ async fn test_crossed_requests_merge_into_one_space() {
         );
     }
 
-    // What the loser wrote in its own space arrives as moved messages, in the
-    // order it wrote them and ahead of anything it writes afterwards.
-    loser
+    // What the loser wrote in its own space is there again in the winning
+    // one, in the order and at the times it wrote it, ahead of anything it
+    // writes afterwards. Writing to its old space lands in the winning one.
+    let written_after = loser
         .send_message_raw(losing_space, "written to the old space".into())
         .await
         .unwrap();
-    let from_loser: Vec<_> = loser
-        .get_messages(chat)
+    let mut expected: Vec<_> = written_before
+        .iter()
+        .map(|header| header.extensions.timestamp())
+        .collect();
+    expected.push(written_after.extensions.timestamp());
+    assert!(expected.is_sorted());
+    let mut from_loser = vec![];
+    for op in loser
+        .op_store
+        .get_log(&loser.device_id(), &topic::application_log_id(*chat), None)
         .await
         .unwrap()
-        .into_iter()
-        .filter(|message| message.author == loser.device_id())
-        .collect();
-    let (moved, new) = from_loser.split_at(from_loser.len() - 1);
-    assert!(
-        moved
-            .iter()
-            .all(|message| message.content.moved().is_some())
-    );
-    assert!(moved.is_sorted_by_key(|message| message.content.moved().unwrap().timestamp));
-    assert_eq!(new[0].content.message(), "written to the old space");
-    assert_eq!(new[0].content.moved(), None);
+    {
+        let Ok(Some(body)) = &op.body else { continue };
+        if let Ok(Payload::Chat(ChatPayload::Message(_))) = Payload::try_from_body(body) {
+            from_loser.push(op.header.extensions.timestamp());
+        }
+    }
+    assert_eq!(from_loser, expected);
 
     poll.consistency([&alice, &bobbi], &[chat.into()])
         .await

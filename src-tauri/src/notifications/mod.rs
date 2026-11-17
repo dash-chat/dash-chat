@@ -178,6 +178,11 @@ pub async fn build_notification_data(
 
     match payload {
         Payload::Chat(dashchat_node::ChatPayload::Message(content)) => {
+            // A message we already hold from before its author moved it to
+            // this space was announced then.
+            if matches!(node.is_moved_message(topic, header).await, Ok(true)) {
+                return None;
+            }
             chat_message_notification(node, topic, sender_device_id, content, id).await
         }
         Payload::Inbox(dashchat_node::InboxPayload::ContactRequest { profile, .. }) => {
@@ -242,14 +247,6 @@ async fn chat_message_notification(
             None
         }
     };
-
-    // A message we already hold from before its author moved it to this
-    // space was announced then.
-    if let Some(moved) = content.moved() {
-        if matches!(node.op_store.get_operation(&moved.hash).await, Ok(Some(_))) {
-            return None;
-        }
-    }
 
     let is_direct_chat = is_direct_chat_with(node, topic, sender_device_id).await;
     let mut qr_code_name = None;
