@@ -111,14 +111,23 @@ export function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
 
-export async function withoutUndecodablePhotos(files: File[]): Promise<File[]> {
-	const decodable: File[] = [];
+export async function findDamagedPhotos(photos: File[]): Promise<Set<File>> {
+	const damaged = new Set<File>();
 	// Sequential: decoding a batch of full-size photos at once can exhaust
 	// the Android webview's memory.
-	for (const file of files) {
-		if (!isVisualFile(file) || (await canDecode(file))) decodable.push(file);
+	for (const photo of photos) {
+		if (!(await canDecode(photo))) damaged.add(photo);
 	}
-	return decodable;
+	return damaged;
+}
+
+export function addedPhotos(
+	current: DraftMedia | undefined,
+	next: DraftMedia | undefined,
+): File[] {
+	if (next?.kind !== 'photos') return [];
+	const existing = current?.kind === 'photos' ? current.items.length : 0;
+	return next.items.slice(existing);
 }
 
 function canDecode(file: File): Promise<boolean> {

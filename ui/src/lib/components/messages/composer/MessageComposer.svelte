@@ -14,7 +14,9 @@
 		ingestFiles,
 		pickMedia,
 		startPreparingPhotos,
-		withoutUndecodablePhotos,
+		findDamagedPhotos,
+		addedPhotos,
+		type IngestResult,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -229,34 +231,46 @@
 	/** Add files to the draft, leaving out damaged photos, and toast why
 	 * anything was left out. */
 	async function stage(files: FileList | File[]) {
+		const picked = Array.from(files);
+		const planned = ingestFiles(media, picked);
+		const candidates = addedPhotos(media, planned.media);
+		if (candidates.length === 0) {
+			commitStaging(planned, 0);
+			return;
+		}
 		pendingStages++;
 		try {
-			const picked = Array.from(files);
-			const decodable = await withoutUndecodablePhotos(picked);
+			const damaged = await findDamagedPhotos(candidates);
 			if (unmounted) return;
-			const result = ingestFiles(media, decodable);
-			showStagingToast(result.error, picked.length - decodable.length);
-			if (result.media?.kind === 'photos') {
-				startPreparingPhotos(result.media.items);
-			}
-			media = result.media;
-			if (isMobile && media && !page.state.stagedMedia) {
-				pushState('', { stagedMedia: true });
-			}
+			// Only checked photos go in, even if the draft gained room meanwhile.
+			const result = ingestFiles(
+				media,
+				candidates.filter(f => !damaged.has(f)),
+			);
+			const error = planned.error ?? result.error;
+			commitStaging({ media: result.media, error }, damaged.size);
 		} finally {
 			pendingStages--;
 		}
 	}
 
+	function commitStaging(result: IngestResult, damaged: number) {
+		showStagingToast(result.error, damaged);
+		if (result.media?.kind === 'photos') {
+			startPreparingPhotos(result.media.items);
+		}
+		media = result.media;
+		if (isMobile && media && !page.state.stagedMedia) {
+			pushState('', { stagedMedia: true });
+		}
+	}
+
 	// One toast at a time: a rule error explains more than the damaged count.
-	function showStagingToast(
-		error: IngestError | undefined,
-		undecodable: number,
-	) {
+	function showStagingToast(error: IngestError | undefined, damaged: number) {
 		if (error) {
 			showToast(ingestErrorMessages[error](), 'error');
-		} else if (undecodable > 0) {
-			showToast(m.errorUndecodablePhotos({ count: undecodable }), 'error');
+		} else if (damaged > 0) {
+			showToast(m.errorUndecodablePhotos({ count: damaged }), 'error');
 		}
 	}
 
@@ -431,7 +445,7 @@
 				: '--toggle-hidden-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)'}"
 			aria-hidden={drafting}
 		>
-			<CameraButton onClick={captureFromCamera} disabled={loadingMedia} />
+			<CameraButton onClick={captureFromCamera} disabled={mediaBusy} />
 			<VoiceRecordButton {voice} />
 		</div>
 	{/if}
@@ -460,7 +474,11 @@
 		use:renderAboveKeyboard
 	>
 		{#if !editing && !isMobile}
-			<StagedAttachments bind:media {loadingMedia} onAddMore={pickPhotos} />
+			<StagedAttachments
+				bind:media
+				loadingMedia={mediaBusy}
+				onAddMore={pickPhotos}
+			/>
 		{/if}
 
 		<div class="m-2 relative">
@@ -556,7 +574,7 @@
 	{#if isMobile}
 		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
 			<MediaPanel
-				{loadingMedia}
+				loadingMedia={mediaBusy}
 				onPickPhotos={pickPhotos}
 				onPickFile={pickFile}
 				onAddRecent={addRecentPhoto}
@@ -571,7 +589,7 @@
 		bind:media
 		bind:value
 		{destinationName}
-		{loadingMedia}
+		loadingMedia={mediaBusy}
 		onSend={async () => {
 			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();
