@@ -8,7 +8,7 @@
 		hasBody,
 	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Badge } from 'konsta/svelte';
+	import { Badge, useTheme } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 	import {
 		inYesterday,
@@ -19,6 +19,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupEventText } from '$lib/utils/group-event-text';
 	import AvatarWithP2pBadge from './AvatarWithP2pBadge.svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCancel } from '@mdi/js';
 
@@ -30,6 +31,15 @@
 			: `/direct-chats/${s.chatId}`;
 
 	const title = $derived(summary.name || m.waitingForProfile());
+
+	// Konsta's Material row is inset 8px from the list's edges and its iOS
+	// row is not; both end up 16px from the screen edge.
+	const theme = $derived(useTheme());
+	const edgePadding = $derived(
+		theme === 'material'
+			? { content: 'ps-2! in-[.wide-layout]:ps-4!', inner: 'pe-2!' }
+			: { content: 'ps-4!', inner: 'pe-4!' },
+	);
 
 	const minutesFormat = new Intl.NumberFormat(getLocale(), {
 		style: 'unit',
@@ -53,16 +63,16 @@
 	{title}
 	link
 	class={active ? 'active' : ''}
-	contentClass="ps-4!"
-	mediaClass="py-0! me-[21px]! in-[.wide-layout]:me-3!"
-	innerClass="min-w-0 pt-3.5! pb-2! pe-4!"
-	titleWrapClass="items-baseline! leading-[22px] [&>div:first-child]:font-normal"
+	contentClass={edgePadding.content}
+	mediaClass="py-0! me-3!"
+	innerClass="min-w-0 py-2! {edgePadding.inner}"
+	titleWrapClass="items-baseline! min-h-0! leading-6 [&>div:first-child]:font-semibold"
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<AvatarWithP2pBadge {summary} />
+		<AvatarWithP2pBadge {summary} size={isWideScreen.value ? 48 : 56} />
 	{/snippet}
 	{#snippet after()}
 		<span class="text-[14px]/5">
@@ -107,7 +117,7 @@
 					{m.contactAccepted()}
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
-						<span class="font-medium"
+						<span class="font-semibold"
 							>{summary.lastEvent.authorName || m.someone()}:</span
 						>
 						{#if hasBody(summary.lastEvent.content)}

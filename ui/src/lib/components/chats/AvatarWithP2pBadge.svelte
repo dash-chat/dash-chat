@@ -12,7 +12,7 @@
 	import GroupAvatar from '../profiles/GroupAvatar.svelte';
 	import PeerAvatar from '../profiles/PeerAvatar.svelte';
 
-	let { summary }: { summary: ChatSummary } = $props();
+	let { summary, size }: { summary: ChatSummary; size: number } = $props();
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
@@ -35,8 +35,11 @@
 
 <P2pBadge show={connectedOverP2p} testId="chat-row-p2p-badge">
 	{#if summary.type === 'GroupChat'}
-		<GroupAvatar image={summary.avatar} />
+		<GroupAvatar image={summary.avatar} {size} />
 	{:else}
-		<PeerAvatar profile={summary.waitingForProfile ? undefined : summary} />
+		<PeerAvatar
+			profile={summary.waitingForProfile ? undefined : summary}
+			{size}
+		/>
 	{/if}
 </P2pBadge>

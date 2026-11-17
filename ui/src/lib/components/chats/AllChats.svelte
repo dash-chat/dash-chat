@@ -36,6 +36,7 @@
 			<List
 				nested
 				inset={isWideScreen.value && theme === 'ios'}
+				dividersIos={isWideScreen.value}
 				data-testid="all-chats-list"
 			>
 				{#each summaries as summary (summary.chatId)}
