@@ -46,7 +46,7 @@ fn sender_letter_tile(avatar: Option<&str>, name: &str) -> Option<LetterTile> {
         });
     }
     let initials = name_initials(name);
-    (!initials.trim().is_empty()).then(|| LetterTile {
+    (!initials.is_empty()).then(|| LetterTile {
         text: initials,
         background_color: NEUTRAL_AVATAR_BACKGROUND.to_string(),
         text_color: NEUTRAL_AVATAR_FOREGROUND.to_string(),
@@ -65,9 +65,14 @@ fn parse_text_avatar(avatar: &str) -> Option<(String, String)> {
     (color_is_valid && text_is_valid).then(|| (format!("#{hex}"), text.to_string()))
 }
 
-/// Mirrors the app's avatar, which shows `name.slice(0, 2)` uppercased.
+/// Counts UTF-16 units because the app's avatar takes `name.slice(0, 2)`. The
+/// app uppercases through CSS, which can differ from `to_uppercase` for a few
+/// locale-specific letters such as the Turkish i.
 fn name_initials(name: &str) -> String {
-    name.chars().take(2).collect::<String>().to_uppercase()
+    let first_two_utf16_units: Vec<u16> = name.encode_utf16().take(2).collect();
+    String::from_utf16_lossy(&first_two_utf16_units)
+        .trim()
+        .to_uppercase()
 }
 
 #[cfg(test)]
@@ -120,8 +125,9 @@ mod tests {
     #[test]
     fn takes_the_first_two_characters_like_the_app() {
         assert_eq!(name_initials("bob"), "BO");
-        assert_eq!(name_initials("🌸 Maria"), "🌸 ");
+        assert_eq!(name_initials("🌸 Maria"), "🌸");
         assert_eq!(name_initials("مریم"), "مر");
+        assert_eq!(name_initials("M Bear"), "M");
     }
 
     #[test]
