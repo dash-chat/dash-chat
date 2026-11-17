@@ -268,6 +268,27 @@ export class Composer extends TestHelper {
 		await this.waitForStagedMedia();
 	}
 
+	/** Paste a damaged `${label}.jpg` (a JPEG header with no image data)
+	 * alongside a valid `${label}.png`. Doesn't wait for anything to stage:
+	 * the composer is expected to drop the damaged one. */
+	async pasteDamagedAndValidPhoto(label: string): Promise<void> {
+		await this.messageInput.waitForExist();
+		await this.agent.execute(
+			(pngBytes: number[], name: string) => {
+				window.__test.pasteFiles([
+					{
+						name: `${name}.jpg`,
+						mimeType: 'image/jpeg',
+						bytes: [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46],
+					},
+					{ name: `${name}.png`, mimeType: 'image/png', bytes: pngBytes },
+				]);
+			},
+			TINY_PNG_BYTES,
+			label,
+		);
+	}
+
 	/** Drop a single synthesized PNG named `${label}.png` onto the window. */
 	async dropPhotos(label: string): Promise<void> {
 		await this.messageInput.waitForExist();

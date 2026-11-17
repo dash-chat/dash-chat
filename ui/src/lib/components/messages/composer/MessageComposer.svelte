@@ -14,6 +14,7 @@
 		ingestFiles,
 		pickMedia,
 		startPreparingPhotos,
+		withoutUndecodablePhotos,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -221,9 +222,11 @@
 		oneFileAtATime: () => m.errorOneFileAtATime(),
 	};
 
-	/** Add files to the draft, toasting if a Signal mixing rule was violated. */
-	function stage(files: FileList | File[]) {
-		const result = ingestFiles(media, Array.from(files));
+	/** Add files to the draft, toasting if a photo is damaged or a Signal
+	 * mixing rule was violated. */
+	async function stage(files: FileList | File[]) {
+		const decodable = await dropUndecodablePhotos(files);
+		const result = ingestFiles(media, decodable);
 		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
 		if (result.media?.kind === 'photos') {
 			startPreparingPhotos(result.media.items);
@@ -234,6 +237,18 @@
 		}
 	}
 
+	async function dropUndecodablePhotos(
+		files: FileList | File[],
+	): Promise<File[]> {
+		const picked = Array.from(files);
+		const decodable = await withoutUndecodablePhotos(picked);
+		const dropped = picked.length - decodable.length;
+		if (dropped > 0) {
+			showToast(m.errorUndecodablePhotos({ count: dropped }), 'error');
+		}
+		return decodable;
+	}
+
 	async function stageWhenLoaded(
 		load: () => Promise<FileList | File[] | null>,
 	) {
@@ -241,7 +256,7 @@
 		loadingMedia = true;
 		try {
 			const files = await load();
-			if (files && files.length > 0) stage(files);
+			if (files && files.length > 0) await stage(files);
 		} finally {
 			loadingMedia = false;
 		}

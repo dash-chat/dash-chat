@@ -112,6 +112,27 @@ export function isVisualFile(file: File): boolean {
 }
 
 /**
+ * `files` without the photos the webview can't decode — damaged files the
+ * recipient couldn't render either. Non-photo files pass through.
+ */
+export async function withoutUndecodablePhotos(files: File[]): Promise<File[]> {
+	const decodable: File[] = [];
+	// Sequential: decoding a batch of full-size photos at once can exhaust
+	// the Android webview's memory.
+	for (const file of files) {
+		if (!isVisualFile(file) || (await canDecode(file))) decodable.push(file);
+	}
+	return decodable;
+}
+
+function canDecode(file: File): Promise<boolean> {
+	return imageDimensions(file).then(
+		() => true,
+		() => false,
+	);
+}
+
+/**
  * Add `files` to the current draft following Signal's mixing rules: photos
  * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
  * non-image file can only be staged alone, and nothing can be added once

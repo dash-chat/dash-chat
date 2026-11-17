@@ -176,6 +176,14 @@ describe('Media attachments', () => {
 		await composer.removeDraft();
 	});
 
+	it('drops a damaged photo when staging, keeping the valid ones', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedAndValidPhoto('damaged');
+		await agent1.toast.expectMessageContaining('damaged');
+		await composer.expectStagedPhotoCount(1);
+		await composer.removeDraft();
+	});
+
 	it('stages dropped images, appending to the draft', async () => {
 		const composer = agent1.directChatPage.composer;
 		await composer.dropPhotos('dropped');
