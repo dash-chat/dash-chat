@@ -1,5 +1,5 @@
+mod notification_avatar;
 mod notified_operations_store;
-mod sender_avatar;
 
 #[cfg(any(mobile, test))]
 pub mod push_notifications;
@@ -281,7 +281,7 @@ async fn chat_message_notification(
         .map(|p| p.name.clone())
         .filter(|name| !name.is_empty())
         .or(qr_code_name);
-    let (sender_avatar, sender_letter_tile) = sender_avatar::sender_avatar(
+    let (sender_avatar, sender_letter_tile) = notification_avatar::notification_avatar(
         sender_profile.and_then(|p| p.avatar),
         sender_name.as_deref(),
     );
@@ -559,7 +559,7 @@ async fn auth_control_op_notification(
         .as_ref()
         .map(|profile| profile.name.clone())
         .filter(|name| !name.is_empty());
-    let (sender_avatar, sender_letter_tile) = sender_avatar::sender_avatar(
+    let (sender_avatar, sender_letter_tile) = notification_avatar::notification_avatar(
         sender_profile.and_then(|profile| profile.avatar),
         sender_name.as_deref(),
     );
