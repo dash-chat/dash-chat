@@ -1,5 +1,5 @@
 mod notified_operations_store;
-mod sender_avatar;
+mod sender_letter_tile;
 
 #[cfg(any(mobile, test))]
 pub mod push_notifications;
@@ -111,6 +111,9 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     }
     if let Some(bytes) = data.large_icon_bytes {
         builder = builder.large_icon_bytes(bytes);
+    }
+    if let Some(letter_tile) = data.large_icon_letter_tile {
+        builder = builder.large_icon_letter_tile(letter_tile);
     }
     if let Some(group) = data.group {
         builder = builder.group(group);
@@ -278,10 +281,10 @@ async fn chat_message_notification(
         .map(|p| p.name.clone())
         .filter(|name| !name.is_empty())
         .or(qr_code_name);
-    let sender_avatar = sender_avatar::sender_avatar_image(
-        sender_profile.and_then(|p| p.avatar).as_deref(),
-        sender_name.as_deref(),
-    );
+    let sender_avatar = sender_profile.and_then(|p| p.avatar);
+    let sender_letter_tile =
+        sender_letter_tile::sender_letter_tile(sender_avatar.as_deref(), sender_name.as_deref());
+    let sender_avatar = sender_avatar.filter(|s| s.starts_with("data:image/"));
 
     let chat_route = if is_direct_chat {
         format!("/direct-chats/{}", topic)
@@ -311,6 +314,7 @@ async fn chat_message_notification(
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
         large_icon_bytes: sender_avatar,
+        large_icon_letter_tile: Some(sender_letter_tile),
         group: Some(topic.to_hex()),
         route: Some(chat_route),
         ..Default::default()
@@ -555,10 +559,10 @@ async fn auth_control_op_notification(
         .as_ref()
         .map(|profile| profile.name.clone())
         .filter(|name| !name.is_empty());
-    let sender_avatar = sender_avatar::sender_avatar_image(
-        sender_profile.and_then(|profile| profile.avatar).as_deref(),
-        sender_name.as_deref(),
-    );
+    let sender_avatar = sender_profile.and_then(|profile| profile.avatar);
+    let sender_letter_tile =
+        sender_letter_tile::sender_letter_tile(sender_avatar.as_deref(), sender_name.as_deref());
+    let sender_avatar = sender_avatar.filter(|avatar| avatar.starts_with("data:image/"));
     let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
 
     // Signal writes the add into the group's thread, as a line from whoever
@@ -576,6 +580,7 @@ async fn auth_control_op_notification(
         }),
         icon: Some("ic_stat_icon".to_string()),
         large_icon_bytes: sender_avatar,
+        large_icon_letter_tile: Some(sender_letter_tile),
         group: Some(topic.to_hex()),
         route: Some(format!("/group-chat/{}", topic.to_hex())),
         ..Default::default()

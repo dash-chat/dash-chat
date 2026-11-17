@@ -1,8 +1,0 @@
-[package]
-name = "text-avatar"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-ab_glyph = "0.2"
-image = { version = "0.25", default-features = false, features = ["png"] }

@@ -41,7 +41,7 @@ tauri-plugin-sentry-reporting = { workspace = true }
 tauri-plugin-subscriptions = { git = "https://github.com/dash-chat/tauri-plugin-subscriptions", rev = "30d1a889a4d7fca0a28bc9d77a7662b6f95cec29" }
 
 tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "e3537c5f8d58e9c9891370253f94de32f1b18043", features = [
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "42e897d3f356468e163e6b72b93c64cc6f49cfcc", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
@@ -55,7 +55,6 @@ dashchat-utils = { workspace = true }
 sqlite-gate = { workspace = true }
 panic-policy = { workspace = true }
 opus-transcode = { workspace = true }
-text-avatar = { workspace = true }
 
 p2panda = { workspace = true }
 iroh = { workspace = true }
@@ -76,7 +75,6 @@ regex = "1"
 hex = "0.4.3"
 nanoid = "0"
 image = "0.25"
-base64 = "0.22"
 
 log = "0.4"
 netdev = "0.43"
