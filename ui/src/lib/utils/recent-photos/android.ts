@@ -69,16 +69,9 @@ export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 	const result = await getImages(imagesRequest(limit));
 	const items = result?.items ?? [];
 	const photos = await Promise.allSettled(items.map(toRecentPhoto));
-	const failures = photos.filter(photo => photo.status === 'rejected');
 	// An image Android can't make a thumbnail of (a damaged file, for one) is
-	// left out instead of failing the whole strip. None succeeding means
-	// something other than a bad file is wrong.
-	if (failures.length > 0 && failures.length === items.length) {
-		throw failures[0].reason;
-	}
-	for (const failure of failures) {
-		console.warn('No thumbnail for a recent photo', failure.reason);
-	}
+	// left out instead of failing the whole strip. Not logged: the rejection
+	// carries the photo's content URI.
 	return photos.flatMap(photo =>
 		photo.status === 'fulfilled' ? [photo.value] : [],
 	);
