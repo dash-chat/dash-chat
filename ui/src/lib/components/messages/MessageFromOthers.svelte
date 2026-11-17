@@ -22,7 +22,7 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import SwipeToReply from './SwipeToReply.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
@@ -139,11 +139,7 @@
 		<div class="row items-end gap-2">
 			{#if showAvatar}
 				{#if isLast}
-					<Avatar
-						image={sender?.avatar}
-						initials={sender?.name.slice(0, 2)}
-						size="1.75rem"
-					/>
+					<PeerAvatar profile={sender} size="1.75rem" />
 				{:else}
 					<div class="shrink-0" style="width: 1.75rem"></div>
 				{/if}

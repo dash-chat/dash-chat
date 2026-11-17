@@ -8,7 +8,6 @@
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
-		mdiAccountGroup,
 		mdiDelete,
 		mdiExport,
 		mdiKeyVariant,
@@ -28,7 +27,8 @@
 	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
 
 	import { page } from '$app/state';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	import RemoveMemberDialog from '$lib/components/chats/RemoveMemberDialog.svelte';
@@ -117,11 +117,7 @@
 			{#snippet title()}
 				<div class="flex w-full min-w-0 items-center justify-start gap-2">
 					<span class="shrink-0">
-						<Avatar
-							image={info.image}
-							initials={info.name.slice(0, 2)}
-							size="2.5rem"
-						/>
+						<GroupAvatar image={info.image} size="2.5rem" />
 					</span>
 					<span
 						class="flex-1 min-w-0 truncate"
@@ -153,14 +149,11 @@
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<Avatar
+						<GroupAvatar
 							image={info.image}
-							initials={info.name.slice(0, 2)}
 							size="5rem"
 							testId="group-info-avatar"
-						>
-							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
-						</Avatar>
+						/>
 
 						<span
 							class="text-xl font-semibold break-words text-center max-w-full"
@@ -202,11 +195,7 @@
 										: undefined}
 								>
 									{#snippet media()}
-										<Avatar
-											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
-											size={32}
-										/>
+										<PeerAvatar profile={member.profile} size={32} />
 									{/snippet}
 
 									{#snippet after()}
@@ -248,11 +237,7 @@
 									class="flex-col gap-4 py-4"
 									style="display: flex; align-items: center;"
 								>
-									<Avatar
-										image={sheetMember.profile?.avatar}
-										initials={sheetMember.profile?.name.slice(0, 2)}
-										size={32}
-									/>
+									<PeerAvatar profile={sheetMember.profile} size={32} />
 									<span class="font-semibold">{sheetMember.profile?.name}</span>
 								</div>
 

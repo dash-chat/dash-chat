@@ -10,7 +10,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 
 	let {
 		reactions,
@@ -121,15 +121,7 @@
 					data-testid={own ? 'reaction-row-own' : 'reaction-row'}
 				>
 					{#snippet media()}
-						{#if profile}
-							<Avatar
-								image={profile.avatar}
-								initials={profile.name.slice(0, 2)}
-								size="2.5rem"
-							/>
-						{:else}
-							<Avatar waitingForProfile size="2.5rem" />
-						{/if}
+						<PeerAvatar {profile} size="2.5rem" />
 					{/snippet}
 					{#snippet after()}
 						<span class="text-xl">{emoji}</span>

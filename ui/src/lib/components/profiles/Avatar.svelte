@@ -5,31 +5,27 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/avatar/avatar.js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { mdiAccountOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { TextAvatarData } from './text-avatar-data-url';
-	import type { Snippet } from 'svelte';
 
 	let {
-		waitingForProfile,
 		image,
 		initials,
+		fallbackIcon,
 		alt,
 		size,
 		style,
 		id,
 		testId,
-		children,
 	}: {
-		waitingForProfile?: boolean | undefined;
 		image?: string | undefined;
 		initials?: string | undefined;
+		fallbackIcon?: string | undefined;
 		alt?: string | undefined;
 		size?: number | string | undefined;
 		style?: string | undefined;
 		id?: string | undefined;
 		testId?: string | undefined;
-		children?: Snippet | undefined;
 	} = $props();
 
 	const textAvatarData = $derived(TextAvatarData.deserialize(image));
@@ -37,9 +33,7 @@
 		image?.startsWith('data:image') ? image : undefined,
 	);
 	const avatarInitials = $derived(
-		waitingForProfile
-			? undefined
-			: textAvatarData?.text || initials || undefined,
+		textAvatarData?.text || initials || undefined,
 	);
 	const sizeValue = $derived(
 		size !== undefined
@@ -65,11 +59,7 @@
 	});
 </script>
 
-<span
-	class="inline-block"
-	data-testid={testId}
-	data-waiting={testId ? (waitingForProfile ? 'true' : 'false') : undefined}
->
+<span class="inline-block" data-testid={testId}>
 	<wa-avatar
 		{id}
 		image={avatarImage}
@@ -78,13 +68,12 @@
 		{alt}
 		shape="circle"
 	>
-		{#if waitingForProfile}
+		{#if fallbackIcon}
 			<wa-icon
 				slot="icon"
-				src={wrapPathInSvg(mdiAccountOutline)}
+				src={wrapPathInSvg(fallbackIcon)}
 				style="font-size: calc(var(--size, 3rem) * 0.5)"
 			></wa-icon>
 		{/if}
-		{@render children?.()}
 	</wa-avatar>
 </span>

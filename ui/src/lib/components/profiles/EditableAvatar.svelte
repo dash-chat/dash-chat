@@ -6,18 +6,25 @@
 	interface Props {
 		image?: string;
 		initials?: string;
+		fallbackIcon?: string;
 		onEdit: () => void;
 		class?: string;
 	}
 
-	let { image, initials, onEdit, class: className }: Props = $props();
+	let {
+		image,
+		initials,
+		fallbackIcon,
+		onEdit,
+		class: className,
+	}: Props = $props();
 </script>
 
 <div
 	class="column gap-2 items-center {className ?? ''}"
 	data-testid="editable-avatar"
 >
-	<Avatar {image} {initials} size={100} />
+	<Avatar {image} {initials} {fallbackIcon} size={100} />
 	<Button
 		tonal
 		style="width: auto"

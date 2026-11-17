@@ -1,3 +1,4 @@
+import { Avatar } from '../../components/avatar';
 import { Composer } from '../../components/composer';
 import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { type MessageStatus, Messages } from '../../components/messages';
@@ -105,11 +106,10 @@ export class DirectChatPage extends TestHelper {
 	/** Whether the peer-header avatar is the profile placeholder (person icon,
 	 * shown while the full profile is still syncing) rather than a real one. */
 	peerAvatarIsPlaceholder(): Promise<boolean> {
-		return this.agent.execute(
-			(sel: string) =>
-				document.querySelector(sel)?.getAttribute('data-waiting') === 'true',
+		return new Avatar(
+			this.agent,
 			tid('direct-chat-peer-avatar'),
-		);
+		).showsFallbackIcon();
 	}
 
 	isContactRequestBannerVisible(): Promise<boolean> {
