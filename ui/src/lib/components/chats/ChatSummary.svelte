@@ -36,7 +36,6 @@
 		unit: 'minute',
 		unitDisplay: 'narrow',
 	});
-	const secondaryTextClass = 'text-[#545863] dark:text-white/70';
 
 	function summarizeMessage(content: MessageBody): string {
 		if (content.message) return content.message;
@@ -57,7 +56,7 @@
 	contentClass="ps-4!"
 	mediaClass="py-0! me-[21px]! in-[.wide-layout]:me-3!"
 	innerClass="min-w-0 pt-3.5! pb-2! pe-4!"
-	titleWrapClass="items-baseline! leading-[22px] [&>div:first-child]:font-normal [&>div:first-child]:text-[#1b1b1d] dark:[&>div:first-child]:text-md-dark-on-surface"
+	titleWrapClass="items-baseline! leading-[22px] [&>div:first-child]:font-normal"
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
@@ -66,7 +65,7 @@
 		<AvatarWithP2pBadge {summary} />
 	{/snippet}
 	{#snippet after()}
-		<span class="text-[14px]/5 {secondaryTextClass}">
+		<span class="text-[14px]/5">
 			{#if beforeYesterday(summary.lastEvent.timestamp)}
 				<wa-format-date
 					weekday="short"
@@ -90,7 +89,9 @@
 	{/snippet}
 	{#snippet subtitle()}
 		<div class="row h-10 items-start text-[14px]/5">
-			<span class="line-clamp-2 min-w-0 flex-1 {secondaryTextClass}">
+			<span
+				class="line-clamp-2 min-w-0 flex-1 text-black/70 dark:text-white/70"
+			>
 				{#if summary.blocked === true && summary.type === 'DirectChat'}
 					<span class="inline-flex items-center gap-1 italic">
 						<wa-icon
