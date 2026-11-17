@@ -45,15 +45,6 @@
 	--color-page-surface: var(--color-ios-dark-surface);
 }
 
-/* Messages scroll under the chat navbar, and Konsta's iOS navbar only fades
-   them out. */
-.k-ios .reverse-scroll-host .k-navbar {
-	background-color: var(--color-page-surface);
-}
-.k-ios .reverse-scroll-host .k-navbar > .pointer-events-none {
-	display: none;
-}
-
 :root.wide-layout {
 	--color-page-surface: var(--color-desktop-main-bg);
 }

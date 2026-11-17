@@ -2,8 +2,10 @@
 	import internetConnectedSvg from '$lib/assets/connection-mode/internet-connected.svg?raw';
 	import internetFailedSvg from '$lib/assets/connection-mode/internet-failed.svg?raw';
 	import internetSearchingSvg from '$lib/assets/connection-mode/internet-searching.svg?raw';
+	import localHubCenteredSvg from '$lib/assets/connection-mode/local-hub-centered.svg?raw';
 	import localHubConnectedSvg from '$lib/assets/connection-mode/local-hub-connected.svg?raw';
 	import localHubNotFoundSvg from '$lib/assets/connection-mode/local-hub-not-found.svg?raw';
+	import phoneToPhoneCenteredSvg from '$lib/assets/connection-mode/phone-to-phone-centered.svg?raw';
 	import phoneToPhoneConnectedSvg from '$lib/assets/connection-mode/phone-to-phone-connected.svg?raw';
 	import phoneToPhoneNotFoundSvg from '$lib/assets/connection-mode/phone-to-phone-not-found.svg?raw';
 	import isolationSvg from '$lib/assets/connection-status/isolation.svg?raw';
@@ -11,8 +13,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiArrowLeft, mdiChevronRight } from '@mdi/js';
-	import { Dialog } from 'konsta/svelte';
+	import { mdiArrowLeft } from '@mdi/js';
+	import { Dialog, Link, List, ListItem } from 'konsta/svelte';
 	import type { ConnectionModes, InternetStatus } from './connection-status';
 	import type { ConnectionModeStatus } from './connection-status-tags';
 
@@ -38,10 +40,17 @@
 		disconnected: m.connectionModeInternetNoAccess,
 	};
 
+	// Konsta renders snippet titles, but types the props as strings.
+	type DialogTitle = InstanceType<typeof Dialog>['$$prop_def']['title'];
+	type ListItemTitle = InstanceType<typeof ListItem>['$$prop_def']['title'];
+
 	type ModeWithHelp = 'local-hub' | 'phone-to-phone';
 	interface ModeWithHelpView {
 		status: ConnectionModeStatus;
 		icon: string;
+		/** The list's icons leave room for a status badge; the help view's
+		 * circle needs the glyph in the middle. */
+		helpIcon: string;
 		title: string;
 		description: string;
 		help: string[];
@@ -60,6 +69,7 @@
 		'local-hub': {
 			status: localHubConnected ? 'connected' : 'searching',
 			icon: localHubConnected ? localHubConnectedSvg : localHubNotFoundSvg,
+			helpIcon: localHubCenteredSvg,
 			title: m.connectionModeLocalHubTitle(),
 			description: localHubConnected
 				? m.connectionModeLocalHubConnected({
@@ -73,6 +83,7 @@
 			icon: phoneToPhoneConnected
 				? phoneToPhoneConnectedSvg
 				: phoneToPhoneNotFoundSvg,
+			helpIcon: phoneToPhoneCenteredSvg,
 			title: m.connectionModePhoneToPhoneTitle(),
 			description: phoneToPhoneConnected
 				? m.connectionModePhoneToPhoneFound({ count: modes.onlinePeersCount })
@@ -91,20 +102,9 @@
 
 <svelte:window onkeydown={closeOnEscape} />
 
-{#snippet modeSummary(
-	icon: string,
-	title: string,
-	description: string,
-	iconClass: string,
-)}
-	<span class="grid size-11 shrink-0 place-items-center" aria-hidden="true">
-		<span class="block {iconClass} *:size-full">
-			{@html icon}
-		</span>
-	</span>
-	<span class="flex min-w-0 flex-1 flex-col text-start text-sm/5">
-		<span>{title}</span>
-		<span class="opacity-70">{description}</span>
+{#snippet modeIcon(icon: string, sizeClass = 'size-11')}
+	<span class="block {sizeClass} *:size-full" aria-hidden="true">
+		{@html icon}
 	</span>
 {/snippet}
 
@@ -112,76 +112,96 @@
 	id: string,
 	status: ConnectionModeStatus | undefined,
 	icon: string,
-	title: string,
+	name: string,
 	description: string,
-	iconClass = 'size-11',
+	iconSizeClass?: string,
+	onClick?: () => void,
 )}
-	<div
-		class="flex items-center gap-3"
+	<!-- Both lines go in the title: Konsta centres its chevron on the title,
+	     and would leave it level with the first line of a subtitled item. -->
+	{#snippet nameAndDescription()}
+		<div>{name}</div>
+		<div class="text-sm opacity-70">{description}</div>
+	{/snippet}
+	<!-- The dialog already pads its content; Konsta's list items add their
+	     own page-edge inset on top. -->
+	<ListItem
+		link={onClick !== undefined}
+		contentClass="ps-0!"
+		mediaClass="me-1!"
+		innerClass="pe-0!"
+		title={nameAndDescription as ListItemTitle}
+		{onClick}
 		data-testid="connection-mode-{id}"
 		data-status={status}
 	>
-		{@render modeSummary(icon, title, description, iconClass)}
-	</div>
+		{#snippet media()}
+			{@render modeIcon(icon, iconSizeClass)}
+		{/snippet}
+	</ListItem>
 {/snippet}
 
-{#snippet modeWithHelp(id: ModeWithHelp, mode: ModeWithHelpView)}
-	<button
-		type="button"
-		class="flex h-auto w-full cursor-pointer items-center gap-3 whitespace-normal"
-		data-testid="connection-mode-{id}"
-		data-status={mode.status}
-		onclick={() => (helpFor = id)}
-	>
-		{@render modeSummary(mode.icon, mode.title, mode.description, 'size-11')}
-		<wa-icon
-			class="shrink-0 text-2xl opacity-70 rtl:-scale-x-100"
-			src={wrapPathInSvg(mdiChevronRight)}
-		></wa-icon>
-	</button>
+{#snippet modeWithHelp(id: ModeWithHelp)}
+	{@const view = modesWithHelp[id]}
+	{@render mode(
+		id,
+		view.status,
+		view.icon,
+		view.title,
+		view.description,
+		undefined,
+		() => (helpFor = id),
+	)}
 {/snippet}
 
-{#snippet modeHelp(id: ModeWithHelp, mode: ModeWithHelpView)}
-	<div
-		class="flex flex-col gap-4 text-start"
-		data-testid="connection-mode-{id}-help"
-	>
-		<button
-			type="button"
-			class="-ms-2 -mt-2 -mb-3 grid size-10 cursor-pointer place-items-center self-start text-2xl"
-			aria-label={m.connectionModeHelpBack()}
-			data-testid="connection-mode-help-back"
-			onclick={() => (helpFor = undefined)}
-		>
-			<wa-icon class="rtl:-scale-x-100" src={wrapPathInSvg(mdiArrowLeft)}
-			></wa-icon>
-		</button>
-		<div class="flex items-center gap-3">
-			{@render modeSummary(
-				mode.icon,
-				mode.title,
-				mode.description,
-				'size-11 rounded-full bg-black/5 dark:bg-white/10',
-			)}
-		</div>
-		{#each mode.help as paragraph}
-			<p class="text-sm/5">{paragraph}</p>
-		{/each}
-	</div>
+{#snippet helpTitle()}
+	{#if helpFor !== undefined}
+		<span class="flex flex-col items-start gap-2">
+			<!-- Konsta pads an icon link by 12px, which would indent the arrow. -->
+			<Link
+				iconOnly
+				class="-ms-3"
+				aria-label={m.connectionModeHelpBack()}
+				data-testid="connection-mode-help-back"
+				onClick={() => (helpFor = undefined)}
+			>
+				<wa-icon class="rtl:-scale-x-100" src={wrapPathInSvg(mdiArrowLeft)}
+				></wa-icon>
+			</Link>
+			<span class="flex items-center gap-2">
+				{@render modeIcon(
+					modesWithHelp[helpFor].helpIcon,
+					'size-11 rounded-full bg-black/5 dark:bg-white/10',
+				)}
+				{modesWithHelp[helpFor].title}
+			</span>
+		</span>
+	{/if}
 {/snippet}
 
 <Modal bind:opened>
 	{#snippet children(modal)}
+		<!-- Wide enough for the longest status to stay on one line. -->
 		<Dialog
+			class="w-84!"
 			data-testid="connection-status-dialog"
 			opened={modal.opened}
 			onBackdropClick={modal.close}
-			title={helpFor === undefined ? m.connectionModeTitle() : undefined}
+			title={helpFor === undefined
+				? m.connectionModeTitle()
+				: (helpTitle as DialogTitle)}
 		>
 			{#if helpFor !== undefined}
-				{@render modeHelp(helpFor, modesWithHelp[helpFor])}
+				<div
+					class="flex flex-col gap-4"
+					data-testid="connection-mode-{helpFor}-help"
+				>
+					{#each modesWithHelp[helpFor].help as paragraph}
+						<p class="text-wrap">{paragraph}</p>
+					{/each}
+				</div>
 			{:else}
-				<div class="flex flex-col gap-4 text-start">
+				<List nested dividers={false}>
 					{#if isolated}
 						{@render mode(
 							'isolation',
@@ -199,12 +219,9 @@
 						m.connectionModeInternetTitle(),
 						internetDescriptions[modes.internet](),
 					)}
-					{@render modeWithHelp('local-hub', modesWithHelp['local-hub'])}
-					{@render modeWithHelp(
-						'phone-to-phone',
-						modesWithHelp['phone-to-phone'],
-					)}
-				</div>
+					{@render modeWithHelp('local-hub')}
+					{@render modeWithHelp('phone-to-phone')}
+				</List>
 			{/if}
 		</Dialog>
 	{/snippet}

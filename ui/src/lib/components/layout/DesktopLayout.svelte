@@ -95,6 +95,12 @@
 	.desktop-sidebar-panel {
 		flex: 1;
 		min-height: 0;
+	}
+
+	/* The panel itself scrolls, not this wrapper: Konsta's navbar fills in on
+	   the scroll of its own parent element. */
+	.desktop-sidebar-panel > :global(*) {
+		height: 100%;
 		overflow-y: auto;
 		overflow-x: hidden;
 	}
