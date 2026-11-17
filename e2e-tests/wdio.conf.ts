@@ -354,8 +354,9 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		setOptions({ wait: RENDER_SETTLE_WINDOW });
 		expect.extend(notificationMatchers);
 		killLeftoverLocalHubs();
-		await ensureHealthyMailbox();
+		// Before the mailbox, which exits unless it reaches the relay within 10s.
 		if (!isRemoteMailbox()) await ensureHealthyRelay();
+		await ensureHealthyMailbox();
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
@@ -380,6 +381,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 			await clearIosAppData(browser.getInstance(`agent${slot}`));
 		}
 		killLeftoverLocalHubs();
+		if (!isRemoteMailbox()) await ensureHealthyRelay();
 		await ensureHealthyMailbox();
 		// Not in afterSession: wdio skips it when the only session is the
 		// desktop-only stub, which has no session id.
