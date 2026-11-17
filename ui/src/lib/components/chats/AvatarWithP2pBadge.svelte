@@ -9,6 +9,7 @@
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { connectionStatus } from '../connection/connection-status';
+	import { mdiAccountGroupOutline } from '@mdi/js';
 	import Avatar from '../profiles/Avatar.svelte';
 
 	let { summary }: { summary: ChatSummary } = $props();
@@ -29,6 +30,9 @@
 		<Avatar
 			image={summary.avatar}
 			initials={summary.name.slice(0, 2)}
+			fallbackIcon={summary.type === 'GroupChat'
+				? mdiAccountGroupOutline
+				: undefined}
 			waitingForProfile={summary.waitingForProfile}
 		/>
 	</span>

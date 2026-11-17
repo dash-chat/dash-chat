@@ -23,7 +23,7 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccountGroup } from '@mdi/js';
+	import { mdiAccountGroup, mdiAccountGroupOutline } from '@mdi/js';
 	import Avatar from '$lib/components/profiles/Avatar.svelte';
 	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
@@ -165,7 +165,7 @@
 							<span class="shrink-0">
 								<Avatar
 									image={info.image}
-									initials={info.name.slice(0, 2)}
+									fallbackIcon={mdiAccountGroupOutline}
 									size="2.25rem"
 								/>
 							</span>
@@ -194,7 +194,7 @@
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
 								<Avatar
 									image={info.image}
-									initials={info.name.slice(0, 2)}
+									fallbackIcon={mdiAccountGroupOutline}
 									size={80}
 								/>
 								<span

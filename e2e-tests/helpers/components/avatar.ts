@@ -31,4 +31,19 @@ export class Avatar extends TestHelper {
 		);
 		return src!;
 	}
+
+	async initials(): Promise<string | null> {
+		return this.agent.execute(
+			(sel: string) =>
+				document.querySelector(sel)?.getAttribute('initials') ?? null,
+			this.selector,
+		);
+	}
+
+	async showsFallbackIcon(): Promise<boolean> {
+		return this.agent.execute(
+			(sel: string) => !!document.querySelector(`${sel} wa-icon[slot="icon"]`),
+			this.selector,
+		);
+	}
 }

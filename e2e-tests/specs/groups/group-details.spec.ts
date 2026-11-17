@@ -56,6 +56,11 @@ describe('Group details spec', () => {
 		);
 	});
 
+	it('Shows the group icon, not initials, for a group without a photo', async () => {
+		expect(await agent2.groupInfoPage.avatar.showsFallbackIcon()).toBe(true);
+		expect(await agent2.groupInfoPage.avatar.initials()).toBe(null);
+	});
+
 	it('Shows a new photo and description to all members if the admin changes them', async () => {
 		await agent1.groupInfoPage.editLink.click();
 		await agent1.groupInfoEditPage.ready();

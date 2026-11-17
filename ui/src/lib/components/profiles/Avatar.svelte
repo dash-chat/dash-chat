@@ -14,6 +14,7 @@
 		waitingForProfile,
 		image,
 		initials,
+		fallbackIcon,
 		alt,
 		size,
 		style,
@@ -24,6 +25,7 @@
 		waitingForProfile?: boolean | undefined;
 		image?: string | undefined;
 		initials?: string | undefined;
+		fallbackIcon?: string | undefined;
 		alt?: string | undefined;
 		size?: number | string | undefined;
 		style?: string | undefined;
@@ -36,10 +38,15 @@
 	const avatarImage = $derived(
 		image?.startsWith('data:image') ? image : undefined,
 	);
+	const slotIcon = $derived(
+		waitingForProfile ? mdiAccountOutline : fallbackIcon,
+	);
 	const avatarInitials = $derived(
 		waitingForProfile
 			? undefined
-			: textAvatarData?.text || initials || undefined,
+			: textAvatarData?.text ||
+					(fallbackIcon ? undefined : initials) ||
+					undefined,
 	);
 	const sizeValue = $derived(
 		size !== undefined
@@ -78,10 +85,10 @@
 		{alt}
 		shape="circle"
 	>
-		{#if waitingForProfile}
+		{#if slotIcon}
 			<wa-icon
 				slot="icon"
-				src={wrapPathInSvg(mdiAccountOutline)}
+				src={wrapPathInSvg(slotIcon)}
 				style="font-size: calc(var(--size, 3rem) * 0.5)"
 			></wa-icon>
 		{/if}

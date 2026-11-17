@@ -8,7 +8,7 @@
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
-		mdiAccountGroup,
+		mdiAccountGroupOutline,
 		mdiDelete,
 		mdiExport,
 		mdiKeyVariant,
@@ -119,7 +119,7 @@
 					<span class="shrink-0">
 						<Avatar
 							image={info.image}
-							initials={info.name.slice(0, 2)}
+							fallbackIcon={mdiAccountGroupOutline}
 							size="2.5rem"
 						/>
 					</span>
@@ -155,12 +155,10 @@
 					<div class="column" style="align-items: center; gap: 1rem">
 						<Avatar
 							image={info.image}
-							initials={info.name.slice(0, 2)}
+							fallbackIcon={mdiAccountGroupOutline}
 							size="5rem"
 							testId="group-info-avatar"
-						>
-							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
-						</Avatar>
+						/>
 
 						<span
 							class="text-xl font-semibold break-words text-center max-w-full"
