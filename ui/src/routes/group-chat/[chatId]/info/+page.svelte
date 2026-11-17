@@ -2,10 +2,14 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ChatsStore } from 'dash-chat-stores';
+	import type {
+		ChatsStore,
+		IOnlinePeersStore,
+		MailboxTrackerStore,
+	} from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiDelete,
@@ -29,6 +33,9 @@
 	import { page } from '$app/state';
 	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
 	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
+	import P2pBadge from '$lib/components/connection/P2pBadge.svelte';
+	import { peersConnectedOverP2p } from '$lib/components/connection/connection-status';
+	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	import RemoveMemberDialog from '$lib/components/chats/RemoveMemberDialog.svelte';
@@ -41,6 +48,24 @@
 	const info = useReactivePromise(groupChatStore.info);
 	const members = useReactivePromise(groupChatStore.allMembers);
 	const me = useReactivePromise(groupChatStore.me);
+
+	const mailboxTrackerStore: MailboxTrackerStore = getContext(
+		'mailbox-tracker-store',
+	);
+	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
+	const mailboxes = useReactiveValue(
+		mailboxTrackerStore.connectionStatusForAllMailboxes,
+	);
+	const onlinePeers = useReactiveValue(onlinePeersStore.onlinePeers, chatId);
+	const membersActiveOverP2p = $derived(
+		$mailboxes !== undefined && $onlinePeers !== undefined
+			? peersConnectedOverP2p(
+					$mailboxes,
+					$onlinePeers,
+					renderingResumedAt.value,
+				)
+			: [],
+	);
 
 	let sheetOpenFor = $state<string | null>(null);
 	let dialogType = $state<
@@ -183,19 +208,26 @@
 							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
+								{@const activeOverP2p = membersActiveOverP2p.includes(actorId)}
 								<ListItem
 									link
 									chevron={false}
 									title={actorId === me.agentId
 										? m.you()
 										: member.profile?.name}
+									subtitle={activeOverP2p ? m.activeOverP2p() : undefined}
 									data-testid={`group-info-member-${member.profile?.name}`}
 									onclick={me.admin
 										? () => (sheetOpenFor = actorId)
 										: undefined}
 								>
 									{#snippet media()}
-										<PeerAvatar profile={member.profile} size={32} />
+										<P2pBadge
+											show={activeOverP2p}
+											testId="group-info-member-p2p-badge"
+										>
+											<PeerAvatar profile={member.profile} size={32} />
+										</P2pBadge>
 									{/snippet}
 
 									{#snippet after()}

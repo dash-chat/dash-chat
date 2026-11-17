@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type {
-		ChatId,
 		IOnlinePeersStore,
 		MailboxTrackerStore,
 	} from 'dash-chat-stores';
@@ -20,9 +19,6 @@
 	import ConnectionModeDialog from './ConnectionModeDialog.svelte';
 	import ConnectionStatusIcon from './ConnectionStatusIcon.svelte';
 
-	/** Counts the peers online in `chatId`, or in every chat without one. */
-	let { chatId }: { chatId?: ChatId } = $props();
-
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
 	);
@@ -30,9 +26,7 @@
 
 	const inputs = useReactivePromises(() => [
 		mailboxTrackerStore.connectionStatusForAllMailboxes(),
-		chatId === undefined
-			? onlinePeersStore.onlinePeersInAnyChat()
-			: onlinePeersStore.onlinePeers(chatId),
+		onlinePeersStore.onlinePeersInAnyChat(),
 	]);
 
 	const ariaLabels: Record<ConnectionStatusTag, () => string> = {

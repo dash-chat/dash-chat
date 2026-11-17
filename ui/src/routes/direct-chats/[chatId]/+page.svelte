@@ -58,6 +58,7 @@
 	import { isMobile } from '$lib/utils/environment';
 	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import PeerActiveOverP2p from '$lib/components/connection/PeerActiveOverP2p.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
@@ -72,7 +73,6 @@
 	} from '$lib/components/messages/message-helpers';
 	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
 	import { useDeviceId } from '$lib/stores/my-device-id';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
@@ -280,12 +280,6 @@
 	const theme = $derived(useTheme());
 </script>
 
-{#snippet connectionStatus()}
-	<div class="grid size-11 shrink-0 place-items-center">
-		<ConnectionStatusIndicator {chatId} />
-	</div>
-{/snippet}
-
 <div
 	bind:this={parentDivEl}
 	class="absolute inset-0"
@@ -333,7 +327,6 @@
 									? 'shrink-0 me-4'
 									: 'shrink-0'}
 								centerTitle={false}
-								right={theme === 'ios' ? connectionStatus : undefined}
 							>
 								{#snippet left()}
 									{#if !isWideScreen.value}
@@ -355,7 +348,11 @@
 													{profile}
 													blocked={isBlocked}
 													nameTestId="direct-chat-peer-name"
-												/>
+												>
+													{#snippet subtitle()}
+														<PeerActiveOverP2p {chatId} />
+													{/snippet}
+												</AvatarWithName>
 											{/await}
 										{:else}
 											{#await $peerName then peerName}
@@ -378,10 +375,6 @@
 										{/if}
 									</Link>
 								{/snippet}
-
-								{#if theme === 'material'}
-									<div class="me-2">{@render connectionStatus()}</div>
-								{/if}
 							</Navbar>
 						{/if}
 					{/snippet}
@@ -560,7 +553,6 @@
 																	{message}
 																	{position}
 																	{myDeviceId}
-																	{chatId}
 																	{readOnly}
 																	showDeliveryStatus={endsDeliveryStatusRun(
 																		messageGroup,
@@ -593,7 +585,6 @@
 																	{message}
 																	{position}
 																	{myDeviceId}
-																	{chatId}
 																	{readOnly}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	sender={profile}

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
-	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
@@ -16,7 +15,9 @@
 		lessThanAMinuteAgo,
 		inYesterday,
 		beforeYesterday,
+		minutesSince,
 	} from '$lib/utils/time';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupEventText } from '$lib/utils/group-event-text';
 	import AvatarWithP2pBadge from './AvatarWithP2pBadge.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
@@ -30,6 +31,13 @@
 			: `/direct-chats/${s.chatId}`;
 
 	const title = $derived(summary.name || m.waitingForProfile());
+
+	const minutesFormat = new Intl.NumberFormat(getLocale(), {
+		style: 'unit',
+		unit: 'minute',
+		unitDisplay: 'narrow',
+	});
+	const secondaryTextClass = 'text-[#545863] dark:text-white/70';
 
 	function summarizeMessage(content: MessageBody): string {
 		if (content.message) return content.message;
@@ -47,6 +55,10 @@
 	{title}
 	link
 	class={active ? 'active' : ''}
+	contentClass="ps-4!"
+	mediaClass="py-0! me-[21px]! in-[.wide-layout]:me-3!"
+	innerClass="min-w-0 pt-3.5! pb-2! pe-4!"
+	titleWrapClass="items-baseline! leading-[22px] [&>div:first-child]:font-normal [&>div:first-child]:text-[#1b1b1d] dark:[&>div:first-child]:text-md-dark-on-surface"
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
@@ -55,7 +67,7 @@
 		<AvatarWithP2pBadge {summary} />
 	{/snippet}
 	{#snippet after()}
-		<span class="text-xs">
+		<span class="text-[14px]/5 {secondaryTextClass}">
 			{#if beforeYesterday(summary.lastEvent.timestamp)}
 				<wa-format-date
 					weekday="short"
@@ -73,19 +85,13 @@
 					date={new Date(summary.lastEvent.timestamp)}
 				></wa-format-date>
 			{:else}
-				<wa-relative-time
-					sync
-					style="text-align: end"
-					format="narrow"
-					date={new Date(summary.lastEvent.timestamp)}
-				>
-				</wa-relative-time>
+				{minutesFormat.format(minutesSince(summary.lastEvent.timestamp))}
 			{/if}
 		</span>
 	{/snippet}
 	{#snippet subtitle()}
-		<div class="row items-center">
-			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
+		<div class="row h-10 items-start text-[14px]/5">
+			<span class="line-clamp-2 min-w-0 flex-1 {secondaryTextClass}">
 				{#if summary.blocked === true && summary.type === 'DirectChat'}
 					<span class="inline-flex items-center gap-1 italic">
 						<wa-icon
@@ -101,7 +107,9 @@
 					{m.contactAccepted()}
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
-						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+						<span class="font-medium"
+							>{summary.lastEvent.authorName || m.someone()}:</span
+						>
 						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
 						{:else}

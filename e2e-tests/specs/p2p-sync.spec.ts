@@ -6,11 +6,12 @@
  * messages, and media all have to propagate over a direct p2p (iroh/mDNS)
  * connection between the two agents. This is the path exercised by real
  * device-to-device delivery and, unlike the rest of the suite, never falls back
- * to a mailbox relay. The chat navbar chip says so: it reads "p2p" while the
+ * to a mailbox relay. The home page chip says so: it reads "p2p" while the
  * other agent is online.
  *
  * Skips against a remote environment mailbox, whose lifecycle we can't control.
  */
+import { backToHome } from '../helpers/flows/back-to-home';
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { MAILBOX_HUNG_MS, UI_TIMEOUT } from '../helpers/timeouts';
@@ -41,20 +42,28 @@ describe('Pure p2p sync (no mailbox)', function () {
 	});
 
 	it('both chips read p2p once the cloud is out of reach, and the dialog explains it', async () => {
+		await backToHome([agent1, agent2]);
 		for (const agent of [agent1, agent2]) {
-			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
+			await agent.homePage.connectionStatusIndicator.waitForStatus(
 				'p2p',
 				MAILBOX_HUNG_MS,
 				'the chip did not read p2p with the cloud down and the peer connected',
 			);
 		}
 
-		const chip = agent1.directChatPage.connectionStatusIndicator;
+		const chip = agent1.homePage.connectionStatusIndicator;
 		await chip.expectModes({
 			isolated: false,
 			internet: 'failed',
 			phoneToPhone: 'connected',
 		});
+		await chip.expectModeHelp();
+	});
+
+	it('the direct chat reads active while the peer is reachable just over p2p', async () => {
+		await agent1.homePage.openChat('Bob');
+		await agent2.homePage.openChat('Alice');
+		await agent1.directChatPage.activeOverP2p.waitForDisplayed();
 	});
 
 	it('syncs a text message agent1 → agent2 over p2p', async () => {
@@ -78,7 +87,8 @@ describe('Pure p2p sync (no mailbox)', function () {
 	});
 
 	it('the chip reads disconnected once the peer goes offline, and p2p again once it is back', async () => {
-		const chip = agent1.directChatPage.connectionStatusIndicator;
+		await backToHome([agent1]);
+		const chip = agent1.homePage.connectionStatusIndicator;
 		await agent2.stopApp();
 		await chip.waitForStatus(
 			'disconnected',
@@ -95,8 +105,6 @@ describe('Pure p2p sync (no mailbox)', function () {
 
 	it('the home chat row badges the peer only while reachable just over p2p', async () => {
 		const { homePage } = agent1;
-		await agent1.directChatPage.back.click();
-		await homePage.ready();
 		await homePage.p2pBadge.waitForDisplayed({ timeout: UI_TIMEOUT });
 
 		await agent2.stopApp();

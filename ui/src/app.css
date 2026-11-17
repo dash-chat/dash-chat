@@ -15,6 +15,7 @@
 	--color-brand-green: #00ff00;
 
 	--color-desktop-sidebar-bg: #f5f4f7;
+	--color-desktop-nav-strip-active-bg: #e6e6e6;
 	--color-desktop-main-bg: #ffffff;
 	--color-incoming-surface: #e7ebf3;
 	--color-page-surface: var(--color-md-light-surface);
@@ -27,6 +28,7 @@
 :root.dark {
 	--background-color: var(--color-md-dark-surface);
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
+	--color-desktop-nav-strip-active-bg: #313131;
 	--color-desktop-main-bg: var(--color-md-dark-surface);
 	--color-page-surface: var(--color-md-dark-surface);
 }
@@ -41,6 +43,15 @@
 
 :root.dark .k-ios {
 	--color-page-surface: var(--color-ios-dark-surface);
+}
+
+/* Messages scroll under the chat navbar, and Konsta's iOS navbar only fades
+   them out. */
+.k-ios .reverse-scroll-host .k-navbar {
+	background-color: var(--color-page-surface);
+}
+.k-ios .reverse-scroll-host .k-navbar > .pointer-events-none {
+	display: none;
 }
 
 :root.wide-layout {
@@ -285,15 +296,6 @@ li.plain span {
 }
 .incoming-message.last-message {
 	border-start-start-radius: 4px;
-}
-
-/* A message still waiting to reach the cloud mailbox while we are offline. */
-.offline-message {
-	border: 3px dashed rgb(255, 182, 193);
-	background-clip: padding-box;
-}
-.offline-message > div {
-	padding: calc(var(--message-padding-y) - 2px) calc(0.5rem - 2px) !important;
 }
 
 .icon-only-card {

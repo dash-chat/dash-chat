@@ -278,24 +278,14 @@ export async function settle(model: ExpectedModel, real: Real): Promise<void> {
 	}
 }
 
-/** The members-less group every agent of a run with networks gets: the page
- *  its connection chip is read on. */
-export function chipChat(m: ExpectedModel, name: string): ExpectedChat {
-	const chat = m.chipChatOf(name);
-	if (chat === null) {
-		throw new Error(`${name} has no chat to read its chip in`);
-	}
-	return chat;
-}
-
 /** Wait until `sa`'s chip shows the hubs the model says its network has.
- *  Assumes the agent is on its chip chat. */
+ *  Assumes the agent is on its chat list, where the chip is. */
 export async function expectHubs(
 	m: ExpectedModel,
 	sa: StressAgent,
 	after: string,
 ): Promise<void> {
-	const chip = sa.agent.groupChatPage.connectionStatusIndicator;
+	const chip = sa.agent.homePage.connectionStatusIndicator;
 	const expected = m.expectedHubs(sa.name);
 	if (expected === 0) {
 		// A hub that left the LAN must drop off the chip within the budget. It
@@ -320,26 +310,26 @@ export async function expectHubs(
 	);
 }
 
-/** Open `sa`'s chip chat, check the chip against the model, and return home. */
+/** Get `sa` to its chat list and check the chip against the model. */
 export async function checkHubs(
 	m: ExpectedModel,
 	sa: StressAgent,
 	after: string,
 ): Promise<void> {
-	await openChat(sa, chipChat(m, sa.name), m);
+	await checkChatList(m, sa);
 	await expectHubs(m, sa, after);
 }
 
 /** Wait until `sa`'s chip shows what the model says of the cloud: cloud
- *  while its link is usable, disconnected otherwise. For runs with no hub
- *  to show. Assumes the agent is on its chip chat. */
+ *  while its link is usable, and no mailbox otherwise. For runs with no hub
+ *  to show. Assumes the agent is on its chat list, where the chip is. */
 export async function expectCloud(
 	m: ExpectedModel,
 	sa: StressAgent,
 	after: string,
 	within: number,
 ): Promise<void> {
-	const chip = sa.agent.groupChatPage.connectionStatusIndicator;
+	const chip = sa.agent.homePage.connectionStatusIndicator;
 	if (m.cloudUsable()) {
 		const budget = m.awaitsCloudRegistration(sa.name)
 			? within + CLOUD_REGISTRATION_RETRY_MS
@@ -352,29 +342,26 @@ export async function expectCloud(
 		m.registeredWithCloud(sa.name);
 		return;
 	}
-	await chip.waitForStatus(
-		'disconnected',
+	await chip.waitForNoMailbox(
 		within,
-		`${sa.name}: the chip did not read disconnected within ${within / 1_000}s after ${after}`,
+		`${sa.name}: the chip still showed a mailbox ${within / 1_000}s after ${after}`,
 	);
 }
 
-/** Open `sa`'s chip chat, check the chip against the model's cloud, and
- *  return home. */
+/** Get `sa` to its chat list and check the chip against the model's cloud. */
 export async function checkCloud(
 	m: ExpectedModel,
 	sa: StressAgent,
 	after: string,
 	within: number,
 ): Promise<void> {
-	await openChat(sa, chipChat(m, sa.name), m);
+	await checkChatList(m, sa);
 	await expectCloud(m, sa, after, within);
 }
 
-/** Open `sa`'s chip chat and check the connection status the run watches:
- *  the hubs on its LAN for a run with networks, the cloud link's state for one
- *  with a cloud. A run with neither has no chip to read and nothing to check.
- *  Left on the chat, as every move leaves the app where it finished. */
+/** Check the connection status the run watches on `sa`'s chat list: the hubs
+ *  on its LAN for a run with networks, the cloud link's state for one with a
+ *  cloud. A run with neither has nothing to check. */
 export async function checkConnection(
 	m: ExpectedModel,
 	sa: StressAgent,

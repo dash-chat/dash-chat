@@ -1,6 +1,5 @@
 import { Avatar } from '../../components/avatar';
 import { Composer } from '../../components/composer';
-import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { type MessageStatus, Messages } from '../../components/messages';
 import { Navbar } from '../../components/navbar';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
@@ -45,7 +44,7 @@ export class DirectChatPage extends TestHelper {
 		'direct-chat-unread-divider',
 		this.composer,
 	);
-	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
+	activeOverP2p = this.el(tid('direct-chat-active-over-p2p'));
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
