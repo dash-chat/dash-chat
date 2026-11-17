@@ -68,22 +68,30 @@ export async function requestPermission(): Promise<RecentPhotosPermission> {
 export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 	const result = await getImages(imagesRequest(limit));
 	const items = result?.items ?? [];
-	return Promise.all(items.map(toRecentPhoto));
+	const photos = await Promise.all(items.map(toRecentPhoto));
+	return photos.filter(photo => photo !== undefined);
 }
 
 export async function readPhotoBytes(contentUri: string): Promise<Uint8Array> {
 	return AndroidFs.readFile(uri(contentUri));
 }
 
+/** `undefined` for an image Android can't make a thumbnail of (a damaged
+ * file, for one), so it is left out instead of failing the whole strip. */
 async function toRecentPhoto(
 	item: ImageInfo,
 	index: number,
-): Promise<RecentPhoto> {
-	const dataUrl = await AndroidFs.getThumbnailAsDataURL(
-		uri(item.contentUri),
-		THUMBNAIL_PX,
-		THUMBNAIL_PX,
-	);
+): Promise<RecentPhoto | undefined> {
+	let dataUrl: string | null;
+	try {
+		dataUrl = await AndroidFs.getThumbnailAsDataURL(
+			uri(item.contentUri),
+			THUMBNAIL_PX,
+			THUMBNAIL_PX,
+		);
+	} catch {
+		return undefined;
+	}
 	return {
 		id: item.contentUri,
 		thumbnail: dataUrl ?? '',
