@@ -8,6 +8,36 @@ use std::collections::{BTreeSet, HashMap};
 use super::*;
 use crate::chat::MovedMessage;
 
+/// What a running node keeps track of across its direct chats.
+#[derive(Clone, Default)]
+pub(crate) struct DirectChats {
+    admissions: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// Held while admitting, so two admissions of the same peer don't both add them.
+    admitting: Arc<Mutex<()>>,
+    /// Held while moving messages between spaces, so none is moved twice.
+    moving: Arc<Mutex<()>>,
+}
+
+impl DirectChats {
+    /// Have `node` admit `peer` to the direct chat space it created for them,
+    /// in the background: the key bundle of someone whose code we scanned
+    /// only arrives once we sync their inbox.
+    pub(crate) async fn spawn_admission(&self, node: Node, peer: DeviceId, chat_id: DirectChatId) {
+        let handle = tokio::spawn(async move {
+            if let Err(err) = node.admit_to_direct_chat(peer, chat_id).await {
+                tracing::warn!(?err, peer = ?peer.aliased(), "failed to admit to direct chat");
+            }
+        });
+        self.admissions.lock().await.push(handle);
+    }
+
+    pub(crate) async fn abort_admissions(&self) {
+        for handle in self.admissions.lock().await.drain(..) {
+            handle.abort();
+        }
+    }
+}
+
 /// The two spaces of a direct chat both sides requested, and who gives theirs up.
 struct SplitDirectChat {
     winning: DirectChatId,
@@ -16,6 +46,84 @@ struct SplitDirectChat {
 }
 
 impl Node {
+    /// The space our direct chat with `peer` takes place in, once either of us
+    /// has requested contact.
+    ///
+    /// When both did, each created a space. Until the two get reconciled, both
+    /// sides settle on the one requested by the lower device id.
+    pub async fn direct_chat_id(&self, peer: DeviceId) -> anyhow::Result<Option<DirectChatId>> {
+        let spaces = self.projection.direct_chat_spaces(peer).await?;
+        let preferred_requester = self.device_id().min(peer);
+        Ok(spaces
+            .iter()
+            .find(|(_, requester)| *requester == preferred_requester)
+            .or(spaces.first())
+            .map(|(space, _)| *space))
+    }
+
+    #[cfg(feature = "testing")]
+    pub async fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
+        self.direct_chat_id(other.device_id())
+            .await
+            .unwrap()
+            .expect("no contact request was exchanged with this node")
+    }
+
+    /// [`Self::direct_chat_id`] of someone we exchanged a contact request with.
+    pub(crate) async fn known_direct_chat_id(
+        &self,
+        peer: DeviceId,
+    ) -> anyhow::Result<DirectChatId> {
+        self.direct_chat_id(peer)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("no direct chat with {:?}", peer.aliased()))
+    }
+
+    /// The space we created for our direct chat with `peer`, if we requested
+    /// contact with them before.
+    pub(crate) async fn requested_direct_chat_id(
+        &self,
+        peer: DeviceId,
+    ) -> anyhow::Result<Option<DirectChatId>> {
+        let spaces = self.projection.direct_chat_spaces(peer).await?;
+        Ok(spaces
+            .into_iter()
+            .find(|(_, requester)| *requester == self.device_id())
+            .map(|(space, _)| space))
+    }
+
+    /// Create the space for a direct chat we are requesting, with only us in
+    /// it: the other side is admitted once their key bundle has reached us.
+    pub(super) async fn create_direct_chat_space(&self) -> anyhow::Result<DirectChatId> {
+        let (chat_id, _) = self.create_space(vec![]).await?;
+        self.publish_my_profile_to(chat_id).await?;
+        tracing::info!(chat_id = ?chat_id.aliased(), "created direct chat space");
+        Ok(chat_id)
+    }
+
+    /// Admit `peer` to the direct chat space we created for them, once their
+    /// key bundle has reached us.
+    pub(crate) async fn admit_to_direct_chat(
+        &self,
+        peer: DeviceId,
+        chat_id: DirectChatId,
+    ) -> anyhow::Result<()> {
+        self.keybundle_of(peer).await?;
+        let _admitting = self.direct_chats.admitting.lock().await;
+        let is_member = self
+            .space_members(chat_id.into())
+            .await?
+            .iter()
+            .any(|(member, _)| *member == peer);
+        if is_member {
+            return Ok(());
+        }
+        let space = self.streams.space(chat_id.into()).await?;
+        self.add_member_to_space(&space, *peer, AccessLevel::Write)
+            .await?;
+        Ok(())
+    }
+
     /// Every space the chat in `chat_id` is spread over: both spaces of a
     /// direct chat each side requested, otherwise just the chat's own.
     pub async fn chat_spaces(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatId>> {
@@ -88,7 +196,7 @@ impl Node {
     /// other side's, oldest first. Safe to repeat: a message already moved is
     /// not moved again.
     async fn move_direct_chat_messages(&self, split: &SplitDirectChat) -> anyhow::Result<()> {
-        let _moving = self.direct_chat_move.lock().await;
+        let _moving = self.direct_chats.moving.lock().await;
         let me = self.device_id();
         let mut moved = self.moved_messages(me, split.winning).await?;
 

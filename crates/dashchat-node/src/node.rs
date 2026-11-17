@@ -283,9 +283,7 @@ pub struct Node {
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    direct_chat_admission_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    direct_chat_admission: Arc<Mutex<()>>,
-    direct_chat_move: Arc<Mutex<()>>,
+    direct_chats: direct_chat::DirectChats,
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
@@ -360,6 +358,18 @@ impl Node {
             );
         }
 
+        // A mailbox must keep a code owner's key bundle for as long as the code
+        // can be scanned.
+        let max_contact_code_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)?;
+        if config.contact_code_expiry > max_contact_code_expiry {
+            anyhow::bail!(
+                "invalid NodeConfig: contact_code_expiry ({}) is longer than a mailbox keeps \
+                 messages ({})",
+                config.contact_code_expiry,
+                max_contact_code_expiry,
+            );
+        }
+
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
@@ -419,7 +429,6 @@ impl Node {
             Some(topic) => topic,
             None => {
                 let (topic, _) = streams.create_space().await?;
-                let topic = DeviceGroupId::from_topic_id(topic);
                 local_store.set_device_group_topic(topic).await?;
                 topic
             }
@@ -517,9 +526,7 @@ impl Node {
             network_change_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
-            direct_chat_admission_handles: Default::default(),
-            direct_chat_admission: Default::default(),
-            direct_chat_move: Default::default(),
+            direct_chats: Default::default(),
             device_group_topic,
             dirty_ack_topics: Default::default(),
         };
@@ -626,12 +633,9 @@ impl Node {
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
     pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
-        // A mailbox must keep our key bundle for as long as the code can be scanned.
-        let max_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)
-            .expect("mailbox retention fits a chrono duration");
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
-            Utc::now() + self.config.contact_code_expiry.min(max_expiry),
+            Utc::now() + self.config.contact_code_expiry,
         );
         self.initialize_stream(*inbox_topic.topic)
             .await
@@ -832,97 +836,6 @@ impl Node {
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
         self.device_group_topic
-    }
-
-    /// The space our direct chat with `peer` takes place in, once either of us
-    /// has requested contact.
-    ///
-    /// When both did, each created a space. Until the two get reconciled, both
-    /// sides settle on the one requested by the lower device id.
-    pub async fn direct_chat_id(&self, peer: DeviceId) -> anyhow::Result<Option<DirectChatId>> {
-        let spaces = self.projection.direct_chat_spaces(peer).await?;
-        let preferred_requester = self.device_id().min(peer);
-        Ok(spaces
-            .iter()
-            .find(|(_, requester)| *requester == preferred_requester)
-            .or(spaces.first())
-            .map(|(space, _)| *space))
-    }
-
-    #[cfg(feature = "testing")]
-    pub async fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
-        self.direct_chat_id(other.device_id())
-            .await
-            .unwrap()
-            .expect("no contact request was exchanged with this node")
-    }
-
-    /// [`Self::direct_chat_id`] of someone we exchanged a contact request with.
-    pub(crate) async fn known_direct_chat_id(
-        &self,
-        peer: DeviceId,
-    ) -> anyhow::Result<DirectChatId> {
-        self.direct_chat_id(peer)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("no direct chat with {:?}", peer.aliased()))
-    }
-
-    /// The space we created for our direct chat with `peer`, if we requested
-    /// contact with them before.
-    pub(crate) async fn requested_direct_chat_id(
-        &self,
-        peer: DeviceId,
-    ) -> anyhow::Result<Option<DirectChatId>> {
-        let spaces = self.projection.direct_chat_spaces(peer).await?;
-        Ok(spaces
-            .into_iter()
-            .find(|(_, requester)| *requester == self.device_id())
-            .map(|(space, _)| space))
-    }
-
-    /// Create the space for a direct chat we are requesting, with only us in
-    /// it: the other side is admitted once their key bundle has reached us.
-    async fn create_direct_chat_space(&self) -> anyhow::Result<DirectChatId> {
-        let (chat_id, _) = self.create_space(vec![]).await?;
-        self.publish_my_profile_to(chat_id).await?;
-        tracing::info!(chat_id = ?chat_id.aliased(), "created direct chat space");
-        Ok(chat_id)
-    }
-
-    /// Admit `peer` to the direct chat space we created for them, once their
-    /// key bundle has reached us.
-    pub(crate) async fn admit_to_direct_chat(
-        &self,
-        peer: DeviceId,
-        chat_id: DirectChatId,
-    ) -> anyhow::Result<()> {
-        self.keybundle_of(peer).await?;
-        let _admitting = self.direct_chat_admission.lock().await;
-        let is_member = self
-            .space_members(chat_id.into())
-            .await?
-            .iter()
-            .any(|(member, _)| *member == peer);
-        if is_member {
-            return Ok(());
-        }
-        let space = self.streams.space(chat_id.into()).await?;
-        self.add_member_to_space(&space, *peer, AccessLevel::Write)
-            .await?;
-        Ok(())
-    }
-
-    /// Run [`Self::admit_to_direct_chat`] in the background, since the key
-    /// bundle of someone whose code we scanned only arrives once we sync
-    /// their inbox.
-    pub(crate) async fn spawn_direct_chat_admission(&self, peer: DeviceId, chat_id: DirectChatId) {
-        let node = self.clone();
-        let handle = tokio::spawn(async move {
-            if let Err(err) = node.admit_to_direct_chat(peer, chat_id).await {
-                tracing::warn!(?err, peer = ?peer.aliased(), "failed to admit to direct chat");
-            }
-        });
-        self.direct_chat_admission_handles.lock().await.push(handle);
     }
 
     pub async fn create_chat_group(
@@ -1838,9 +1751,7 @@ impl Node {
             let _ = handle.await;
         }
 
-        for handle in self.direct_chat_admission_handles.lock().await.drain(..) {
-            handle.abort();
-        }
+        self.direct_chats.abort_admissions().await;
 
         // While the network is still up, so peers see us leave instead of timing us out.
         self.online_peers.leave_all().await;
@@ -2167,7 +2078,8 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        self.spawn_direct_chat_admission(contact.device_pubkey, direct_chat_topic_id)
+        self.direct_chats
+            .spawn_admission(self.clone(), contact.device_pubkey, direct_chat_topic_id)
             .await;
 
         Ok(AddContactResult::NewRequest(direct_chat_topic_id))
@@ -2706,7 +2618,8 @@ impl Node {
             .await?
         {
             if let Some(direct_chat_id) = self.requested_direct_chat_id(owner).await? {
-                self.spawn_direct_chat_admission(owner, direct_chat_id)
+                self.direct_chats
+                    .spawn_admission(self.clone(), owner, direct_chat_id)
                     .await;
             }
         }
@@ -3083,6 +2996,17 @@ mod config_validation_tests {
         config.enable_p2p = false;
         config.mdns_mode = MdnsDiscoveryMode::Active;
         assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_contact_code_expiry_longer_than_mailbox_retention() {
+        let retention = chrono::Duration::from_std(mailbox_server::MESSAGE_MAX_AGE).unwrap();
+        let mut config = NodeConfig::testing();
+        config.contact_code_expiry = retention + chrono::Duration::seconds(1);
+        assert!(init_result(config.clone()).await.is_err());
+
+        config.contact_code_expiry = retention;
+        assert!(init_result(config).await.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread")]

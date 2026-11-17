@@ -354,7 +354,9 @@ impl TopicStreams {
     }
 
     /// Create a space with only us in it, at an id p2panda generates.
-    pub(crate) async fn create_space(&self) -> Result<(Topic, Space), StreamsError> {
+    pub(crate) async fn create_space<K: crate::topic::TopicKind>(
+        &self,
+    ) -> Result<(crate::Topic<K>, Space), StreamsError> {
         let mut pubs = self.publishers.lock().await;
         if self.shut_down.load(Ordering::Acquire) {
             return Err(StreamsError::ShutDown);
@@ -362,7 +364,8 @@ impl TopicStreams {
         let (space, subscriber) = self
             .with_node(async |node| node.create_space().await)
             .await?;
-        self.track_created_space(&mut pubs, space, subscriber)
+        let (topic, space) = self.track_created_space(&mut pubs, space, subscriber)?;
+        Ok((crate::Topic::new(*topic.as_bytes()), space))
     }
 
     /// Create a space at an id of our choosing, as someone publishing their own

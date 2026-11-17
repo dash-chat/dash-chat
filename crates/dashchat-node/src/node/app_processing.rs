@@ -110,8 +110,8 @@ impl Node {
 
     /// Create a space we own, persist it for restart, and import its mailbox stream.
     pub(crate) async fn create_and_register_space(&self) -> anyhow::Result<(ChatId, Space)> {
-        let (topic, space) = self.streams.create_space().await?;
-        self.register_created_space(topic, space).await
+        let (chat_id, space) = self.streams.create_space().await?;
+        self.register_created_space(chat_id, space).await
     }
 
     #[cfg(feature = "testing")]
@@ -119,16 +119,16 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<(ChatId, Space)> {
-        let (topic, space) = self.streams.create_space_at(*chat_id).await?;
-        self.register_created_space(topic, space).await
+        let (_, space) = self.streams.create_space_at(*chat_id).await?;
+        self.register_created_space(chat_id, space).await
     }
 
     async fn register_created_space(
         &self,
-        topic: TopicId,
+        chat_id: ChatId,
         space: Space,
     ) -> anyhow::Result<(ChatId, Space)> {
-        let chat_id = ChatId::from_topic_id(topic);
+        let topic: TopicId = chat_id.into();
         self.local_store
             .register_space_as_subscribed(chat_id)
             .await?;

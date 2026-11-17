@@ -253,12 +253,6 @@ impl Topic<kind::Inbox> {
     }
 }
 
-impl Topic<kind::DeviceGroup> {
-    pub fn from_topic_id(topic_id: TopicId) -> Self {
-        Self::new(*topic_id.as_bytes())
-    }
-}
-
 impl Topic<kind::Untyped> {
     /// Declare the actual type of an Untyped topic.
     pub fn upcast<K: TopicKind>(self) -> Topic<K> {

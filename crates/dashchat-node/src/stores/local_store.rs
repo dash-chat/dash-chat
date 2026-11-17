@@ -268,7 +268,7 @@ impl LocalStore {
             return Ok(None);
         };
         let arr = bytes32(bytes, "identity.device_group_topic")?;
-        Ok(Some(DeviceGroupId::from_topic_id(TopicId::from(arr))))
+        Ok(Some(DeviceGroupId::new(arr)))
     }
 
     pub async fn set_device_group_topic(&self, topic: DeviceGroupId) -> anyhow::Result<()> {
