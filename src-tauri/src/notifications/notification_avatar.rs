@@ -5,8 +5,11 @@ use tauri_plugin_notification::LetterTile;
 const TEXT_AVATAR_PREFIX: &str = "data:application/x-dashchat-avatar,TextAvatarData|1|";
 /// Keep in sync with `TEXT_AVATAR_TEXT_COLOR` in `Avatar.svelte`.
 const TEXT_AVATAR_TEXT_COLOR: &str = "#831843";
-const GENERIC_AVATAR_GREY: &str = "#8e8e93";
-const WHITE: &str = "#ffffff";
+/// The light theme's neutral avatar colours (`--wa-color-neutral-fill-normal`
+/// and `--wa-color-neutral-on-normal`), which the app draws initials and its
+/// waiting-for-profile icon in.
+const NEUTRAL_AVATAR_BACKGROUND: &str = "#e4e5e9";
+const NEUTRAL_AVATAR_FOREGROUND: &str = "#424554";
 
 /// The sender's photo as `large_icon_bytes`, or else, like Signal, what the
 /// app draws for them as `large_icon_letter_tile`. Without their profile yet,
@@ -38,8 +41,8 @@ fn sender_letter_tile(avatar: Option<&str>, name: Option<&str>) -> LetterTile {
     }
     LetterTile {
         text: name.map(name_initials),
-        background_color: GENERIC_AVATAR_GREY.to_string(),
-        text_color: WHITE.to_string(),
+        background_color: NEUTRAL_AVATAR_BACKGROUND.to_string(),
+        text_color: NEUTRAL_AVATAR_FOREGROUND.to_string(),
     }
 }
 
@@ -95,7 +98,7 @@ mod tests {
         let avatar = "data:application/x-dashchat-avatar,TextAvatarData|1|%23fbcfe8|<b>";
         let tile = sender_letter_tile(Some(avatar), Some("Bob"));
         assert_eq!(tile.text.as_deref(), Some("BO"));
-        assert_eq!(tile.background_color, GENERIC_AVATAR_GREY);
+        assert_eq!(tile.background_color, NEUTRAL_AVATAR_BACKGROUND);
     }
 
     #[test]
