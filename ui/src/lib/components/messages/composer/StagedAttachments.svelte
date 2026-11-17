@@ -3,43 +3,35 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose } from '@mdi/js';
-	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import { MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import type { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from '$lib/components/StagedThumb.svelte';
 	import AddThumb from '$lib/components/AddThumb.svelte';
+	import PendingThumb from '$lib/components/PendingThumb.svelte';
 	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
-		media: DraftMedia | undefined;
+		draft: MediaDraft;
 		loadingMedia: boolean;
 		onAddMore: () => void;
 	}
 
-	let { media = $bindable(), loadingMedia, onAddMore }: Props = $props();
+	let { draft, loadingMedia, onAddMore }: Props = $props();
 
-	const showClearAll = $derived(
-		media?.kind === 'photos' && media.items.length > 1,
-	);
+	const media = $derived(draft.media);
+	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
-	function clear() {
-		media = undefined;
-	}
-
-	function removePhoto(index: number) {
-		if (!media || media.kind !== 'photos') return;
-		const remaining = media.items.filter((_, i) => i !== index);
-		media =
-			remaining.length > 0 ? { kind: 'photos', items: remaining } : undefined;
-	}
+	const showClearAll = $derived(photos.length > 1);
 </script>
 
-{#if media && media.kind !== 'voice_note'}
+{#if (media && media.kind !== 'voice_note') || draft.pendingPhotos > 0}
 	<div class="pt-2" data-testid="message-input-media-preview">
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">
 				<IconButton
-					onClick={clear}
+					onClick={() => draft.clear()}
 					label={m.removeAllAttachments()}
 					testid="message-input-clear-attachments"
 					class="!h-7 !w-7"
@@ -49,22 +41,27 @@
 			</div>
 		{/if}
 		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">
-			{#if media.kind === 'photos'}
-				{#each media.items as photo, i (photo)}
+			{#if media?.kind !== 'file'}
+				{#each photos as photo, i (photo)}
 					<StagedThumb
 						removeLabel={m.removeAttachment()}
-						onRemove={() => removePhoto(i)}
+						onRemove={() => draft.removePhoto(i)}
 						removeTestId="message-input-remove-attachment-{i}"
 						class="h-[120px] w-[120px]"
 					>
 						<img
-							use:objectUrl={photo}
+							use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 							alt={photo.name}
 							class="block h-full w-full object-cover"
 						/>
 					</StagedThumb>
 				{/each}
-				{#if media.items.length < MAX_STAGED_PHOTOS}
+				{#each { length: draft.pendingPhotos }, i (i)}
+					<PendingThumb
+						class="h-[120px] w-[120px] rounded bg-black/10 dark:bg-white/10"
+					/>
+				{/each}
+				{#if photos.length + draft.pendingPhotos < MAX_STAGED_PHOTOS}
 					<AddThumb
 						onClick={onAddMore}
 						label={m.addMoreAttachments()}
@@ -76,7 +73,7 @@
 			{:else}
 				<StagedThumb
 					removeLabel={m.removeAttachment()}
-					onRemove={clear}
+					onRemove={() => draft.clear()}
 					removeTestId="message-input-remove-attachment-0"
 					class="flex h-[120px] w-[120px] flex-col items-center justify-center gap-2 p-2"
 				>
