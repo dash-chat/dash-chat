@@ -35,8 +35,12 @@ export async function startLocalRelay(): Promise<{
 }> {
 	mkdirSync(RELAY_DIR, { recursive: true });
 	const logger = startAgentLogger('relay', RELAY_LOG);
-	const proc = await spawnRelay();
-	return { proc, logger };
+	try {
+		return { proc: await spawnRelay(), logger };
+	} catch (err) {
+		logger.kill();
+		throw err;
+	}
 }
 
 /** Back to a running relay, whatever a spec left it in: resumed if it was

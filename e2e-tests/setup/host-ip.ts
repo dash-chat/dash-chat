@@ -21,13 +21,16 @@ export function nonInternalIpv4s(): HostAddress[] {
  *  the host unreachable from every device. */
 function isPrivateLanAddress(address: string): boolean {
 	const [a, b] = address.split('.').map(Number);
-	return a === 10 || a === 192 || (a === 172 && b >= 16 && b <= 31);
+	return (
+		a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31)
+	);
 }
 
-/** Bridges, containers and VPNs hold private addresses no phone on the LAN
- *  can reach: docker0 sits on 172.17.0.1. */
+/** Bridges, containers, VPNs and USB tethers hold private addresses no phone
+ *  on the LAN can reach: docker0 sits on 172.17.0.1, and a tethered phone,
+ *  `enx<mac>` or `usb0` on Linux, hands out 172.20.10.x. */
 const VIRTUAL_INTERFACE =
-	/^(docker|br-|virbr|veth|tun|utun|tap|tailscale|wg|zt|vEthernet)/;
+	/^(docker|br-|virbr|veth|tun|utun|tap|tailscale|wg|zt|vEthernet|enx|usb)/;
 
 /** Built-in wifi/ethernet ahead of USB and virtual interfaces, lowest number
  *  first: en0, en1 on macOS; eth0, enp3s0, wlan0, wlp2s0 on Linux. A tethered
@@ -35,7 +38,7 @@ const VIRTUAL_INTERFACE =
  *  not win over the real LAN. */
 function interfaceRank(name: string): number {
 	if (VIRTUAL_INTERFACE.test(name)) return 2000;
-	const nic = /^(?:en|eth|wl)[a-z]*(\d+)/.exec(name);
+	const nic = /^(?:en|eth|wl)[a-z]*(\d+)(?:[a-z]\d+)*$/.exec(name);
 	return nic === null ? 1000 : Number(nic[1]);
 }
 

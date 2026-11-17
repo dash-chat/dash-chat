@@ -358,7 +358,11 @@ function watchRunningboardd(
 	);
 	const matched = new Promise<string>(resolve => {
 		createInterface({ input: proc.stdout }).on('line', line => {
-			appendFileSync(log, `${line}\n`);
+			try {
+				appendFileSync(log, `${line}\n`);
+			} catch {
+				// A full disk loses the copy, not the watch.
+			}
 			const match = pattern.exec(line);
 			if (match !== null) resolve(match[0]);
 		});

@@ -23,6 +23,8 @@ export function returnToWebviewBeforeDrivingIt(
 ): void {
 	// Chained lookups (`element.$(…)`) start from a lookup of their parent,
 	// which goes back first; only element handles held from before do not.
+	// The marker stays until a switch succeeds, so each later webview command
+	// tries again: an app that never comes back costs every one of them a wait.
 	const returnIfPending = async () => {
 		if (!webviewPending.has(agent)) return;
 		if (!(await isOnWebview(agent))) await switchToWebview(agent, platform);

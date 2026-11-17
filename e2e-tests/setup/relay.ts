@@ -1,6 +1,7 @@
 import { allocatePinnedPortFrom } from './allocate-port';
+import { killLeftoverRelay } from './cleanup';
 import { lanHostAddress } from './host-ip';
-import { remoteMailboxUrl } from './test-env';
+import { phonePlatforms, remoteMailboxUrl } from './test-env';
 
 /** The public relay a run against a remote mailbox uses: that mailbox's iroh
  *  endpoint is only reachable through it. */
@@ -11,6 +12,9 @@ const PUBLIC_RELAY_URL = 'https://e90mqanwh7cec3zww.aps1.relay.iroh-svc.com/';
  *  to run unless something else holds it: past the 3300..5299 range a
  *  checkout's mailbox and push ports come from (network-id.ts). */
 export function localRelayPort(): number {
+	// A relay an interrupted run left behind would push this run onto the next
+	// port, and the run after back again, each a rebuild of every app.
+	if (process.env._WDIO_RELAY_PORT === undefined) killLeftoverRelay();
 	return allocatePinnedPortFrom('_WDIO_RELAY_PORT', 5400);
 }
 
@@ -29,6 +33,13 @@ function pinnedRelayUrl(): string {
 	if (remoteMailboxUrl() !== null) return PUBLIC_RELAY_URL;
 	if (process.env._WDIO_RELAY_URL === undefined) {
 		const host = lanHostAddress();
+		// Phones reach the relay at the host's LAN address, with no adb reverse
+		// in between: on loopback they would have none.
+		if (host === null && phonePlatforms().length > 0) {
+			throw new Error(
+				'No private LAN IPv4 for the phones to reach the relay on — set E2E_HOST_IP.',
+			);
+		}
 		process.env._WDIO_RELAY_URL = `http://${host?.address ?? '127.0.0.1'}:${localRelayPort()}/`;
 		console.log(
 			`[relay] baking ${process.env._WDIO_RELAY_URL} (${host?.name ?? 'no LAN address'})`,
