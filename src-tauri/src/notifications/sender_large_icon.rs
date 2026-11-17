@@ -7,9 +7,21 @@ const TEXT_AVATAR_TEXT_COLOR: &str = "#831843";
 const GENERIC_AVATAR_GREY: &str = "#8e8e93";
 const WHITE: &str = "#ffffff";
 
-/// What the app draws for a sender without a photo, like Signal: their text
-/// avatar, else the initials of their name, else (no text) a person silhouette.
-pub(super) fn sender_letter_tile(avatar: Option<&str>, name: Option<&str>) -> LetterTile {
+/// The sender's photo as `large_icon_bytes`, or else, like Signal, what the
+/// app draws for them as `large_icon_letter_tile`.
+pub(super) fn sender_large_icon(
+    avatar: Option<String>,
+    name: Option<&str>,
+) -> (Option<String>, Option<LetterTile>) {
+    match avatar {
+        Some(photo) if photo.starts_with("data:image/") => (Some(photo), None),
+        avatar => (None, Some(sender_letter_tile(avatar.as_deref(), name))),
+    }
+}
+
+/// Their text avatar, else the initials of their name, else no text, which
+/// the plugin draws as a person silhouette.
+fn sender_letter_tile(avatar: Option<&str>, name: Option<&str>) -> LetterTile {
     if let Some((background_color, text)) = avatar.and_then(parse_text_avatar) {
         return LetterTile {
             text: Some(text),
@@ -18,17 +30,16 @@ pub(super) fn sender_letter_tile(avatar: Option<&str>, name: Option<&str>) -> Le
         };
     }
     LetterTile {
-        text: name
-            .map(name_initials)
-            .filter(|initials| !initials.is_empty()),
+        text: name.map(name_initials),
         background_color: GENERIC_AVATAR_GREY.to_string(),
         text_color: WHITE.to_string(),
     }
 }
 
 fn parse_text_avatar(avatar: &str) -> Option<(String, String)> {
-    let (encoded_color, text) = avatar.strip_prefix(TEXT_AVATAR_PREFIX)?.split_once('|')?;
-    let hex = encoded_color.strip_prefix("%23")?;
+    let mut fields = avatar.strip_prefix(TEXT_AVATAR_PREFIX)?.split('|');
+    let hex = fields.next()?.strip_prefix("%23")?;
+    let text = fields.next()?;
     let color_is_valid = hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit());
     let text_is_valid = (1..=3).contains(&text.len())
         && text
@@ -37,20 +48,22 @@ fn parse_text_avatar(avatar: &str) -> Option<(String, String)> {
     (color_is_valid && text_is_valid).then(|| (format!("#{hex}"), text.to_string()))
 }
 
-/// The app shows the first two characters of the name; spaces and punctuation
-/// among them draw nothing, so they are dropped.
+/// Mirrors the app's avatar, which shows `name.slice(0, 2)` uppercased.
 fn name_initials(name: &str) -> String {
-    name.trim()
-        .chars()
-        .take(2)
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_uppercase)
-        .collect()
+    name.chars().take(2).collect::<String>().to_uppercase()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_a_photo() {
+        let photo = "data:image/jpeg;base64,AAAA".to_string();
+        let (bytes, tile) = sender_large_icon(Some(photo.clone()), Some("Bob"));
+        assert_eq!(bytes, Some(photo));
+        assert!(tile.is_none());
+    }
 
     #[test]
     fn draws_a_text_avatar_in_its_own_colour() {
@@ -62,6 +75,15 @@ mod tests {
     }
 
     #[test]
+    fn ignores_trailing_text_avatar_fields_like_the_app() {
+        let avatar = "data:application/x-dashchat-avatar,TextAvatarData|1|%23fbcfe8|GC|x";
+        assert_eq!(
+            parse_text_avatar(avatar),
+            Some(("#fbcfe8".to_string(), "GC".to_string()))
+        );
+    }
+
+    #[test]
     fn falls_back_to_the_initials_of_a_malformed_text_avatar() {
         let avatar = "data:application/x-dashchat-avatar,TextAvatarData|1|%23fbcfe8|<b>";
         let tile = sender_letter_tile(Some(avatar), Some("Bob"));
@@ -70,16 +92,14 @@ mod tests {
     }
 
     #[test]
-    fn takes_the_letters_among_the_first_two_characters() {
-        assert_eq!(name_initials(" bob "), "BO");
-        assert_eq!(name_initials("J Doe"), "J");
-        assert_eq!(name_initials("J.R."), "J");
+    fn takes_the_first_two_characters_like_the_app() {
+        assert_eq!(name_initials("bob"), "BO");
+        assert_eq!(name_initials("🌸 Maria"), "🌸 ");
         assert_eq!(name_initials("مریم"), "مر");
     }
 
     #[test]
-    fn leaves_the_text_out_for_the_person_silhouette() {
+    fn leaves_the_text_out_without_a_name() {
         assert_eq!(sender_letter_tile(None, None).text, None);
-        assert_eq!(sender_letter_tile(None, Some("..")).text, None);
     }
 }
