@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
@@ -21,6 +21,12 @@
 	let getStartedVisible = $state(true);
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const loadedChatSummaries = useReactiveValue(chatsStore.allChatsSummaries);
+	const listNeedsFabClearance = $derived(
+		theme === 'material' &&
+			!isWideScreen.value &&
+			($loadedChatSummaries?.length ?? 0) > 0,
+	);
 </script>
 
 {#snippet connectionStatus()}
@@ -64,7 +70,9 @@
 
 	<UpdaterBanner />
 
-	<AllChats class="flex min-h-[70vh] flex-col pb-22"></AllChats>
+	<AllChats
+		class="flex min-h-[70vh] flex-col {listNeedsFabClearance ? 'pb-22' : ''}"
+	></AllChats>
 
 	{#if !isWideScreen.value}
 		<div
