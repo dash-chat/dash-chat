@@ -19,17 +19,23 @@
 	let selectedContacts = $state<VerifyingKey[]>([]);
 	let groupName = $state('');
 	let groupImage = $state<string | undefined>(undefined);
+	let creating = $state(false);
 
 	async function createGroupChat() {
-		const groupStore = await chatsStore.createGroup(
-			Array.from(selectedContacts),
-		);
-		await groupStore.setInfo({
-			name: groupName.trim(),
-			description: undefined,
-			image: groupImage,
-		});
-		goto(`/group-chat/${groupStore.chatId}`);
+		creating = true;
+		try {
+			const groupStore = await chatsStore.createGroup(
+				Array.from(selectedContacts),
+			);
+			await groupStore.setInfo({
+				name: groupName.trim(),
+				description: undefined,
+				image: groupImage,
+			});
+			await goto(`/group-chat/${groupStore.chatId}`);
+		} finally {
+			creating = false;
+		}
 	}
 </script>
 
@@ -44,6 +50,7 @@
 		bind:groupImage
 		{selectedContacts}
 		{resolvedContacts}
+		{creating}
 		onBack={() => (currentPage = 'members')}
 		onCreate={createGroupChat}
 	/>

@@ -17,6 +17,7 @@
  *   PHONES=android,android E2E_STRESS=1 just e2e run p2p-network-switch
  *   PHONES=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
  */
+import { backToHome } from '../helpers/flows/back-to-home';
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { UI_TIMEOUT } from '../helpers/timeouts';
@@ -80,13 +81,16 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	it('both chips read p2p on the LAN', async () => {
+		await backToHome([alice, bob]);
 		for (const agent of [alice, bob]) {
-			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
+			await agent.homePage.connectionStatusIndicator.waitForStatus(
 				'p2p',
 				UI_TIMEOUT,
 				'the chip did not read p2p with the peer on the LAN',
 			);
 		}
+		await alice.homePage.openChat('Bob');
+		await bob.homePage.openChat('Alice');
 	});
 
 	it('receives a message the peer sent while it was off Wi-Fi, once back on the LAN', async () => {
@@ -94,11 +98,13 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.disableWifi();
 		stampedLog('Alice off Wi-Fi');
 		await bob.directChatPage.composer.sendMessage(text);
-		await bob.directChatPage.connectionStatusIndicator.waitForStatus(
+		await backToHome([bob]);
+		await bob.homePage.connectionStatusIndicator.waitForStatus(
 			'disconnected',
 			UI_TIMEOUT,
 			'the chip did not read disconnected with the peer off Wi-Fi',
 		);
+		await bob.homePage.openChat('Alice');
 		await alice.pause(AWAY_MS);
 		expect(await bob.directChatPage.messageStatusFor(text)).not.toBe(
 			'delivered',
@@ -106,11 +112,13 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.enableWifi();
 		stampedLog('Alice holds her address again');
 		await expectArrival(alice, text, Date.now());
-		await bob.directChatPage.connectionStatusIndicator.waitForStatus(
+		await backToHome([bob]);
+		await bob.homePage.connectionStatusIndicator.waitForStatus(
 			'p2p',
 			UI_TIMEOUT,
 			'the chip did not read p2p once the peer was back on the LAN',
 		);
+		await bob.homePage.openChat('Alice');
 	});
 
 	it('receives a message the peer sent during a long absence, once back on the LAN', async () => {

@@ -163,6 +163,99 @@ async fn a_group_operation_the_extension_applied_first_is_processed() {
     wait_until_nothing_recorded(&bobbi).await;
 }
 
+/// The accept of Bobbi's contact request reaching her extension first must
+/// still become a contact her app recorded: the extension stays read-only,
+/// and the app — re-processing the recorded accept — authors the AddContact
+/// itself, so its own processor and the webview observe it. An extension
+/// publish would land in the shared store under the app's key without the
+/// running app ever processing it, leaving the contact out of everything
+/// driven by the device-group log until the next cold start.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_accept_the_extension_processed_first_is_recorded_by_the_app() {
+    let config = NodeConfig::testing().no_p2p();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    // Bobbi scans Alice's code.
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    // Wait until the request has reached Alice — via the mailbox — before
+    // Bobbi's app goes quiet, since afterwards nothing uploads it.
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            alice
+                .projection
+                .lookup_contact_by_agent_id(bobbi.agent_id())
+                .await
+                .unwrap()
+                .is_some()
+                .then_some(())
+                .ok_or("alice has not received the request")
+        })
+        .await
+        .unwrap();
+
+    // Bobbi's app is running but not syncing, so the accept can only reach
+    // its store through the extension. Rebuild it before Alice accepts: the
+    // app fetching the accept itself first would ack it past its own cursor,
+    // and the later import would have nothing left to re-process.
+    let bobbi = TestNode::new_at_path(app_config(), "bobbi", bobbi.shutdown().await).await;
+
+    alice.accept_contact(bobbi.agent_id()).await.unwrap();
+
+    let extension = TestNode::new_at_path(extension_config(), "bobbi-extension", bobbi.store_dir())
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            extension
+                .get_profile(alice.agent_id())
+                .await
+                .unwrap()
+                .is_some()
+                .then_some(())
+                .ok_or("the extension has not processed the accept")
+        })
+        .await
+        .unwrap();
+    extension.shutdown().await;
+
+    // The extension established the contact's topics but authored nothing:
+    // the contact is not recorded yet.
+    assert!(
+        bobbi.get_contacts().await.unwrap().is_empty(),
+        "the extension recorded the contact instead of the app"
+    );
+
+    bobbi.resync().await.unwrap();
+
+    // The accept is imported and the contact published by a task spawned off
+    // the import's processing, so this spans resync → import → spawn →
+    // publish; under a fully parallel test run that has outlasted 30s.
+    PollConfig::seconds(60)
+        .wait_for(|| async {
+            bobbi
+                .get_contacts()
+                .await
+                .unwrap()
+                .contains(&alice.agent_id())
+                .then_some(())
+                .ok_or("the app never recorded the accepted contact")
+        })
+        .await
+        .unwrap();
+    wait_until_nothing_recorded(&bobbi).await;
+}
+
 struct Stored {
     alice: TestNode,
     bobbi: TestNode,
@@ -242,6 +335,7 @@ fn extension_config() -> NodeConfig {
     let mut config = NodeConfig::testing().no_p2p().no_blob_sync();
     config.stream_cursor_prefix = Some("nse".to_string());
     config.enable_message_acks = false;
+    config.read_only = true;
     config.record_processed_operations = true;
     config
 }

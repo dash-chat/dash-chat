@@ -36,6 +36,7 @@
 			<List
 				nested
 				inset={isWideScreen.value && theme === 'ios'}
+				dividersIos={isWideScreen.value}
 				data-testid="all-chats-list"
 			>
 				{#each summaries as summary (summary.chatId)}
@@ -44,7 +45,7 @@
 			</List>
 		{:else}
 			<div
-				class="quiet flex flex-1 flex-col items-center justify-center pb-16 text-center"
+				class="quiet flex flex-1 flex-col items-center justify-center text-center"
 				data-testid="all-chats-empty"
 			>
 				<p>{m.noChatsYet()}</p>

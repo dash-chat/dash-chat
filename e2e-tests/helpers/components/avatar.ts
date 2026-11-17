@@ -1,11 +1,10 @@
 import { TestHelper } from '../pages/test-helper';
-import { tid } from '../selectors';
 
 /** An avatar rendered by `wa-avatar`, wherever in the app it appears. */
 export class Avatar extends TestHelper {
-	constructor(agent: WebdriverIO.Browser, hostTestId: string) {
+	constructor(agent: WebdriverIO.Browser, hostSelector: string) {
 		super(agent);
-		this.selector = `${tid(hostTestId)} wa-avatar`;
+		this.selector = `${hostSelector} wa-avatar`;
 	}
 
 	readonly selector: string;
@@ -30,5 +29,36 @@ export class Avatar extends TestHelper {
 			{ timeoutMsg: `${this.selector} never rendered an image` },
 		);
 		return src!;
+	}
+
+	/** `initials` is a non-reflecting property of `wa-avatar`, so it is read as one. */
+	async initials(): Promise<string | null> {
+		return this.agent.execute((sel: string) => {
+			const avatar = document.querySelector(sel) as
+				| (Element & { initials?: string })
+				| null;
+			return avatar?.initials || null;
+		}, this.selector);
+	}
+
+	/** True when `wa-avatar` renders the icon the app slotted in, not an image, initials or its own default glyph. */
+	async showsFallbackIcon(): Promise<boolean> {
+		let shown: boolean | null = null;
+		// `wa-avatar` renders its shadow root a tick after it mounts; reading it
+		// before then would report "no icon" for a placeholder avatar.
+		await this.agent.waitUntil(
+			async () => {
+				shown = await this.agent.execute((sel: string) => {
+					const root = document.querySelector(sel)?.shadowRoot;
+					const slot =
+						root?.querySelector<HTMLSlotElement>('slot[name="icon"]');
+					if (slot) return slot.assignedElements().length > 0;
+					return root?.querySelector('img, .initials') ? false : null;
+				}, this.selector);
+				return shown !== null;
+			},
+			{ timeoutMsg: `${this.selector} never rendered` },
+		);
+		return shown!;
 	}
 }

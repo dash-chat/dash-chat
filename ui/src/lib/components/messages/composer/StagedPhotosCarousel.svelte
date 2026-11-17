@@ -1,19 +1,16 @@
 <script lang="ts">
-	import { type DraftMedia } from '$lib/utils/media';
+	import type { OutgoingPhoto } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	import ImageCarousel from '$lib/components/ImageCarousel.svelte';
 
 	interface Props {
-		/** The staged draft. Only the `photos` variant is rendered. */
-		media: DraftMedia | undefined;
+		photos: OutgoingPhoto[];
 		/** Index of the currently shown photo. */
 		index?: number;
 	}
 
-	let { media = $bindable(), index = $bindable(0) }: Props = $props();
-
-	const photos = $derived(media?.kind === 'photos' ? media.items : []);
+	let { photos, index = $bindable(0) }: Props = $props();
 
 	// Keep the selected index in range as photos are added or removed.
 	$effect(() => {
@@ -49,7 +46,7 @@
 		<img
 			class="rounded-2xl object-contain"
 			style="max-height: 70vh; max-width: 70vw;"
-			use:objectUrl={photo}
+			use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 			use:renderAboveKeyboard
 			alt={photo.name}
 		/>

@@ -5,7 +5,7 @@
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
 	import AddContactPanel from './AddContactPanel.svelte';
-	import MainTabbar from './MainTabbar.svelte';
+	import DesktopNavStrip from './DesktopNavStrip.svelte';
 	import EmptyState from './EmptyState.svelte';
 	import GetStarted from '$lib/components/GetStarted.svelte';
 	import TestBanner from './TestBanner.svelte';
@@ -39,6 +39,7 @@
 <div class="desktop-shell pb-keyboard-safe">
 	<TestBanner />
 	<div class="desktop-layout no-safe-areas-top">
+		<DesktopNavStrip />
 		<div class="desktop-sidebar">
 			<div class="desktop-sidebar-panel">
 				{#if isSettings}
@@ -49,11 +50,6 @@
 					<ChatListPanel />
 				{/if}
 			</div>
-			{#if isSettings || !isNewMessage}
-				<div class="desktop-sidebar-tabbar">
-					<MainTabbar />
-				</div>
-			{/if}
 		</div>
 		<div class="desktop-content" class:desktop-content-settings={isSettings}>
 			{#if page.state.contentPanel === 'add-contact'}
@@ -99,12 +95,14 @@
 	.desktop-sidebar-panel {
 		flex: 1;
 		min-height: 0;
-		overflow-y: auto;
-		overflow-x: hidden;
 	}
 
-	.desktop-sidebar-tabbar {
-		border-top: 1px solid var(--k-hairline-color);
+	/* The panel itself scrolls, not this wrapper: Konsta's navbar fills in on
+	   the scroll of its own parent element. */
+	.desktop-sidebar-panel > :global(*) {
+		height: 100%;
+		overflow-y: auto;
+		overflow-x: hidden;
 	}
 
 	.desktop-content {
