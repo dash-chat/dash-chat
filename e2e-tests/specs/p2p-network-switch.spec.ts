@@ -228,6 +228,8 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.joinWifi(network.ssid, network.passphrase);
 		stampedLog(`both phones on ${network.ssid}`);
 		await bob.directChatPage.composer.sendMessage(text);
+		// The plain budget: Alice's connections from before she was put away
+		// have timed out during the two network moves.
 		await expectArrival(alice, text, Date.now());
 	});
 });

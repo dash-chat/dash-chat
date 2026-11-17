@@ -31,7 +31,6 @@ const LEVELS: &[(&str, LevelFilter)] = &[
     ("mailbox_server", LevelFilter::Debug),
     ("mailbox_local_server", LevelFilter::Debug),
     ("local_hub_discovery", LevelFilter::Debug),
-    ("swarm_discovery", LevelFilter::Info),
     ("lan_multicast_probe", LevelFilter::Debug),
     ("network_watch", LevelFilter::Debug),
     ("tauri_app_lib", LevelFilter::Debug), // dash-chat crate

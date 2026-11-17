@@ -26,15 +26,16 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    // `ServerConfig` is non-exhaustive, so it can't be built with a literal.
     let mut config = ServerConfig::default();
     config.relay = Some(RelayConfig::new(args.addr));
     let mut server = Server::spawn(config).await?;
     tracing::info!("relay serving on http://{}", args.addr);
 
     tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
+        _ = tokio::signal::ctrl_c() => server.shutdown().await?,
+        // Already stopped: there is nothing left to shut down.
         _ = server.join() => {}
     }
-    server.shutdown().await?;
     Ok(())
 }

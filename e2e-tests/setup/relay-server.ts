@@ -62,6 +62,11 @@ export async function startLocalRelay(): Promise<{
 }
 
 function relayPid(): number {
+	if (!existsSync(RELAY_INFO_PATH)) {
+		throw new Error(
+			`no ${RELAY_INFO_PATH}: the run's relay was never started (a remote-mailbox run has none)`,
+		);
+	}
 	return (JSON.parse(readFileSync(RELAY_INFO_PATH, 'utf-8')) as { pid: number })
 		.pid;
 }

@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 panic-policy = { workspace = true }
-iroh-relay = { version = "1.4.1", features = ["server"] }
+iroh-relay = { workspace = true, features = ["server"] }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4.5", features = ["derive"] }

@@ -27,5 +27,8 @@ export function lanHostIp(): string | null {
 		.filter(({ addr }) => addr.family === 'IPv4' && !addr.internal)
 		.filter(({ addr }) => isPrivateLanAddress(addr.address))
 		.sort((a, b) => interfaceRank(a.name) - interfaceRank(b.name));
-	return usable[0]?.addr.address ?? null;
+	if (usable.length === 0) return null;
+	const { name, addr } = usable[0];
+	console.log(`[host-ip] the host's LAN address is ${addr.address} (${name})`);
+	return addr.address;
 }

@@ -22,8 +22,9 @@ export function returnToWebviewBeforeDrivingIt(
 	platform: AgentPlatformName,
 ): void {
 	const returnIfPending = async () => {
-		if (!webviewPending.delete(agent)) return;
+		if (!webviewPending.has(agent)) return;
 		if (!(await isOnWebview(agent))) await switchToWebview(agent, platform);
+		webviewPending.delete(agent);
 	};
 	for (const command of ['findElement', 'findElements'] as const) {
 		agent.overwriteCommand(

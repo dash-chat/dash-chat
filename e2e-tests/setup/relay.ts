@@ -21,7 +21,9 @@ export function localRelayPort(): number {
 export const E2E_RELAY_URL = pinnedRelayUrl();
 
 /** Worked out once, by the launcher, and pinned in the env its workers
- *  inherit: a worker working it out again could land on another address. */
+ *  inherit: a worker working it out again could land on another address. It
+ *  only holds for the network the host was on at build time: a spec that moves
+ *  the host's Wi-Fi leaves the relay unreachable for the rest of the run. */
 function pinnedRelayUrl(): string {
 	if (remoteMailboxUrl() !== null) return PUBLIC_RELAY_URL;
 	process.env._WDIO_RELAY_URL ??= `http://${lanHostIp() ?? '127.0.0.1'}:${localRelayPort()}/`;

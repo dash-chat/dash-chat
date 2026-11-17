@@ -274,17 +274,25 @@ export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
 	const onWebview = await isOnWebview(b);
 	for (let attempt = 1; attempt <= RECLAIM_ATTEMPTS; attempt++) {
 		const reclaim = watchRunningboardd(udid, SOCKETS_RECLAIMED);
-		// A real home-button press: XCUITest's terminate reads to iOS as a
-		// force-quit.
-		await b.execute('mobile: backgroundApp');
-		await b.execute('mobile: lock');
-		await b.pause(BACKGROUND_TRANSITION_MS);
-		// Killed rather than ending the session: ending it terminates the app
-		// (`appium:shouldTerminateApp`).
-		killWebDriverAgentHost(udid);
-		const reclaimed = await reclaim.seen(RECLAIM_TIMEOUT_MS);
+		let reclaimed: string | null;
+		try {
+			// A real home-button press: XCUITest's terminate reads to iOS as a
+			// force-quit.
+			await b.execute('mobile: backgroundApp');
+			await b.execute('mobile: lock');
+			await b.pause(BACKGROUND_TRANSITION_MS);
+			// Killed rather than ending the session: ending it terminates the app
+			// (`appium:shouldTerminateApp`).
+			killWebDriverAgentHost(udid);
+			reclaimed = await reclaim.seen(RECLAIM_TIMEOUT_MS);
+		} finally {
+			reclaim.stop();
+		}
 		await reattachIosSession(b);
-		if (reclaimed) {
+		if (reclaimed !== null) {
+			console.log(
+				`[ios] ${udid}: iOS reclaimed the app's sockets: ${reclaimed}`,
+			);
 			if (onWebview) returnToWebviewOnNextUse(b);
 			return;
 		}
@@ -333,7 +341,11 @@ async function reattachIosSession(b: WebdriverIO.Browser): Promise<void> {
 function watchRunningboardd(
 	udid: string,
 	pattern: RegExp,
-): { seen(timeoutMs: number): Promise<boolean> } {
+): {
+	/** The matching line, or null when none came within `timeoutMs`. */
+	seen(timeoutMs: number): Promise<string | null>;
+	stop(): void;
+} {
 	const proc = spawn('idevicesyslog', ['-u', udid, '-p', 'runningboardd'], {
 		stdio: ['ignore', 'pipe', 'ignore'],
 	});
@@ -346,10 +358,11 @@ function watchRunningboardd(
 		'e2e',
 		`runningboardd-${udid}.log`,
 	);
-	const matched = new Promise<boolean>(resolve => {
+	const matched = new Promise<string>(resolve => {
 		createInterface({ input: proc.stdout }).on('line', line => {
 			appendFileSync(log, `${line}\n`);
-			if (pattern.test(line)) resolve(true);
+			const match = pattern.exec(line);
+			if (match !== null) resolve(match[0]);
 		});
 	});
 	return {
@@ -357,13 +370,15 @@ function watchRunningboardd(
 			let timer: NodeJS.Timeout | undefined;
 			const seen = await Promise.race([
 				matched,
-				new Promise<boolean>(resolve => {
-					timer = setTimeout(() => resolve(false), timeoutMs);
+				new Promise<null>(resolve => {
+					timer = setTimeout(() => resolve(null), timeoutMs);
 				}),
 			]);
 			clearTimeout(timer);
-			proc.kill();
 			return seen;
+		},
+		stop() {
+			proc.kill();
 		},
 	};
 }
@@ -545,9 +560,10 @@ async function reinstallApp(udid: string): Promise<boolean> {
  *
  *  Each spec runs in its own worker, so `afterSession`'s kill only ever reaches
  *  that worker's own tails and a worker that exits early leaves its own behind.
- *  The device relay serves one consumer, so a single survivor makes every later
- *  tail connect to a stream that stays empty — which is silent, and looks
- *  exactly like an app that logged nothing. */
+ *  A surviving tail of the app's processes has made every later one connect to
+ *  a stream that stays empty — which is silent, and looks exactly like an app
+ *  that logged nothing. A tail of other processes alongside it (the
+ *  runningboardd watcher of [`backgroundIosApp`]) has not. */
 function killStaleSyslogLoggers(udid: string): void {
 	try {
 		execSync(`pkill -f "idevicesyslog -u ${udid}"`, { stdio: 'ignore' });
