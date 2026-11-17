@@ -11,11 +11,10 @@
 	import { Badge } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 	import {
-		moreThanAnHourAgo,
-		lessThanAMinuteAgo,
 		inYesterday,
 		beforeYesterday,
 		minutesSince,
+		withinWindow,
 	} from '$lib/utils/time';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupEventText } from '$lib/utils/group-event-text';
@@ -75,15 +74,15 @@
 				></wa-format-date>
 			{:else if inYesterday(summary.lastEvent.timestamp)}
 				{m.yesterday().toLocaleLowerCase()}
-			{:else if lessThanAMinuteAgo(summary.lastEvent.timestamp)}
-				{m.now()}
-			{:else if moreThanAnHourAgo(summary.lastEvent.timestamp)}
+			{:else if !withinWindow(summary.lastEvent.timestamp, 3_600_000)}
 				<wa-format-date
 					hour="numeric"
 					minute="numeric"
 					hour-format="24"
 					date={new Date(summary.lastEvent.timestamp)}
 				></wa-format-date>
+			{:else if minutesSince(summary.lastEvent.timestamp) < 1}
+				{m.now()}
 			{:else}
 				{minutesFormat.format(minutesSince(summary.lastEvent.timestamp))}
 			{/if}

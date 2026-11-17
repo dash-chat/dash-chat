@@ -15,7 +15,11 @@
 </script>
 
 <div class="flex flex-col relative h-full">
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1 min-w-0 truncate"
+		transparent={true}
+	>
 		{#snippet left()}
 			<div class="grid size-11 place-items-center">
 				<ConnectionStatusIndicator />

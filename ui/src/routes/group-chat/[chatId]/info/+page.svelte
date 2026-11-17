@@ -224,7 +224,7 @@
 									{#snippet media()}
 										<P2pBadge
 											show={activeOverP2p}
-											testId="group-info-member-p2p-badge"
+											testId={`group-info-member-p2p-badge-${member.profile?.name}`}
 										>
 											<PeerAvatar profile={member.profile} size={32} />
 										</P2pBadge>

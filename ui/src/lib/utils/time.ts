@@ -83,6 +83,6 @@ export function withinWindow(timestamp: number, windowMs: number): boolean {
 /** Whole minutes elapsed since `timestamp`, reactively. */
 export function minutesSince(timestamp: number): number {
 	const minutes = Math.floor((Date.now() - timestamp) / 60_000);
-	withinWindow(timestamp, (minutes + 1) * 60_000);
+	subscriberFor(timestamp + (minutes + 1) * 60_000)();
 	return minutes;
 }

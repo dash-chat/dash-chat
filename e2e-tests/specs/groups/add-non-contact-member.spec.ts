@@ -69,6 +69,6 @@ describe('Adding a member the other members are not contacts with', () => {
 		await member.groupChatPage.connectedPeersCount.waitForDisplayed();
 		await member.groupChatPage.infoLink.click();
 		await member.groupInfoPage.ready();
-		await member.groupInfoPage.memberP2pBadge.waitForDisplayed();
+		await member.groupInfoPage.memberP2pBadge('Cat').waitForDisplayed();
 	});
 });

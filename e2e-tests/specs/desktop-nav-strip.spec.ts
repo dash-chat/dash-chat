@@ -17,10 +17,11 @@ describe('Desktop nav strip', () => {
 
 	it('switches the sidebar between settings and chats', async () => {
 		await agent.mainTabbar.desktopNavStrip.waitForDisplayed();
+		await agent.homePage.emptyState.waitForDisplayed();
 
 		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
-		await agent.homePage.chatList.waitForExist({ reverse: true });
+		await agent.homePage.emptyState.waitForExist({ reverse: true });
 
 		await agent.mainTabbar.chatsTab.click();
 		await agent.homePage.ready();
