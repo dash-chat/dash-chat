@@ -9,6 +9,7 @@
 	import IconButton from '$lib/components/IconButton.svelte';
 	import StagedThumb from '$lib/components/StagedThumb.svelte';
 	import AddThumb from '$lib/components/AddThumb.svelte';
+	import PendingThumb from '$lib/components/PendingThumb.svelte';
 	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
@@ -20,13 +21,12 @@
 	let { draft, loadingMedia, onAddMore }: Props = $props();
 
 	const media = $derived(draft.media);
+	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
-	const showClearAll = $derived(
-		media?.kind === 'photos' && media.items.length > 1,
-	);
+	const showClearAll = $derived(photos.length > 1);
 </script>
 
-{#if media && media.kind !== 'voice_note'}
+{#if (media && media.kind !== 'voice_note') || draft.pendingPhotos > 0}
 	<div class="pt-2" data-testid="message-input-media-preview">
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">
@@ -41,8 +41,8 @@
 			</div>
 		{/if}
 		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">
-			{#if media.kind === 'photos'}
-				{#each media.items as photo, i (photo)}
+			{#if media?.kind !== 'file'}
+				{#each photos as photo, i (photo)}
 					<StagedThumb
 						removeLabel={m.removeAttachment()}
 						onRemove={() => draft.removePhoto(i)}
@@ -56,7 +56,12 @@
 						/>
 					</StagedThumb>
 				{/each}
-				{#if media.items.length < MAX_STAGED_PHOTOS}
+				{#each { length: draft.pendingPhotos }, i (i)}
+					<PendingThumb
+						class="h-[120px] w-[120px] rounded bg-black/10 dark:bg-white/10"
+					/>
+				{/each}
+				{#if photos.length + draft.pendingPhotos < MAX_STAGED_PHOTOS}
 					<AddThumb
 						onClick={onAddMore}
 						label={m.addMoreAttachments()}

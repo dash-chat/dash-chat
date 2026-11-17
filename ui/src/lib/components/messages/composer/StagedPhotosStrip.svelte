@@ -8,9 +8,11 @@
 	import type { OutgoingPhoto } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
 	import IconButton from '$lib/components/IconButton.svelte';
+	import PendingThumb from '$lib/components/PendingThumb.svelte';
 
 	interface Props {
 		photos: OutgoingPhoto[];
+		pendingPhotos: number;
 		/** Index of the currently shown photo. */
 		index?: number;
 		loadingMedia: boolean;
@@ -22,6 +24,7 @@
 
 	let {
 		photos,
+		pendingPhotos,
 		index = $bindable(0),
 		loadingMedia,
 		onAddMore,
@@ -34,13 +37,14 @@
 	}
 
 	async function removePhoto(i: number) {
-		if (photos.length <= 1) {
+		const nothingRemains = photos.length + pendingPhotos <= 1;
+		onRemove(i);
+		if (nothingRemains) {
 			onClose();
 			return;
 		}
-		onRemove(i);
 		await tick();
-		index = Math.min(index, photos.length - 1);
+		index = Math.max(0, Math.min(index, photos.length - 1));
 	}
 </script>
 
@@ -48,7 +52,7 @@
 	class="flex items-center justify-start gap-3 overflow-x-auto px-4 pt-3 pb-3"
 	data-testid="staged-media-strip"
 >
-	{#if photos.length > 1}
+	{#if photos.length + pendingPhotos > 1}
 		{#each photos as photo, i (photo)}
 			<div
 				class="staged-thumb relative h-14 w-14 shrink-0 overflow-hidden"
@@ -84,8 +88,14 @@
 				{/if}
 			</div>
 		{/each}
+		{#each { length: pendingPhotos }, i (i)}
+			<PendingThumb
+				class="h-14 w-14 rounded-xl border-2 border-white bg-white/10"
+				spinnerClass="!text-white"
+			/>
+		{/each}
 	{/if}
-	{#if photos.length < MAX_STAGED_PHOTOS}
+	{#if photos.length + pendingPhotos < MAX_STAGED_PHOTOS}
 		<div class="flex h-14 shrink-0 items-center">
 			<IconButton
 				icon={mdiPlusBoxOutline}

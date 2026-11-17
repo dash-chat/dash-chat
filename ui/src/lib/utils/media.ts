@@ -42,9 +42,10 @@ export class AttachmentTooLargeError extends Error {
 	}
 }
 
+// No file name in the message: it would reach an error report unredacted.
 export class UndecodablePhotoError extends Error {
-	constructor(fileName: string) {
-		super(`could not decode ${fileName}`);
+	constructor() {
+		super('could not decode photo');
 		this.name = 'UndecodablePhotoError';
 	}
 }
@@ -233,7 +234,7 @@ function imgDimensions(file: File): Promise<{ width: number; height: number }> {
 		};
 		img.onerror = () => {
 			URL.revokeObjectURL(url);
-			reject(new UndecodablePhotoError(file.name));
+			reject(new UndecodablePhotoError());
 		};
 		img.src = url;
 	});

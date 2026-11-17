@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import { Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
@@ -116,9 +117,13 @@
 			{/if}
 		</div>
 
-		{#if media?.kind === 'photos'}
+		{#if photos.length > 0}
 			<StagedPhotosCarousel {photos} bind:index />
-		{:else if media?.kind === 'file'}
+		{:else if media?.kind !== 'file'}
+			<div class="flex min-h-0 flex-1 items-center justify-center">
+				<Preloader class="!text-white" />
+			</div>
+		{:else}
 			<div
 				class="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center"
 			>
@@ -138,9 +143,10 @@
 		use:renderAboveKeyboard
 		use:keepKeyboardOpen
 	>
-		{#if media?.kind === 'photos'}
+		{#if media?.kind !== 'file'}
 			<StagedPhotosStrip
 				{photos}
+				pendingPhotos={draft.pendingPhotos}
 				bind:index
 				onRemove={i => draft.removePhoto(i)}
 				{loadingMedia}

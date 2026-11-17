@@ -60,13 +60,15 @@ export class Composer extends TestHelper {
 		);
 	}
 
-	/** Wait for the staged-media UI: the inline preview on desktop, the
-	 * full-screen staged-media page on mobile. */
+	/** Wait for the staged-media UI (the inline preview on desktop, the
+	 * full-screen staged-media page on mobile) to hold every photo of the
+	 * batch: send is refused while any is still being prepared. */
 	async waitForStagedMedia(): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
-				(await this.mediaPreview.isExisting()) ||
-				(await this.stagedMediaPage.isExisting()),
+				((await this.mediaPreview.isExisting()) ||
+					(await this.stagedMediaPage.isExisting())) &&
+				!(await this.agent.$(tid('staged-photo-pending')).isExisting()),
 			{ timeout: 5_000, timeoutMsg: 'Staged media UI did not appear' },
 		);
 	}

@@ -75,6 +75,10 @@
 	const mediaDraft = new MediaDraft(openStagedMediaPage);
 	onDestroy(() => mediaDraft.clear());
 	const media = $derived(mediaDraft.media);
+	const showsStagedMedia = $derived(
+		(media !== undefined && media.kind !== 'voice_note') ||
+			mediaDraft.pendingPhotos > 0,
+	);
 	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
@@ -234,6 +238,20 @@
 				'error',
 			);
 		}
+		closeEmptyStagedMediaPage();
+	}
+
+	// A batch opens the page before its photos are prepared, so one whose
+	// photos were all damaged leaves it with nothing to show.
+	function closeEmptyStagedMediaPage() {
+		if (
+			isMobile &&
+			page.state.stagedMedia &&
+			!showsStagedMedia &&
+			!mediaDraft.busy
+		) {
+			history.back();
+		}
 	}
 
 	function openStagedMediaPage() {
@@ -310,13 +328,9 @@
 	// history entry, and the rule would discard every voice draft the moment it
 	// was staged.
 	$effect(() => {
-		if (
-			isMobile &&
-			media &&
-			media.kind !== 'voice_note' &&
-			!page.state.stagedMedia
-		)
+		if (isMobile && showsStagedMedia && !page.state.stagedMedia) {
 			mediaDraft.clear();
+		}
 	});
 
 	$effect(() => {
@@ -549,7 +563,7 @@
 	{/if}
 </div>
 
-{#if isMobile && media && page.state.stagedMedia}
+{#if isMobile && showsStagedMedia && page.state.stagedMedia}
 	<StagedMediaPage
 		draft={mediaDraft}
 		bind:value

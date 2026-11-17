@@ -20,12 +20,15 @@ export class MediaDraft {
 	// to the backend as they are.
 	#media = $state.raw<DraftMedia | undefined>();
 	#pendingBatches = $state(0);
+	#pendingPhotos = $state(0);
 	#queue: Promise<void> = Promise.resolve();
 	// Bumped by whatever discards the draft, so a batch still being staged
 	// stops instead of bringing the draft back.
 	#generation = 0;
 
-	constructor(private onAttachmentStaged: () => void) {}
+	/** @param onStagingStarted called when a batch starts adding attachments,
+	 * before its photos are prepared. */
+	constructor(private onStagingStarted: () => void) {}
 
 	get media(): DraftMedia | undefined {
 		return this.#media;
@@ -33,6 +36,11 @@ export class MediaDraft {
 
 	get busy(): boolean {
 		return this.#pendingBatches > 0;
+	}
+
+	/** Photos of the batch being staged that are still to be prepared. */
+	get pendingPhotos(): number {
+		return this.#pendingPhotos;
 	}
 
 	/** Stage what the mixing rules allow of `files`, after any batch already
@@ -58,6 +66,7 @@ export class MediaDraft {
 	clear() {
 		this.#generation++;
 		this.#media = undefined;
+		this.#pendingPhotos = 0;
 	}
 
 	setVoiceNote(voice: DraftVoiceNote) {
@@ -76,29 +85,41 @@ export class MediaDraft {
 	async #stage(files: File[], generation: number): Promise<StagingOutcome> {
 		if (generation !== this.#generation) return { undecodablePhotos: 0 };
 		const plan = planStaging(this.#media, files);
-		if (plan.file) {
-			this.#media = { kind: 'file', file: plan.file };
-			this.onAttachmentStaged();
+		if (plan.file) this.#media = { kind: 'file', file: plan.file };
+		if (!plan.file && plan.photos.length === 0) {
+			return { error: plan.error, undecodablePhotos: 0 };
 		}
-		let undecodablePhotos = 0;
-		// One at a time: decoding a batch of full-size photos at once can
-		// exhaust the Android webview's memory.
-		for (const file of plan.photos) {
-			const photo = await prepareOrUndecodable(file);
-			if (generation !== this.#generation) return { undecodablePhotos: 0 };
-			if (photo) {
-				this.#appendPhoto(photo);
-			} else {
-				undecodablePhotos++;
-			}
-		}
+		this.#pendingPhotos = plan.photos.length;
+		this.onStagingStarted();
+		const undecodablePhotos = await this.#stagePhotos(plan.photos, generation);
 		return { error: plan.error, undecodablePhotos };
+	}
+
+	/** Returns how many of `files` couldn't be decoded. */
+	async #stagePhotos(files: File[], generation: number): Promise<number> {
+		let undecodablePhotos = 0;
+		try {
+			// One at a time: decoding a batch of full-size photos at once can
+			// exhaust the Android webview's memory.
+			for (const file of files) {
+				const photo = await prepareOrUndecodable(file);
+				if (generation !== this.#generation) return 0;
+				this.#pendingPhotos--;
+				if (photo) {
+					this.#appendPhoto(photo);
+				} else {
+					undecodablePhotos++;
+				}
+			}
+		} finally {
+			if (generation === this.#generation) this.#pendingPhotos = 0;
+		}
+		return undecodablePhotos;
 	}
 
 	#appendPhoto(photo: OutgoingPhoto) {
 		const staged = this.#media?.kind === 'photos' ? this.#media.items : [];
 		this.#media = { kind: 'photos', items: [...staged, photo] };
-		this.onAttachmentStaged();
 	}
 
 	#setPhotos(photos: OutgoingPhoto[]) {
