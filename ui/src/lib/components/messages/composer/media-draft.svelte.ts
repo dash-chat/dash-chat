@@ -23,7 +23,7 @@ export class MediaDraft {
 	#pendingPhotos = $state(0);
 	#queue: Promise<void> = Promise.resolve();
 	// Bumped by whatever discards the draft, so a batch still being staged
-	// stops instead of bringing the draft back.
+	// stops, and stops counting as pending, instead of bringing the draft back.
 	#generation = 0;
 
 	/** @param onStagingStarted called when a batch starts adding attachments,
@@ -50,7 +50,9 @@ export class MediaDraft {
 		this.#pendingBatches++;
 		const outcome = this.#queue
 			.then(() => this.#stage(files, generation))
-			.finally(() => this.#pendingBatches--);
+			.finally(() => {
+				if (generation === this.#generation) this.#pendingBatches--;
+			});
 		this.#queue = outcome.then(
 			() => {},
 			() => {},
@@ -67,9 +69,11 @@ export class MediaDraft {
 		this.#generation++;
 		this.#media = undefined;
 		this.#pendingPhotos = 0;
+		this.#pendingBatches = 0;
 	}
 
 	setVoiceNote(voice: DraftVoiceNote) {
+		this.clear();
 		this.#media = { kind: 'voice_note', voice };
 	}
 
@@ -92,6 +96,7 @@ export class MediaDraft {
 		this.#pendingPhotos = plan.photos.length;
 		this.onStagingStarted();
 		const undecodablePhotos = await this.#stagePhotos(plan.photos, generation);
+		if (generation !== this.#generation) return { undecodablePhotos: 0 };
 		return { error: plan.error, undecodablePhotos };
 	}
 

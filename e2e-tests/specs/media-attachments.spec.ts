@@ -203,7 +203,9 @@ describe('Media attachments', () => {
 		await agent1.toast.expectMessage(
 			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
 		);
-		expect(await composer.hasMediaPreview()).toBe(false);
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg: 'Staged media UI stayed up after the only photo was dropped',
+		});
 	});
 
 	it('stages dropped images, appending to the draft', async () => {

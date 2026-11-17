@@ -2,7 +2,10 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
 	import { onDestroy, onMount } from 'svelte';
-	import { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
+	import {
+		MediaDraft,
+		type StagingOutcome,
+	} from '$lib/components/messages/composer/media-draft.svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
@@ -79,7 +82,9 @@
 		(media !== undefined && media.kind !== 'voice_note') ||
 			mediaDraft.pendingPhotos > 0,
 	);
-	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
+	let hasContent = $derived(
+		value.trim().length > 0 || media !== undefined || mediaDraft.busy,
+	);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let sending = false;
@@ -100,7 +105,7 @@
 	 * new message. Media attachments are disabled while editing. Asks to
 	 * discard first when a draft (text or staged media) would be lost. */
 	export function editMessage(message: Message) {
-		if (!editing && (hasContent || mediaDraft.busy)) {
+		if (!editing && hasContent) {
 			discardDialog?.confirm(message);
 			return;
 		}
@@ -226,10 +231,16 @@
 
 	/** Add files to the draft and toast why anything was left out. */
 	async function stage(files: FileList | File[]) {
-		const { error, undecodablePhotos } = await mediaDraft.add(
-			Array.from(files),
-		);
-		// One toast at a time: a rule error explains more than the damaged count.
+		try {
+			const outcome = await mediaDraft.add(Array.from(files));
+			showStagingToast(outcome);
+		} finally {
+			closeEmptyStagedMediaPage();
+		}
+	}
+
+	// One toast at a time: a rule error explains more than the damaged count.
+	function showStagingToast({ error, undecodablePhotos }: StagingOutcome) {
 		if (error) {
 			showToast(stagingErrorMessages[error](), 'error');
 		} else if (undecodablePhotos > 0) {
@@ -238,11 +249,11 @@
 				'error',
 			);
 		}
-		closeEmptyStagedMediaPage();
 	}
 
-	// A batch opens the page before its photos are prepared, so one whose
-	// photos were all damaged leaves it with nothing to show.
+	// A batch opens the page before its photos are prepared, so one that
+	// staged nothing (every photo damaged, or preparing failed) leaves it
+	// with nothing to show.
 	function closeEmptyStagedMediaPage() {
 		if (
 			isMobile &&
