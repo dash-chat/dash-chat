@@ -4,13 +4,14 @@
  * apps start, and the cloud mailbox is down, so neither the relay nor a
  * mailbox can carry anything. Contact exchange, text messages and media can
  * only cross over a direct connection to a peer discovered over mDNS. The chat
- * navbar chip reads "p2p" while they are online.
+ * home page chip reads "p2p" while they are online.
  *
  * Needs two physical phones without mobile data, and a network in
  * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:
  *   PHONES=android,android just e2e run p2p-offline-lan
  *   PHONES=ios,ios just e2e run p2p-offline-lan
  */
+import { backToHome } from '../helpers/flows/back-to-home';
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { UI_TIMEOUT } from '../helpers/timeouts';
@@ -67,13 +68,16 @@ describe('P2P sync on a LAN with no internet', () => {
 	});
 
 	it('both chips read p2p', async () => {
+		await backToHome([alice, bob]);
 		for (const agent of [alice, bob]) {
-			await agent.directChatPage.connectionStatusIndicator.waitForStatus(
+			await agent.homePage.connectionStatusIndicator.waitForStatus(
 				'p2p',
 				UI_TIMEOUT,
 				'the chip did not read p2p on a LAN with no internet',
 			);
 		}
+		await alice.homePage.openChat('Bob');
+		await bob.homePage.openChat('Alice');
 	});
 
 	it('syncs a text message Alice → Bob', async () => {

@@ -1,5 +1,4 @@
 import { Composer } from '../../components/composer';
-import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { Messages } from '../../components/messages';
 import { Navbar } from '../../components/navbar';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
@@ -21,7 +20,6 @@ export class GroupChatPage extends TestHelper {
 	);
 	notMemberNotice = this.el(tid('group-chat-not-member'));
 	connectedPeersCount = this.el(tid('connected-peers-count'));
-	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 	scroll = new ReverseScrollPage(this.agent, 'group-chat-scroll');
 
 	async ready() {

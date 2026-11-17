@@ -21,6 +21,10 @@ export class GroupInfoPage extends TestHelper {
 		return this.agent.$(tid(`group-info-member-${name}`));
 	}
 
+	memberP2pBadge(name: string) {
+		return this.agent.$(tid(`group-info-member-p2p-badge-${name}`));
+	}
+
 	async ready() {
 		await this.back.waitForExist();
 	}

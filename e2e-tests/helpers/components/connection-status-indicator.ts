@@ -66,6 +66,9 @@ export class ConnectionStatusIndicator extends TestHelper {
 	internetMode = this.el(tid('connection-mode-internet'));
 	localHubMode = this.el(tid('connection-mode-local-hub'));
 	phoneToPhoneMode = this.el(tid('connection-mode-phone-to-phone'));
+	localHubHelp = this.el(tid('connection-mode-local-hub-help'));
+	phoneToPhoneHelp = this.el(tid('connection-mode-phone-to-phone-help'));
+	helpBack = this.el(tid('connection-mode-help-back'));
 
 	/** Read the chip's data-status, or null while it is not mounted. */
 	status(): Promise<ConnectionStatus | null> {
@@ -103,8 +106,32 @@ export class ConnectionStatusIndicator extends TestHelper {
 		}, tid('connection-status-dialog'));
 	}
 
-	async waitForStatus(
+	waitForStatus(
 		status: ConnectionStatus,
+		timeout: number,
+		timeoutMsg: string,
+	): Promise<void> {
+		return this.waitUntilStatus(seen => seen === status, timeout, timeoutMsg);
+	}
+
+	/** Wait until the chip is not showing a local hub. Which other state it
+	 *  reads instead depends on the cloud connection, so this leaves it open. */
+	waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
+		return this.waitUntilStatus(seen => seen !== 'local', timeout, timeoutMsg);
+	}
+
+	/** Wait until the chip says no mailbox is in reach: p2p while a peer in
+	 *  any chat is online, disconnected otherwise. */
+	waitForNoMailbox(timeout: number, timeoutMsg: string): Promise<void> {
+		return this.waitUntilStatus(
+			seen => seen === 'disconnected' || seen === 'p2p',
+			timeout,
+			timeoutMsg,
+		);
+	}
+
+	private async waitUntilStatus(
+		reached: (seen: ConnectionStatus | null) => boolean,
 		timeout: number,
 		timeoutMsg: string,
 	): Promise<void> {
@@ -113,24 +140,7 @@ export class ConnectionStatusIndicator extends TestHelper {
 			await this.agent.waitUntil(
 				async () => {
 					seen = await this.status();
-					return seen === status;
-				},
-				{ timeout, interval: 200 },
-			);
-		} catch {
-			throw new Error(`${timeoutMsg} (the chip last read ${String(seen)})`);
-		}
-	}
-
-	/** Wait until the chip is not showing a local hub. Which other state it
-	 *  reads instead depends on the cloud connection, so this leaves it open. */
-	async waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
-		let seen: ConnectionStatus | null = null;
-		try {
-			await this.agent.waitUntil(
-				async () => {
-					seen = await this.status();
-					return seen !== 'local';
+					return reached(seen);
 				},
 				{ timeout, interval: 200 },
 			);
@@ -194,6 +204,24 @@ export class ConnectionStatusIndicator extends TestHelper {
 					expected.phoneToPhone,
 				);
 			}
+		} finally {
+			await this.closeDialog();
+		}
+	}
+
+	/** Open the dialog, walk into the help of each mode that has one and back
+	 *  out to the list, then close it. */
+	async expectModeHelp(): Promise<void> {
+		await this.chip.click();
+		await this.agent.waitUntil(() => this.isDialogOpen());
+		try {
+			await this.localHubMode.click();
+			await this.localHubHelp.waitForDisplayed();
+			await this.helpBack.click();
+			await this.phoneToPhoneMode.click();
+			await this.phoneToPhoneHelp.waitForDisplayed();
+			await this.helpBack.click();
+			await this.localHubMode.waitForDisplayed();
 		} finally {
 			await this.closeDialog();
 		}

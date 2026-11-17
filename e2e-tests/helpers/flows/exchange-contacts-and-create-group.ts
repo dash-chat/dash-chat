@@ -28,9 +28,7 @@ export async function exchangeContactsAndCreateGroup(
 }
 
 /** Walk `agent` from the home page through the new-group flow, picking each
- *  of `members` by contact name, and leave it on the new group's chat page. An
- *  empty `members` makes a members-less group: the cheapest page where the
- *  connection chip is mounted. */
+ *  of `members` by contact name, and leave it on the new group's chat page. */
 export async function createGroup(
 	agent: Agent,
 	groupName: string,

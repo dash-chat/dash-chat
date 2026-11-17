@@ -23,7 +23,6 @@ import type { WifiNetwork } from '../../setup/test-env';
 import type { RenderedMessage } from '../components/messages';
 import { createProfiles } from '../flows/create-profiles';
 import { contactLinkOf, exchangeContacts } from '../flows/exchange-contacts';
-import { createGroup } from '../flows/exchange-contacts-and-create-group';
 import {
 	type Real,
 	type StressAgent,
@@ -105,11 +104,8 @@ export class Fuzzer {
 	/**
 	 * A fuzzer over `agents`, by the name each goes by. It builds the world
 	 * itself — a profile each, then whatever `setUp` adds — and drives them to
-	 * where moves expect them: preview features on, each one's contact link
-	 * collected, and — given networks to walk phones and hubs through, and a
-	 * Wi-Fi card on the host for the hubs, or the `cloud` mailbox's link to
-	 * degrade — a members-less group chat each, to read the connection chip
-	 * in. The model is then read back off the devices — who they are contacts
+	 * where moves expect them: preview features on and each one's contact link
+	 * collected. The model is then read back off the devices — who they are contacts
 	 * of, the groups they are in, the messages in each chat — so a `setUp` is
 	 * described once, in the app's own terms, and never also in the model.
 	 * Leave `setUp` out and the agents start as strangers, which is what lets a
@@ -357,21 +353,9 @@ function restoreNetworks(real: Real): Promise<void> {
 
 /** Drive every agent to where moves expect it. Each drives its own session
  *  and reads nothing of another's, so they are prepared at once: with a
- *  handful of agents this is the difference between one wait and n of them.
- *  The group names are drawn before, and recorded after, so the shared model
- *  is only ever touched from here. */
+ *  handful of agents this is the difference between one wait and n of them. */
 async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
-	const chipChats = new Map<StressAgent, string>();
-	if (model.watchesChip()) {
-		for (const sa of real.agents) chipChats.set(sa, model.nextGroupName());
-	}
-	await Promise.all(
-		real.agents.map(sa => prepareAgent(model, sa, chipChats.get(sa) ?? null)),
-	);
-	for (const [sa, chatName] of chipChats) {
-		model.setChipChat(sa.name, model.addGroup(sa.name, [], chatName));
-		model.wentHome(sa.name);
-	}
+	await Promise.all(real.agents.map(sa => prepareAgent(model, sa)));
 }
 
 /** What one agent's screen says it already has: the chats in its list, and
@@ -501,13 +485,11 @@ function describeFound(found: FoundState[]): string {
 		.join('; ');
 }
 
-/** One agent: preview features on, its device's notifications cleared, its
- *  add-contact link collected, and the members-less group a run that watches
- *  the connection chip reads it in. */
+/** One agent: preview features on, its device's notifications cleared, and
+ *  its add-contact link collected. */
 async function prepareAgent(
 	model: ExpectedModel,
 	sa: StressAgent,
-	chipChat: string | null,
 ): Promise<void> {
 	await sa.agent.enablePreviewFeatures();
 	// The device keeps what earlier runs posted across the session's app data
@@ -517,10 +499,6 @@ async function prepareAgent(
 	// `exchangeContacts` is their direct chat.
 	await ensureHome(sa, model);
 	sa.link = await contactLinkOf(sa.agent);
-	if (chipChat === null) return;
-	await createGroup(sa.agent, chipChat, []);
-	await sa.agent.groupChatPage.back.click();
-	await sa.agent.homePage.ready();
 }
 
 /** Park every hub and take the host's card off the test networks. */

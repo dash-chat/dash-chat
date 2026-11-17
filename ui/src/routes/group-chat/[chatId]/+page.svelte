@@ -26,7 +26,6 @@
 	import { mdiAccountGroup } from '@mdi/js';
 	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
 	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
@@ -125,12 +124,6 @@
 	}
 </script>
 
-{#snippet connectionStatus()}
-	<div class="grid size-11 shrink-0 place-items-center">
-		<ConnectionStatusIndicator {chatId} />
-	</div>
-{/snippet}
-
 <div class="absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
@@ -145,7 +138,6 @@
 					? 'shrink-0 me-4'
 					: 'shrink-0'}
 				centerTitle={false}
-				right={theme === 'ios' ? connectionStatus : undefined}
 			>
 				{#snippet left()}
 					{#if !isWideScreen.value}
@@ -172,10 +164,6 @@
 						</Link>
 					{/await}
 				{/snippet}
-
-				{#if theme === 'material'}
-					<div class="me-2">{@render connectionStatus()}</div>
-				{/if}
 			</Navbar>
 		{/snippet}
 
@@ -267,7 +255,6 @@
 														{message}
 														{position}
 														{myDeviceId}
-														{chatId}
 														{readOnly}
 														showDeliveryStatus={endsDeliveryStatusRun(
 															messageGroup,
@@ -302,7 +289,6 @@
 														{message}
 														{position}
 														{myDeviceId}
-														{chatId}
 														{readOnly}
 														searchQuery=""
 														sender={author?.profile}
