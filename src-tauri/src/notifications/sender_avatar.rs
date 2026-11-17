@@ -9,7 +9,7 @@ const WHITE: &str = "#ffffff";
 
 /// The sender's photo as `large_icon_bytes`, or else, like Signal, what the
 /// app draws for them as `large_icon_letter_tile`.
-pub(super) fn sender_large_icon(
+pub(super) fn sender_avatar(
     avatar: Option<String>,
     name: Option<&str>,
 ) -> (Option<String>, Option<LetterTile>) {
@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn keeps_a_photo() {
         let photo = "data:image/jpeg;base64,AAAA".to_string();
-        let (bytes, tile) = sender_large_icon(Some(photo.clone()), Some("Bob"));
+        let (bytes, tile) = sender_avatar(Some(photo.clone()), Some("Bob"));
         assert_eq!(bytes, Some(photo));
         assert!(tile.is_none());
     }
