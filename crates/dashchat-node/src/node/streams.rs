@@ -18,6 +18,7 @@ use p2panda::streams::{
     PublishError, Source, StreamEvent, StreamFrom, StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_core::Timestamp;
 use p2panda_core::traits::Digest;
 use p2panda_encryption::crypto::xchacha20::XAeadNonce;
 use p2panda_encryption::data_scheme::GroupSecretId;
@@ -504,8 +505,24 @@ impl TopicStreams {
         let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
         let process_fut = match publisher {
             Publisher::Stream(tx) => self.publish_plain(&tx, payload).await?,
-            Publisher::Space(space) => self.publish_encrypted(&space, payload).await?,
+            Publisher::Space(space) => self.publish_encrypted(&space, payload, None).await?,
         };
+        process_fut.hash().alias_numbered();
+        Ok(process_fut)
+    }
+
+    /// Publish a payload into a space as [`Self::publish`] does, dated `timestamp`: the time
+    /// its author first wrote it, in another space.
+    pub(crate) async fn publish_at(
+        &self,
+        topic: Topic,
+        payload: Payload,
+        timestamp: Timestamp,
+    ) -> Result<ProcessFuture, StreamsError> {
+        let space = self.space(topic).await?;
+        let process_fut = self
+            .publish_encrypted(&space, payload, Some(timestamp))
+            .await?;
         process_fut.hash().alias_numbered();
         Ok(process_fut)
     }
@@ -545,6 +562,7 @@ impl TopicStreams {
         &self,
         space: &Space,
         payload: Payload,
+        timestamp: Option<Timestamp>,
     ) -> Result<ProcessFuture, StreamsError> {
         let (processed_tx, processed_rx) = oneshot::channel();
         let registered = Arc::new(std::sync::Mutex::new(None));
@@ -553,12 +571,16 @@ impl TopicStreams {
             .run({
                 let registered = registered.clone();
                 move |space| async move {
-                    space
-                        .publish_with(payload, |hash| {
-                            in_process.lock().unwrap().insert(hash, processed_tx);
-                            *registered.lock().unwrap() = Some(hash);
-                        })
-                        .await
+                    let register = |hash| {
+                        in_process.lock().unwrap().insert(hash, processed_tx);
+                        *registered.lock().unwrap() = Some(hash);
+                    };
+                    match timestamp {
+                        Some(timestamp) => {
+                            space.publish_at_with(payload, timestamp, register).await
+                        }
+                        None => space.publish_with(payload, register).await,
+                    }
                 }
             })
             .await?;

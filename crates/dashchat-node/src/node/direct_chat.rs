@@ -6,7 +6,6 @@
 use std::collections::{BTreeSet, HashMap};
 
 use super::*;
-use crate::chat::MovedMessage;
 
 /// What a running node keeps track of across its direct chats.
 #[derive(Clone, Default)]
@@ -152,6 +151,16 @@ impl Node {
         Ok(split.winning)
     }
 
+    async fn split_direct_chat_in(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Option<SplitDirectChat>> {
+        match self.projection.direct_chat_peer(chat_id).await? {
+            Some(peer) => self.split_direct_chat(peer).await,
+            None => Ok(None),
+        }
+    }
+
     async fn split_direct_chat(&self, peer: DeviceId) -> anyhow::Result<Option<SplitDirectChat>> {
         let spaces = self.projection.direct_chat_spaces(peer).await?;
         let Some(winning) = self.direct_chat_id(peer).await? else {
@@ -192,15 +201,17 @@ impl Node {
         self.drop_moved_direct_chat_space(peer).await
     }
 
-    /// Copy the messages we wrote in our own space of a direct chat into the
-    /// other side's, oldest first. Safe to repeat: a message already moved is
-    /// not moved again.
+    /// Publish the messages we wrote in our own space of a direct chat again in
+    /// the other side's, oldest first and dated as first written. Safe to
+    /// repeat: a message already moved is not moved again.
     async fn move_direct_chat_messages(&self, split: &SplitDirectChat) -> anyhow::Result<()> {
         let _moving = self.direct_chats.moving.lock().await;
         let me = self.device_id();
-        let mut moved = self.moved_messages(me, split.winning).await?;
+        let already_moved = self.messages_by_timestamp(me, split.winning).await?;
+        // Replies name a hash of their target's edit chain; each leads to its copy.
+        let mut copies: HashMap<Hash, Hash> = HashMap::new();
 
-        let mut pending = vec![];
+        let mut written = vec![];
         let mut edits: HashMap<Hash, (Hash, String)> = HashMap::new();
         let mut deleted: BTreeSet<Hash> = BTreeSet::new();
         for op in self
@@ -213,7 +224,7 @@ impl Node {
             };
             match Payload::try_from_body(body) {
                 Ok(Payload::Chat(ChatPayload::Message(message))) => {
-                    pending.push((op.header.clone(), message))
+                    written.push((op.header.clone(), message))
                 }
                 Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) => {
                     edits.insert(edit_hash, (op.header.hash(), message));
@@ -223,33 +234,28 @@ impl Node {
             }
         }
 
-        for (header, mut message) in pending {
-            let original = header.hash();
-            // Replies name the latest edit of their target, so every hash of
-            // this message's edit chain leads to its copy.
-            let mut chain = vec![original];
+        for (header, mut message) in written {
+            let mut chain = vec![header.hash()];
             while let Some((edit, text)) = edits.get(chain.last().expect("never empty")) {
                 message.message = text.clone();
                 chain.push(*edit);
             }
-            if deleted.contains(&original) {
+            if deleted.contains(&header.hash()) {
                 continue;
             }
-            let copy = match moved.get(&original) {
+            let written_at = header.extensions.timestamp();
+            let copy = match already_moved.get(&written_at) {
                 Some(copy) => *copy,
                 None => {
                     message.reply = message
                         .reply
-                        .map(|target| moved.get(&target).copied().unwrap_or(target));
-                    message.moved = Some(MovedMessage {
-                        hash: original,
-                        timestamp: header.extensions.timestamp().into(),
-                    });
-                    self.publish_moved_message(split.winning, message).await?
+                        .map(|target| copies.get(&target).copied().unwrap_or(target));
+                    self.move_message(split.winning, message, written_at)
+                        .await?
                 }
             };
             for hash in chain {
-                moved.insert(hash, copy);
+                copies.insert(hash, copy);
             }
         }
         Ok(())
@@ -257,10 +263,11 @@ impl Node {
 
     /// Publish our copy of a message into the space it moves to, with its
     /// media encrypted anew towards that space.
-    async fn publish_moved_message(
+    async fn move_message(
         &self,
         space: DirectChatId,
         mut message: ChatMessageContent,
+        written_at: p2panda_core::Timestamp,
     ) -> anyhow::Result<Hash> {
         let topic: TopicId = space.into();
         if let Some(media) = message.media.take() {
@@ -269,7 +276,7 @@ impl Node {
         }
         let media = message.media.clone();
         let header = self
-            .publish_unguarded(topic, Payload::Chat(ChatPayload::Message(message)))
+            .publish_moved_message(topic, message, written_at)
             .await?;
         for item in media.iter().flatten() {
             if let Err(err) = self
@@ -283,14 +290,15 @@ impl Node {
         Ok(header.hash())
     }
 
-    /// The messages `author` moved into `space`: each original's hash with
-    /// the hash of its copy.
-    async fn moved_messages(
+    /// The messages `author` wrote in `space`, by when they are dated. A
+    /// message moved between the spaces of a direct chat keeps its date, which
+    /// is what tells its copy.
+    async fn messages_by_timestamp(
         &self,
         author: DeviceId,
         space: DirectChatId,
-    ) -> anyhow::Result<HashMap<Hash, Hash>> {
-        let mut moved = HashMap::new();
+    ) -> anyhow::Result<HashMap<p2panda_core::Timestamp, Hash>> {
+        let mut messages = HashMap::new();
         for op in self
             .op_store
             .get_log(&author, &LogId::from(space), None)
@@ -299,15 +307,28 @@ impl Node {
             let Ok(Some(body)) = &op.body else {
                 continue;
             };
-            let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
-            else {
-                continue;
-            };
-            if let Some(origin) = message.moved() {
-                moved.insert(origin.hash, op.header.hash());
+            if let Ok(Payload::Chat(ChatPayload::Message(_))) = Payload::try_from_body(body) {
+                messages.insert(op.header.extensions.timestamp(), op.header.hash());
             }
         }
-        Ok(moved)
+        Ok(messages)
+    }
+
+    /// Whether we already hold the message `header` carries from before its
+    /// author moved it into this space of our direct chat.
+    pub async fn is_moved_message(&self, space: TopicId, header: &Header) -> anyhow::Result<bool> {
+        let author = DeviceId::from(header.verifying_key);
+        let Some(split) = self
+            .split_direct_chat_in(ChatId::from_topic_id(space))
+            .await?
+        else {
+            return Ok(false);
+        };
+        if split.winning != ChatId::from_topic_id(space) || split.loser != author {
+            return Ok(false);
+        }
+        let originals = self.messages_by_timestamp(author, split.losing).await?;
+        Ok(originals.contains_key(&header.extensions.timestamp()))
     }
 
     /// Give up the losing space of a direct chat both sides requested, once
@@ -320,7 +341,9 @@ impl Node {
         if !self.is_accepted_contact(peer).await? {
             return Ok(());
         }
-        let moved = self.moved_messages(split.loser, split.winning).await?;
+        let moved = self
+            .messages_by_timestamp(split.loser, split.winning)
+            .await?;
         // The loser keeps writing to its own space until our request reaches it.
         let loser_log_in_winning = self
             .op_store
@@ -341,7 +364,7 @@ impl Node {
                 Payload::try_from_body(body),
                 Ok(Payload::Chat(ChatPayload::Message(_)))
             );
-            if is_message && !moved.contains_key(&op.header.hash()) {
+            if is_message && !moved.contains_key(&op.header.extensions.timestamp()) {
                 return Ok(());
             }
         }

@@ -21,16 +21,6 @@ impl Node {
                 .into(),
             _ => topic,
         };
-        self.publish_unguarded(topic, payload).await
-    }
-
-    /// Publish into exactly `topic`, where [`Self::publish`] may redirect a
-    /// chat operation to the space its direct chat settled on.
-    pub(super) async fn publish_unguarded(
-        &self,
-        topic: TopicId,
-        payload: Payload,
-    ) -> Result<Header, anyhow::Error> {
         debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
         // This only means the operation has been handed to the pipeline, not that it has been
@@ -42,7 +32,30 @@ impl Node {
             Box::pin(self.streams.publish(topic, payload)),
         )
         .await?;
+        self.published(process_fut).await
+    }
 
+    /// Publish a chat message into exactly `space`, dated when its author
+    /// first wrote it in the other space of the same direct chat.
+    pub(super) async fn publish_moved_message(
+        &self,
+        space: TopicId,
+        message: ChatMessageContent,
+        written_at: p2panda_core::Timestamp,
+    ) -> Result<Header, anyhow::Error> {
+        let payload = Payload::Chat(ChatPayload::Message(message));
+        let process_fut = warn_if_slow(
+            "awaiting publish",
+            Box::pin(self.streams.publish_at(space, payload, written_at)),
+        )
+        .await?;
+        self.published(process_fut).await
+    }
+
+    async fn published(
+        &self,
+        process_fut: streams::ProcessFuture,
+    ) -> Result<Header, anyhow::Error> {
         // Now we await the operation being published and processed on the system layer.
         let header = warn_if_slow("awaiting process_fut", process_fut).await?;
 

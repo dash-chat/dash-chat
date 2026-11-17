@@ -54,13 +54,17 @@ reporting = { path = "crates/reporting" }
 # - `encrypt_aux`/`decrypt_aux` and `Space::with_secrets` for encrypting
 #   auxiliary data (media blobs) towards a space.
 # - The gossip manager survives a message arriving before the first subscriber.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45", features = [
+# - `Space::publish_at_with`, to publish a message again in another space at
+#   the time it was first written.
+# - `Node::create_space_with_id` only behind the `test_space_ids` feature, for
+#   tests of a create at an id that is already taken.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -68,9 +72,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "75b51d45" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "78d7fbbc" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.4.1", default-features = false, features = [
