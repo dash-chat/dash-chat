@@ -34,7 +34,7 @@ import { removeDirWithRetries, signalGroup } from './setup/host-process';
 import { releaseWifiDevice } from './setup/host-wifi';
 import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
 import { ensureLoopback } from './setup/loopback';
-import { ensureHealthyMailbox } from './setup/mailbox-control';
+import { ensureHealthyMailbox, isRemoteMailbox } from './setup/mailbox-control';
 import {
 	buildCargoPackages,
 	startLocalMailboxServer,
@@ -49,6 +49,7 @@ import {
 	pushTestingEnabled,
 	startLocalPushServer,
 } from './setup/push-server';
+import { resumeRelay, startLocalRelay } from './setup/relay-server';
 import { specAgents } from './setup/setup-agents';
 import {
 	type PhonePlatformName,
@@ -86,7 +87,11 @@ if (process.env.WDIO_WORKER_ID === undefined) {
  * overlaps the emulator boots that block construction. Awaited in onPrepare. */
 const mailboxBuild =
 	process.env.WDIO_WORKER_ID === undefined && remoteMailboxUrl() === null
-		? buildCargoPackages(['mailbox-server', LOCAL_HUB_PACKAGE])
+		? buildCargoPackages([
+				'mailbox-server',
+				'relay-local-server',
+				LOCAL_HUB_PACKAGE,
+			])
 		: null;
 // Register a handler now so a build failure before onPrepare awaits the
 // promise doesn't crash node with an unhandled rejection.
@@ -144,11 +149,14 @@ let toxiproxyLogger: ChildProcess | undefined;
 let appium: ChildProcess | undefined;
 let mailboxTls: ChildProcess | undefined;
 let mailboxTlsLogger: ChildProcess | undefined;
+let relay: ChildProcess | undefined;
+let relayLogger: ChildProcess | undefined;
 
 async function teardown() {
 	for (const server of [
 		mailboxServer,
 		mailboxTls,
+		relay,
 		pushServer,
 		toxiproxy,
 		appium,
@@ -171,6 +179,7 @@ async function teardown() {
 	pushLogger?.kill();
 	toxiproxyLogger?.kill();
 	mailboxTlsLogger?.kill();
+	relayLogger?.kill();
 	release(CHECKOUT_CLAIM);
 }
 
@@ -297,6 +306,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				}
 
 				await mailboxBuild;
+				({ proc: relay, logger: relayLogger } = await startLocalRelay());
 				// The mailbox's public port is a link through this, for the
 				// specs that degrade it.
 				({ proc: toxiproxy, logger: toxiproxyLogger } = await startToxiproxy());
@@ -345,6 +355,8 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		expect.extend(notificationMatchers);
 		killLeftoverLocalHubs();
 		await ensureHealthyMailbox();
+		// A spec that took the relay down does not hand it down to the next one.
+		if (!isRemoteMailbox()) resumeRelay();
 	},
 
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes

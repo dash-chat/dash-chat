@@ -1,3 +1,4 @@
+import { returnToWebviewOnNextUse } from '../../../setup/webview';
 import {
 	AppiumNotificationHelper,
 	type DeliveredNotification,
@@ -83,6 +84,16 @@ export class IosNotifications extends AppiumNotificationHelper {
 
 	protected async switchToWebview(): Promise<void> {
 		await this.agent.updateSettings({ defaultActiveApplication: 'auto' });
+		// A suspended app publishes no webview context until it is back on
+		// screen: the session goes back to it on its next webview command.
+		const appId = this.appId();
+		if (
+			appId !== undefined &&
+			Number(await this.agent.queryAppState(appId)) !== FOREGROUND
+		) {
+			returnToWebviewOnNextUse(this.agent);
+			return;
+		}
 		await super.switchToWebview();
 	}
 

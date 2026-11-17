@@ -123,11 +123,12 @@ export function killAllE2EProcesses() {
 	killOursNamed('dash-chat');
 }
 
-/** Kill this checkout's leftover mailbox, hub and push servers from previous
- *  interrupted runs. */
+/** Kill this checkout's leftover mailbox, hub, relay and push servers from
+ *  previous interrupted runs. */
 export function killLeftoverMailboxServers() {
 	killOursBuiltFrom('mailbox-server');
 	killOursBuiltFrom('mailbox-local-server');
+	killOursBuiltFrom('relay-local-server');
 	killOursBuiltFrom('push-notifications-server');
 	// Not built here: startToxiproxy and startMailboxTls stamp this checkout's
 	// `.dbs` into their environments instead.

@@ -3,6 +3,64 @@
 import { APP_PACKAGE } from './platforms/android';
 import type { AgentPlatformName } from './test-env';
 
+const webviewPending = new WeakSet<WebdriverIO.Browser>();
+
+/** Have the session go back to the app's webview the next time it drives it:
+ *  a suspended iOS app publishes no webview context to switch to until it is
+ *  on screen again. */
+export function returnToWebviewOnNextUse(agent: WebdriverIO.Browser): void {
+	webviewPending.add(agent);
+}
+
+/** Make the session's first webview command after [`returnToWebviewOnNextUse`]
+ *  go back to the app's webview before it runs. Native commands — element
+ *  lookups by predicate, class chain or accessibility id (the harness never
+ *  looks up native elements by css or xpath), `mobile:` scripts — go through
+ *  as they are. */
+export function returnToWebviewBeforeDrivingIt(
+	agent: WebdriverIO.Browser,
+	platform: AgentPlatformName,
+): void {
+	const returnIfPending = async () => {
+		if (!webviewPending.delete(agent)) return;
+		if (!(await isOnWebview(agent))) await switchToWebview(agent, platform);
+	};
+	for (const command of ['findElement', 'findElements'] as const) {
+		agent.overwriteCommand(
+			// @ts-expect-error The typings only accept webdriverio's own commands,
+			// but a WebDriver protocol command overwrites the same way.
+			command,
+			async (orig: (using: string, value: string) => unknown, using, value) => {
+				if (using === 'css selector' || using === 'xpath')
+					await returnIfPending();
+				return await orig(using, value);
+			},
+		);
+	}
+	for (const command of ['executeScript', 'executeAsyncScript'] as const) {
+		agent.overwriteCommand(
+			// @ts-expect-error As above.
+			command,
+			async (
+				orig: (script: string, args: unknown[]) => unknown,
+				script,
+				args,
+			) => {
+				if (!script.startsWith('mobile:')) await returnIfPending();
+				return await orig(script, args);
+			},
+		);
+	}
+	agent.overwriteCommand(
+		// @ts-expect-error As above.
+		'getUrl',
+		async (orig: () => unknown) => {
+			await returnIfPending();
+			return await orig();
+		},
+	);
+}
+
 /** Attach to the app's webview context, which a relaunch drops out of.
  *
  *  On Android the app's context must be matched by name: other apps' webviews

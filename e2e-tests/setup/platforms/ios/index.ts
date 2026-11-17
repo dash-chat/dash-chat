@@ -5,6 +5,7 @@ import {
 	spawn,
 } from 'node:child_process';
 import {
+	appendFileSync,
 	existsSync,
 	readFileSync,
 	readdirSync,
@@ -13,6 +14,7 @@ import {
 } from 'node:fs';
 import { networkInterfaces, tmpdir } from 'node:os';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { syncXcodeEnv } from '../../../../scripts/sync-xcode-env';
@@ -32,9 +34,16 @@ import {
 } from '../../claims';
 import { deviceHasBuild, recordInstalled } from '../../device-installs';
 import { envWithoutWdioLoader } from '../../harness-env';
+import { lanHostIp } from '../../host-ip';
 import { E2E_NETWORK_ID } from '../../network-id';
 import { E2E_RELAY_URL } from '../../relay';
-import { deviceUdid, switchToWebview, waitForTestUtils } from '../../webview';
+import {
+	deviceUdid,
+	isOnWebview,
+	returnToWebviewOnNextUse,
+	switchToWebview,
+	waitForTestUtils,
+} from '../../webview';
 import {
 	type AgentPlatform,
 	type PrepareContext,
@@ -99,45 +108,24 @@ function assertIosToolsAvailable() {
 	}
 }
 
-/** Whether the device could route to this address over the LAN. 169.254 is
- *  excluded on purpose: a tethered iPhone shows up as a USB network interface
- *  with a self-assigned address in that range, and baking one of those leaves
- *  the mailbox unreachable from every device. */
-function isPrivateLanAddress(address: string): boolean {
-	const [a, b] = address.split('.').map(Number);
-	return a === 10 || a === 192 || (a === 172 && b >= 16 && b <= 31);
-}
-
-/** Built-in wifi/ethernet (en0, en1, …) ahead of USB and virtual interfaces,
- *  lowest number first. A tethered iPhone sharing its connection hands out a
- *  private address too, and it must not win over the real LAN. */
-function interfaceRank(name: string): number {
-	const en = /^en(\d+)$/.exec(name);
-	return en === null ? 1000 : Number(en[1]);
-}
-
 /** Host IPv4 the device reaches the mailbox at. Baked into the build, so
  *  picking a wrong-but-plausible one costs a whole run: every cross-device
  *  assertion times out with the app quietly showing its offline state. */
 function detectHostIp(): string {
-	const override = process.env.E2E_HOST_IP;
-	if (override !== undefined && override !== '') return override;
-	const found = Object.entries(networkInterfaces())
-		.flatMap(([name, addrs]) => (addrs ?? []).map(addr => ({ name, addr })))
-		.filter(({ addr }) => addr.family === 'IPv4' && !addr.internal);
-	const usable = found
-		.filter(({ addr }) => isPrivateLanAddress(addr.address))
-		.sort((a, b) => interfaceRank(a.name) - interfaceRank(b.name));
-	if (usable.length === 0) {
-		const seen = found.map(f => `${f.name}=${f.addr.address}`).join(', ');
+	const ip = lanHostIp();
+	if (ip === null) {
+		const seen = Object.entries(networkInterfaces())
+			.flatMap(([name, addrs]) => (addrs ?? []).map(addr => ({ name, addr })))
+			.filter(({ addr }) => addr.family === 'IPv4' && !addr.internal)
+			.map(f => `${f.name}=${f.addr.address}`)
+			.join(', ');
 		throw new Error(
 			'No private LAN IPv4 for the iOS devices to reach the mailbox on — ' +
 				`set E2E_HOST_IP. Non-internal IPv4 seen: ${seen || 'none'}`,
 		);
 	}
-	const { name, addr } = usable[0];
-	console.log(`[ios] baking mailbox host ip ${addr.address} (${name})`);
-	return addr.address;
+	console.log(`[ios] baking mailbox host ip ${ip}`);
+	return ip;
 }
 
 /** Fail the moment the address baked into the app stops being ours.
@@ -250,6 +238,134 @@ export function killIosPushExtension(udid: string): void {
 			{ stdio: 'ignore' },
 		);
 	}
+}
+
+/** How many times [`backgroundIosApp`] backgrounds the app before giving up on
+ *  iOS reclaiming its sockets. */
+const RECLAIM_ATTEMPTS = 4;
+/** What the transition into the background gets before the runner goes: iOS
+ *  holds the phone awake for about a second around it. */
+const BACKGROUND_TRANSITION_MS = 1_500;
+/** What each home-button press gets to land before the next. */
+const UNLOCK_PRESS_MS = 1_000;
+/** What iOS gets to suspend the app once nothing holds the phone awake. */
+const RECLAIM_TIMEOUT_MS = 20_000;
+/** What runningboardd logs when iOS reclaims the backgrounded app's sockets:
+ *  the reclaim of every app suspended so far, once nothing holds the phone
+ *  awake any more, or the app being suspended with all of them ("ALL") rather
+ *  than only its AF_UNIX ones ("SVC"). iOS 26 only ever logs the former. */
+const SOCKETS_RECLAIMED = new RegExp(
+	`Shutdown sockets for all suspended processes|: \\[app<${APP_BUNDLE_ID.replace(/\./g, '\\.')}\\(.*?\\)>:\\d+\\] Shutdown sockets \\(ALL\\)`,
+);
+
+/** Send the app to the background as a phone put away does: locked, with
+ *  nothing holding it awake, so iOS suspends the app and reclaims every socket
+ *  it holds. The phone is unlocked again afterwards with the app still in the
+ *  background, and the session is back for whatever the caller does next.
+ *
+ *  The XCUITest runner holds the phone awake for as long as the host's
+ *  xcodebuild is attached, and an app suspended while it is held awake keeps
+ *  its sockets: the runner goes for the suspension. This checks runningboardd
+ *  said iOS reclaimed them, and tries again until it does. */
+export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
+	const udid = deviceUdid(b);
+	// The new session starts out native; a caller driving the webview carries on
+	// in it once the app is back on screen, as after a plain home-button press.
+	const onWebview = await isOnWebview(b);
+	for (let attempt = 1; attempt <= RECLAIM_ATTEMPTS; attempt++) {
+		const reclaim = watchRunningboardd(udid, SOCKETS_RECLAIMED);
+		// A real home-button press: XCUITest's terminate reads to iOS as a
+		// force-quit.
+		await b.execute('mobile: backgroundApp');
+		await b.execute('mobile: lock');
+		await b.pause(BACKGROUND_TRANSITION_MS);
+		// Killed rather than ending the session: ending it terminates the app
+		// (`appium:shouldTerminateApp`).
+		killWebDriverAgentHost(udid);
+		const reclaimed = await reclaim.seen(RECLAIM_TIMEOUT_MS);
+		await reattachIosSession(b);
+		if (reclaimed) {
+			if (onWebview) returnToWebviewOnNextUse(b);
+			return;
+		}
+		console.log(
+			`[ios] ${udid}: iOS kept the backgrounded app's sockets (attempt ${attempt}), backgrounding again`,
+		);
+		await b.activateApp(APP_BUNDLE_ID);
+	}
+	throw new Error(
+		`iOS never reclaimed the backgrounded app's sockets on ${udid} in ${RECLAIM_ATTEMPTS} attempts`,
+	);
+}
+
+/** End the host's xcodebuild for the phone's runner, which holds the phone
+ *  awake for as long as it is attached. */
+function killWebDriverAgentHost(udid: string): void {
+	try {
+		execSync(`pkill -f 'xcodebuild .*-destination id=${udid}'`);
+	} catch {
+		console.warn(`[ios] ${udid}: no WebDriverAgent xcodebuild to end`);
+	}
+}
+
+/** A new session on the phone whose runner was killed, leaving the app where
+ *  it is, and the phone unlocked on its home screen. */
+async function reattachIosSession(b: WebdriverIO.Browser): Promise<void> {
+	// Neither reset, launch nor attach to the app: the first two restart it,
+	// and attaching brings it to the foreground.
+	await b.reloadSession({
+		...b.requestedCapabilities,
+		'appium:noReset': true,
+		'appium:autoLaunch': false,
+		'appium:autoWebview': false,
+	});
+	// A new runner always takes the phone for unlocked, so `mobile: unlock`
+	// does nothing: the first press wakes the lock screen, the second unlocks
+	// it (the test phones have no passcode).
+	for (let press = 0; press < 2; press++) {
+		await b.execute('mobile: pressButton', { name: 'home' });
+		await b.pause(UNLOCK_PRESS_MS);
+	}
+}
+
+/** Follow runningboardd's log on the phone until a line matches `pattern`,
+ *  keeping what it read in .dbs/e2e for when it never does. */
+function watchRunningboardd(
+	udid: string,
+	pattern: RegExp,
+): { seen(timeoutMs: number): Promise<boolean> } {
+	const proc = spawn('idevicesyslog', ['-u', udid, '-p', 'runningboardd'], {
+		stdio: ['ignore', 'pipe', 'ignore'],
+	});
+	// A watcher that cannot start just never sees the line.
+	proc.on('error', () => {});
+	const log = path.join(
+		E2E_DIR,
+		'..',
+		'.dbs',
+		'e2e',
+		`runningboardd-${udid}.log`,
+	);
+	const matched = new Promise<boolean>(resolve => {
+		createInterface({ input: proc.stdout }).on('line', line => {
+			appendFileSync(log, `${line}\n`);
+			if (pattern.test(line)) resolve(true);
+		});
+	});
+	return {
+		async seen(timeoutMs) {
+			let timer: NodeJS.Timeout | undefined;
+			const seen = await Promise.race([
+				matched,
+				new Promise<boolean>(resolve => {
+					timer = setTimeout(() => resolve(false), timeoutMs);
+				}),
+			]);
+			clearTimeout(timer);
+			proc.kill();
+			return seen;
+		},
+	};
 }
 
 /** Reset an iOS agent to first-launch state without reinstalling the app.
