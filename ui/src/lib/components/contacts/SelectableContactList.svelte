@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ContactWithProfile, VerifyingKey } from 'dash-chat-stores';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import { List, ListItem, Checkbox, Preloader, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
@@ -39,10 +39,7 @@
 					data-contact-name={profile.name}
 				>
 					{#snippet media()}
-						<Avatar
-							image={profile.avatar}
-							initials={profile.name.slice(0, 2)}
-						/>
+						<PeerAvatar {profile} />
 					{/snippet}
 
 					{#snippet after()}

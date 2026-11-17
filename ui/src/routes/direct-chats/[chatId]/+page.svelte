@@ -56,7 +56,7 @@
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
@@ -363,7 +363,7 @@
 													class="flex w-full min-w-0 flex-row items-center gap-4"
 												>
 													<span class="shrink-0">
-														<Avatar waitingForProfile size="2.25rem" />
+														<PeerAvatar size="2.25rem" />
 													</span>
 													<span
 														class="flex-1 min-w-0 truncate {peerName
@@ -426,9 +426,8 @@
 													}}
 													onclick={() => (showPeerProfile = true)}
 												>
-													<Avatar
-														image={profile.avatar}
-														initials={profile.name.slice(0, 2)}
+													<PeerAvatar
+														{profile}
 														size={80}
 														testId="direct-chat-peer-avatar"
 													/>
@@ -445,8 +444,7 @@
 												</Link>
 											{:else}
 												<div class="column gap-2 items-center">
-													<Avatar
-														waitingForProfile
+													<PeerAvatar
 														size={80}
 														testId="direct-chat-peer-avatar"
 													/>

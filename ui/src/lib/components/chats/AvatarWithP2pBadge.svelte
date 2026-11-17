@@ -9,8 +9,8 @@
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import { useReactivePromises } from '$lib/stores/use-signal';
 	import { connectionStatus } from '../connection/connection-status';
-	import { mdiAccountGroupOutline } from '@mdi/js';
-	import Avatar from '../profiles/Avatar.svelte';
+	import GroupAvatar from '../profiles/GroupAvatar.svelte';
+	import PeerAvatar from '../profiles/PeerAvatar.svelte';
 
 	let { summary }: { summary: ChatSummary } = $props();
 
@@ -27,14 +27,11 @@
 
 <span class="avatar-with-p2p-badge relative inline-flex">
 	<span class="avatar inline-flex">
-		<Avatar
-			image={summary.avatar}
-			initials={summary.name.slice(0, 2)}
-			fallbackIcon={summary.type === 'GroupChat'
-				? mdiAccountGroupOutline
-				: undefined}
-			waitingForProfile={summary.waitingForProfile}
-		/>
+		{#if summary.type === 'GroupChat'}
+			<GroupAvatar image={summary.avatar} />
+		{:else}
+			<PeerAvatar profile={summary.waitingForProfile ? undefined : summary} />
+		{/if}
 	</span>
 	{#await $inputs then [mailboxes, onlinePeers]}
 		{#if connectionStatus(mailboxes, onlinePeers.length > 0, renderingResumedAt.value).status === 'p2p'}

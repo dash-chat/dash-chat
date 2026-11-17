@@ -23,8 +23,8 @@
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiAccountGroup, mdiAccountGroupOutline } from '@mdi/js';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { mdiAccountGroup } from '@mdi/js';
+	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
 	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
@@ -163,11 +163,7 @@
 							class="flex w-full min-w-0 items-center justify-start gap-4 ps-0"
 						>
 							<span class="shrink-0">
-								<Avatar
-									image={info.image}
-									fallbackIcon={mdiAccountGroupOutline}
-									size="2.25rem"
-								/>
+								<GroupAvatar image={info.image} size="2.25rem" />
 							</span>
 							<span class="flex flex-1 min-w-0 flex-col">
 								<span class="truncate">{info.name}</span>
@@ -192,11 +188,7 @@
 							style="border-radius: 2rem; min-width: 250px"
 						>
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
-								<Avatar
-									image={info.image}
-									fallbackIcon={mdiAccountGroupOutline}
-									size={80}
-								/>
+								<GroupAvatar image={info.image} size={80} />
 								<span
 									class="text-2xl font-semibold break-words text-center max-w-full"
 									data-testid="group-chat-header-name"
