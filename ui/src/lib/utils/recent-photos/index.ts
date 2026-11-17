@@ -115,7 +115,7 @@ export function cachedRecentPhotos(): RecentPhoto[] | undefined {
 	return cache;
 }
 
-/** Full-resolution `File` for a tapped photo, ready for `ingestFiles`/`stage`. */
+/** Full-resolution `File` for a tapped photo, ready for `MediaDraft.add`. */
 export async function loadRecentPhotoFile(photo: RecentPhoto): Promise<File> {
 	if (testData()) {
 		const src = photo.thumbnail;

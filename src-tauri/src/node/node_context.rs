@@ -177,8 +177,14 @@ impl NodeContext {
         };
 
         // The push extension's short-lived background node only reads
-        // operations to build notifications; it must not author any.
+        // operations to build notifications; it must not author any. Both
+        // processes sign with the app's key, but an operation the extension
+        // publishes into a topic the app already follows never passes through
+        // the running app's processor — the store is shared, the streams are
+        // not — so authoring is left to the app, which re-processes the
+        // operations the extension recorded and performs the publishes itself.
         config.enable_message_acks = self.role == NodeRole::App;
+        config.read_only = self.role == NodeRole::PushNotification;
         config.sqlite_gate = self.sqlite_gate.clone();
         config.local_hub_registry = self.local_hub_registry.clone();
 
