@@ -42,23 +42,34 @@ export class AttachmentTooLargeError extends Error {
 	}
 }
 
+// No file name in the message: it would reach an error report unredacted.
+export class UndecodablePhotoError extends Error {
+	constructor() {
+		super('could not decode photo');
+		this.name = 'UndecodablePhotoError';
+	}
+}
+
 /**
- * Draft media held in the composer before sending — raw `File` refs. Previews
- * derive their object URL via the `objectUrl` action on the `<img>`, so the
- * draft carries no URLs that need revoking.
+ * Draft media held in the composer before sending. Photos are staged already
+ * compressed and measured, so one that can't be decoded is never in a draft.
+ * Previews derive their object URL via the `objectUrl` action on the
+ * `<img>`, so the draft carries no URLs that need revoking.
  */
 export type DraftMedia =
-	| { kind: 'photos'; items: File[] }
+	| { kind: 'photos'; items: OutgoingPhoto[] }
 	| { kind: 'file'; file: File }
 	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
 export const MAX_STAGED_PHOTOS = 32;
 
-export type IngestError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
+export type StagingError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
 
-export interface IngestResult {
-	media: DraftMedia | undefined;
-	error?: IngestError;
+/** What a batch of picked files may add to a draft. */
+export interface StagingPlan {
+	photos: File[];
+	file?: File;
+	error?: StagingError;
 }
 
 // Only raster types that decode in every supported webview may enter the
@@ -112,46 +123,43 @@ export function isVisualFile(file: File): boolean {
 }
 
 /**
- * Add `files` to the current draft following Signal's mixing rules: photos
- * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
- * non-image file can only be staged alone, and nothing can be added once
- * a file is staged. On a rule violation the current draft is returned
- * unchanged alongside the error.
+ * Decide what `files` may add to the current draft following Signal's mixing
+ * rules: photos append (up to `MAX_STAGED_PHOTOS`, accepting a partial
+ * batch), a non-image file can only be staged alone, and nothing can be added
+ * once a file is staged. On a rule violation nothing is added.
  */
-export function ingestFiles(
+export function planStaging(
 	current: DraftMedia | undefined,
 	files: File[],
-): IngestResult {
-	if (files.length === 0) return { media: current };
+): StagingPlan {
+	if (files.length === 0) return { photos: [] };
 	if (current?.kind === 'file') {
-		return { media: current, error: 'oneFileAtATime' };
+		return { photos: [], error: 'oneFileAtATime' };
 	}
 	const visual = files.filter(isVisualFile);
 	const nonVisual = files.filter(f => !isVisualFile(f));
 	if (nonVisual.length > 0) {
 		if (current || visual.length > 0) {
-			return { media: current, error: 'filesWithPhotos' };
+			return { photos: [], error: 'filesWithPhotos' };
 		}
 		if (nonVisual.length > 1) {
-			return { media: current, error: 'oneFileAtATime' };
+			return { photos: [], error: 'oneFileAtATime' };
 		}
-		return { media: { kind: 'file', file: nonVisual[0] } };
+		return { photos: [], file: nonVisual[0] };
 	}
-	const existing = current?.kind === 'photos' ? current.items : [];
-	const room = MAX_STAGED_PHOTOS - existing.length;
-	if (room <= 0) return { media: current, error: 'tooMany' };
-	const accepted = visual.slice(0, room);
-	const items = [...existing, ...accepted];
+	const staged = current?.kind === 'photos' ? current.items.length : 0;
+	const room = MAX_STAGED_PHOTOS - staged;
+	if (room <= 0) return { photos: [], error: 'tooMany' };
 	return {
-		media: { kind: 'photos', items },
+		photos: visual.slice(0, room),
 		error: visual.length > room ? 'tooMany' : undefined,
 	};
 }
 
 /**
- * Convert composer-side draft to the wire-format `Media` for sending.
- * Compresses images first, then enforces a total-size cap; throws
- * `AttachmentTooLargeError` if the post-compression payload still exceeds it.
+ * Convert composer-side draft to the wire-format `Media` for sending,
+ * enforcing a total-size cap; throws `AttachmentTooLargeError` if the payload
+ * exceeds it.
  */
 export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	const media = await buildMedia(draft);
@@ -162,28 +170,9 @@ export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return media;
 }
 
-const preparedPhotos = new WeakMap<File, Promise<OutgoingPhoto>>();
-
-// One at a time, so a burst of staged photos doesn't hog the main thread while
-// the user is still composing.
-export async function startPreparingPhotos(files: File[]): Promise<void> {
-	for (const file of files) {
-		// A failure resurfaces when the send retries this photo.
-		await preparePhoto(file).catch(() => {});
-	}
-}
-
-function preparePhoto(file: File): Promise<OutgoingPhoto> {
-	let prepared = preparedPhotos.get(file);
-	if (!prepared) {
-		prepared = buildPhoto(file);
-		prepared.catch(() => preparedPhotos.delete(file));
-		preparedPhotos.set(file, prepared);
-	}
-	return prepared;
-}
-
-async function buildPhoto(file: File): Promise<OutgoingPhoto> {
+/** Compress and measure a picked photo. Rejects with `UndecodablePhotoError`
+ * when it can't be decoded. */
+export async function prepareOutgoingPhoto(file: File): Promise<OutgoingPhoto> {
 	const compressed = await compressImage(file);
 	const { width, height } = await imageDimensions(compressed);
 	return {
@@ -197,8 +186,7 @@ async function buildPhoto(file: File): Promise<OutgoingPhoto> {
 
 async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	if (draft.kind === 'photos') {
-		const photos = await Promise.all(draft.items.map(preparePhoto));
-		return { kind: 'photos', photos };
+		return { kind: 'photos', photos: draft.items };
 	}
 	if (draft.kind === 'voice_note') {
 		return {
@@ -246,7 +234,7 @@ function imgDimensions(file: File): Promise<{ width: number; height: number }> {
 		};
 		img.onerror = () => {
 			URL.revokeObjectURL(url);
-			reject(new Error(`could not decode ${file.name}`));
+			reject(new UndecodablePhotoError());
 		};
 		img.src = url;
 	});

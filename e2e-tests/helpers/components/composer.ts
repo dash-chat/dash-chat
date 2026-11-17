@@ -60,13 +60,15 @@ export class Composer extends TestHelper {
 		);
 	}
 
-	/** Wait for the staged-media UI: the inline preview on desktop, the
-	 * full-screen staged-media page on mobile. */
+	/** Wait for the staged-media UI (the inline preview on desktop, the
+	 * full-screen staged-media page on mobile) to hold every photo of the
+	 * batch: send is refused while any is still being prepared. */
 	async waitForStagedMedia(): Promise<void> {
 		await this.agent.waitUntil(
 			async () =>
-				(await this.mediaPreview.isExisting()) ||
-				(await this.stagedMediaPage.isExisting()),
+				((await this.mediaPreview.isExisting()) ||
+					(await this.stagedMediaPage.isExisting())) &&
+				!(await this.agent.$(tid('staged-photo-pending')).isExisting()),
 			{ timeout: 5_000, timeoutMsg: 'Staged media UI did not appear' },
 		);
 	}
@@ -266,6 +268,35 @@ export class Composer extends TestHelper {
 			label,
 		);
 		await this.waitForStagedMedia();
+	}
+
+	/** Paste one batch of damaged `${label}.jpg` photos (a JPEG header with no
+	 * image data) followed by valid `${label}.png` ones. Doesn't wait for
+	 * anything to stage: the composer is expected to drop the damaged ones. */
+	async pasteDamagedPhotos(
+		damagedLabels: string[],
+		validLabels: string[] = [],
+	): Promise<void> {
+		await this.messageInput.waitForExist();
+		await this.agent.execute(
+			(pngBytes: number[], damaged: string[], valid: string[]) => {
+				window.__test.pasteFiles([
+					...damaged.map(name => ({
+						name: `${name}.jpg`,
+						mimeType: 'image/jpeg',
+						bytes: [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46],
+					})),
+					...valid.map(name => ({
+						name: `${name}.png`,
+						mimeType: 'image/png',
+						bytes: pngBytes,
+					})),
+				]);
+			},
+			TINY_PNG_BYTES,
+			damagedLabels,
+			validLabels,
+		);
 	}
 
 	/** Drop a single synthesized PNG named `${label}.png` onto the window. */

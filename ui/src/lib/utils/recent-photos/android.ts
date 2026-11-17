@@ -68,7 +68,13 @@ export async function requestPermission(): Promise<RecentPhotosPermission> {
 export async function listRecentPhotos(limit: number): Promise<RecentPhoto[]> {
 	const result = await getImages(imagesRequest(limit));
 	const items = result?.items ?? [];
-	return Promise.all(items.map(toRecentPhoto));
+	const photos = await Promise.allSettled(items.map(toRecentPhoto));
+	// An image Android can't make a thumbnail of (a damaged file, for one) is
+	// left out instead of failing the whole strip. Not logged: the rejection
+	// carries the photo's content URI.
+	return photos.flatMap(photo =>
+		photo.status === 'fulfilled' ? [photo.value] : [],
+	);
 }
 
 export async function readPhotoBytes(contentUri: string): Promise<Uint8Array> {
