@@ -4,14 +4,17 @@ import { describe, it } from 'node:test';
 import { foldMovedMessages } from '../src/chats/moved-messages';
 import type { SimplifiedOperation } from '../src/p2panda/simplified-types';
 import type { DeviceId, Hash } from '../src/p2panda/types';
-import type { MessageContent, Payload } from '../src/types';
+import type { ChatId, MessageContent, Payload } from '../src/types';
 
 const LOSER: DeviceId = 'loser';
 const WINNER: DeviceId = 'winner';
+const LOSING: ChatId = 'losing-space';
+const WINNING: ChatId = 'winning-space';
 
 function message(
 	hash: Hash,
 	author: DeviceId,
+	space: ChatId,
 	timestamp: number,
 	content: Partial<MessageContent> = {},
 ): SimplifiedOperation<Payload> {
@@ -23,7 +26,7 @@ function message(
 			seq_num: 0,
 			backlink: undefined,
 			previous: [],
-			topic_id: 'topic',
+			topic_id: space,
 			log_id: 'log',
 			auth: undefined,
 		},
@@ -42,45 +45,43 @@ function hashes(ops: SimplifiedOperation<Payload>[]): Hash[] {
 }
 
 describe('foldMovedMessages', () => {
-	it('shows a moved message once, at the time it was first written', () => {
+	it('shows a moved message once, as its copy in the space settled on', () => {
 		const ops = [
-			message('original', LOSER, 1_000),
-			message('reply', WINNER, 2_000, { reply: 'original' }),
-			message('copy', LOSER, 3_000, {
-				moved: { hash: 'original', timestamp: 1_000_000 },
-			}),
+			message('original', LOSER, LOSING, 1_000),
+			message('copy', LOSER, WINNING, 1_000),
+			message('reply', WINNER, WINNING, 2_000, { reply: 'original' }),
 		];
 
-		const folded = foldMovedMessages(ops);
+		const folded = foldMovedMessages(ops, WINNING);
 
 		assert.deepEqual(hashes(folded), ['copy', 'reply']);
-		assert.equal(folded[0].header.timestamp, 1_000);
 		const reply = folded[1].body;
 		assert.ok(reply?.type === 'Chat' && reply.payload.type === 'Message');
 		assert.equal(reply.payload.payload.reply, 'copy');
 	});
 
-	it('keeps a copy whose original is already gone', () => {
+	it('keeps a message that has not been moved yet', () => {
 		const ops = [
-			message('copy', LOSER, 3_000, {
-				moved: { hash: 'original', timestamp: 1_000_000 },
-			}),
+			message('moved', LOSER, LOSING, 1_000),
+			message('copy', LOSER, WINNING, 1_000),
+			message('pending', LOSER, LOSING, 2_000),
 		];
 
-		const folded = foldMovedMessages(ops);
-
-		assert.deepEqual(hashes(folded), ['copy']);
-		assert.equal(folded[0].header.timestamp, 1_000);
+		assert.deepEqual(hashes(foldMovedMessages(ops, WINNING)), [
+			'copy',
+			'pending',
+		]);
 	});
 
-	it("does not let a copy stand in for someone else's message", () => {
+	it("does not take someone else's message of the same date for a copy", () => {
 		const ops = [
-			message('theirs', WINNER, 1_000),
-			message('copy', LOSER, 3_000, {
-				moved: { hash: 'theirs', timestamp: 1_000_000 },
-			}),
+			message('theirs', LOSER, LOSING, 1_000),
+			message('mine', WINNER, WINNING, 1_000),
 		];
 
-		assert.deepEqual(hashes(foldMovedMessages(ops)), ['theirs', 'copy']);
+		assert.deepEqual(hashes(foldMovedMessages(ops, WINNING)), [
+			'theirs',
+			'mine',
+		]);
 	});
 });

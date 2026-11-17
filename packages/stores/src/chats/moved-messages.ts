@@ -1,87 +1,57 @@
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { Hash } from '../p2panda/types';
-import { Payload } from '../types';
+import { ChatId, Payload } from '../types';
 
 /**
  * A direct chat both sides requested at once is spread over two spaces until
- * the side whose space lost the tie has moved its messages into the other
- * one. Until the losing space is given up, each moved message exists twice.
+ * the side whose space lost the tie has published its messages again in the
+ * other one, dated as first written. Until the losing space is given up, each
+ * of those messages exists twice.
  */
 
-/** The copy standing in for each original that was moved, by the original's
- * hash. A copy only counts for a message of its own author. */
+/** The copy standing in for each message that was moved into `space`, by the
+ * original's hash: a message of the same author with the same date there. */
 export function movedMessages(
 	ops: SimplifiedOperation<Payload>[],
+	space: ChatId,
 ): Record<Hash, SimplifiedOperation<Payload>> {
-	const byHash: Record<Hash, SimplifiedOperation<Payload>> = {};
-	for (const op of ops) byHash[op.hash] = op;
+	const messages = ops
+		.filter(isMessage)
+		.sort((a, b) => a.header.seq_num - b.header.seq_num);
+	const candidates: Record<string, SimplifiedOperation<Payload>[]> = {};
+	for (const op of messages) {
+		if (op.header.topic_id !== space) continue;
+		(candidates[writtenBy(op)] ??= []).push(op);
+	}
 
 	const copies: Record<Hash, SimplifiedOperation<Payload>> = {};
-	for (const op of ops) {
-		const moved = movedFrom(op);
-		if (moved === undefined) continue;
-		const original = byHash[moved.hash];
-		if (
-			original !== undefined &&
-			original.header.verifying_key !== op.header.verifying_key
-		)
-			continue;
-		copies[moved.hash] = op;
+	for (const op of messages) {
+		if (op.header.topic_id === space) continue;
+		const copy = candidates[writtenBy(op)]?.shift();
+		if (copy !== undefined) copies[op.hash] = copy;
 	}
 	return copies;
 }
 
-/** Shows each moved message once: its copy, at the time the original was
- * written, with whatever referred to the original referring to the copy. */
+/** Shows each message moved into `space` once, as its copy, with whatever
+ * referred to the original referring to the copy. */
 export function foldMovedMessages(
 	ops: SimplifiedOperation<Payload>[],
+	space: ChatId,
 ): SimplifiedOperation<Payload>[] {
-	const copies = movedMessages(ops);
+	const copies = movedMessages(ops, space);
 	if (Object.keys(copies).length === 0) return ops;
-
-	const byHash: Record<Hash, SimplifiedOperation<Payload>> = {};
-	for (const op of ops) byHash[op.hash] = op;
-	const copyHashes = new Set(Object.values(copies).map(copy => copy.hash));
-
 	return ops
 		.filter(op => copies[op.hash] === undefined)
-		.map(op =>
-			copyHashes.has(op.hash)
-				? atOriginalTime(op, byHash)
-				: retarget(op, copies),
-		)
-		.sort(
-			(a, b) =>
-				a.header.timestamp - b.header.timestamp || a.hash.localeCompare(b.hash),
-		);
+		.map(op => retarget(op, copies));
 }
 
-function movedFrom(op: SimplifiedOperation<Payload>) {
-	if (op.body?.type !== 'Chat' || op.body.payload.type !== 'Message')
-		return undefined;
-	return op.body.payload.payload.moved ?? undefined;
+function isMessage(op: SimplifiedOperation<Payload>): boolean {
+	return op.body?.type === 'Chat' && op.body.payload.type === 'Message';
 }
 
-/** The original's own timestamp when we still hold it, since a copy could
- * claim any; a claimed time is at least kept from postdating the copy. */
-function atOriginalTime(
-	copy: SimplifiedOperation<Payload>,
-	byHash: Record<Hash, SimplifiedOperation<Payload>>,
-): SimplifiedOperation<Payload> {
-	const moved = movedFrom(copy);
-	if (moved === undefined) return copy;
-	const original = byHash[moved.hash];
-	const claimed = Math.min(
-		Math.floor(moved.timestamp / 1000),
-		copy.header.timestamp,
-	);
-	return {
-		...copy,
-		header: {
-			...copy.header,
-			timestamp: original?.header.timestamp ?? claimed,
-		},
-	};
+function writtenBy(op: SimplifiedOperation<Payload>): string {
+	return `${op.header.verifying_key}:${op.header.timestamp}`;
 }
 
 function retarget(

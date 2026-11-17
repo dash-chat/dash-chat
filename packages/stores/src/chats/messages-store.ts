@@ -121,6 +121,7 @@ export class MessagesStore {
 						a.header.timestamp - b.header.timestamp ||
 						a.hash.localeCompare(b.hash),
 				),
+			this.chatId,
 		);
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
@@ -265,7 +266,10 @@ export class MessagesStore {
 		}
 
 		// A message read before it was moved stays read as its copy.
-		const copies = movedMessages(Object.values(await this.logs()).flat());
+		const copies = movedMessages(
+			Object.values(await this.logs()).flat(),
+			this.chatId,
+		);
 		for (const [original, copy] of Object.entries(copies)) {
 			if (readHashes.has(original)) readHashes.add(copy.hash);
 		}
