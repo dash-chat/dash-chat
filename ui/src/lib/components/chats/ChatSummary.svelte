@@ -19,7 +19,6 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupEventText } from '$lib/utils/group-event-text';
 	import AvatarWithP2pBadge from './AvatarWithP2pBadge.svelte';
-	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCancel } from '@mdi/js';
 
@@ -37,7 +36,7 @@
 	const theme = $derived(useTheme());
 	const edgePadding = $derived(
 		theme === 'material'
-			? { content: 'ps-2! in-[.wide-layout]:ps-4!', inner: 'pe-2!' }
+			? { content: 'ps-2!', inner: 'pe-2!' }
 			: { content: 'ps-4!', inner: 'pe-4!' },
 	);
 
@@ -72,7 +71,7 @@
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<AvatarWithP2pBadge {summary} size={isWideScreen.value ? 48 : 56} />
+		<AvatarWithP2pBadge {summary} size={56} />
 	{/snippet}
 	{#snippet after()}
 		<span class="text-[14px]/5">
