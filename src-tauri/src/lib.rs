@@ -183,6 +183,7 @@ pub fn run() {
             commands::chats::set_group_info,
             commands::chats::add_group_member,
             commands::chats::remove_group_member,
+            commands::chats::promote_group_member_to_admin,
             commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,

@@ -246,6 +246,24 @@ pub async fn remove_group_member(
 }
 
 #[tauri::command]
+pub async fn promote_group_member_to_admin(
+    chat_id: ChatId,
+    agent_id: AgentId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), String> {
+    let node = app_node_manager.get().await?;
+    let device_id = node
+        .projection
+        .lookup_contact_by_agent_id(agent_id)
+        .await
+        .map_err(|e| format!("{e:?}"))?
+        .ok_or_else(|| format!("No device found for agent {:?}", agent_id))?;
+    node.promote_group_member_to_admin(chat_id, *device_id)
+        .await
+        .map_err(|e| format!("Failed to promote group member to admin: {e:?}"))
+}
+
+#[tauri::command]
 pub async fn leave_group(
     chat_id: ChatId,
     app_node_manager: State<'_, AppNodeManager>,

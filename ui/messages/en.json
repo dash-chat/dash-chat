@@ -248,6 +248,8 @@
 	"promote": "Promote",
 	"promoteToAdministrator": "Promote to administrator",
 	"areYouSurePromote": "Are you sure you want to promote this member to the administrator role?",
+	"makeAdmin": "Make admin",
+	"memberWillBeAbleToEditGroup": "{{name}} will be able to edit this group and its members.",
 	"leaveGroup": "Leave group",
 	"leave": "Leave",
 	"areYouSureLeaveGroup": "Are you sure you want to leave this group?",

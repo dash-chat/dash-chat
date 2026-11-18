@@ -1062,6 +1062,32 @@ impl Node {
         Ok(())
     }
 
+    pub async fn promote_group_member_to_admin(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+    ) -> anyhow::Result<()> {
+        // TODO: this should use a transaction, but the race is not a big deal here
+        let deps = self.group_store.heads(*chat_id).await?;
+        self.publish(
+            chat_id,
+            Payload::group_control(
+                chat_id,
+                GroupAction::Promote {
+                    member: GroupMember::Individual(member),
+                    access: p2panda_auth::Access::manage(),
+                },
+                deps,
+            )?,
+            Some(&format!(
+                "promote_group_member_to_admin({:?})",
+                chat_id.aliased()
+            )),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_group_members(
         &self,
         chat_id: ChatId,

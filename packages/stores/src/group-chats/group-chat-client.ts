@@ -45,10 +45,12 @@ export class GroupChatClient implements IGroupChatClient {
 	setInfo(chatId: ChatId, info: GroupInfo): Promise<void> {
 		return invokeAfterSetup('set_group_info', { chatId, info });
 	}
-	async promoteToAdministrator(
-		chatId: ChatId,
-		member: AgentId,
-	): Promise<void> {}
+	async promoteToAdministrator(chatId: ChatId, member: AgentId): Promise<void> {
+		await invokeAfterSetup('promote_group_member_to_admin', {
+			chatId,
+			agentId: member,
+		});
+	}
 	async demoteFromAdministrator(
 		chatId: ChatId,
 		member: AgentId,
