@@ -92,6 +92,7 @@ async fn media_hash_of(node: &TestNode, chat: ChatId, text: &str) -> iroh_blobs:
 /// edited media messages, a delete of one edit chain, and a third member added
 /// after the delete who must never receive the deleted payloads or media.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     setup();
 
@@ -116,7 +117,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         .unwrap();
 
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -229,8 +230,9 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     // Neither alice nor bobbi will ever transmit the deleted payloads: the
     // mailbox-facing log view serves the chain ops body-less.
+    let alice_log = Log::new(alice.device_id(), LogId::from_topic(*chat));
     for node in [&alice, &bobbi] {
-        let served = MailboxStore::get_log(&node.op_store, &alice.device_id(), &chat, 0)
+        let served = MailboxStore::get_log(&node.op_store, &alice_log, &chat, 0)
             .await
             .unwrap()
             .unwrap();
@@ -363,6 +365,7 @@ fn mailbox_scrubbing_implemented() -> bool {
 /// message author is ignored everywhere, and an incomplete chain is rejected
 /// on the author side.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn invalid_deletes_are_rejected() {
     // setup();
 
@@ -546,7 +549,7 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
     }
 
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
             *mallory.device_id() => p2panda_auth::Access::manage(),
         })

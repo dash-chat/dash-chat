@@ -3,7 +3,7 @@ use p2panda::operation::{Header, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{AsBody, DeviceId, SeqNum, TopicId};
+use crate::{AsBody, Log, SeqNum, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -18,15 +18,18 @@ pub struct MailboxOperation {
 
 impl MailboxItem for MailboxOperation {
     type Hash = Hash;
-    type Author = DeviceId;
+    type Log = Log;
     type Topic = TopicId;
 
     fn hash(&self) -> Hash {
         self.header.hash()
     }
 
-    fn author(&self) -> DeviceId {
-        self.header.verifying_key.into()
+    fn log(&self) -> Log {
+        Log::new(
+            self.header.verifying_key.into(),
+            self.header.extensions.log_id(),
+        )
     }
 
     fn seq_num(&self) -> SeqNum {
@@ -135,6 +138,8 @@ mod tests {
                 width: 640,
                 height: 480,
                 hash: media_hash,
+                group_secret_id: [7; 32],
+                nonce: [9; 24],
             }]),
             None,
             0,
@@ -163,10 +168,11 @@ mod tests {
         assert_eq!(op.blob_hashes(), Vec::<iroh_blobs::Hash>::new());
     }
 
-    /// Very simple test which circumvents the contact adding system:
-    /// - alice sends a message to a direct chat topic
-    /// - alice and bobbi add a mailbox after the fact
-    /// - bobbi still gets the message later
+    /// A mailbox added after the fact still delivers what was sent before:
+    /// - alice and bobbi become contacts over p2p
+    /// - bobbi goes away, and comes back unable to reach alice directly
+    /// - alice sends a message, then both add a mailbox
+    /// - bobbi gets the message through it
     #[tokio::test(flavor = "multi_thread")]
     async fn test_mailbox_late_join() {
         dashchat_node::testing::setup_tracing(
@@ -183,23 +189,29 @@ mod tests {
         );
 
         let mb = TestMailbox::from_env();
-        let config = NodeConfig::testing();
         let poll = PollConfig::default();
 
         // Start with no mailbox
-        let alice = TestNode::new(config.clone(), "alice").await;
-        let bobbi = TestNode::new(config.clone(), "bobbi").await;
-
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+        introduce_peers([&alice, &bobbi]).await.unwrap();
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
         let chat = alice.direct_chat_with(&bobbi);
-        alice.register_topic(chat).await.unwrap();
 
+        let bobbi_dir = bobbi.shutdown().await;
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
         println!("=== adding mailboxes ===");
-        bobbi.add_mailbox(&mb).await;
+        // Without p2p, the mailbox is bobbi's only way to hear from alice.
+        let bobbi = TestNode::new_at_path(NodeConfig::testing().no_p2p(), "bobbi", bobbi_dir)
+            .await
+            .add_mailbox(&mb)
+            .await;
         alice.add_mailbox(&mb).await;
-
-        bobbi.register_topic(chat).await.unwrap();
         println!("=== added mailboxes ===");
 
         poll.wait_for(|| async {
@@ -207,39 +219,6 @@ mod tests {
                 Ok(())
             } else {
                 Err("message not received")
-            }
-        })
-        .await
-        .unwrap();
-    }
-
-    /// A node may publish into a topic before registering it — the startup
-    /// message-ack writer races topic initialization this way — and the topic
-    /// must still sync from the mailbox once registered.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn topic_published_before_registration_syncs_from_mailbox() {
-        let mb = TestMailbox::from_env();
-        let config = NodeConfig::testing().no_p2p();
-        let poll = PollConfig::default();
-
-        let alice = TestNode::new(config.clone(), "alice").await;
-        let bobbi = TestNode::new(config.clone(), "bobbi").await;
-        alice.add_mailbox(&mb).await;
-        bobbi.add_mailbox(&mb).await;
-
-        let chat = alice.direct_chat_with(&bobbi);
-        bobbi.send_message_raw(chat, "Early".into()).await.unwrap();
-        bobbi.register_topic(chat).await.unwrap();
-
-        alice.register_topic(chat).await.unwrap();
-        alice.send_message_raw(chat, "Hello".into()).await.unwrap();
-
-        poll.wait_for(|| async {
-            let messages = bobbi.get_messages(chat).await.unwrap();
-            if messages.iter().any(|m| m.content.message() == "Hello") {
-                Ok(())
-            } else {
-                Err("alice's message has not reached bobbi through the mailbox")
             }
         })
         .await
@@ -261,20 +240,25 @@ mod tests {
         );
 
         let mb = TestMailbox::from_env();
-        let config = NodeConfig::testing();
+        let config = NodeConfig::testing().no_p2p();
         let poll = PollConfig::default();
 
-        let alice = TestNode::new(config.clone(), "alice").await;
-        let bobbi = TestNode::new(config.clone(), "bobbi").await;
-
-        let chat_id = alice.direct_chat_with(&bobbi);
-        alice.register_topic(chat_id).await.unwrap();
-
-        alice.add_mailbox(&mb).await;
-        bobbi.add_mailbox(&mb).await;
-        bobbi.register_topic(chat_id).await.unwrap();
-
+        let alice = TestNode::new(config.clone(), "alice")
+            .await
+            .add_mailbox(&mb)
+            .await;
+        let bobbi = TestNode::new(config.clone(), "bobbi")
+            .await
+            .add_mailbox(&mb)
+            .await;
         alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat_id = alice.direct_chat_with(&bobbi);
+
+        let header = alice
             .send_message_raw(chat_id, "Hello".into())
             .await
             .unwrap();
@@ -290,9 +274,12 @@ mod tests {
         .unwrap();
 
         let mailbox_id = mb.id().await;
-        let alice_device: crate::DeviceId = alice.device_id();
+        let alice_log = Log::new(
+            alice.device_id(),
+            p2panda::operation::LogId::from_topic(*chat_id),
+        );
 
-        // The mailbox should have recorded alice's seq 0 from both sides.
+        // The mailbox should have recorded alice's message from both sides.
         let alice_sync = alice
             .mailboxes
             .operation_tracker()
@@ -310,14 +297,14 @@ mod tests {
             let alice_seq = alice_sync
                 .borrow()
                 .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
+                .and_then(|m| m.get(&alice_log))
                 .copied();
             let bobbi_seq = bobbi_sync
                 .borrow()
                 .get(&*chat_id)
-                .and_then(|m| m.get(&alice_device))
+                .and_then(|m| m.get(&alice_log))
                 .copied();
-            if alice_seq == Some(0) && bobbi_seq == Some(0) {
+            if alice_seq == Some(header.seq_num) && bobbi_seq == Some(header.seq_num) {
                 Ok(())
             } else {
                 Err("watermark not recorded")

@@ -49,6 +49,7 @@ async fn payload_present(
 /// Alice deletes a message she received from Bobbi just for her own device
 /// group. It disappears on Alice's side while Bobbi is entirely unaffected.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn delete_for_me_tombstones_locally_without_affecting_peer() {
     setup();
 
@@ -131,6 +132,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
 /// A delete-for-me covers the whole edit chain, and it can target the author's
 /// own message. The message vanishes for the author while the peer keeps it.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn delete_for_me_covers_edit_chain_of_own_message() {
     setup();
 
@@ -209,6 +211,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 /// is the reason `DeleteForMe` references only the original message: the whole chain,
 /// including edits that don't exist yet, is caught on the receiving side.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn delete_for_me_hides_edits_arriving_after_the_delete() {
     setup();
 
@@ -287,6 +290,7 @@ async fn delete_for_me_hides_edits_arriving_after_the_delete() {
 /// the valid-ops view). The delete-for-me tombstone reason wins, so the message
 /// vanishes for me rather than lingering as a "deleted" placeholder.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
     setup();
 
@@ -365,6 +369,7 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
 /// on reload), so a notification missing an edit hash leaves that edit's
 /// reply quotes unresolved until the app is reloaded.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn delete_for_me_notification_covers_the_whole_edit_chain() {
     setup();
 

@@ -28,6 +28,9 @@ export interface SimplifiedHeader {
 
 	topic_id: Hash;
 
+	/// The log this operation belongs to, which mailbox sync state is keyed by.
+	log_id: Hash;
+
 	/// p2panda-auth group-control extension. Present on operations that author a group action
 	/// (Create / Add / Remove / Promote / Demote) instead of a chat payload body.
 	auth?: GroupsArgs;

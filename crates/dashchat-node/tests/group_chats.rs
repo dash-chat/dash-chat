@@ -3,11 +3,11 @@
 
 #![cfg(test)]
 
+use dashchat_node::membership::{action_adds_member, membership_action};
 use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
 use p2panda_auth::Access;
-use p2panda_auth::group::{GroupAction, GroupMember};
 use std::collections::BTreeSet;
 
 fn format_members(members: &BTreeSet<(DeviceId, Access)>, labels: &[(&DeviceId, &str)]) -> String {
@@ -208,7 +208,7 @@ async fn test_group_chat() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -289,47 +289,29 @@ async fn test_group_chat() {
         Some("Hello".into())
     );
 
-    // Ensure that the two members who aren't contacts can see each others' profiles.
-
-    poll.consistency(
-        [&cammy, &alice],
-        &[
-            Topic::announcements(alice.agent_id()).into(),
-            Topic::announcements(cammy.agent_id()).into(),
-        ],
-    )
+    // Ensure that the two members who aren't contacts can see each others'
+    // profiles: each pushed theirs into the group on creating or joining it.
+    let named = |name: &str| Profile {
+        name: name.to_string(),
+        surname: None,
+        avatar: None,
+        about: None,
+    };
+    poll.wait_for(|| async {
+        let alice_profile = cammy.get_profile(alice.agent_id()).await.unwrap();
+        let cammy_profile = alice.get_profile(cammy.agent_id()).await.unwrap();
+        if alice_profile.as_ref() == Some(&named("alice"))
+            && cammy_profile.as_ref() == Some(&named("cammy"))
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "alice: {alice_profile:?}, cammy: {cammy_profile:?}"
+            ))
+        }
+    })
     .await
     .unwrap();
-
-    let alice_profile = cammy
-        .projection
-        .get_profile(alice.agent_id())
-        .await
-        .unwrap();
-    assert_eq!(
-        alice_profile,
-        Some(Profile {
-            name: "alice".to_string(),
-            surname: None,
-            avatar: None,
-            about: None,
-        })
-    );
-
-    let cammy_profile = alice
-        .projection
-        .get_profile(cammy.agent_id())
-        .await
-        .unwrap();
-    assert_eq!(
-        cammy_profile,
-        Some(Profile {
-            name: "cammy".to_string(),
-            surname: None,
-            avatar: None,
-            about: None,
-        })
-    );
 
     // shutdown alice
 
@@ -337,6 +319,62 @@ async fn test_group_chat() {
     let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir).await;
     let alice_members = alice.get_group_members(chat_id).await.unwrap();
     assert_eq!(alice_members, expected_members);
+}
+
+/// A restarted node must rejoin its group chats as spaces, not plain streams.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_chat_space_survives_restart() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let alice_dir = alice.shutdown().await;
+    let alice = TestNode::new_at_path(NodeConfig::testing(), "alice", alice_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    // Fails with `NotASpace` if the restart opened the chat as a plain stream.
+    alice.join_space(chat_id).await.unwrap();
+
+    alice
+        .send_message_raw(chat_id, "after restart".into())
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        let msgs = bobbi.get_messages(chat_id).await.unwrap().len();
+        (msgs == 1).then_some(()).ok_or(msgs)
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -355,7 +393,7 @@ async fn test_group_chat_registered_in_op_projection() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -391,7 +429,7 @@ async fn test_admin_removes_themself_when_they_are_the_only_member() {
     let alice = make_node(&mailbox, "alice").await;
 
     let chat_id = alice
-        .create_group(btreemap! {})
+        .create_chat_group(btreemap! {})
         .await
         .unwrap()
         .alias_named("groupchat");
@@ -420,7 +458,7 @@ async fn test_admin_removes_themself_there_is_another_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -436,6 +474,18 @@ async fn test_admin_removes_themself_there_is_another_admin() {
     poll.consistency([&alice, &bobbi], &[chat_id.into()])
         .await
         .unwrap();
+    // The chat log and the space's control log arrive separately: wait until
+    // bobbi's node knows he is a member who can act.
+    assert_group_members(
+        &poll,
+        &[(&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::manage()),
+        ],
+    )
+    .await;
 
     bobbi
         .remove_group_member(chat_id, *bobbi.device_id())
@@ -470,7 +520,7 @@ async fn test_admin_cant_remove_themself_when_they_are_the_only_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -501,7 +551,7 @@ async fn test_non_admin_removes_themself() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -553,7 +603,7 @@ async fn test_admin_removes_non_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
@@ -610,7 +660,7 @@ async fn test_non_admin_cannot_remove_admin() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *andi.device_id() => p2panda_auth::Access::manage(),
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
@@ -634,8 +684,8 @@ async fn test_non_admin_cannot_remove_admin() {
 
     let result = bobbi.remove_group_member(chat_id, *alice.device_id()).await;
     assert!(
-        matches!(result, Ok(())),
-        "Expected remove call to return OK, because this should enque an operation that will be resolved later, but got error: {result:?}"
+        result.is_err(),
+        "expected the space to reject a removal by a non-admin, but got ok"
     );
 
     assert_group_members(
@@ -675,7 +725,7 @@ async fn test_group_events() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::manage(),
         })
         .await
@@ -713,6 +763,26 @@ async fn test_group_events() {
         .add_group_member(chat_id, *cammy.device_id(), Access::write())
         .await
         .unwrap();
+
+    bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::Membership { topic, header })
+                    if *topic == chat_id.into()
+                        && membership_action(header)
+                            .is_some_and(|a| action_adds_member(&a, cammy.device_id())) =>
+                {
+                    Some(())
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is handed the operation adding cammy");
 
     let changed = bobbi
         .watcher
@@ -774,15 +844,7 @@ async fn adds_member(node: &TestNode, operation: p2panda::Hash, member: DeviceId
         .await
         .unwrap()
         .unwrap();
-    let is_member = |m: &GroupMember<p2panda::VerifyingKey>| matches!(m, GroupMember::Individual(pk) if DeviceId::from(*pk) == member);
-    let args = operation.header.extensions.group_args().unwrap();
-    match &args.action {
-        GroupAction::Create { initial_members } => {
-            initial_members.iter().any(|(m, _)| is_member(m))
-        }
-        GroupAction::Add { member, .. } => is_member(member),
-        _ => false,
-    }
+    membership_action(&operation.header).is_some_and(|action| action_adds_member(&action, member))
 }
 
 /// After a removal the invitee still holds the operation that added it the
@@ -801,7 +863,7 @@ async fn test_invitation_names_the_operation_adding_the_invitee() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::write(),
         })
         .await
@@ -822,4 +884,222 @@ async fn test_invitation_names_the_operation_adding_the_invitee() {
     assert_eq!(invited_to, chat_id);
     assert_ne!(re_add, create);
     assert!(adds_member(&alice, re_add, bobbi.device_id()).await);
+}
+
+/// The kinds of group-control actions in `node`'s view of `chat_id`, in log order per author.
+async fn control_action_kinds(node: &TestNode, chat_id: ChatId) -> Vec<String> {
+    node.get_group_control_ops(chat_id)
+        .await
+        .unwrap()
+        .iter()
+        .filter_map(|op| membership_action(&op.header))
+        .map(|action| match action {
+            p2panda_auth::group::GroupAction::Create { .. } => "create".to_string(),
+            p2panda_auth::group::GroupAction::Add { .. } => "add".to_string(),
+            p2panda_auth::group::GroupAction::Remove { .. } => "remove".to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_control_ops_are_served_to_every_member() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    let expected = vec!["create".to_string(), "add".to_string()];
+    poll.wait_for(|| async {
+        let kinds = [
+            control_action_kinds(&alice, chat_id).await,
+            control_action_kinds(&bobbi, chat_id).await,
+        ];
+        kinds
+            .iter()
+            .all(|k| *k == expected)
+            .then_some(())
+            .ok_or(kinds)
+    })
+    .await
+    .unwrap();
+
+    let ops = alice.get_group_control_ops(chat_id).await.unwrap();
+    assert!(
+        ops.iter()
+            .all(|op| op.header.verifying_key == *alice.device_id())
+    );
+    assert!(ops.iter().all(|op| op.body.is_none()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_members_of_a_left_group_survive_restart() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    let expected = btreeset![(alice.device_id(), Access::manage())];
+    assert_group_members(&poll, &[(&bobbi, "bobbi")], chat_id, expected.clone()).await;
+
+    let bobbi_dir = bobbi.shutdown().await;
+    let bobbi = TestNode::new_at_path(NodeConfig::testing(), "bobbi", bobbi_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    let started = std::time::Instant::now();
+    let members = bobbi.get_group_members(chat_id).await.unwrap();
+    assert_eq!(members, expected);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "members of a left group must not wait for a join that never comes"
+    );
+}
+
+/// A member added to a group after a media message was sent can still decrypt
+/// the media: the welcome carries the space's whole secret bundle, and the
+/// blob's metadata pins the secret it was encrypted with.
+#[tokio::test(flavor = "multi_thread")]
+async fn late_joiner_decrypts_pre_join_media() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
+    let media = OutgoingMedia::Photos {
+        photos: vec![OutgoingPhoto {
+            data: photo_bytes.clone(),
+            name: "pic.png".into(),
+            mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
+        }],
+    };
+    alice
+        .send_message(chat_id, "pre-join photo", Some(media), None)
+        .await
+        .unwrap();
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    // Cammy joins only after the media message exists.
+    bobbi
+        .add_group_member(chat_id, *cammy.device_id(), Access::write())
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let meta = cammy
+        .get_messages(chat_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|m| m.content.media().cloned())
+        .expect("media metadata present on cammy's copy of the message");
+
+    poll.wait_for(|| async {
+        cammy
+            .load_media(meta.clone())
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("blob not downloaded or decrypted yet: {err:?}"))
+    })
+    .await
+    .unwrap();
+
+    let OutgoingMedia::Photos { photos } = cammy.load_media(meta).await.unwrap() else {
+        panic!("expected a photo attachment");
+    };
+    assert_eq!(photos[0].data, photo_bytes);
 }

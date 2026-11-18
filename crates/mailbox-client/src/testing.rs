@@ -13,14 +13,14 @@ pub struct Msg {
 }
 
 impl MailboxItem for Msg {
-    type Author = char;
+    type Log = char;
     type Hash = (char, SeqNum);
     type Topic = u8;
 
     fn hash(&self) -> Self::Hash {
         (self.author, self.seq)
     }
-    fn author(&self) -> Self::Author {
+    fn log(&self) -> Self::Log {
         self.author
     }
     fn seq_num(&self) -> SeqNum {

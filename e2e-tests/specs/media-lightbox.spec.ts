@@ -19,7 +19,10 @@ describe('Photo lightbox', () => {
 		await exchangeContacts([agent1, agent2]);
 
 		for (let i = 0; i < 3; i++) {
-			await agent1.directChatPage.composer.attachPhotos('lightbox');
+			// Distinct names: the lightbox's force-error test hook targets images
+			// by alt (= filename), so photos sharing one name would all fail
+			// together instead of just the one under test.
+			await agent1.directChatPage.composer.attachPhotos(`lightbox-${i}`);
 		}
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('lightbox');

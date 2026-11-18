@@ -2,12 +2,6 @@
 //!
 //! # List of topics
 //!
-//! ## `Announcements` (ActorId)
-//!
-//! Each node has their own announcements topic.
-//! It is backed by a space with the node as sole Manager, with everyone else having Read access.
-//! The node uses this to publish profile updates
-//!
 //! ## `Auth` (ActorId)
 //!
 //! KeyBundle and Auth control messages are published to this topic.
@@ -104,7 +98,6 @@ pub mod kind {
         };
     }
 
-    topic_kind!(Announcements);
     topic_kind!(DeviceGroup);
 
     // Either direct or group chat
@@ -222,14 +215,6 @@ impl std::str::FromStr for Topic<kind::Untyped> {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(TopicId::from_str(s)?.into())
-    }
-}
-
-impl Topic<kind::Announcements> {
-    pub fn announcements(agent_id: AgentId) -> Self {
-        let t = Self::new(*agent_id.as_bytes());
-        t.alias_named(&format!("announcements({:?})", agent_id.aliased()));
-        t
     }
 }
 

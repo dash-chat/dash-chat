@@ -12,9 +12,11 @@ use futures::TryStreamExt;
 use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
-use p2panda::operation::{LogId, Operation};
+use p2panda::operation::{ExtensionsVariantV1, LogId, Operation};
+use p2panda_spaces::SpacesArgs;
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
+use p2panda_store::topics::TopicStore;
 
 use crate::{mailbox::MailboxOperation, topic::TopicId, *};
 
@@ -86,9 +88,13 @@ impl OpStore {
         use p2panda_store::cursors::CursorStore;
         // The ack cursor is persisted by p2panda under the topic's string
         // representation (see `StreamSubscription`'s internal `Acked`).
-        let cursor =
-            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(&self.store, topic.to_string())
-                .await?;
+        let cursor = p2panda_store::tx!(self.store, {
+            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
+                &self.store,
+                topic.to_string(),
+            )
+            .await?
+        });
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
@@ -196,7 +202,10 @@ impl OpStore {
     /// intact so log sync stays consistent. Used to enforce tombstones.
     pub async fn delete_body(&self, hash: &Hash) -> anyhow::Result<()> {
         use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash>::delete_operation_payload(&self.store, hash).await?;
+        p2panda_store::tx!(self.store, {
+            OperationStore::<Operation, Hash>::delete_operation_payload_tx(&self.store, hash)
+                .await?;
+        });
         Ok(())
     }
 
@@ -225,11 +234,12 @@ impl OpStore {
 impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     async fn get_log(
         &self,
-        author: &DeviceId,
+        log: &Log,
         topic: &TopicId,
         from: SeqNum,
     ) -> Result<Option<Vec<MailboxOperation>>, anyhow::Error> {
-        let log_id = LogId::from_topic(*topic);
+        let Log { author, log_id } = log;
+        let log_id: LogId = (*log_id).into();
         let from = from.checked_sub(1);
         let log = self.log_operations(author, &log_id, from).await?;
         if log.is_empty() && !self.log_exists(author, &log_id).await? {
@@ -241,13 +251,17 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         // still have its payload dropped by a tombstone it is about to
         // enforce, so it must not be sent onward yet. Truncating (rather than
         // filtering) keeps the returned log dense from `from`, which callers
-        // index by sequence number. Body-less operations are always safe to
-        // transmit — there is no payload to leak — and are acknowledged by
-        // p2panda before ever reaching the application layer.
+        // index by sequence number. Control operations (space, group and key
+        // bundle logs) are always safe to transmit — only application payloads
+        // are ever tombstoned — and are acknowledged by p2panda before ever
+        // reaching the application layer.
         let acked_height = self.acked_log_height(topic, author, &log_id).await?;
         let mut ops = Vec::with_capacity(log.len());
         for op in log {
-            if op.body.is_some() && acked_height.is_none_or(|h| op.header.seq_num > h) {
+            if is_application(&op)
+                && op.body.is_some()
+                && acked_height.is_none_or(|h| op.header.seq_num > h)
+            {
                 break;
             }
             ops.push(MailboxOperation {
@@ -259,11 +273,29 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
         Ok(Some(ops))
     }
 
-    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(DeviceId, SeqNum)>> {
-        Ok(OpStore::get_log_heights(self, &LogId::from_topic(*topic))
-            .await?
-            .into_iter()
-            .collect())
+    async fn get_log_heights(&self, topic: &TopicId) -> anyhow::Result<Vec<(Log, SeqNum)>> {
+        let logs: BTreeMap<p2panda::VerifyingKey, Vec<LogId>> = self.store.resolve(topic).await?;
+        let mut heights = Vec::new();
+        for (author, log_ids) in logs {
+            let Some(log_heights) = self.store.get_log_heights(&author, &log_ids).await? else {
+                continue;
+            };
+            for (log_id, height) in log_heights {
+                heights.push((Log::new(DeviceId::from(author), log_id), height));
+            }
+        }
+        Ok(heights)
+    }
+}
+
+/// Whether an operation carries an application payload, as opposed to a
+/// space, group or key bundle control message.
+fn is_application(op: &Operation) -> bool {
+    match &op.header.extensions.variant {
+        ExtensionsVariantV1::Basic(_) => true,
+        ExtensionsVariantV1::Space(extensions) => {
+            matches!(extensions.args, SpacesArgs::Application { .. })
+        }
     }
 }
 
@@ -309,7 +341,7 @@ mod tests {
 
     async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation(&store.store, &op.hash, op, log_id)
+        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &op.hash, op, log_id)
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
@@ -329,7 +361,8 @@ mod tests {
         use p2panda_core::logs::LogHeights;
         use p2panda_store::cursors::CursorStore;
 
-        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor(
+        let permit = store.store.begin().await.unwrap();
+        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
             &store.store,
             topic.to_string(),
         )
@@ -337,8 +370,7 @@ mod tests {
         .unwrap()
         .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
         cursor.advance(**author, log_id, seq);
-        let permit = store.store.begin().await.unwrap();
-        CursorStore::set_cursor(&store.store, &cursor)
+        CursorStore::set_cursor_tx(&store.store, &cursor)
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();
@@ -355,7 +387,7 @@ mod tests {
         let author = DeviceId::from(signing_key.verifying_key());
 
         for from in [0, 1] {
-            let log = MailboxStore::get_log(&store, &author, &topic, from)
+            let log = MailboxStore::get_log(&store, &Log::new(author, log_id), &topic, from)
                 .await
                 .unwrap();
             assert!(log.is_none(), "absent log from {from}: {log:?}");
@@ -368,7 +400,7 @@ mod tests {
         let served = |from: SeqNum| {
             let store = store.clone();
             async move {
-                MailboxStore::get_log(&store, &author, &topic, from)
+                MailboxStore::get_log(&store, &Log::new(author, log_id), &topic, from)
                     .await
                     .unwrap()
                     .map(|ops| {
@@ -403,7 +435,7 @@ mod tests {
         let served = |store: &OpStore| {
             let store = store.clone();
             async move {
-                MailboxStore::get_log(&store, &author, &topic, 0)
+                MailboxStore::get_log(&store, &Log::new(author, log_id), &topic, 0)
                     .await
                     .unwrap()
                     .unwrap()
@@ -450,7 +482,7 @@ mod tests {
         };
 
         let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation(&store.store, &hash, &op, &log_id)
+        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &hash, &op, &log_id)
             .await
             .unwrap();
         store.store.commit(permit).await.unwrap();

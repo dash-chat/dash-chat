@@ -1,3 +1,4 @@
+pub mod blob_crypto;
 pub mod blob_sync;
 mod chat;
 mod contact;
@@ -14,6 +15,7 @@ pub mod util;
 
 mod id;
 pub mod mailbox;
+pub mod membership;
 mod online_peers;
 
 pub mod compat;
