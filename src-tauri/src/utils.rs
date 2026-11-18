@@ -9,6 +9,17 @@ pub fn install_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+/// Raise the soft open-files limit as far as the OS allows. p2panda starts a
+/// tokio runtime (one kqueue each) per topic, so a few dozen chats exhaust the
+/// 256 that macOS gives apps launched from Finder.
+#[cfg(unix)]
+pub fn raise_open_files_limit() {
+    match rlimit::increase_nofile_limit(u64::MAX) {
+        Ok(limit) => log::info!("Open files limit: {limit}"),
+        Err(err) => log::warn!("Failed to raise the open files limit: {err}"),
+    }
+}
+
 pub async fn with_retries<T>(
     condition: impl AsyncFn() -> anyhow::Result<T>,
     retries: usize,

@@ -4,7 +4,7 @@
  *  show, so a sequence fails at the exact move peer or hub discovery did
  *  not survive. */
 import { type Real, at, byName, log, networkNamed } from '../agents';
-import { chipChat, expectHubs, openChat } from '../checks';
+import { checkChatList, expectHubs } from '../checks';
 import { type ExpectedModel, HOME_NETWORK } from '../model';
 import { Move, type Moves } from './move';
 
@@ -30,7 +30,7 @@ class PeerJoinMove extends Move {
 		const actor = byName(real, at(this.movable(m), this.agentIdx));
 		const network = at(m.otherNetworks(actor.name), this.networkIdx);
 		log(`${actor.name}: ${this.toString()} -> joins ${network}`);
-		await openChat(actor, chipChat(m, actor.name), m);
+		await checkChatList(m, actor);
 		if (network === HOME_NETWORK) {
 			await actor.agent.leaveWifi();
 		} else {
@@ -64,7 +64,7 @@ class PeerLeaveMove extends Move {
 		const actor = byName(real, at(this.movable(m), this.agentIdx));
 		const from = m.networkOf(actor.name);
 		log(`${actor.name}: ${this.toString()} -> leaves ${String(from)}`);
-		await openChat(actor, chipChat(m, actor.name), m);
+		await checkChatList(m, actor);
 		await actor.agent.forgetWifi();
 		await actor.agent.disableWifi();
 		m.agentLeave(actor.name);

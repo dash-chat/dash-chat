@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
 	import {
-		type ChatId,
 		type DeviceId,
 		type Hash,
-		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
 		hasBody,
@@ -24,8 +22,6 @@
 	import { isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { useReactiveValue } from '$lib/stores/use-signal';
-	import { connectedToCloudMailboxServer } from '$lib/components/connection/connection-status';
 	import { getContext } from 'svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { toggleReaction } from '$lib/utils/reactions';
@@ -35,7 +31,6 @@
 		position,
 		myDeviceId,
 		searchQuery,
-		chatId,
 		showDeliveryStatus = false,
 		readOnly,
 		onEdit,
@@ -45,7 +40,6 @@
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
-		chatId: ChatId;
 		searchQuery: string;
 		/** Whether to render the message's delivery status indicator — see
 		 * `endsDeliveryStatusRun`. */
@@ -88,30 +82,6 @@
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
-
-	const mailboxTrackerStore: MailboxTrackerStore = getContext(
-		'mailbox-tracker-store',
-	);
-
-	const syncStatus = $derived(
-		useReactiveValue(
-			mailboxTrackerStore.syncStatusForOp,
-			chatId,
-			message.author,
-			message.logId,
-			message.seqNum,
-		),
-	);
-	const mailboxes = useReactiveValue(
-		mailboxTrackerStore.connectionStatusForAllMailboxes,
-	);
-
-	const isOfflineMessage = $derived(
-		$syncStatus !== undefined &&
-			$mailboxes !== undefined &&
-			!$syncStatus.syncedWithCloudMailbox &&
-			!connectedToCloudMailboxServer($mailboxes),
-	);
 </script>
 
 {#snippet metadata()}
@@ -155,7 +125,7 @@
 					textIos: 'text-white',
 					textMaterial: 'text-white',
 				}}
-				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+				class={`message outgoing-message ${position}-message`}
 			>
 				<MessageContent
 					{message}

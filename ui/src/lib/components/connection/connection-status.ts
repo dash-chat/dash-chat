@@ -1,5 +1,6 @@
 import { withinWindow } from '$lib/utils/time';
 import type {
+	AgentId,
 	AllMailboxesConnectionState,
 	MailboxConnectionHealth,
 } from 'dash-chat-stores';
@@ -32,12 +33,6 @@ function reachable(mailbox: MailboxConnectionHealth): boolean {
 
 function happenedAfter(at: string | null | undefined, instant: number) {
 	return at !== null && at !== undefined && Date.parse(at) > instant;
-}
-
-export function connectedToCloudMailboxServer(
-	mailboxes: AllMailboxesConnectionState,
-): boolean {
-	return mailboxes.cloudMailbox !== null && reachable(mailboxes.cloudMailbox);
 }
 
 type CloudVerdict = 'confirmed' | 'unconfirmed' | 'settling' | 'down';
@@ -95,6 +90,21 @@ export function connectionStatus(
 	if (count > 0) return { status: 'local', count, hasAnotherRoute: peerOnline };
 	if (cloud === 'settling') return { status: 'pending' };
 	return { status: peerOnline ? 'p2p' : 'disconnected' };
+}
+
+/** The online peers, while phone to phone is the route carrying the
+ * connection: with the internet or a hub reachable, nobody counts. */
+export function peersConnectedOverP2p(
+	mailboxes: AllMailboxesConnectionState,
+	onlinePeers: AgentId[],
+	resumedAt: number,
+): AgentId[] {
+	const { status } = connectionStatus(
+		mailboxes,
+		onlinePeers.length > 0,
+		resumedAt,
+	);
+	return status === 'p2p' ? onlinePeers : [];
 }
 
 export type InternetStatus = 'connected' | 'pending' | 'disconnected';

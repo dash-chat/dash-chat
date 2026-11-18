@@ -173,6 +173,8 @@ pub async fn get_or_build_node(
     }
 
     log::info!("No compatible node in the cache, building node from scratch.");
+    #[cfg(unix)]
+    crate::utils::raise_open_files_limit();
 
     #[cfg(mobile)]
     let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);

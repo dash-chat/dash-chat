@@ -1,19 +1,20 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { useTheme } from 'konsta/svelte';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import {
+		MediaDraft,
+		type StagingOutcome,
+	} from '$lib/components/messages/composer/media-draft.svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
-		type DraftMedia,
-		type IngestError,
+		type StagingError,
 		capturePhoto,
 		draftToMedia,
-		ingestFiles,
 		pickMedia,
-		startPreparingPhotos,
 		AttachmentTooLargeError,
 		formatFileSize,
 		MAX_MESSAGE_BYTES,
@@ -74,12 +75,21 @@
 
 	const theme = $derived(useTheme());
 
-	let media: DraftMedia | undefined = $state(undefined);
-	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
+	const mediaDraft = new MediaDraft(openStagedMediaPage);
+	onDestroy(() => mediaDraft.clear());
+	const media = $derived(mediaDraft.media);
+	const showsStagedMedia = $derived(
+		(media !== undefined && media.kind !== 'voice_note') ||
+			mediaDraft.pendingPhotos > 0,
+	);
+	let hasContent = $derived(
+		value.trim().length > 0 || media !== undefined || mediaDraft.busy,
+	);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let sending = false;
 	let loadingMedia = $state(false);
+	let mediaBusy = $derived(loadingMedia || mediaDraft.busy);
 
 	let showMediaPanel = $state(false);
 
@@ -111,7 +121,7 @@
 	}
 
 	function discardDraftAndEdit(message: Message) {
-		media = undefined;
+		mediaDraft.clear();
 		startEdit(message);
 	}
 
@@ -176,13 +186,13 @@
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
 		if (!hasContent || sending) return false;
-		if (loadingMedia && media?.kind !== 'voice_note') return false;
+		if (mediaBusy && media?.kind !== 'voice_note') return false;
 		sending = true;
 		const message = value;
-		const draft = media;
+		const stagedMedia = media;
 		const replyTo = replying;
 		try {
-			const wireMedia = draft ? await draftToMedia(draft) : null;
+			const wireMedia = stagedMedia ? await draftToMedia(stagedMedia) : null;
 			const hash = await store.sendMessage({
 				message,
 				media: wireMedia,
@@ -191,9 +201,7 @@
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
-			if (media === draft) {
-				media = undefined;
-			}
+			if (stagedMedia) mediaDraft.discardSent(stagedMedia);
 			if (replying === replyTo) replying = null;
 			onSent?.(hash);
 			return true;
@@ -215,23 +223,59 @@
 		}
 	}
 
-	const ingestErrorMessages: Record<IngestError, () => string> = {
+	const stagingErrorMessages: Record<StagingError, () => string> = {
 		tooMany: () => m.errorTooManyAttachments(),
 		filesWithPhotos: () => m.errorFilesWithPhotos(),
 		oneFileAtATime: () => m.errorOneFileAtATime(),
 	};
 
-	/** Add files to the draft, toasting if a Signal mixing rule was violated. */
-	function stage(files: FileList | File[]) {
-		const result = ingestFiles(media, Array.from(files));
-		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
-		if (result.media?.kind === 'photos') {
-			startPreparingPhotos(result.media.items);
+	/** Add files to the draft and toast why anything was left out. */
+	async function stage(files: FileList | File[]) {
+		try {
+			const outcome = await mediaDraft.add(Array.from(files));
+			showStagingToast(outcome);
+		} finally {
+			closeEmptyStagedMediaPage();
 		}
-		media = result.media;
-		if (isMobile && media && !page.state.stagedMedia) {
+	}
+
+	// One toast at a time: a rule error explains more than the damaged count.
+	function showStagingToast({ error, undecodablePhotos }: StagingOutcome) {
+		if (error) {
+			showToast(stagingErrorMessages[error](), 'error');
+		} else if (undecodablePhotos > 0) {
+			showToast(
+				m.errorUndecodablePhotos({ count: undecodablePhotos }),
+				'error',
+			);
+		}
+	}
+
+	// A batch opens the page before its photos are prepared, so one that
+	// staged nothing (every photo damaged, or preparing failed) leaves it
+	// with nothing to show.
+	function closeEmptyStagedMediaPage() {
+		if (
+			isMobile &&
+			page.state.stagedMedia &&
+			!showsStagedMedia &&
+			!mediaDraft.busy
+		) {
+			history.back();
+		}
+	}
+
+	function openStagedMediaPage() {
+		if (isMobile && !page.state.stagedMedia) {
 			pushState('', { stagedMedia: true });
 		}
+	}
+
+	function stageOrToast(files: FileList | File[]) {
+		stage(files).catch(e => {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to stage files', e);
+		});
 	}
 
 	async function stageWhenLoaded(
@@ -241,7 +285,7 @@
 		loadingMedia = true;
 		try {
 			const files = await load();
-			if (files && files.length > 0) stage(files);
+			if (files && files.length > 0) await stage(files);
 		} finally {
 			loadingMedia = false;
 		}
@@ -295,13 +339,9 @@
 	// history entry, and the rule would discard every voice draft the moment it
 	// was staged.
 	$effect(() => {
-		if (
-			isMobile &&
-			media &&
-			media.kind !== 'voice_note' &&
-			!page.state.stagedMedia
-		)
-			media = undefined;
+		if (isMobile && showsStagedMedia && !page.state.stagedMedia) {
+			mediaDraft.clear();
+		}
 	});
 
 	$effect(() => {
@@ -315,7 +355,7 @@
 	let sendingVoiceNote = $state(false);
 
 	const voice = new VoiceRecorder(async draft => {
-		media = { kind: 'voice_note', voice: draft };
+		mediaDraft.setVoiceNote(draft);
 		sendingVoiceNote = true;
 		try {
 			await send();
@@ -345,22 +385,19 @@
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
 		event.preventDefault();
-		stage(files);
+		stageOrToast(files);
 	}
 
 	// Test-only: the native recorder can’t capture in the headless e2e harness.
 	onMount(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent).detail;
-			media = {
-				kind: 'voice_note',
-				voice: {
-					bytes: new Uint8Array(detail.bytes),
-					mimeType: detail.mimeType ?? 'audio/wav',
-					durationMs: detail.durationMs,
-					waveform: new Uint8Array(detail.waveform),
-				},
-			};
+			mediaDraft.setVoiceNote({
+				bytes: new Uint8Array(detail.bytes),
+				mimeType: detail.mimeType ?? 'audio/wav',
+				durationMs: detail.durationMs,
+				waveform: new Uint8Array(detail.waveform),
+			});
 		};
 		window.addEventListener('test-inject-voice-message', handler);
 		return () =>
@@ -368,7 +405,7 @@
 	});
 </script>
 
-<MediaDropOverlay onFiles={stage} />
+<MediaDropOverlay onFiles={stageOrToast} />
 
 {#snippet emojiButton()}
 	<EmojiButton onClick={openEmojiPicker} />
@@ -398,7 +435,7 @@
 				: '--toggle-hidden-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)'}"
 			aria-hidden={drafting}
 		>
-			<CameraButton onClick={captureFromCamera} disabled={loadingMedia} />
+			<CameraButton onClick={captureFromCamera} disabled={mediaBusy} />
 			<VoiceRecordButton {voice} />
 		</div>
 	{/if}
@@ -427,10 +464,15 @@
 		use:renderAboveKeyboard
 	>
 		{#if !editing && !isMobile}
-			<StagedAttachments bind:media {loadingMedia} onAddMore={pickPhotos} />
+			<StagedAttachments
+				draft={mediaDraft}
+				loadingMedia={mediaBusy}
+				onAddMore={pickPhotos}
+			/>
 		{/if}
 
-		<div class="m-2 relative">
+		<!-- Signal's iOS composer keeps 16pt clear of the screen edges. -->
+		<div class="relative {theme === 'ios' ? 'mx-4 my-2' : 'm-2'}">
 			<VoiceRecordingBar
 				{voice}
 				onLeavingChange={leaving => (voiceBarLeaving = leaving)}
@@ -490,12 +532,12 @@
 							class:ios-send-hidden={!drafting}
 							aria-hidden={!drafting}
 						>
-							<SendButton onSend={send} disabled={loadingMedia} />
+							<SendButton onSend={send} disabled={mediaBusy} />
 						</div>
 					{:else}
 						<div class="toggle-slot shrink-0">
 							<div class="toggle-child" class:toggle-hidden={!drafting}>
-								<SendButton onSend={send} disabled={loadingMedia} />
+								<SendButton onSend={send} disabled={mediaBusy} />
 							</div>
 							<div class="toggle-child" class:toggle-hidden={drafting}>
 								<StandaloneAttachButton
@@ -523,7 +565,7 @@
 	{#if isMobile}
 		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
 			<MediaPanel
-				{loadingMedia}
+				loadingMedia={mediaBusy}
 				onPickPhotos={pickPhotos}
 				onPickFile={pickFile}
 				onAddRecent={addRecentPhoto}
@@ -533,12 +575,12 @@
 	{/if}
 </div>
 
-{#if isMobile && media && page.state.stagedMedia}
+{#if isMobile && showsStagedMedia && page.state.stagedMedia}
 	<StagedMediaPage
-		bind:media
+		draft={mediaDraft}
 		bind:value
 		{destinationName}
-		{loadingMedia}
+		loadingMedia={mediaBusy}
 		onSend={async () => {
 			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();

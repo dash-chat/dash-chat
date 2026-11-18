@@ -44,7 +44,6 @@
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
-	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
@@ -98,9 +97,6 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	// Never in the binary under test
-	const isE2E = import.meta.env.VITE_E2E === 'true';
-	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile && !isE2E;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -260,10 +256,6 @@
 		if (isMobile && !optedIn) e.preventDefault();
 	}}
 />
-
-{#if showToolbar}
-	<PreviewToolbar />
-{/if}
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>

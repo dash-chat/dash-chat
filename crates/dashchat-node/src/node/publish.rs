@@ -14,6 +14,12 @@ impl Node {
     ) -> Result<Header, anyhow::Error> {
         let payload: Payload = payload.into();
 
+        // A read-only node (the push extension) must never land here: what it
+        // publishes under the shared key the running app never processes.
+        if self.config.read_only {
+            tracing::warn!(topic = ?topic.aliased(), payload = ?payload.aliased(), "read-only node publishing an operation");
+        }
+
         debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
         // This only means the operation has been handed to the pipeline, not that it has been

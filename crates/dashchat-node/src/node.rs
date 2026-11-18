@@ -123,6 +123,14 @@ pub struct NodeConfig {
     /// disables this — its short-lived background node must not author
     /// operations.
     pub enable_message_acks: bool,
+    /// Whether this node must not author any operations at all. On for the
+    /// iOS push extension: it shares the app's store and signs with the app's
+    /// key, but an operation it publishes into a topic the app already
+    /// follows never passes through the running app's processor — the store
+    /// is shared, the streams are not. Side effects that publish are left to
+    /// the app, which re-processes the operations this node recorded (see
+    /// [`Self::record_processed_operations`]) and performs them itself.
+    pub read_only: bool,
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
@@ -194,6 +202,7 @@ impl NodeConfig {
             blob_sync_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            read_only: false,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
@@ -225,6 +234,7 @@ impl Default for NodeConfig {
             blob_sync_interval: std::time::Duration::from_secs(4),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            read_only: false,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,

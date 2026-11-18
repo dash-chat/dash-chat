@@ -5,9 +5,9 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-	connectedToCloudMailboxServer,
 	connectionModes,
 	connectionStatus,
+	peersConnectedOverP2p,
 } from './connection-status';
 
 const RESUMED_AT = Date.parse('2026-01-05T12:00:00Z');
@@ -140,26 +140,26 @@ describe('connectionStatus', () => {
 	});
 });
 
-describe('connectedToCloudMailboxServer', () => {
-	it('counts a cloud below the error threshold as connected', () => {
+describe('peersConnectedOverP2p', () => {
+	it('names the online peers once nothing else is reachable', () => {
+		vi.setSystemTime(SETTLED_AT);
 		expect(
-			connectedToCloudMailboxServer({
-				cloudMailbox: failing(1),
-				localMailboxes: [],
-			}),
-		).toBe(true);
+			peersConnectedOverP2p(
+				{ cloudMailbox: null, localMailboxes: [] },
+				['alice'],
+				RESUMED_AT,
+			),
+		).toEqual(['alice']);
 	});
 
-	it('does not count an unregistered or failing cloud', () => {
+	it('names nobody while the cloud answers', () => {
 		expect(
-			connectedToCloudMailboxServer({ cloudMailbox: null, localMailboxes: [] }),
-		).toBe(false);
-		expect(
-			connectedToCloudMailboxServer({
-				cloudMailbox: failing(2),
-				localMailboxes: [],
-			}),
-		).toBe(false);
+			peersConnectedOverP2p(
+				{ cloudMailbox: answering(), localMailboxes: [] },
+				['alice'],
+				RESUMED_AT,
+			),
+		).toEqual([]);
 	});
 });
 

@@ -4,7 +4,7 @@ import { TestHelper } from '../../test-helper';
 
 export class ProfilePage extends TestHelper {
 	back = this.el(tid('profile-back'));
-	avatar = new Avatar(this.agent, 'editable-avatar');
+	avatar = new Avatar(this.agent, tid('editable-avatar'));
 	editPhoto = this.el(tid('edit-photo'));
 	editName = this.el(tid('profile-edit-name'));
 	editAbout = this.el(tid('profile-edit-about'));

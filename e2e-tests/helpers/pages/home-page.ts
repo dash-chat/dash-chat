@@ -1,18 +1,10 @@
+import { ConnectionStatusIndicator } from '../components/connection-status-indicator';
 import { checkOverflow } from '../review/checks';
 import { tid } from '../selectors';
 import { TestHelper } from './test-helper';
 
 /** Spelt once: `tid()` yields CSS, and the row lookup below needs XPath. */
 const CHAT_LIST_ID = 'all-chats-list';
-
-const GET_STARTED_CARD_IDS = [
-	'add-contact',
-	'add-photo',
-	'chat-color',
-	'new-group',
-] as const;
-
-type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
 
 /** One row of the chat list: what it is titled and what its unread badge
  *  reads. */
@@ -43,6 +35,7 @@ export class HomePage extends TestHelper {
 	blockedRowIcon = this.el(tid('blocked-row-icon'));
 	unreadBadge = this.el(tid('chat-row-unread-badge'));
 	p2pBadge = this.el(tid('chat-row-p2p-badge'));
+	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {
@@ -172,21 +165,6 @@ export class HomePage extends TestHelper {
 			tid(CHAT_LIST_ID),
 			contactName,
 		);
-	}
-
-	getStartedCard(id: GetStartedCardId) {
-		return this.agent.$(tid(`get-started-${id}`));
-	}
-
-	dismissGetStartedCardButton(id: GetStartedCardId) {
-		return this.agent.$(tid(`get-started-dismiss-${id}`));
-	}
-
-	async visibleGetStartedCards(): Promise<GetStartedCardId[]> {
-		const checks = await Promise.all(
-			GET_STARTED_CARD_IDS.map(id => this.getStartedCard(id).isExisting()),
-		);
-		return GET_STARTED_CARD_IDS.filter((_, i) => checks[i]);
 	}
 
 	/** Returns descriptions of any chat-list items overflowing their container. */
