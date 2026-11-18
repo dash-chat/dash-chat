@@ -3,7 +3,7 @@ use p2panda::operation::{Header, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{AsBody, Log, SeqNum, TopicId};
+use crate::{Cbor, Log, SeqNum, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -14,6 +14,17 @@ pub struct MailboxOperation {
     #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub body: Option<Body>,
+}
+
+/// The media blobs an operation's plaintext payload refers to.
+pub(crate) fn media_blob_hashes(payload: &[u8]) -> Vec<iroh_blobs::Hash> {
+    match crate::Payload::from_bytes(payload) {
+        Ok(crate::Payload::Chat(crate::ChatPayload::Message(m))) => m
+            .media()
+            .map(|items| items.iter().map(|item| item.hash()).collect())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
 }
 
 impl MailboxItem for MailboxOperation {
@@ -38,22 +49,6 @@ impl MailboxItem for MailboxOperation {
 
     fn topic(&self) -> TopicId {
         self.topic
-    }
-
-    fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
-        let Some(body) = &self.body else {
-            return Vec::new();
-        };
-        let Ok(payload) = crate::Payload::try_from_body(body) else {
-            return Vec::new();
-        };
-        match payload {
-            crate::Payload::Chat(crate::ChatPayload::Message(m)) => m
-                .media()
-                .map(|items| items.iter().map(|item| item.hash()).collect())
-                .unwrap_or_default(),
-            _ => Vec::new(),
-        }
     }
 }
 
@@ -113,20 +108,9 @@ impl crate::Node {
 mod tests {
 
     use crate::{testing::*, *};
-    use mailbox_client::MailboxItem as _;
-
-    fn make_header(topic: TopicId) -> p2panda::operation::Header {
-        use p2panda::operation::{Extensions, Header, LogId};
-        let signing_key = p2panda::SigningKey::from_bytes(&[0u8; 32]);
-        Header::builder().build(
-            &signing_key,
-            Extensions::builder(LogId::from_topic(topic)).build(),
-        )
-    }
 
     #[test]
-    fn mailbox_operation_exposes_media_blob_hashes() {
-        let topic = TopicId::random();
+    fn media_blob_hashes_reads_a_message_payload() {
         let media_hash = iroh_blobs::Hash::new([42u8; 32]);
 
         let content = ChatMessageContent::new(
@@ -145,27 +129,8 @@ mod tests {
             0,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
-        let body = payload.try_into_body().unwrap();
-
-        let op = super::MailboxOperation {
-            topic,
-            header: make_header(topic),
-            body: Some(body),
-        };
-
-        let hashes = op.blob_hashes();
+        let hashes = super::media_blob_hashes(&payload.as_bytes().unwrap());
         assert_eq!(hashes, vec![media_hash]);
-    }
-
-    #[test]
-    fn mailbox_operation_no_body_returns_empty_hashes() {
-        let topic = TopicId::random();
-        let op = super::MailboxOperation {
-            topic,
-            header: make_header(topic),
-            body: None,
-        };
-        assert_eq!(op.blob_hashes(), Vec::<iroh_blobs::Hash>::new());
     }
 
     /// A mailbox added after the fact still delivers what was sent before:
@@ -276,7 +241,7 @@ mod tests {
         let mailbox_id = mb.id().await;
         let alice_log = Log::new(
             alice.device_id(),
-            p2panda::operation::LogId::from_topic(*chat_id),
+            crate::topic::application_log_id(*chat_id),
         );
 
         // The mailbox should have recorded alice's message from both sides.

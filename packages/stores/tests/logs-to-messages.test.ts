@@ -109,3 +109,50 @@ describe('logsToMessages under clock skew', () => {
 		assert.equal(replyQuote?.text, 'text of target');
 	});
 });
+
+describe('logsToMessages with operations that do not decrypt', () => {
+	function atSeqNum(
+		op: SimplifiedOperation<Payload>,
+		seqNum: number,
+	): SimplifiedOperation<Payload> {
+		return { ...op, header: { ...op.header, seq_num: seqNum } };
+	}
+
+	function undecryptable(
+		hash: Hash,
+		seqNum: number,
+	): SimplifiedOperation<Payload> {
+		const op = message(hash, FAST_CLOCK, BASE_TS + seqNum, 0);
+		return { ...atSeqNum(op, seqNum), body: undefined, undecryptable: true };
+	}
+
+	it('shows a placeholder in place of the message', () => {
+		const messages = logsToMessages(
+			opsInCausalOrder([
+				atSeqNum(message('readable', FAST_CLOCK, BASE_TS, 1), 0),
+				undecryptable('corrupt', 1),
+			]),
+			{},
+			DEVICE_AGENTS,
+			DEVICE_NAMES,
+		);
+
+		assert.equal(messages['corrupt'].content, 'undecryptable');
+		assert.ok(hasBody(messages['readable'].content));
+	});
+
+	it('shows one placeholder for a run of undecryptable operations', () => {
+		const messages = logsToMessages(
+			opsInCausalOrder([
+				undecryptable('first', 0),
+				undecryptable('second', 1),
+				undecryptable('third', 2),
+			]),
+			{},
+			DEVICE_AGENTS,
+			DEVICE_NAMES,
+		);
+
+		assert.deepEqual(Object.keys(messages), ['first']);
+	});
+});

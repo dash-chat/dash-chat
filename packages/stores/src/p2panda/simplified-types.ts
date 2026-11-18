@@ -4,6 +4,8 @@ export interface SimplifiedOperation<B> {
 	hash: Hash;
 	header: SimplifiedHeader;
 	body: B | undefined;
+	/** Set when the operation has a payload, which does not decrypt. */
+	undecryptable?: boolean;
 }
 
 export interface SimplifiedHeader {

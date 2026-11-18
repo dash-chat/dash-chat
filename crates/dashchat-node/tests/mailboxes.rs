@@ -295,7 +295,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
 
     let alice_log = Log::new(
         alice.device_id(),
-        p2panda::operation::LogId::from_topic(*chat),
+        dashchat_node::topic::application_log_id(*chat),
     );
     let synced_before_send = alice
         .mailboxes

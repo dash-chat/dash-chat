@@ -46,7 +46,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         }
     }
 
-    /// Attach a blob-bytes source so `publish` streams blob bytes to the mailbox
+    /// Attach a blob-bytes source so `store_blobs` streams blob bytes to the mailbox
     /// (best-effort, in a spawned task) after announcing their hashes. Without a
     /// reader the client only announces hashes and the mailbox fetches the bytes
     /// from us.
@@ -106,9 +106,6 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         // Group operations by topic -> author -> seq_num
         let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
 
-        let blob_hashes: Vec<iroh_blobs::Hash> =
-            ops.iter().flat_map(|op| op.blob_hashes()).collect();
-
         for op in ops {
             let topic_id = op.topic().to_mailbox_key();
             let log_id = op.log().to_mailbox_key();
@@ -136,7 +133,6 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
         if response.status().is_success() {
             let response: StoreBlipsResponse = response.json().await?;
-            self.store_blobs(blob_hashes).await?;
 
             let mut result = PublishResponse::default();
             for (topic_str, authors) in response.watermarks {

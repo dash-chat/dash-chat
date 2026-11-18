@@ -951,7 +951,7 @@ async fn test_group_control_ops_are_served_to_every_member() {
         ops.iter()
             .all(|op| op.header.verifying_key == *alice.device_id())
     );
-    assert!(ops.iter().all(|op| op.body.is_none()));
+    assert!(ops.iter().all(|op| matches!(op.body, Ok(None))));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -1,5 +1,6 @@
+use dashchat_node::stores::Undecryptable;
 use dashchat_node::{DeviceId, Payload, SeqNum, TopicId};
-use p2panda::operation::{Header, LogId};
+use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
 use p2panda_auth::group::GroupAction;
 use p2panda_core::cbor::decode_cbor;
@@ -28,6 +29,9 @@ pub struct SimplifiedOperation {
     pub hash: Hash,
     pub header: SimplifiedHeader,
     pub body: Option<serde_json::Value>,
+    /// The operation has a payload, which does not decrypt.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub undecryptable: bool,
 }
 
 // #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -161,10 +165,11 @@ pub fn simplify(
     topic: TopicId,
     hash: Hash,
     header: Header,
-    body: Option<p2panda_core::Body>,
+    body: Result<Option<p2panda_core::Body>, Undecryptable>,
 ) -> anyhow::Result<SimplifiedOperation> {
+    let undecryptable = body.is_err();
     let body: Option<serde_json::Value> = match body {
-        Some(b) => {
+        Ok(Some(b)) => {
             let payload: Payload = decode_cbor(&b.to_bytes()[..])?;
 
             // if let Payload::Chat(dashchat_node::ChatPayload::Space(spaces_messages)) = payload {
@@ -192,13 +197,14 @@ pub fn simplify(
             Some(serde_json::to_value(payload)?)
             // }
         }
-        _ => None,
+        Ok(None) | Err(_) => None,
     };
 
     let operation = SimplifiedOperation {
         hash,
         header: SimplifiedHeader::from_header(topic, header),
         body,
+        undecryptable,
     };
 
     Ok(operation)
@@ -213,7 +219,7 @@ pub async fn get_log(
     let node = app_node_manager.get().await?;
     let log = node
         .op_store
-        .get_log(&author, &LogId::from_topic(topic_id), None)
+        .get_log(&author, &node.app_message_log_id(topic_id).await, None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
@@ -234,7 +240,7 @@ pub async fn get_authors(
     let node = app_node_manager.get().await?;
     let authors = node
         .op_store
-        .get_authors(LogId::from_topic(topic_id))
+        .get_authors(node.app_message_log_id(topic_id).await)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)
@@ -243,7 +249,7 @@ pub async fn get_authors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use p2panda::operation::Extensions;
+    use p2panda::operation::{Extensions, LogId};
     use p2panda::SigningKey;
     use p2panda_auth::group::GroupMember;
     use p2panda_auth::Access;

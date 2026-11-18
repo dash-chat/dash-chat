@@ -13,6 +13,27 @@ pub trait MailboxStore<Item: MailboxItem>: Clone + Send + Sync + 'static {
         from: SeqNum,
     ) -> Result<Option<Vec<Item>>, anyhow::Error>;
 
+    /// The media blobs each item of a log refers to, over the items `get_log`
+    /// returns, up to the first whose blobs the store can not tell yet. Only
+    /// the store can tell: the payload naming an item's blobs may be
+    /// unreadable from the item itself.
+    ///
+    /// A store whose items carry no blobs can keep this default.
+    async fn get_log_blob_hashes(
+        &self,
+        log: &Item::Log,
+        topic: &Item::Topic,
+        from: SeqNum,
+    ) -> Result<Option<Vec<(SeqNum, Vec<iroh_blobs::Hash>)>>, anyhow::Error> {
+        let items = self.get_log(log, topic, from).await?;
+        Ok(items.map(|items| {
+            items
+                .iter()
+                .map(|item| (item.seq_num(), Vec::new()))
+                .collect()
+        }))
+    }
+
     /// Get the last sequence number of each log in the topic.
     ///
     /// NOTE: "height" here is potentially misleading.

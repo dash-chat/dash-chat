@@ -19,7 +19,7 @@ pub trait BlobSource: Send + Sync + 'static {
 
 /// One log's walk outcome: the blob candidates found inside its
 /// `(blob_height, op_watermark]` window, plus the last seq the walk read.
-/// That can fall short of the watermark: `get_log` only returns ops the
+/// That can fall short of the watermark: the store only returns ops the
 /// node has finished processing, and the watermark moves as soon as a fetch
 /// stores them.
 struct LogCandidates<Item: MailboxItem> {
@@ -87,12 +87,12 @@ trait CandidateSource<Item: MailboxItem>: Send + Sync {
     ) -> anyhow::Result<
         std::collections::HashMap<Item::Topic, std::collections::HashMap<Item::Log, SeqNum>>,
     >;
-    async fn get_log(
+    async fn get_log_blob_hashes(
         &self,
         author: &Item::Log,
         topic: &Item::Topic,
         from: SeqNum,
-    ) -> anyhow::Result<Option<Vec<Item>>>;
+    ) -> anyhow::Result<Option<Vec<(SeqNum, Vec<iroh_blobs::Hash>)>>>;
 }
 
 /// Compute the blob candidates for one mailbox on one reconcile pass: per
@@ -150,13 +150,13 @@ where
             .await
     }
 
-    async fn get_log(
+    async fn get_log_blob_hashes(
         &self,
         author: &Item::Log,
         topic: &Item::Topic,
         from: SeqNum,
-    ) -> anyhow::Result<Option<Vec<Item>>> {
-        self.store().get_log(author, topic, from).await
+    ) -> anyhow::Result<Option<Vec<(SeqNum, Vec<iroh_blobs::Hash>)>>> {
+        self.store().get_log_blob_hashes(author, topic, from).await
     }
 }
 
@@ -246,7 +246,7 @@ where
 /// is intentional: late-arrival is the mailbox's pull problem, not our
 /// push gap.
 ///
-/// Returns `None` when no op of the window could be read (a `get_log` read
+/// Returns `None` when no op of the window could be read (a store read
 /// error, an `(author, topic)` log that doesn't exist locally, or a log
 /// whose next op isn't processed yet) — the caller must not push the
 /// `LogCandidates` for the log and the height stays put so the next pass
@@ -266,7 +266,7 @@ where
     Item: MailboxItem,
 {
     let from = blob_height.map_or(0, |h| h + 1);
-    let ops = match source.get_log(&author, &topic, from).await {
+    let ops = match source.get_log_blob_hashes(&author, &topic, from).await {
         Ok(Some(ops)) => ops,
         Ok(None) => return None,
         Err(err) => {
@@ -277,13 +277,12 @@ where
 
     let mut walked_to = None;
     let mut candidates = Vec::new();
-    for op in ops {
-        let seq = op.seq_num();
+    for (seq, blob_hashes) in ops {
         if seq > op_height {
             break;
         }
         walked_to = Some(seq);
-        for hash in op.blob_hashes() {
+        for hash in blob_hashes {
             if reader.has_blob(hash).await {
                 candidates.push((seq, hash));
             }
@@ -497,9 +496,6 @@ mod tests {
         fn topic(&self) -> Self::Topic {
             self.topic
         }
-        fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
-            self.blob.into_iter().collect()
-        }
     }
 
     /// A `CandidateSource` that answers from pre-programmed state: fixed
@@ -584,12 +580,12 @@ mod tests {
             }
         }
 
-        async fn get_log(
+        async fn get_log_blob_hashes(
             &self,
             author: &char,
             topic: &u8,
             from: SeqNum,
-        ) -> anyhow::Result<Option<Vec<BlobOp>>> {
+        ) -> anyhow::Result<Option<Vec<(SeqNum, Vec<iroh_blobs::Hash>)>>> {
             if self.fail_get_log {
                 return Err(anyhow::anyhow!("simulated get_log failure"));
             }
@@ -597,7 +593,7 @@ mod tests {
                 ops.iter()
                     .filter(|op| op.seq >= from)
                     .filter(|op| self.processed_up_to.is_none_or(|last| op.seq <= last))
-                    .cloned()
+                    .map(|op| (op.seq, op.blob.into_iter().collect()))
                     .collect()
             }))
         }

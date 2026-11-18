@@ -438,8 +438,12 @@ export interface MessageBody {
 
 /** The renderable content of a message, or `'deleted-for-everyone'` once a
  * delete op replaces the body entirely — dropping text, media, reactions and
- * edits — and it renders as the deleted placeholder. */
-export type MessageDisplay = MessageBody | 'deleted-for-everyone';
+ * edits — and it renders as the deleted placeholder. An operation that does
+ * not decrypt renders as the `'undecryptable'` placeholder. */
+export type MessageDisplay =
+	| MessageBody
+	| 'deleted-for-everyone'
+	| 'undecryptable';
 
 /** Whether a message still has a live body. Written as a type guard so the
  * `true` branch narrows `content` to `MessageBody`. */
@@ -456,6 +460,13 @@ export function isDeleted(
 	content: MessageDisplay,
 ): content is 'deleted-for-everyone' {
 	return content === 'deleted-for-everyone';
+}
+
+/** Whether a message stands in for an operation that does not decrypt. */
+export function isUndecryptable(
+	content: MessageDisplay,
+): content is 'undecryptable' {
+	return content === 'undecryptable';
 }
 
 export type ChatSummaryLastEvent =

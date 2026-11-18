@@ -419,6 +419,8 @@ where
                 self.op_tracker
                     .record_synced(id, &[(topic, log, watermark)])
                     .await?;
+                // The ops just stored may refer to blobs the mailbox lacks.
+                self.blob_sync_trigger.notify_one();
                 Ok(())
             }
             // Nothing new in the log.
@@ -1081,9 +1083,6 @@ mod tests {
         fn topic(&self) -> Self::Topic {
             self.topic
         }
-        fn blob_hashes(&self) -> Vec<iroh_blobs::Hash> {
-            self.blob.into_iter().collect()
-        }
     }
 
     /// An op store whose every op at `seq` carries the blob
@@ -1144,6 +1143,19 @@ mod tests {
             Ok(logs
                 .get(&(*topic, *author))
                 .map(|ops| ops.iter().filter(|op| op.seq >= from).cloned().collect()))
+        }
+        async fn get_log_blob_hashes(
+            &self,
+            author: &char,
+            topic: &u8,
+            from: SeqNum,
+        ) -> Result<Option<Vec<(SeqNum, Vec<iroh_blobs::Hash>)>>, anyhow::Error> {
+            let log = self.get_log(author, topic, from).await?;
+            Ok(log.map(|ops| {
+                ops.iter()
+                    .map(|op| (op.seq, op.blob.into_iter().collect()))
+                    .collect()
+            }))
         }
         async fn get_log_heights(&self, topic: &u8) -> Result<Vec<(char, SeqNum)>, anyhow::Error> {
             let logs = self.logs.lock().unwrap();
