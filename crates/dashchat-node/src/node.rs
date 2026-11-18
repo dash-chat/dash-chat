@@ -974,6 +974,17 @@ impl Node {
         member: VerifyingKey,
         access: AccessLevel,
     ) -> anyhow::Result<Hash> {
+        // A contact's key bundle reaches us through the direct chat we share,
+        // which can be a moment after they became one.
+        const KEY_BUNDLE_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+        tokio::time::timeout(KEY_BUNDLE_WAIT, self.keybundle_of(DeviceId::from(member)))
+            .await
+            .with_context(|| {
+                format!(
+                    "no key bundle of {:?} to add them to the space with",
+                    DeviceId::from(member).aliased()
+                )
+            })??;
         let hashes = space
             .run(async move |space| space.add(member, access).await)
             .await??;
@@ -1218,6 +1229,7 @@ impl Node {
         self.projection.get_group_chat_ids().await
     }
 
+    #[cfg(feature = "testing")]
     pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
         Ok(self
             .streams
@@ -1235,6 +1247,7 @@ impl Node {
         Ok(())
     }
 
+    #[cfg(feature = "testing")]
     pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
         self.streams
             .with_node(async |node| node.register_member(keybundle).await)
@@ -1874,7 +1887,6 @@ impl Node {
     }
 
     /// Store someone as a contact, and:
-    /// - register their spaces keybundle so we can add them to spaces
     /// - subscribe to their inbox
     /// - store them in the contacts map
     /// - send an invitation to them to do the same
@@ -2018,11 +2030,6 @@ impl Node {
             return Err(AddContactError::ProfileNotCreated);
         };
 
-        let keybundle = self
-            .keybundle()
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-
         // A request sent again after the first expired keeps the same space.
         let direct_chat_topic_id = match self
             .requested_direct_chat_id(contact.device_pubkey)
@@ -2055,7 +2062,6 @@ impl Node {
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest {
                     profile,
-                    keybundle,
                     agent_id: self.agent_id(),
                     reply_topic: reply_inbox.topic.clone(),
                     direct_chat_id: direct_chat_topic_id,
@@ -2312,15 +2318,10 @@ impl Node {
         self.initialize_stream(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        let keybundle = self
-            .keybundle()
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         self.publish(
             reply_topic,
             Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
-                keybundle,
                 agent_id: self.agent_id(),
             }),
             Some("reply_to_contact_request"),
@@ -3248,7 +3249,6 @@ mod forged_contact_request_tests {
                 alice_inbox.topic,
                 Payload::Inbox(InboxPayload::ContactRequest {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
-                    keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
                     direct_chat_id: Topic::random(),
@@ -3304,7 +3304,6 @@ mod forged_contact_request_tests {
                 alice_inbox.topic,
                 Payload::Inbox(InboxPayload::ContactRequest {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
-                    keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
                     direct_chat_id: Topic::random(),

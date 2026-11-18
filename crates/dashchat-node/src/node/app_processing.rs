@@ -623,7 +623,6 @@ impl Node {
                 match invitation {
                     InboxPayload::ContactRequest {
                         agent_id,
-                        keybundle,
                         direct_chat_id,
                         ..
                     } => {
@@ -647,8 +646,6 @@ impl Node {
                             // push extension) leaves completing it to the app.
                             let crossed = !self.config.read_only
                                 && self.has_outgoing_pending_request(author).await?;
-
-                            self.save_keybundle(keybundle.clone()).await?;
 
                             // Join the requester's space now, so we can read
                             // what they write before we accept. Only if the
@@ -692,11 +689,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAccept {
-                        agent_id,
-                        keybundle,
-                        ..
-                    } => {
+                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -724,7 +717,6 @@ impl Node {
                                 return Ok(());
                             }
 
-                            self.save_keybundle(keybundle.clone()).await?;
                             self.establish_contact(author).await?;
 
                             // A read-only node (the push extension) establishes
