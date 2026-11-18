@@ -2,15 +2,19 @@
 //!
 //! Each requester created a space, so the chat is spread over two until the
 //! side whose space lost the tie has moved its messages into the other one.
+//! Only messages move, as edited: a reaction made in the losing space is
+//! given up with it.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
+
+use tokio::task::JoinSet;
 
 use super::*;
 
 /// What a running node keeps track of across its direct chats.
 #[derive(Clone, Default)]
 pub(crate) struct DirectChats {
-    admissions: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    admissions: Arc<Mutex<JoinSet<()>>>,
     /// Held while admitting, so two admissions of the same peer don't both add them.
     admitting: Arc<Mutex<()>>,
     /// Held while moving messages between spaces, so none is moved twice.
@@ -22,18 +26,17 @@ impl DirectChats {
     /// in the background: the key bundle of someone whose code we scanned
     /// only arrives once we sync their inbox.
     pub(crate) async fn spawn_admission(&self, node: Node, peer: DeviceId, chat_id: DirectChatId) {
-        let handle = tokio::spawn(async move {
+        let mut admissions = self.admissions.lock().await;
+        while admissions.try_join_next().is_some() {}
+        admissions.spawn(async move {
             if let Err(err) = node.admit_to_direct_chat(peer, chat_id).await {
                 tracing::warn!(?err, peer = ?peer.aliased(), "failed to admit to direct chat");
             }
         });
-        self.admissions.lock().await.push(handle);
     }
 
     pub(crate) async fn abort_admissions(&self) {
-        for handle in self.admissions.lock().await.drain(..) {
-            handle.abort();
-        }
+        self.admissions.lock().await.abort_all();
     }
 }
 
@@ -157,7 +160,8 @@ impl Node {
         let Some(split) = self.split_direct_chat(peer).await? else {
             return Ok(self.direct_chat_id(peer).await?.unwrap_or(chat_id));
         };
-        if split.loser == self.device_id() {
+        // A read-only node (the push extension) leaves moving messages to the app.
+        if split.loser == self.device_id() && !self.config.read_only {
             // Boxed: this rarely-taken path would otherwise bloat the future
             // of every publish, which p2panda's deep futures leave no room for.
             Box::pin(self.move_direct_chat_messages(&split)).await?;
@@ -206,10 +210,16 @@ impl Node {
         self.register_bootstrap_node(*peer).await?;
         let direct_chat_id = self.known_direct_chat_id(peer).await?;
         self.join_space(direct_chat_id).await?;
-        let direct_chat_id = self.chat_write_target(direct_chat_id).await?;
+        self.notify_topic_subscribed(direct_chat_id.into()).await;
+        // Recorded before anything is moved: what is left of the move is
+        // resumed for a contact, not for a request that stayed unanswered.
         self.publish_add_contact(agent_id, direct_chat_id).await?;
-        if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
-            tracing::warn!(?err, "failed to push my profile to the direct chat");
+        let direct_chat_id = self.chat_write_target(direct_chat_id).await?;
+        // A space we created has had our profile since then.
+        if self.requested_direct_chat_id(peer).await? != Some(direct_chat_id) {
+            if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
+                tracing::warn!(?err, "failed to push my profile to the direct chat");
+            }
         }
         self.mark_ack_topic_dirty(direct_chat_id);
         self.drop_moved_direct_chat_space(peer).await
@@ -217,11 +227,14 @@ impl Node {
 
     /// Publish the messages we wrote in our own space of a direct chat again in
     /// the other side's, oldest first and dated as first written. Safe to
-    /// repeat: a message already moved is not moved again.
+    /// repeat: a message already moved is not moved again, and one that could
+    /// not be moved is left for the next time.
     async fn move_direct_chat_messages(&self, split: &SplitDirectChat) -> anyhow::Result<()> {
         let _moving = self.direct_chats.moving.lock().await;
         let me = self.device_id();
-        let already_moved = self.messages_by_timestamp(me, split.winning).await?;
+        let mut already_moved = self.messages_by_timestamp(me, split.winning).await?;
+        // The copies come after what the space already holds, in their own order.
+        let mut lamport = self.next_lamport(split.winning).await?;
         // Replies name a hash of their target's edit chain; each leads to its copy.
         let mut copies: HashMap<Hash, Hash> = HashMap::new();
 
@@ -258,16 +271,26 @@ impl Node {
                 continue;
             }
             let written_at = header.extensions.timestamp();
-            let copy = match already_moved.get(&written_at) {
-                Some(copy) => *copy,
+            let moved = already_moved
+                .get_mut(&written_at)
+                .and_then(VecDeque::pop_front);
+            let copy = match moved {
+                Some(copy) => copy,
                 None => {
                     message.reply = message
                         .reply
                         .map(|target| copies.get(&target).copied().unwrap_or(target));
-                    self.move_message(split.winning, message, written_at)
-                        .await?
+                    message.lamport = lamport;
+                    match self.move_message(split.winning, message, written_at).await {
+                        Ok(copy) => copy,
+                        Err(err) => {
+                            tracing::warn!(?err, "failed to move a message; leaving it for later");
+                            continue;
+                        }
+                    }
                 }
             };
+            lamport += 1;
             for hash in chain {
                 copies.insert(hash, copy);
             }
@@ -304,15 +327,15 @@ impl Node {
         Ok(header.hash())
     }
 
-    /// The messages `author` wrote in `space`, by when they are dated. A
-    /// message moved between the spaces of a direct chat keeps its date, which
-    /// is what tells its copy.
+    /// The messages `author` wrote in `space`, by when they are dated, oldest
+    /// first among those dated alike. A message moved between the spaces of a
+    /// direct chat keeps its date, which is what tells its copy.
     async fn messages_by_timestamp(
         &self,
         author: DeviceId,
         space: DirectChatId,
-    ) -> anyhow::Result<HashMap<p2panda_core::Timestamp, Hash>> {
-        let mut messages = HashMap::new();
+    ) -> anyhow::Result<HashMap<p2panda_core::Timestamp, VecDeque<Hash>>> {
+        let mut messages: HashMap<_, VecDeque<Hash>> = HashMap::new();
         for op in self
             .op_store
             .get_log(&author, &LogId::from(space), None)
@@ -322,7 +345,10 @@ impl Node {
                 continue;
             };
             if let Ok(Payload::Chat(ChatPayload::Message(_))) = Payload::try_from_body(body) {
-                messages.insert(op.header.extensions.timestamp(), op.header.hash());
+                messages
+                    .entry(op.header.extensions.timestamp())
+                    .or_default()
+                    .push_back(op.header.hash());
             }
         }
         Ok(messages)
@@ -355,7 +381,7 @@ impl Node {
         if !self.is_accepted_contact(peer).await? {
             return Ok(());
         }
-        let moved = self
+        let mut moved = self
             .messages_by_timestamp(split.loser, split.winning)
             .await?;
         // The loser keeps writing to its own space until our request reaches it.
@@ -378,20 +404,17 @@ impl Node {
                 Payload::try_from_body(body),
                 Ok(Payload::Chat(ChatPayload::Message(_)))
             );
-            if is_message && !moved.contains_key(&op.header.extensions.timestamp()) {
+            let copy = moved
+                .get_mut(&op.header.extensions.timestamp())
+                .and_then(VecDeque::pop_front);
+            if is_message && copy.is_none() {
                 return Ok(());
             }
         }
 
         tracing::info!(losing = ?split.losing.aliased(), "dropping the direct chat space that lost the tie");
         self.projection.drop_direct_chat_space(split.losing).await?;
-        self.local_store
-            .register_topic_as_unsubscribed(split.losing)
-            .await?;
-        self.online_peers.leave(*split.losing).await;
-        self.mailboxes.unsubscribe(split.losing.into()).await?;
-        self.streams.unsubscribe(*split.losing).await;
-        Ok(())
+        self.leave_space(split.losing).await
     }
 
     /// Carry on with any direct chat still spread over two spaces, e.g. after

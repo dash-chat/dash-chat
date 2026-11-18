@@ -2222,8 +2222,8 @@ impl Node {
         Ok(())
     }
 
-    /// The agent behind `device`, if they requested contact and we neither
-    /// answered nor blocked them.
+    /// The agent behind `device`, if they requested contact, we neither
+    /// answered nor blocked them, and their request can still be answered.
     async fn unanswered_request_from(&self, device: DeviceId) -> anyhow::Result<Option<AgentId>> {
         let requested_us = self
             .projection
@@ -2234,7 +2234,14 @@ impl Node {
         if !requested_us || self.projection.is_author_blocked(&device).await? {
             return Ok(None);
         }
-        self.lookup_contact(device).await
+        let Some(agent_id) = self.lookup_contact(device).await? else {
+            return Ok(None);
+        };
+        let answerable = self
+            .find_contact_request_reply_topic(agent_id, device)
+            .await?
+            .is_some();
+        Ok(answerable.then_some(agent_id))
     }
 
     /// Returns true if we have an unexpired outgoing contact request to

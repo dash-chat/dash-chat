@@ -307,6 +307,11 @@ impl OpProjection {
             .bind(space.to_vec())
             .execute(&self.pool)
             .await?;
+        // Nothing is acked in a space we no longer take part in.
+        sqlx::query("DELETE FROM chat_log_heads WHERE topic_id = ?")
+            .bind(space.to_vec())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 

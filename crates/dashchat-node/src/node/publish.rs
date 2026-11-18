@@ -15,6 +15,8 @@ impl Node {
         let payload: Payload = payload.into();
         let topic: TopicId = topic.into();
         let topic = match &payload {
+            // An ack covers what its own space holds, so it stays there.
+            Payload::Chat(ChatPayload::MessageAck { .. }) => topic,
             Payload::Chat(_) => self
                 .chat_write_target(ChatId::from_topic_id(topic))
                 .await?
