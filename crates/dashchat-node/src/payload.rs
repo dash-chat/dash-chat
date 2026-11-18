@@ -45,10 +45,6 @@ pub enum InboxPayload {
     /// created for their direct chat with the owner of the inbox it is sent to.
     ContactRequest {
         profile: Profile,
-        /// The sender's spaces key bundle. It has to travel here: p2panda only
-        /// links a member's own key bundle log to us after a shared space
-        /// operation, and we need the bundle before we can create one.
-        keybundle: p2panda::spaces::Member,
         agent_id: AgentId,
         reply_topic: Topic<kind::Inbox>,
         direct_chat_id: ChatId,
@@ -58,11 +54,7 @@ pub enum InboxPayload {
     /// immediately rather than waiting for chat sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
-    ContactRequestAccept {
-        profile: Profile,
-        keybundle: p2panda::spaces::Member,
-        agent_id: AgentId,
-    },
+    ContactRequestAccept { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

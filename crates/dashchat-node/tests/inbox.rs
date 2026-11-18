@@ -381,6 +381,80 @@ async fn test_requester_gets_code_owner_keybundle_from_mailbox() {
     .unwrap();
 }
 
+/// The same with no mailbox at all: Alice's key bundle reaches Bobbi over
+/// their direct connection.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_requester_gets_code_owner_keybundle_over_p2p() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        bobbi.keybundle_of(alice.device_id()),
+    )
+    .await
+    .expect("bobbi never received alice's key bundle")
+    .unwrap();
+}
+
+/// Neither the request nor its acceptance carries a key bundle. Once two
+/// nodes are contacts, each must hold the other's all the same, or it could
+/// not add them to a group.
+async fn assert_contacts_hold_each_others_keybundle(alice: &TestNode, bobbi: &TestNode) {
+    alice
+        .behavior()
+        .initiate_and_establish_contact(bobbi)
+        .await
+        .unwrap();
+
+    for (holder, other) in [(alice, bobbi), (bobbi, alice)] {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            holder.keybundle_of(other.device_id()),
+        )
+        .await
+        .expect("a contact's key bundle never arrived")
+        .unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_contacts_hold_each_others_keybundle_from_mailbox() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let config = NodeConfig::testing().no_p2p().no_blob_sync();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(config, "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    assert_contacts_hold_each_others_keybundle(&alice, &bobbi).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_contacts_hold_each_others_keybundle_over_p2p() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+
+    assert_contacts_hold_each_others_keybundle(&alice, &bobbi).await;
+}
+
 /// Bobbi scans Alice's code and writes to her before she has answered. She
 /// can read it while still deciding, and once she accepts they talk both ways.
 #[tokio::test(flavor = "multi_thread")]

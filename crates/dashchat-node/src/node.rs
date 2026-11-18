@@ -2018,11 +2018,6 @@ impl Node {
             return Err(AddContactError::ProfileNotCreated);
         };
 
-        let keybundle = self
-            .keybundle()
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-
         // A request sent again after the first expired keeps the same space.
         let direct_chat_topic_id = match self
             .requested_direct_chat_id(contact.device_pubkey)
@@ -2055,7 +2050,6 @@ impl Node {
                 inbox_topic.topic,
                 Payload::Inbox(InboxPayload::ContactRequest {
                     profile,
-                    keybundle,
                     agent_id: self.agent_id(),
                     reply_topic: reply_inbox.topic.clone(),
                     direct_chat_id: direct_chat_topic_id,
@@ -2312,15 +2306,10 @@ impl Node {
         self.initialize_stream(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        let keybundle = self
-            .keybundle()
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         self.publish(
             reply_topic,
             Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
-                keybundle,
                 agent_id: self.agent_id(),
             }),
             Some("reply_to_contact_request"),
@@ -3248,7 +3237,6 @@ mod forged_contact_request_tests {
                 alice_inbox.topic,
                 Payload::Inbox(InboxPayload::ContactRequest {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
-                    keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
                     direct_chat_id: Topic::random(),
@@ -3304,7 +3292,6 @@ mod forged_contact_request_tests {
                 alice_inbox.topic,
                 Payload::Inbox(InboxPayload::ContactRequest {
                     profile: mallory.my_profile().await.unwrap().unwrap(),
-                    keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
                     direct_chat_id: Topic::random(),
