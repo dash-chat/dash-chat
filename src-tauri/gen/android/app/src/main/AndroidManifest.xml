@@ -24,6 +24,10 @@
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!-- The Wi-Fi permissions make Play assume Wi-Fi hardware is required, which
+         hides the app from devices on Ethernet or mobile data only. -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
