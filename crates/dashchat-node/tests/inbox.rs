@@ -351,6 +351,178 @@ async fn test_p2p_acceptance_survives_acceptor_restart() {
         .unwrap();
 }
 
+/// Bobbi scans Alice's code with a mailbox as their only link, and Alice
+/// answers nothing before she accepts. He must still get her key bundle, or he
+/// cannot create their direct chat space ahead of her acceptance.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_requester_gets_code_owner_keybundle_from_mailbox() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let config = NodeConfig::testing().no_p2p().no_blob_sync();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(config, "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+
+    tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        bobbi.keybundle_of(alice.device_id()),
+    )
+    .await
+    .expect("bobbi never received alice's key bundle")
+    .unwrap();
+}
+
+/// Bobbi scans Alice's code and writes to her before she has answered. She
+/// can read it while still deciding, and once she accepts they talk both ways.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_requester_messages_before_acceptance() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let config = NodeConfig::testing().no_p2p().no_blob_sync();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(config, "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    let chat = bobbi.direct_chat_with(&alice).await;
+
+    bobbi.send_message_raw(chat, "before".into()).await.unwrap();
+
+    poll.wait_for(|| async {
+        (alice.get_messages(chat).await.unwrap().len() == 1)
+            .then_some(())
+            .ok_or("alice hasn't received the message sent before she accepted")
+    })
+    .await
+    .unwrap();
+    assert!(alice.get_contacts().await.unwrap().is_empty());
+
+    alice.accept_contact(bobbi.agent_id()).await.unwrap();
+    poll.wait_for(|| async {
+        bobbi
+            .get_contacts()
+            .await
+            .unwrap()
+            .contains(&alice.agent_id())
+            .then_some(())
+            .ok_or("bobbi never learned alice accepted")
+    })
+    .await
+    .unwrap();
+
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.consistency([&alice, &bobbi], &[chat.into()])
+        .await
+        .unwrap();
+    assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 2);
+}
+
+/// Alice follows the space Bobbi made by requesting contact, to read what he
+/// writes ahead of her answer. Rejecting him ends that.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_rejecting_a_request_leaves_the_requesters_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    let chat = bobbi.direct_chat_with(&alice).await;
+
+    poll.wait_for(|| async {
+        let followed = alice.local_store.subscribed_spaces().await.unwrap();
+        followed
+            .contains(&chat.into())
+            .then_some(())
+            .ok_or("alice has not joined bobbi's space yet")
+    })
+    .await
+    .unwrap();
+
+    alice
+        .reject_contact_request(bobbi.agent_id())
+        .await
+        .unwrap();
+    let followed = alice.local_store.subscribed_spaces().await.unwrap();
+    assert!(!followed.contains(&chat.into()));
+}
+
+/// Blocking Bobbi while his request is pending stops Alice following the
+/// space he made. Unblocking him undoes that: she reads what he writes next.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_unblocking_a_requester_follows_their_space_again() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    let chat = bobbi.direct_chat_with(&alice).await;
+    let follows = || async {
+        let followed = alice.local_store.subscribed_spaces().await.unwrap();
+        followed.contains(&chat.into())
+    };
+
+    poll.wait_for(|| async {
+        follows()
+            .await
+            .then_some(())
+            .ok_or("alice has not joined bobbi's space yet")
+    })
+    .await
+    .unwrap();
+
+    alice.block_contact(bobbi.agent_id()).await.unwrap();
+    assert!(!follows().await);
+
+    alice.unblock_contact(bobbi.agent_id()).await.unwrap();
+    assert!(follows().await);
+
+    bobbi.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.wait_for(|| async {
+        (alice.get_messages(chat).await.unwrap().len() == 1)
+            .then_some(())
+            .ok_or("alice has not received what bobbi wrote after she unblocked him")
+    })
+    .await
+    .unwrap();
+}
+
 fn mailbox_only_config() -> NodeConfig {
     NodeConfig::testing().no_p2p().no_blob_sync()
 }

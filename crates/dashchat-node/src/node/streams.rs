@@ -433,7 +433,6 @@ impl TopicStreams {
         Ok(opened)
     }
 
-    #[allow(unused)]
     pub(crate) async fn unsubscribe(&self, topic: Topic) {
         self.publishers.lock().await.remove(&topic);
         let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));

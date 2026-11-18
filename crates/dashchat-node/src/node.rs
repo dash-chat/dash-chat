@@ -368,6 +368,18 @@ impl Node {
             );
         }
 
+        // A mailbox must keep a code owner's key bundle for as long as the code
+        // can be scanned.
+        let max_contact_code_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)?;
+        if config.contact_code_expiry > max_contact_code_expiry {
+            anyhow::bail!(
+                "invalid NodeConfig: contact_code_expiry ({}) is longer than a mailbox keeps \
+                 messages ({})",
+                config.contact_code_expiry,
+                max_contact_code_expiry,
+            );
+        }
+
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
@@ -641,6 +653,12 @@ impl Node {
             Utc::now() + self.config.contact_code_expiry,
         );
         self.initialize_stream(*inbox_topic.topic)
+            .await
+            .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
+        // A scanner needs our key bundle to create the direct chat space
+        // before we have answered anything.
+        self.op_store
+            .associate_member_log(&inbox_topic.topic.into(), &self.device_id())
             .await
             .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
         self.local_store
@@ -925,7 +943,8 @@ impl Node {
     }
 
     /// Run [`Self::admit_to_direct_chat`] in the background, since the key
-    /// bundle of someone whose code we scanned only arrives with their answer.
+    /// bundle of someone whose code we scanned only arrives once we sync
+    /// their inbox.
     pub(crate) async fn spawn_direct_chat_admission(&self, peer: DeviceId, chat_id: DirectChatId) {
         let node = self.clone();
         let handle = tokio::spawn(async move {
@@ -2262,6 +2281,8 @@ impl Node {
         self.join_space(direct_chat_topic)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+        // Joined on their request without waking the device for it; now it may.
+        self.notify_topic_subscribed(direct_chat_topic.into()).await;
         let node = self.clone();
         tokio::spawn(async move {
             if let Err(err) = node.publish_my_profile_to(direct_chat_topic).await {
@@ -2287,6 +2308,7 @@ impl Node {
         let requested = self.requested_direct_chat_id(owner).await?;
         let direct_chat_id = self.known_direct_chat_id(owner).await?;
         self.join_space(direct_chat_id).await?;
+        self.notify_topic_subscribed(direct_chat_id.into()).await;
         // Recorded before admitting: an admission that fails is tried again
         // on the next start, an acceptance is only processed once.
         self.publish_add_contact(agent_id, direct_chat_id).await?;
@@ -2429,6 +2451,71 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        self.unfollow_unanswered_direct_chats(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// The spaces the devices of `agent_id` made by requesting contact, unless
+    /// we accepted them.
+    async fn unanswered_direct_chats_of(&self, agent_id: AgentId) -> anyhow::Result<Vec<ChatId>> {
+        let mut unanswered = vec![];
+        for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+            if self.is_accepted_contact(device_id).await? {
+                continue;
+            }
+            let spaces = self.projection.direct_chat_spaces(device_id).await?;
+            unanswered.extend(
+                spaces
+                    .into_iter()
+                    .filter(|(_, requester)| *requester == device_id)
+                    .map(|(space, _)| space),
+            );
+        }
+        Ok(unanswered)
+    }
+
+    /// Stop following the spaces `agent_id` made by requesting contact:
+    /// nothing they put there is wanted. Undone by
+    /// [`Self::follow_unanswered_direct_chats`].
+    async fn unfollow_unanswered_direct_chats(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for space in self.unanswered_direct_chats_of(agent_id).await? {
+            self.leave_space(space).await?;
+        }
+        Ok(())
+    }
+
+    /// Follow the spaces `agent_id` made by requesting contact again, as when
+    /// their request arrived. Undoes [`Self::unfollow_unanswered_direct_chats`].
+    async fn follow_unanswered_direct_chats(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for space in self.unanswered_direct_chats_of(agent_id).await? {
+            self.register_and_join_space(space).await?;
+        }
+        Ok(())
+    }
+
+    /// Stop showing up to the devices of `agent_id`, and seeing them, in our
+    /// direct chat. Undone by [`Self::join_direct_chat_presence`].
+    async fn leave_direct_chat_presence(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+            if let Some(direct_chat_id) = self.direct_chat_id(device_id).await? {
+                self.online_peers.leave(*direct_chat_id).await;
+            }
+            self.online_peers.forget(device_id);
+        }
+        Ok(())
+    }
+
+    /// Show up to the devices of `agent_id` in our direct chat again. Undoes
+    /// [`Self::leave_direct_chat_presence`].
+    async fn join_direct_chat_presence(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+            if let Some(direct_chat_id) = self.direct_chat_id(device_id).await? {
+                self.join_presence(direct_chat_id).await?;
+            }
+        }
         Ok(())
     }
 
@@ -2447,27 +2534,19 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        for device_id in self
-            .projection
-            .lookup_devices_by_agent_id(agent_id)
+        self.leave_direct_chat_presence(agent_id)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
-        {
-            if let Some(direct_chat_id) = self
-                .direct_chat_id(device_id)
-                .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            {
-                self.online_peers.leave(*direct_chat_id).await;
-            }
-            self.online_peers.forget(device_id);
-        }
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        self.unfollow_unanswered_direct_chats(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         Ok(())
     }
 
     /// Unblock a previously blocked contact, allowing their operations to be
-    /// processed again.
+    /// processed again. Undoes each thing [`Self::block_contact`] did, last
+    /// first.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn unblock_contact(&self, agent_id: AgentId) -> Result<(), Error> {
         tracing::debug!("unblocking contact: {:?}", agent_id.aliased());
@@ -2480,28 +2559,19 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        self.follow_unanswered_direct_chats(agent_id)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         let is_contact = self
             .accepted_contact_agent_ids()
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
             .contains(&agent_id);
         if is_contact {
-            for device_id in self
-                .projection
-                .lookup_devices_by_agent_id(agent_id)
+            self.join_direct_chat_presence(agent_id)
                 .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            {
-                if let Some(direct_chat_id) = self
-                    .direct_chat_id(device_id)
-                    .await
-                    .map_err(|e| Error::AuthorOperation(e.to_string()))?
-                {
-                    self.join_presence(direct_chat_id)
-                        .await
-                        .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-                }
-            }
+                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
             // Profile updates skipped them while they were blocked.
             let direct_chat = self
                 .accepted_contacts()
@@ -2709,8 +2779,9 @@ impl Node {
             }
         }
 
+        let accepted = self.accepted_contact_agent_ids().await?;
         for topic in subscribed_spaces.iter() {
-            if let Err(err) = self.initialize_space(*topic).await {
+            if let Err(err) = self.initialize_space(*topic, Some(&accepted)).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
             }
@@ -3093,6 +3164,17 @@ mod config_validation_tests {
         config.enable_p2p = false;
         config.mdns_mode = MdnsDiscoveryMode::Active;
         assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_contact_code_expiry_longer_than_mailbox_retention() {
+        let retention = chrono::Duration::from_std(mailbox_server::MESSAGE_MAX_AGE).unwrap();
+        let mut config = NodeConfig::testing();
+        config.contact_code_expiry = retention + chrono::Duration::seconds(1);
+        assert!(init_result(config.clone()).await.is_err());
+
+        config.contact_code_expiry = retention;
+        assert!(init_result(config).await.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread")]

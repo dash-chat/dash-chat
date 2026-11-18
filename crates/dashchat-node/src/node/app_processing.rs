@@ -104,7 +104,7 @@ impl Node {
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
         self.local_store.register_space_as_subscribed(topic).await?;
-        self.initialize_space(*topic).await?;
+        self.initialize_space(*topic, None).await?;
         Ok(())
     }
 
@@ -183,13 +183,58 @@ impl Node {
 
     /// Rejoin a registered space on node startup and import its mailbox stream.
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn initialize_space(&self, topic: TopicId) -> anyhow::Result<()> {
+    ///
+    /// `accepted` spares looking the accepted contacts up again for a caller
+    /// that initializes many spaces.
+    pub(crate) async fn initialize_space(
+        &self,
+        topic: TopicId,
+        accepted: Option<&BTreeSet<AgentId>>,
+    ) -> anyhow::Result<()> {
         topic.alias_numbered();
         tracing::info!(topic = ?topic.aliased(), "initialize space");
 
         self.streams.join_space(topic).await?;
         self.import_mailbox_stream(topic).await?;
-        self.notify_topic_subscribed(topic).await;
+        if self.wakes_device(topic, accepted).await? {
+            self.notify_topic_subscribed(topic).await;
+        }
+        Ok(())
+    }
+
+    /// Whether traffic in a space is worth waking the device for. It is not in
+    /// a space someone made by requesting contact, until we accept them:
+    /// anyone holding our code could otherwise wake us at will.
+    async fn wakes_device(
+        &self,
+        topic: TopicId,
+        accepted: Option<&BTreeSet<AgentId>>,
+    ) -> anyhow::Result<bool> {
+        let chat_id = ChatId::from_topic_id(topic);
+        let Some(peer) = self.projection.direct_chat_peer(chat_id).await? else {
+            return Ok(true);
+        };
+        if self.requested_direct_chat_id(peer).await? == Some(chat_id) {
+            return Ok(true);
+        }
+        let Some(agent_id) = self.lookup_contact(peer).await? else {
+            return Ok(false);
+        };
+        Ok(match accepted {
+            Some(accepted) => accepted.contains(&agent_id),
+            None => self.accepted_contact_agent_ids().await?.contains(&agent_id),
+        })
+    }
+
+    /// Stop following a space: it is not rejoined on restart and nothing more
+    /// of it is fetched. The inverse of [`Self::register_and_join_space`].
+    pub(crate) async fn leave_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        self.local_store
+            .register_topic_as_unsubscribed(chat_id)
+            .await?;
+        self.online_peers.leave(*chat_id).await;
+        self.mailboxes.unsubscribe(chat_id.into()).await?;
+        self.streams.unsubscribe(*chat_id).await;
         Ok(())
     }
 
@@ -203,7 +248,7 @@ impl Node {
     }
 
     /// Tell the host (push notifications) that this node now receives traffic for a topic.
-    async fn notify_topic_subscribed(&self, topic: TopicId) {
+    pub(super) async fn notify_topic_subscribed(&self, topic: TopicId) {
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
@@ -579,15 +624,17 @@ impl Node {
                     InboxPayload::ContactRequest {
                         agent_id,
                         keybundle,
+                        direct_chat_id,
                         ..
                     } => {
-                        // A request arrived on our advertised inbox. Perform no
-                        // network side-effects (bootstrap registration) and
-                        // disclose nothing about us until the user explicitly
-                        // accepts (see `accept_contact`). This
-                        // keeps an unsolicited request — e.g. anyone scanning a
-                        // shared QR — from amplifying our resources or handing our
-                        // profile to every scanner. The request is signed by the
+                        // A request arrived on our advertised inbox. Disclose
+                        // nothing about us and register no bootstrap node until
+                        // the user explicitly accepts (see `accept_contact`), so
+                        // that an unsolicited request — e.g. anyone scanning a
+                        // shared QR — is not handed our profile. All it gets is
+                        // that we follow the space it names, without waking the
+                        // device for it, until the request is rejected or its
+                        // sender blocked. The request is signed by the
                         // scanner's device key (author), so we map that device to
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
@@ -611,6 +658,30 @@ impl Node {
                                         tracing::warn!(
                                             ?err,
                                             "failed to auto-accept mutual contact request"
+                                        );
+                                    }
+                                });
+                            }
+
+                            // Join the requester's space now, so we can read
+                            // what they write before we accept. Only if the
+                            // projection recorded it as our chat with them: a
+                            // request could name any space, even one of ours.
+                            // A read-only node (the push extension) leaves
+                            // following it to the app.
+                            let direct_chat_id = *direct_chat_id;
+                            if !self.config.read_only
+                                && self.projection.direct_chat_peer(direct_chat_id).await?
+                                    == Some(author)
+                            {
+                                let node = self.clone();
+                                tokio::spawn(async move {
+                                    if let Err(err) =
+                                        node.register_and_join_space(direct_chat_id).await
+                                    {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to join the requester's direct chat space"
                                         );
                                     }
                                 });
