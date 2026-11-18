@@ -213,7 +213,7 @@
 									link
 									chevron={false}
 									strongTitle={false}
-									innerClass="py-0!"
+									innerClass="py-0! self-stretch flex flex-col justify-center"
 									data-testid={`group-info-member-${member.profile?.name}`}
 									onclick={me.admin
 										? () => (sheetOpenFor = actorId)
