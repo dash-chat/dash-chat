@@ -927,13 +927,9 @@ async fn test_non_admin_cannot_promote_member_to_admin() {
         .promote_group_member_to_admin(chat_id, *cammy.device_id())
         .await;
     assert!(
-        matches!(result, Ok(())),
-        "Expected the promote call to return OK, because the operation is published and only rejected when the group resolves it, but got error: {result:?}"
+        result.is_err(),
+        "Expected the promote call to be refused for a non-admin"
     );
-
-    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
-        .await
-        .unwrap();
 
     assert_group_members(
         &poll,
