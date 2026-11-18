@@ -2129,6 +2129,7 @@ dependencies = [
  "push-notifications-client",
  "push-notifications-server",
  "regex",
+ "rlimit",
  "rustls 0.23.46",
  "sentry-types 0.42.0",
  "serde",
@@ -9196,6 +9197,15 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rlimit"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f35ee2729c56bb610f6dba436bf78135f728b7373bdffae2ec815b2d3eb98cc3"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

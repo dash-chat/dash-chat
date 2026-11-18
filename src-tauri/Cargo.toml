@@ -99,6 +99,9 @@ hyper-tls = "0.6"
 libc = "0.2"
 env_logger = "0.11"
 
+# Open files limit
+rlimit = "0.11"
+
 # Build openssl from source to cross-compile to each platform as needed
 openssl-sys = { version = "0.9", features = ["vendored"] }
 
