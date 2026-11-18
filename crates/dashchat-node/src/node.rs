@@ -974,6 +974,17 @@ impl Node {
         member: VerifyingKey,
         access: AccessLevel,
     ) -> anyhow::Result<Hash> {
+        // A contact's key bundle reaches us through the direct chat we share,
+        // which can be a moment after they became one.
+        const KEY_BUNDLE_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+        tokio::time::timeout(KEY_BUNDLE_WAIT, self.keybundle_of(DeviceId::from(member)))
+            .await
+            .with_context(|| {
+                format!(
+                    "no key bundle of {:?} to add them to the space with",
+                    DeviceId::from(member).aliased()
+                )
+            })??;
         let hashes = space
             .run(async move |space| space.add(member, access).await)
             .await??;
@@ -1218,6 +1229,7 @@ impl Node {
         self.projection.get_group_chat_ids().await
     }
 
+    #[cfg(feature = "testing")]
     pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
         Ok(self
             .streams
@@ -1235,6 +1247,7 @@ impl Node {
         Ok(())
     }
 
+    #[cfg(feature = "testing")]
     pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
         self.streams
             .with_node(async |node| node.register_member(keybundle).await)
@@ -1874,7 +1887,6 @@ impl Node {
     }
 
     /// Store someone as a contact, and:
-    /// - register their spaces keybundle so we can add them to spaces
     /// - subscribe to their inbox
     /// - store them in the contacts map
     /// - send an invitation to them to do the same

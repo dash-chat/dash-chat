@@ -420,7 +420,12 @@ async fn assert_contacts_hold_each_others_keybundle(alice: &TestNode, bobbi: &Te
             holder.keybundle_of(other.device_id()),
         )
         .await
-        .expect("a contact's key bundle never arrived")
+        .unwrap_or_else(|_| {
+            panic!(
+                "{:?} never received their contact's key bundle",
+                holder.device_id().aliased()
+            )
+        })
         .unwrap();
     }
 }

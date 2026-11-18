@@ -32,7 +32,8 @@ const DEVICE_GROUP_TOPIC_KEY: &str = "device_group_topic";
 ///     - Bob publishes ContactRequest (declaring Y and S) to X
 ///     - Bob registers X as role `Requested`
 /// - Bob receives Alice's key bundle on X and admits her to S
-/// - Alice receives ContactRequest on X and subscribes to S
+/// - Alice receives ContactRequest on X and subscribes to S, which is also
+///   how Bob's key bundle reaches her
 /// - Alice accepts the request (via UI, or by scanning Bob's code) and:
 ///     - Alice publishes ContactRequestAccept to Y
 ///     - Alice registers Y as role `Accepted`
