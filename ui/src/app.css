@@ -41,6 +41,11 @@
 	--color-page-surface: var(--color-ios-light-surface);
 }
 
+/* Grey bubbles blend into iOS's grey page surface. */
+:root:not(.dark):not(.wide-layout) .k-ios {
+	--color-incoming-surface: #fff;
+}
+
 :root.dark .k-ios {
 	--color-page-surface: var(--color-ios-dark-surface);
 }

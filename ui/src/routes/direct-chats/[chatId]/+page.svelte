@@ -297,6 +297,7 @@
 						{#if searchMode}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 w-full min-w-0"
 								leftClass="shrink-0"
 								centerTitle={false}
@@ -322,6 +323,7 @@
 						{:else}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 min-w-0 flex-1"
 								leftClass={theme === 'ios' && !isWideScreen.value
 									? 'shrink-0 me-4'
