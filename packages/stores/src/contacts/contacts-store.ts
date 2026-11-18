@@ -285,10 +285,6 @@ export class ContactsStore {
 		return rejected;
 	});
 
-	private directChatId = reactive(async (devicePubkey: DeviceId) =>
-		this.client.directChatId(devicePubkey),
-	);
-
 	contactRequests = reactive(async () => {
 		const activeInboxTopics = await this.activeInboxTopics();
 
@@ -316,7 +312,8 @@ export class ContactsStore {
 				for (const operation of operations) {
 					if (operation.body?.type !== 'Inbox') continue;
 					if (operation.body.payload.type !== 'ContactRequest') continue;
-					const { profile, agent_id } = operation.body.payload.payload;
+					const { profile, agent_id, direct_chat_id } =
+						operation.body.payload.payload;
 					if (!agent_id) continue;
 					const agentId = agent_id;
 
@@ -347,7 +344,7 @@ export class ContactsStore {
 						profile,
 						agentId,
 						devicePubkey: operation.header.verifying_key,
-						chatId: await this.directChatId(operation.header.verifying_key),
+						chatId: direct_chat_id,
 						topicId,
 						timestamp: operation.header.timestamp,
 					};

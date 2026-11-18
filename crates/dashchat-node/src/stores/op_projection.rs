@@ -265,6 +265,24 @@ impl OpProjection {
             .collect())
     }
 
+    /// The spaces `requester` made by requesting contact, each with the peer
+    /// it is for.
+    pub async fn requested_direct_chat_spaces(
+        &self,
+        requester: DeviceId,
+    ) -> anyhow::Result<Vec<(DeviceId, ChatId)>> {
+        let rows: Vec<(DeviceId, Topic<crate::topic::kind::Untyped>)> = sqlx::query_as(
+            "SELECT peer_device_id, space_id FROM direct_chat_spaces WHERE requester_device_id = ?",
+        )
+        .bind(requester)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(peer, id)| (peer, ChatId::from_topic_id(TopicId::from(id))))
+            .collect())
+    }
+
     /// The device our direct chat in `space` is with, if it is a direct chat.
     pub async fn direct_chat_peer(&self, space: ChatId) -> anyhow::Result<Option<DeviceId>> {
         let row: Option<(DeviceId,)> =

@@ -8,8 +8,7 @@ pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
 use dashchat_node::{
-    AgentId, ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic,
-    TopicId,
+    AgentId, ChatId, DeviceId, MediaBundle, MediaMetadata, Node, Payload, TopicId,
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};

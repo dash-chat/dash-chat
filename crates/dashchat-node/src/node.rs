@@ -2277,20 +2277,27 @@ impl Node {
     }
 
     /// Finish the exchange once the owner of a code we scanned has accepted:
-    /// make sure they are in the direct chat space we created, record them as
-    /// a contact, and show up in the chat.
+    /// record them as a contact, make sure they are in the direct chat space
+    /// we created, and show up in the chat.
     pub(crate) async fn complete_accepted_request(
         &self,
         owner: DeviceId,
         agent_id: AgentId,
     ) -> anyhow::Result<()> {
         let requested = self.requested_direct_chat_id(owner).await?;
-        if let Some(requested) = requested {
-            self.admit_to_direct_chat(owner, requested).await?;
-        }
         let direct_chat_id = self.known_direct_chat_id(owner).await?;
         self.join_space(direct_chat_id).await?;
+        // Recorded before admitting: an admission that fails is tried again
+        // on the next start, an acceptance is only processed once.
         self.publish_add_contact(agent_id, direct_chat_id).await?;
+        if let Some(requested) = requested {
+            if let Err(err) = self.admit_to_direct_chat(owner, requested).await {
+                tracing::warn!(
+                    ?err,
+                    "failed to admit an accepted contact to the direct chat"
+                );
+            }
+        }
         // A space we created has had our profile since then.
         if requested != Some(direct_chat_id) {
             if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
@@ -2709,15 +2716,14 @@ impl Node {
             }
         }
 
-        for (_, owner) in self
-            .local_store
-            .get_requested_inbox_topics_with_owner()
+        // Whoever we requested contact with and have not admitted yet, whether
+        // or not they answered meanwhile.
+        for (peer, direct_chat_id) in self
+            .projection
+            .requested_direct_chat_spaces(self.device_id())
             .await?
         {
-            if let Some(direct_chat_id) = self.requested_direct_chat_id(owner).await? {
-                self.spawn_direct_chat_admission(owner, direct_chat_id)
-                    .await;
-            }
+            self.spawn_direct_chat_admission(peer, direct_chat_id).await;
         }
 
         match self.chat_topics().await {
