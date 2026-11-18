@@ -123,13 +123,9 @@
 		<div>{name}</div>
 		<div class="text-sm opacity-70">{description}</div>
 	{/snippet}
-	<!-- The dialog already pads its content; Konsta's list items add their
-	     own page-edge inset on top. -->
 	<ListItem
 		link={onClick !== undefined}
-		contentClass="ps-0!"
 		mediaClass="me-1!"
-		innerClass="pe-0!"
 		title={nameAndDescription as ListItemTitle}
 		{onClick}
 		data-testid="connection-mode-{id}"
@@ -156,7 +152,7 @@
 
 {#snippet helpTitle()}
 	{#if helpFor !== undefined}
-		<span class="flex flex-col items-start gap-2">
+		<span class="flex flex-col items-start gap-4">
 			<!-- Konsta pads an icon link by 12px, which would indent the arrow. -->
 			<Link
 				iconOnly
@@ -201,7 +197,10 @@
 					{/each}
 				</div>
 			{:else}
-				<List nested dividers={false}>
+				<!-- Bleeds into the dialog's padding by the items' own inset, so
+				     their content lines up with the title and the press highlight
+				     reaches past the chevron. -->
+				<List nested dividers={false} class="-mx-4">
 					{#if isolated}
 						{@render mode(
 							'isolation',

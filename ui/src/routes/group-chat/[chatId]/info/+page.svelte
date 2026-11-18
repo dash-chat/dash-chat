@@ -212,6 +212,8 @@
 								<ListItem
 									link
 									chevron={false}
+									strongTitle={false}
+									innerClass="py-0!"
 									title={actorId === me.agentId
 										? m.you()
 										: member.profile?.name}

@@ -97,9 +97,9 @@
 		</span>
 	{/snippet}
 	{#snippet subtitle()}
-		<div class="row h-10 items-start text-[14px]/5">
+		<div class="row h-10 items-start gap-2 text-[14px]/5">
 			<span
-				class="line-clamp-2 min-w-0 flex-1 text-black/70 dark:text-white/70"
+				class="line-clamp-2 min-w-0 flex-1 wrap-anywhere text-black/70 dark:text-white/70"
 			>
 				{#if summary.blocked === true && summary.type === 'DirectChat'}
 					<span class="inline-flex items-center gap-1 italic">
@@ -134,7 +134,7 @@
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge data-testid="chat-row-unread-badge"
+				<Badge class="self-center" data-testid="chat-row-unread-badge"
 					>{summary.unreadMessages}</Badge
 				>
 			{/if}
