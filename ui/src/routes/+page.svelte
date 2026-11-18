@@ -2,7 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
@@ -19,8 +19,15 @@
 	const theme = $derived(useTheme());
 
 	let getStartedVisible = $state(true);
+	let getStartedHeight = $state(0);
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const loadedChatSummaries = useReactiveValue(chatsStore.allChatsSummaries);
+	const listNeedsFabClearance = $derived(
+		theme === 'material' &&
+			!isWideScreen.value &&
+			($loadedChatSummaries?.length ?? 0) > 0,
+	);
 </script>
 
 {#snippet connectionStatus()}
@@ -51,7 +58,12 @@
 	{/if}
 {/snippet}
 
-<Page>
+<Page
+	class="flex flex-col"
+	style="--get-started-clearance: {getStartedHeight > 0
+		? getStartedHeight + 16
+		: 0}px"
+>
 	<Navbar
 		title={m.chats()}
 		titleClass={theme === 'ios' ? '' : 'opacity1'}
@@ -64,7 +76,11 @@
 
 	<UpdaterBanner />
 
-	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+	<AllChats
+		class="flex flex-1 flex-col {listNeedsFabClearance
+			? 'pb-22'
+			: 'pb-(--get-started-clearance)'}"
+	></AllChats>
 
 	{#if !isWideScreen.value}
 		<div
@@ -87,7 +103,9 @@
 					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 				</Fab>
 			{/if}
-			<GetStarted bind:visible={getStartedVisible} />
+			<div bind:clientHeight={getStartedHeight}>
+				<GetStarted bind:visible={getStartedVisible} />
+			</div>
 		</div>
 	{/if}
 </Page>

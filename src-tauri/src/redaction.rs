@@ -94,9 +94,10 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#"emoji:\s*Some\("[^"]*"\)"#,
         // Debug format: NotificationData fields carrying user content — title
         // (sender or group name), body/large_body/summary (message text), and
-        // conversation_title (group name). The NSE logs the built notification,
-        // so these reach a report attachment and must be stripped.
-        r#"\b(title|body|large_body|summary|conversation_title):\s*(Some\()?"[^"]*"(\))?"#,
+        // conversation_title (group name), and the letter tile's `text` (the
+        // sender's initials). The NSE logs the built notification, so these
+        // reach a report attachment and must be stripped.
+        r#"\b(title|body|large_body|summary|conversation_title|text):\s*(Some\()?"[^"]*"(\))?"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "profile_name":"..." — contact request QR placeholder.
@@ -108,8 +109,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""message"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
-        // JSON format: notification title/body/summary/conversation_title.
-        r#""(title|body|large_body|summary|conversation_title)"\s*:\s*"[^"]*""#,
+        // JSON format: notification title/body/summary/conversation_title/text.
+        r#""(title|body|large_body|summary|conversation_title|text)"\s*:\s*"[^"]*""#,
         // OS username inside filesystem paths. The whole `/home/<user>` (or
         // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
         // the rest of the path is preserved so logs stay readable.
@@ -522,7 +523,7 @@ mod tests {
     fn redacts_notification_data_debug() {
         // The shape the NSE logs when showing a built notification: sender name
         // in `title`, message text in `body`, group name in `conversation_title`.
-        let input = r#"NotificationData { id: 1, title: Some("Macky"), body: Some("lalala"), large_body: None, summary: None, conversation_style: Some(ConversationStyle { sender_id: Some("abc"), conversation_title: Some("Family Chat") }) }"#;
+        let input = r##"NotificationData { id: 1, title: Some("Macky"), body: Some("lalala"), large_body: None, summary: None, large_icon_letter_tile: Some(LetterTile { text: Some("MQ"), background_color: "#8e8e93", text_color: "#ffffff" }), conversation_style: Some(ConversationStyle { sender_id: Some("abc"), conversation_title: Some("Family Chat") }) }"##;
         let result = redact(input);
         assert!(!result.contains("Macky"), "title (name) leaked: {result}");
         assert!(
@@ -533,11 +534,12 @@ mod tests {
             !result.contains("Family Chat"),
             "conversation_title leaked: {result}"
         );
+        assert!(!result.contains("MQ"), "letter tile text leaked: {result}");
     }
 
     #[test]
     fn redacts_notification_data_json() {
-        let input = r#"{"title":"Macky","body":"lalala","large_body":"long text","summary":"2 messages","conversation_title":"Family Chat"}"#;
+        let input = r##"{"title":"Macky","body":"lalala","large_body":"long text","summary":"2 messages","conversation_title":"Family Chat","largeIconLetterTile":{"text":"MQ","backgroundColor":"#8e8e93"}}"##;
         let result = redact(input);
         assert!(!result.contains("Macky"), "title leaked: {result}");
         assert!(!result.contains("lalala"), "body leaked: {result}");
@@ -547,6 +549,7 @@ mod tests {
             !result.contains("Family Chat"),
             "conversation_title leaked: {result}"
         );
+        assert!(!result.contains("MQ"), "letter tile text leaked: {result}");
     }
 
     #[test]

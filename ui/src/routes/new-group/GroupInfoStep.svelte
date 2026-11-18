@@ -13,6 +13,7 @@
 		groupImage: string | undefined;
 		selectedContacts: VerifyingKey[];
 		resolvedContacts: ContactWithProfile[];
+		creating: boolean;
 		onBack: () => void;
 		onCreate: () => void;
 	}
@@ -22,6 +23,7 @@
 		groupImage = $bindable(),
 		selectedContacts,
 		resolvedContacts,
+		creating,
 		onBack,
 		onCreate,
 	}: Props = $props();
@@ -35,7 +37,7 @@
 	backTestId="new-group-info-back"
 	actionLabel={m.create()}
 	onAction={onCreate}
-	actionDisabled={groupName.trim() === ''}
+	actionDisabled={groupName.trim() === '' || creating}
 	navbarTestId="new-group-info-navbar"
 	actionTestId="new-group-create"
 	constrainedWidth

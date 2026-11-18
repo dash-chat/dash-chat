@@ -5,9 +5,7 @@
 		hasBody,
 		isDeleted,
 		isUndecryptable,
-		type ChatId,
 		type DeviceId,
-		type MailboxTrackerStore,
 		type Hash,
 		type Message,
 		type MessagesStore,
@@ -24,11 +22,9 @@
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
 	import SwipeToReply from './SwipeToReply.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import { isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useReactiveValue } from '$lib/stores/use-signal';
-	import { connectedToCloudMailboxServer } from '$lib/components/connection/connection-status';
 	import { getContext } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { longpress } from '$lib/actions/longpress';
@@ -39,7 +35,6 @@
 		position,
 		myDeviceId,
 		searchQuery,
-		chatId,
 		sender,
 		showSenderName = false,
 		showAvatar = false,
@@ -50,7 +45,6 @@
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
-		chatId: ChatId;
 		searchQuery: string;
 		sender: Profile | undefined;
 		showSenderName?: boolean;
@@ -97,30 +91,6 @@
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
-
-	const mailboxTrackerStore: MailboxTrackerStore = getContext(
-		'mailbox-tracker-store',
-	);
-
-	const syncStatus = $derived(
-		useReactiveValue(
-			mailboxTrackerStore.syncStatusForOp,
-			chatId,
-			message.author,
-			message.logId,
-			message.seqNum,
-		),
-	);
-	const mailboxes = useReactiveValue(
-		mailboxTrackerStore.connectionStatusForAllMailboxes,
-	);
-
-	const isOfflineMessage = $derived(
-		$syncStatus !== undefined &&
-			$mailboxes !== undefined &&
-			!$syncStatus.syncedWithCloudMailbox &&
-			!connectedToCloudMailboxServer($mailboxes),
-	);
 </script>
 
 {#snippet metadata()}
@@ -148,11 +118,7 @@
 		<div class="row items-end gap-2">
 			{#if showAvatar}
 				{#if isLast}
-					<Avatar
-						image={sender?.avatar}
-						initials={sender?.name.slice(0, 2)}
-						size="1.75rem"
-					/>
+					<PeerAvatar profile={sender} size="1.75rem" />
 				{:else}
 					<div class="shrink-0" style="width: 1.75rem"></div>
 				{/if}
@@ -170,7 +136,7 @@
 				{:else}
 					<Card
 						contentWrapPadding="px-2 py-(--message-padding-y)"
-						class={`message incoming-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+						class={`message incoming-message ${position}-message`}
 					>
 						<MessageContent
 							{message}

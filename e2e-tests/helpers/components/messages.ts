@@ -7,6 +7,7 @@ import {
 	SYNC_TIMEOUT,
 	UI_TIMEOUT,
 } from '../timeouts';
+import { Avatar } from './avatar';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
 
@@ -952,14 +953,7 @@ export class Message extends TestHelper {
 	}
 
 	authorInitials(): Promise<string | null> {
-		return this.agent.execute((wrapperSel: string) => {
-			const avatar = document
-				.querySelector(wrapperSel)
-				?.querySelector('wa-avatar') as
-				| (Element & { initials?: string })
-				| null;
-			return avatar?.initials || null;
-		}, this.wrapperSelector);
+		return new Avatar(this.agent, this.wrapperSelector).initials();
 	}
 
 	/** True if the unread divider precedes this message in DOM order. */

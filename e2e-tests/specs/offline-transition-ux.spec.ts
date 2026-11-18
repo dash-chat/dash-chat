@@ -1,14 +1,15 @@
 /**
  * Offline UX E2E.
  *
- * Drives the per-message status indicator and the chat navbar connection chip
+ * Drives the per-message status indicator and the home page connection chip
  * through every visible state by suspending the global cloud mailbox and
  * toggling the per-agent local mailbox server underneath the running agents.
  *
  * Visible states under test:
  *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
- *   - Navbar chip:    cloud → pending → disconnected → local → cloud
+ *   - Home chip:      cloud → pending → disconnected → local → cloud
  */
+import { backToHome } from '../helpers/flows/back-to-home';
 import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { MAILBOX_HUNG_MS } from '../helpers/timeouts';
@@ -58,13 +59,14 @@ describe('Offline UX', () => {
 			{ platform: 'any' },
 		]);
 		// This leaves agent1 inside its direct chat with Bob — that's where
-		// MessageStatusIndicator and ConnectionStatusIndicator are mounted.
+		// MessageStatusIndicator is mounted. The connection chip is on the home
+		// page, so each case that reads it walks there and back.
 		await createProfiles({ Alice: agent1, Bob: agent2 });
 		await exchangeContacts([agent1, agent2]);
 	});
 
 	describe('cloud mailbox online', () => {
-		it('sends a message, peer receives it, sender shows delivered, and the navbar chip reads cloud and explains it', async () => {
+		it('sends a message, peer receives it, sender shows delivered, and the chip reads cloud and explains it', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
@@ -74,10 +76,12 @@ describe('Offline UX', () => {
 				'online hello',
 				['delivered'],
 			);
-			const indicator = agent1.directChatPage.connectionStatusIndicator;
+			await backToHome([agent1]);
+			const indicator = agent1.homePage.connectionStatusIndicator;
 			expect(await indicator.status()).toBe('cloud');
 
 			await indicator.expectModes({ isolated: false, internet: 'connected' });
+			await agent1.homePage.openChat('Bob');
 		});
 	});
 
@@ -99,8 +103,9 @@ describe('Offline UX', () => {
 			await returnToChat(agent2, 'Alice');
 		});
 
-		it('navbar chip reads pending after the first failed poll, and clicking it explains the state', async () => {
-			const indicator = agent1.directChatPage.connectionStatusIndicator;
+		it('chip reads pending after the first failed poll, and clicking it explains the state', async () => {
+			await backToHome([agent1]);
+			const indicator = agent1.homePage.connectionStatusIndicator;
 			await indicator.waitForStatus(
 				'pending',
 				MAILBOX_HUNG_MS,
@@ -108,6 +113,7 @@ describe('Offline UX', () => {
 			);
 
 			await indicator.expectModes({ isolated: false, internet: 'searching' });
+			await agent1.homePage.openChat('Bob');
 		});
 
 		it('new messages start as unsent, then downgrade to sending', async () => {
@@ -137,8 +143,9 @@ describe('Offline UX', () => {
 		// A suspended mailbox fails each request at timeout=20s and the chip
 		// flips on the second failure, around ~45s. Pad on top so a slow
 		// runner doesn't false-fail.
-		it('navbar chip flips to "disconnected", clicking it opens the explainer dialog, and the close button dismisses it', async () => {
-			const indicator = agent1.directChatPage.connectionStatusIndicator;
+		it('chip flips to "disconnected", clicking it opens the explainer dialog, and the close button dismisses it', async () => {
+			await backToHome([agent1]);
+			const indicator = agent1.homePage.connectionStatusIndicator;
 			await agent1.waitUntil(
 				async () => (await indicator.status()) === 'disconnected',
 				{ timeout: 90_000, interval: 1_000 },
@@ -150,6 +157,7 @@ describe('Offline UX', () => {
 				localHub: 'searching',
 				phoneToPhone: 'searching',
 			});
+			await agent1.homePage.openChat('Bob');
 		});
 
 		describe('with local mailbox enabled on the sender', () => {
@@ -166,8 +174,9 @@ describe('Offline UX', () => {
 				await returnToChat(agent1, 'Bob');
 			});
 
-			it('navbar chip switches from "disconnected" to "local" once the local mailbox is discovered, and the dialog reports the local-mailbox state', async () => {
-				const indicator = agent1.directChatPage.connectionStatusIndicator;
+			it('chip switches from "disconnected" to "local" once the local mailbox is discovered, and the dialog reports the local-mailbox state', async () => {
+				await backToHome([agent1]);
+				const indicator = agent1.homePage.connectionStatusIndicator;
 				await agent1.waitUntil(
 					async () => (await indicator.status()) === 'local',
 					{ timeout: 60_000 },
@@ -183,6 +192,7 @@ describe('Offline UX', () => {
 					30_000,
 					'the dialog did not name one local hub',
 				);
+				await agent1.homePage.openChat('Bob');
 			});
 
 			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {
@@ -198,13 +208,15 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox back online', () => {
-		it('navbar chip reads cloud again and the pending message advances to delivered once the peer receives it', async () => {
+		it('chip reads cloud again and the pending message advances to delivered once the peer receives it', async () => {
+			await backToHome([agent1]);
 			await agent1.waitUntil(
 				async () =>
-					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
+					(await agent1.homePage.connectionStatusIndicator.status()) ===
 					'cloud',
 				{ timeout: 30_000 },
 			);
+			await agent1.homePage.openChat('Bob');
 			await agent2.directChatPage.messages.waitForMessage('offline hello');
 			await agent1.directChatPage.messages.waitForMessageStatus(
 				'offline hello',

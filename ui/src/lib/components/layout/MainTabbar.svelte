@@ -10,13 +10,19 @@
 	const theme = $derived(useTheme());
 	// Konsta stretches the iOS bar across the screen; Signal's hugs its tabs.
 	const hugTabs = $derived(theme === 'ios' ? 'w-auto!' : '');
-	const tabWidth = $derived(theme === 'ios' ? 'min-w-28' : '');
+	// Konsta caps a Material tab at 48px inside its 80px bar, which squashes
+	// the active pill; Signal's pill is 60 by 36.
+	const tabClass = $derived(
+		theme === 'ios'
+			? 'min-w-28'
+			: 'max-h-none! [&_.k-tabbar-link-icon]:h-9 [&_.k-tabbar-link-icon]:w-15',
+	);
 </script>
 
 <Toolbar tabbar tabbarLabels tabbarIcons innerClass={hugTabs}>
 	<ToolbarPane class={hugTabs}>
 		<TabbarLink
-			class={tabWidth}
+			class={tabClass}
 			active={!isSettings}
 			label={m.chats()}
 			linkProps={{ href: '/' }}
@@ -29,7 +35,7 @@
 			{/snippet}
 		</TabbarLink>
 		<TabbarLink
-			class={tabWidth}
+			class={tabClass}
 			active={isSettings}
 			label={m.settings()}
 			linkProps={{ href: '/settings' }}

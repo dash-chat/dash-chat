@@ -560,8 +560,11 @@ impl Node {
                             // acceptance — complete the exchange automatically
                             // rather than waiting for a manual tap. Spawned so we
                             // don't await publishing (which needs this same
-                            // processor) and deadlock.
-                            if self.has_outgoing_pending_request(author).await? {
+                            // processor) and deadlock. A read-only node (the push
+                            // extension) leaves the accept to the app.
+                            if !self.config.read_only
+                                && self.has_outgoing_pending_request(author).await?
+                            {
                                 let node = self.clone();
                                 let agent_id = *agent_id;
                                 tokio::spawn(async move {
@@ -606,48 +609,59 @@ impl Node {
                             self.save_keybundle(keybundle.clone()).await?;
                             self.establish_contact(author).await?;
 
-                            let node = self.clone();
-                            let agent_id = *agent_id;
-                            tokio::spawn(async move {
-                                // The accept op can be processed more than once
-                                // (it is replayed when its ack fails), and each
-                                // processing lands here; record the contact only
-                                // the first time.
-                                match node.accepted_contact_agent_ids().await {
-                                    Ok(ids) if ids.contains(&agent_id) => return,
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        tracing::warn!(?err, "failed to check recorded contacts");
+                            // A read-only node (the push extension) establishes
+                            // the contact's topics so it can notify on their
+                            // messages, but leaves recording the contact to the
+                            // app, which re-processes this accept when it
+                            // imports the extension's records.
+                            if !self.config.read_only {
+                                let node = self.clone();
+                                let agent_id = *agent_id;
+                                tokio::spawn(async move {
+                                    // The accept op can be processed more than once
+                                    // (it is replayed when its ack fails), and each
+                                    // processing lands here; record the contact only
+                                    // the first time.
+                                    match node.accepted_contact_agent_ids().await {
+                                        Ok(ids) if ids.contains(&agent_id) => return,
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            tracing::warn!(
+                                                ?err,
+                                                "failed to check recorded contacts"
+                                            );
+                                            return;
+                                        }
+                                    }
+                                    let topic_id =
+                                        node.direct_chat_topic(crate::FakeAgentId::from(author));
+
+                                    if let Err(err) = node.join_space(topic_id).await {
+                                        tracing::error!(
+                                            ?err,
+                                            "direct chat space was subscribed improperly, can't proceed"
+                                        );
                                         return;
                                     }
-                                }
-                                let topic_id =
-                                    node.direct_chat_topic(crate::FakeAgentId::from(author));
-
-                                if let Err(err) = node.join_space(topic_id).await {
-                                    tracing::error!(
-                                        ?err,
-                                        "direct chat space was subscribed improperly, can't proceed"
-                                    );
-                                    return;
-                                }
-                                if let Err(err) = node.publish_add_contact(agent_id, topic_id).await
-                                {
-                                    tracing::warn!(?err, "failed to record accepted contact");
-                                    return;
-                                }
-                                if let Err(err) = node.publish_my_profile_to(topic_id).await {
-                                    tracing::warn!(
-                                        ?err,
-                                        "failed to push my profile to the new direct chat"
-                                    );
-                                }
-                                // Messages they sent before we recorded the
-                                // acceptance were processed but dropped by the
-                                // ack filter; now that they are a contact,
-                                // cover them.
-                                node.mark_ack_topic_dirty(topic_id);
-                            });
+                                    if let Err(err) =
+                                        node.publish_add_contact(agent_id, topic_id).await
+                                    {
+                                        tracing::warn!(?err, "failed to record accepted contact");
+                                        return;
+                                    }
+                                    if let Err(err) = node.publish_my_profile_to(topic_id).await {
+                                        tracing::warn!(
+                                            ?err,
+                                            "failed to push my profile to the new direct chat"
+                                        );
+                                    }
+                                    // Messages they sent before we recorded the
+                                    // acceptance were processed but dropped by the
+                                    // ack filter; now that they are a contact,
+                                    // cover them.
+                                    node.mark_ack_topic_dirty(topic_id);
+                                });
+                            }
                         }
                     }
                 }

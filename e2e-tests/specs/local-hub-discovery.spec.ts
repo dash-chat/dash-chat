@@ -13,7 +13,6 @@
  * local-hub-discovery-stress walks these and the network moves at random on
  * real access points.
  */
-import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { DEPARTURE_MS, DISCOVERY_MS, GOODBYE_MS } from '../helpers/fuzz/checks';
 import { MDNS_RECORD_TTL_S } from '../helpers/fuzz/moves/network';
 import { UI_TIMEOUT } from '../helpers/timeouts';
@@ -44,7 +43,7 @@ describe('Local hub discovery', function () {
 	let agent: Agent;
 	let hub: LocalHub;
 
-	const chip = () => agent.groupChatPage.connectionStatusIndicator;
+	const chip = () => agent.homePage.connectionStatusIndicator;
 
 	async function expectLocal(after: string): Promise<void> {
 		await chip().waitForStatus(
@@ -71,7 +70,7 @@ describe('Local hub discovery', function () {
 		if (agent.platform === 'android-emulator') this.skip();
 		await killMailbox();
 		await agent.createProfilePage.createProfile('Alice', 'Hub');
-		await createGroup(agent, 'Solo Group', []);
+		await agent.homePage.ready();
 		await chip().waitForStatus(
 			'disconnected',
 			UI_TIMEOUT,
@@ -115,8 +114,6 @@ describe('Local hub discovery', function () {
 		hub = await restartLocalHub(hub);
 		await agent.startApp();
 		await agent.homePage.ready();
-		await agent.homePage.chatListItem('Solo Group').click();
-		await agent.groupChatPage.ready();
 		await expectLocal('the app came back');
 	});
 
@@ -128,7 +125,7 @@ describe('Local hub discovery', function () {
 		await agent.pause(BACKGROUNDED_MS);
 		hub = await restartLocalHub(hub);
 		await agent.startApp();
-		await agent.groupChatPage.ready();
+		await agent.homePage.ready();
 		await expectLocal('coming back to the foreground');
 	});
 
@@ -138,7 +135,7 @@ describe('Local hub discovery', function () {
 		await agent.pause(BACKGROUNDED_MS);
 		await stopLocalHub(hub);
 		await agent.startApp();
-		await agent.groupChatPage.ready();
+		await agent.homePage.ready();
 		await expectNoHub('coming back to the foreground');
 		hub = await restartLocalHub(hub);
 		await expectLocal('the hub started');

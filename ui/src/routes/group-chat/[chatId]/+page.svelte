@@ -24,9 +24,8 @@
 	import { isMobile } from '$lib/utils/environment';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
 	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
@@ -125,12 +124,6 @@
 	}
 </script>
 
-{#snippet connectionStatus()}
-	<div class="grid size-11 shrink-0 place-items-center">
-		<ConnectionStatusIndicator {chatId} />
-	</div>
-{/snippet}
-
 <div class="absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
@@ -145,7 +138,6 @@
 					? 'shrink-0 me-4'
 					: 'shrink-0'}
 				centerTitle={false}
-				right={theme === 'ios' ? connectionStatus : undefined}
 			>
 				{#snippet left()}
 					{#if !isWideScreen.value}
@@ -163,11 +155,7 @@
 							class="flex w-full min-w-0 items-center justify-start gap-4 ps-0"
 						>
 							<span class="shrink-0">
-								<Avatar
-									image={info.image}
-									initials={info.name.slice(0, 2)}
-									size="2.25rem"
-								/>
+								<GroupAvatar image={info.image} size="2.25rem" />
 							</span>
 							<span class="flex flex-1 min-w-0 flex-col">
 								<span class="truncate">{info.name}</span>
@@ -176,10 +164,6 @@
 						</Link>
 					{/await}
 				{/snippet}
-
-				{#if theme === 'material'}
-					<div class="me-2">{@render connectionStatus()}</div>
-				{/if}
 			</Navbar>
 		{/snippet}
 
@@ -192,11 +176,7 @@
 							style="border-radius: 2rem; min-width: 250px"
 						>
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
-								<Avatar
-									image={info.image}
-									initials={info.name.slice(0, 2)}
-									size={80}
-								/>
+								<GroupAvatar image={info.image} size={80} />
 								<span
 									class="text-2xl font-semibold break-words text-center max-w-full"
 									data-testid="group-chat-header-name"
@@ -275,7 +255,6 @@
 														{message}
 														{position}
 														{myDeviceId}
-														{chatId}
 														{readOnly}
 														showDeliveryStatus={endsDeliveryStatusRun(
 															messageGroup,
@@ -310,7 +289,6 @@
 														{message}
 														{position}
 														{myDeviceId}
-														{chatId}
 														{readOnly}
 														searchQuery=""
 														sender={author?.profile}

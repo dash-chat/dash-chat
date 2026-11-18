@@ -81,6 +81,7 @@ iroh = { version = "1.4.1", default-features = false, features = [
   "tls-ring",
 ] }
 iroh-blobs = "0.104.0"
+iroh-relay = "1.4.1"
 
 [patch.crates-io]
 # tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
@@ -89,13 +90,19 @@ tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "e3537c5f8d58e9c9891370253f94de32f1b18043" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "c31c614fa0dc9cf2f9df205de841ff180fe450c1" }
 # ndk-context 0.1.1 + rust-mobile/ndk-context PRs #6 and #8 (RwLock-held context,
 # try_* functions) + a second initialize_android_context keeping the first context
 # instead of panicking (dash-chat/ndk-context branch dashchat). android_init.rs
 # installs the context from JNI_OnLoad and tao 0.37 installs it again when the
 # activity is created.
 ndk-context = { git = "https://github.com/dash-chat/ndk-context", rev = "4ed51f9e864f4b380fb4a495637543a785a9d115" }
+# swarm-discovery 0.6.4 + a guardian that rebinds a receiver's socket when it
+# fails instead of stopping discovery for good: iOS tears down every socket of
+# a suspended app once the phone may idle-sleep. Used by iroh's mDNS lookup and
+# local-hub-discovery (dash-chat/swarm-discovery branch
+# dashchat-rebind-defunct-sockets).
+swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "b6cbbc61445132fbc326ec4b9181576fdd884843" }
 
 # [patch."https://github.com/dash-chat/p2panda"]
 # p2panda = { path = "/home/michael/work/p2panda/p2panda" }
