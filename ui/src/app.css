@@ -58,6 +58,23 @@
 	--color-page-surface: var(--color-desktop-main-bg);
 }
 
+/* Messages scroll under the iOS composer to the screen's edge, as in Signal. */
+.k-ios .chat-page {
+	bottom: calc(-1 * var(--k-safe-area-bottom));
+}
+
+/* Messages fade out under the iOS composer, as chats do under the tab bar. */
+.k-ios .chat-bottom-bar::before {
+	content: '';
+	position: absolute;
+	inset-inline: 0;
+	bottom: 0;
+	height: calc(100% + 16px);
+	background: linear-gradient(to top, var(--color-page-surface), transparent);
+	pointer-events: none;
+	z-index: -1;
+}
+
 .wide-layout {
 	--text-sm: 0.875rem; /* default: 0.875rem */
 	--text-sm--line-height: 1.25rem; /* optional, default: 1.25rem */

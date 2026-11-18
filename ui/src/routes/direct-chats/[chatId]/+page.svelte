@@ -282,7 +282,7 @@
 
 <div
 	bind:this={parentDivEl}
-	class="absolute inset-0"
+	class="chat-page absolute inset-0"
 	data-testid="direct-chat-page"
 >
 	{#await $myDeviceId then myDeviceId}
@@ -697,20 +697,28 @@
 					{/await}
 				{/if}
 
-				<div class="absolute bottom-0 inset-x-0 z-30 bg-page-surface">
+				<div
+					class="chat-bottom-bar absolute bottom-0 inset-x-0 z-30"
+					class:bg-page-surface={theme === 'material'}
+				>
 					<div bind:clientHeight={bottomBarHeight}>
 						{#await $blocked then isBlocked}
 							{@const showComposer =
 								!searchMode && !isBlocked && !contactRequest}
 							{#if showComposer}
-								<MessageComposer
-									bind:this={composer}
-									store={store.messages}
-									destinationName={profile ? fullName(profile) : undefined}
-									onSent={onMessageSent}
-								/>
+								<div class={theme === 'ios' ? 'pb-safe' : ''}>
+									<MessageComposer
+										bind:this={composer}
+										store={store.messages}
+										destinationName={profile ? fullName(profile) : undefined}
+										onSent={onMessageSent}
+									/>
+								</div>
 							{:else}
-								<div use:renderAboveKeyboard>
+								<div
+									use:renderAboveKeyboard
+									class={theme === 'ios' ? 'bg-page-surface pb-safe' : ''}
+								>
 									<div class="mx-4">
 										<Divider />
 									</div>
