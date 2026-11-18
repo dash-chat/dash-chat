@@ -7,9 +7,11 @@ use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use std::sync::Arc;
+
+use dashchat_utils::blob_sync::BlobDownloader;
 use dashchat_utils::local_hub::LocalHubRegistry;
 use iroh::EndpointId;
-use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
 use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
 use tokio::sync::mpsc::UnboundedSender;
@@ -67,7 +69,7 @@ impl LocalMailboxServer {
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
-    downloader: Downloader,
+    downloader: Arc<dyn BlobDownloader>,
     endpoint: iroh::Endpoint,
     fetch_config: Option<FetchConfig>,
     upload_grace: Option<Duration>,

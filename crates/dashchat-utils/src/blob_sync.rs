@@ -1,5 +1,8 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use futures::Stream;
 use futures::StreamExt;
 use iroh_blobs::api::downloader::{
     ContentDiscovery, DownloadProgressItem, DownloadRequest, Downloader, FiniteRequest,
@@ -7,6 +10,33 @@ use iroh_blobs::api::downloader::{
 };
 use iroh_blobs::protocol::GetRequest;
 use tokio::time::Duration;
+
+pub type BoxedDownloadStream = Pin<Box<dyn Stream<Item = DownloadProgressItem> + Send + 'static>>;
+
+/// Abstracts the iroh-blobs downloader so tests can inject mock download streams
+/// (slow transfers, provider failures, progress events) without real networking.
+#[async_trait]
+pub trait BlobDownloader: Send + Sync + 'static {
+    async fn download_with_opts(
+        &self,
+        options: DownloadRequest,
+    ) -> anyhow::Result<BoxedDownloadStream>;
+}
+
+#[async_trait]
+impl BlobDownloader for Downloader {
+    async fn download_with_opts(
+        &self,
+        options: DownloadRequest,
+    ) -> anyhow::Result<BoxedDownloadStream> {
+        let stream = self
+            .download_with_opts(options)
+            .stream()
+            .await
+            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
+        Ok(Box::pin(stream))
+    }
+}
 
 /// Max size of a single blob. The hash is content-addressed but its size is not
 /// bounded by anything the fetcher can see, so an untrusted log could reference
@@ -19,7 +49,7 @@ pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 /// Download `hash` from `providers`, aborting if the transfer exceeds
 /// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
 pub async fn download_capped(
-    downloader: &Downloader,
+    downloader: &dyn BlobDownloader,
     hash: iroh_blobs::Hash,
     providers: impl ContentDiscovery,
     attempt_timeout: Duration,
@@ -41,7 +71,6 @@ pub async fn download_capped(
         };
         let mut stream = downloader
             .download_with_opts(options)
-            .stream()
             .await
             .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
         while let Some(item) = stream.next().await {

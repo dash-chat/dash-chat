@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use dashchat_utils::{blob_sync::MAX_BLOB_BYTES, fetch_loop, FetchConfig, FetchPool};
+use dashchat_utils::{
+    blob_sync::{download_capped, BlobDownloader, MAX_BLOB_BYTES},
+    fetch_loop, FetchConfig, FetchPool,
+};
 use futures::StreamExt;
 use iroh::address_lookup::memory::MemoryLookup;
 use iroh::endpoint::presets;
@@ -210,7 +213,7 @@ enum PeerAddrRegistry {
 pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub(crate) fetch_pool: BlobFetchPool,
-    downloader: Downloader,
+    downloader: Arc<dyn BlobDownloader>,
     /// The iroh endpoint blobs are served from. Held both to keep a
     /// standalone server's endpoint alive and to read its live [`EndpointAddr`]
     /// (relay + direct addresses) for the `/health` response so clients can
@@ -292,6 +295,7 @@ impl BlobSync {
         let downloader = Downloader::builder(&store, &endpoint)
             .alpn(mixed_alpn.as_slice())
             .build();
+        let downloader: Arc<dyn BlobDownloader> = Arc::new(downloader);
         let router = Router::builder(endpoint.clone())
             .accept(mixed_alpn, blobs.clone())
             .spawn();
@@ -318,7 +322,7 @@ impl BlobSync {
     /// `EndpointAddr` is the node's.
     pub fn shared(
         blobs: iroh_blobs::BlobsProtocol,
-        downloader: Downloader,
+        downloader: Arc<dyn BlobDownloader>,
         endpoint: iroh::Endpoint,
         peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
     ) -> Self {
@@ -482,8 +486,8 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        let fetched = dashchat_utils::blob_sync::download_capped(
-            &self.downloader,
+        let fetched = download_capped(
+            &*self.downloader,
             hash,
             providers,
             attempt_timeout,

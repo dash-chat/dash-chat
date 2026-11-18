@@ -1,15 +1,5 @@
 //! Manages syncing blobs referenced in logs over iroh-blobs
 
-use aliased::Aliasing;
-use derive_more::derive::Constructor;
-use futures::Stream;
-use iroh_blobs::api::downloader::Downloader;
-use iroh_blobs::provider::events::{
-    AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
-};
-use mailboxes_manager::Mailboxes;
-use p2panda::operation::{LogId, Operation};
-use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -21,6 +11,18 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
+
+use aliased::Aliasing;
+use dashchat_utils::blob_sync::{BlobDownloader, download_capped};
+use derive_more::derive::Constructor;
+use futures::Stream;
+use iroh_blobs::api::downloader::Downloader;
+use iroh_blobs::provider::events::{
+    AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
+};
+use mailboxes_manager::Mailboxes;
+use p2panda::operation::{LogId, Operation};
+use p2panda_store::SqliteStore;
 
 use dashchat_utils::FetchPool;
 
@@ -46,7 +48,7 @@ pub struct BlobSync {
     pub blobs: iroh_blobs::BlobsProtocol,
     pub fetch_pool: BlobFetchPool,
     pub sources: MixedSourceLookup,
-    downloader: Downloader,
+    downloader: Arc<dyn BlobDownloader>,
 }
 
 impl BlobSync {
@@ -88,6 +90,7 @@ impl BlobSync {
         let downloader = Downloader::builder(&store, &iroh_endpoint)
             .alpn(mixed_alpn.as_slice())
             .build();
+        let downloader: Arc<dyn BlobDownloader> = Arc::new(downloader);
 
         Ok(Self {
             blobs,
@@ -99,7 +102,7 @@ impl BlobSync {
 
     /// Clone the downloader so an in-process mailbox can fetch blobs into this
     /// node's shared blob store.
-    pub fn downloader(&self) -> Downloader {
+    pub fn downloader(&self) -> Arc<dyn BlobDownloader> {
         self.downloader.clone()
     }
 
@@ -116,6 +119,13 @@ impl BlobSync {
                 async move { this.try_fetch(topic, hash, attempt_timeout).await }
             },
         ))
+    }
+
+    /// Install a test-only downloader so unit tests can inject deterministic
+    /// download behavior (e.g. a never-completing stream) without real iroh.
+    #[cfg(test)]
+    pub fn set_downloader(&mut self, downloader: Arc<dyn BlobDownloader>) {
+        self.downloader = downloader;
     }
 
     /// Attempt to fetch a single blob, returning `true` when it is present in
@@ -144,8 +154,8 @@ impl BlobSync {
         }
 
         let source_count = sources.len();
-        let fetched = dashchat_utils::blob_sync::download_capped(
-            &self.downloader,
+        let fetched = download_capped(
+            &*self.downloader,
             hash,
             sources,
             attempt_timeout,
@@ -264,11 +274,37 @@ impl BlobSync {
                 return false;
             }
             for topic in topics {
-                if self.try_fetch(topic, hash, remaining).await {
-                    return true;
+                let this = self.clone();
+                let mut handle =
+                    tokio::spawn(async move { this.try_fetch(topic, hash, remaining).await });
+                let poll_interval = Duration::from_millis(250);
+                loop {
+                    tokio::select! {
+                        result = &mut handle => {
+                            match result {
+                                Ok(true) => return true,
+                                Ok(false) => break,
+                                Err(join_err) if join_err.is_cancelled() => break,
+                                Err(join_err) => {
+                                    tracing::warn!(%hash, ?join_err, "fetch task panicked");
+                                    break;
+                                }
+                            }
+                        }
+                        _ = tokio::time::sleep(poll_interval) => {
+                            if self.blobs.has(hash).await.unwrap_or(false) {
+                                handle.abort();
+                                return true;
+                            }
+                            if std::time::Instant::now() >= deadline {
+                                handle.abort();
+                                return false;
+                            }
+                        }
+                    }
                 }
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
 }
@@ -695,6 +731,86 @@ mod tests {
             pool.on_failure(&(TopicId::random(), h)).await;
         }
         assert!(pool.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn fetch_now_cancels_slow_task_when_blob_becomes_local() {
+        use dashchat_utils::FetchConfig as BlobFetchConfig;
+        use dashchat_utils::blob_sync::{BlobDownloader, BoxedDownloadStream};
+        use std::time::Duration;
+
+        struct NeverEndingDownloader;
+        #[async_trait::async_trait]
+        impl BlobDownloader for NeverEndingDownloader {
+            async fn download_with_opts(
+                &self,
+                _options: iroh_blobs::api::downloader::DownloadRequest,
+            ) -> anyhow::Result<BoxedDownloadStream> {
+                let (_tx, rx) = tokio::sync::mpsc::channel(1);
+                Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
+            }
+        }
+
+        // Slow background loop so it doesn't race with this test.
+        let mut config = crate::NodeConfig::testing();
+        config.blob_fetch = BlobFetchConfig {
+            concurrency: 1,
+            attempt_timeout: Duration::from_secs(60),
+            pass_interval: Duration::from_secs(3600),
+            retry_cooldown: Duration::from_secs(3600),
+        };
+
+        let alice = crate::testing::TestNode::new(config.clone(), "alice").await;
+        let bobbi = crate::testing::TestNode::new(config, "bobbi").await;
+        crate::testing::introduce_peers([&alice, &bobbi])
+            .await
+            .unwrap();
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat = bobbi.direct_chat_with(&alice);
+
+        let content = b"local-inject";
+        let hash = iroh_blobs::Hash::new(content.as_slice());
+
+        bobbi
+            .blob_sync()
+            .add_to_fetch_pool(
+                chat.into(),
+                alice.device_id(),
+                p2panda::Hash::from_bytes([0; 32]),
+                hash,
+            )
+            .await
+            .unwrap();
+
+        let mut blob_sync = bobbi.blob_sync().clone();
+        blob_sync.set_downloader(Arc::new(NeverEndingDownloader));
+
+        let blob_sync_for_inject = bobbi.blob_sync().clone();
+        let content_for_inject = content.to_vec();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            blob_sync_for_inject
+                .blobs
+                .add_bytes(content_for_inject)
+                .await
+                .unwrap();
+        });
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(1500),
+            blob_sync.fetch_now(hash, Duration::from_secs(10)),
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "fetch_now should return once the blob is available locally"
+        );
+        assert!(result.unwrap(), "fetch_now should report success");
     }
 
     #[tokio::test]
