@@ -114,7 +114,7 @@
 			scrolling page, iOS's overscroll bounce dragged the navbar along. -->
 		<div
 			bind:this={scrollEl}
-			class="absolute inset-0 flex flex-col overflow-y-auto pb-[calc(var(--main-tabbar-height,0px)-var(--k-safe-area-bottom,0px))]"
+			class="absolute inset-0 flex flex-col overflow-y-auto pb-(--main-tabbar-height)"
 			style:padding-top={navbarHeight > 0
 				? `${navbarHeight}px`
 				: navbarFallbackHeight}
