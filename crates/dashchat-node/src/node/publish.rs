@@ -13,7 +13,16 @@ impl Node {
         _alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
         let payload: Payload = payload.into();
-
+        let topic: TopicId = topic.into();
+        let topic = match &payload {
+            // An ack covers what its own space holds, so it stays there.
+            Payload::Chat(ChatPayload::MessageAck { .. }) => topic,
+            Payload::Chat(_) => self
+                .chat_write_target(ChatId::from_topic_id(topic))
+                .await?
+                .into(),
+            _ => topic,
+        };
         // A read-only node (the push extension) must never land here: what it
         // publishes under the shared key the running app never processes.
         if self.config.read_only {
@@ -28,10 +37,33 @@ impl Node {
             "awaiting publish",
             // Boxed: this future is inlined into every caller of `publish`, and p2panda's
             // space futures make it large enough to overflow their stacks.
-            Box::pin(self.streams.publish(topic.into(), payload)),
+            Box::pin(self.streams.publish(topic, payload)),
         )
         .await?;
+        self.published(process_fut).await
+    }
 
+    /// Publish a chat message into exactly `space`, dated when its author
+    /// first wrote it in the other space of the same direct chat.
+    pub(super) async fn publish_moved_message(
+        &self,
+        space: TopicId,
+        message: ChatMessageContent,
+        written_at: p2panda_core::Timestamp,
+    ) -> Result<Header, anyhow::Error> {
+        let payload = Payload::Chat(ChatPayload::Message(message));
+        let process_fut = warn_if_slow(
+            "awaiting publish",
+            Box::pin(self.streams.publish_at(space, payload, written_at)),
+        )
+        .await?;
+        self.published(process_fut).await
+    }
+
+    async fn published(
+        &self,
+        process_fut: streams::ProcessFuture,
+    ) -> Result<Header, anyhow::Error> {
         // Now we await the operation being published and processed on the system layer.
         let header = warn_if_slow("awaiting process_fut", process_fut).await?;
 

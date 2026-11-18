@@ -150,4 +150,21 @@ describe('orderEventsAscending', () => {
 		]);
 		assert.deepEqual(orderedHashes(input), ['a', 'b', 'reply']);
 	});
+
+	it('places messages moved in without a lamport by when they were written', () => {
+		// The peer's messages were copied into this space later, dated as
+		// first written and carrying no lamport.
+		const input = events([
+			{ hash: 'moved-first', author: PEER, offsetMs: -1000 },
+			{ hash: 'a', offsetMs: 0, lamport: 1 },
+			{ hash: 'moved-between', author: PEER, offsetMs: 1000 },
+			{ hash: 'b', offsetMs: 2000, lamport: 2 },
+		]);
+		assert.deepEqual(orderedHashes(input), [
+			'moved-first',
+			'a',
+			'moved-between',
+			'b',
+		]);
+	});
 });

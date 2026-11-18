@@ -1,5 +1,6 @@
 mod app_processing;
 mod device_group;
+mod direct_chat;
 mod message_acks;
 mod profile;
 pub(crate) mod publish;
@@ -292,8 +293,7 @@ pub struct Node {
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    direct_chat_admission_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    direct_chat_admission: Arc<Mutex<()>>,
+    direct_chats: direct_chat::DirectChats,
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
@@ -540,8 +540,7 @@ impl Node {
             network_change_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
-            direct_chat_admission_handles: Default::default(),
-            direct_chat_admission: Default::default(),
+            direct_chats: Default::default(),
             device_group_topic,
             dirty_ack_topics: Default::default(),
         };
@@ -851,108 +850,6 @@ impl Node {
 
     pub fn device_group_topic(&self) -> DeviceGroupId {
         self.device_group_topic
-    }
-
-    /// The space our direct chat with `peer` takes place in, once either of us
-    /// has requested contact.
-    ///
-    /// When both did, each created a space. Until the two get reconciled, both
-    /// sides settle on the one requested by the lower device id.
-    pub async fn direct_chat_id(&self, peer: DeviceId) -> anyhow::Result<Option<DirectChatId>> {
-        let spaces = self.projection.direct_chat_spaces(peer).await?;
-        let preferred_requester = self.device_id().min(peer);
-        Ok(spaces
-            .iter()
-            .find(|(_, requester)| *requester == preferred_requester)
-            .or(spaces.first())
-            .map(|(space, _)| *space))
-    }
-
-    #[cfg(feature = "testing")]
-    pub async fn direct_chat_with(&self, other: &TestNode) -> DirectChatId {
-        self.direct_chat_id(other.device_id())
-            .await
-            .unwrap()
-            .expect("no contact request was exchanged with this node")
-    }
-
-    /// [`Self::direct_chat_id`] of someone we exchanged a contact request with.
-    pub(crate) async fn known_direct_chat_id(
-        &self,
-        peer: DeviceId,
-    ) -> anyhow::Result<DirectChatId> {
-        self.direct_chat_id(peer)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("no direct chat with {:?}", peer.aliased()))
-    }
-
-    /// The space we created for our direct chat with `peer`, if we requested
-    /// contact with them before.
-    pub(crate) async fn requested_direct_chat_id(
-        &self,
-        peer: DeviceId,
-    ) -> anyhow::Result<Option<DirectChatId>> {
-        let spaces = self.projection.direct_chat_spaces(peer).await?;
-        Ok(spaces
-            .into_iter()
-            .find(|(_, requester)| *requester == self.device_id())
-            .map(|(space, _)| space))
-    }
-
-    /// Create the space for a direct chat we are requesting with `peer`, with
-    /// only us in it: the other side is admitted once their key bundle has
-    /// reached us.
-    async fn create_direct_chat_space(&self, peer: DeviceId) -> anyhow::Result<DirectChatId> {
-        let (chat_id, _) = self.create_space(vec![]).await?;
-        // Recorded now rather than when our request is processed: the chat is
-        // known as soon as we return, and a request that fails to publish is
-        // sent again in the same space.
-        self.projection
-            .register_direct_chat_space(self.device_id(), self.device_id(), peer, chat_id)
-            .await?;
-        self.publish_my_profile_to(chat_id).await?;
-        tracing::info!(chat_id = ?chat_id.aliased(), "created direct chat space");
-        Ok(chat_id)
-    }
-
-    /// Admit `peer` to the direct chat space we created for them, once their
-    /// key bundle has reached us.
-    pub(crate) async fn admit_to_direct_chat(
-        &self,
-        peer: DeviceId,
-        chat_id: DirectChatId,
-    ) -> anyhow::Result<()> {
-        // A read-only node (the push extension) leaves admitting to the app.
-        if self.config.read_only {
-            return Ok(());
-        }
-        self.keybundle_of(peer).await?;
-        let _admitting = self.direct_chat_admission.lock().await;
-        let is_member = self
-            .space_members(chat_id.into())
-            .await?
-            .iter()
-            .any(|(member, _)| *member == peer);
-        if is_member {
-            return Ok(());
-        }
-        let space = self.streams.space(chat_id.into()).await?;
-        self.add_member_to_space(&space, *peer, AccessLevel::Write)
-            .await?;
-        Ok(())
-    }
-
-    /// Run [`Self::admit_to_direct_chat`] in the background, since the key
-    /// bundle of someone whose code we scanned only arrives once we sync
-    /// their inbox.
-    pub(crate) async fn spawn_direct_chat_admission(&self, peer: DeviceId, chat_id: DirectChatId) {
-        let node = self.clone();
-        let handle = tokio::spawn(async move {
-            if let Err(err) = node.admit_to_direct_chat(peer, chat_id).await {
-                tracing::warn!(?err, peer = ?peer.aliased(), "failed to admit to direct chat");
-            }
-        });
-        self.direct_chat_admission_handles.lock().await.push(handle);
     }
 
     pub async fn create_chat_group(
@@ -1451,7 +1348,7 @@ impl Node {
         media: Option<OutgoingMedia>,
         reply: Option<Hash>,
     ) -> Result<Header, SendMessageError> {
-        let chat_id: ChatId = topic.into();
+        let chat_id = self.chat_write_target(topic.into()).await?;
 
         if let Some(target) = reply {
             let valid_ops = self.valid_chat_ops(chat_id).await?;
@@ -1713,33 +1610,15 @@ impl Node {
     // edit operation. We can improve this by building up the parallel ChatOp list
     // reduced state as part of the ACID refactors.
     pub(crate) async fn valid_chat_ops(&self, topic: ChatId) -> anyhow::Result<ValidChatOps> {
-        let log_id = LogId::from(topic);
-        let authors = self.op_store.get_authors(log_id).await?;
-
         let mut ops = std::collections::HashMap::new();
-        for author in authors {
-            for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Ok(Some(body)) = &op.body else {
-                    continue;
-                };
-                let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
-                    continue;
-                };
-                let kind = match chat {
-                    ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
-                    ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
-                    ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
-                    _ => ChatOpKind::Other,
-                };
-                ops.insert(
-                    op.header.hash(),
-                    ChatOp {
-                        author: DeviceId::from(op.header.verifying_key),
-                        timestamp: op.header.extensions.timestamp().into(),
-                        seq_num: op.header.seq_num,
-                        kind,
-                    },
-                );
+        for space in self.chat_spaces(topic).await? {
+            let log_id = LogId::from(space);
+            for author in self.op_store.get_authors(log_id).await? {
+                for op in self.op_store.get_log(&author, &log_id, None).await? {
+                    if let Some((hash, chat_op)) = chat_op(&op) {
+                        ops.insert(hash, chat_op);
+                    }
+                }
             }
         }
 
@@ -1889,9 +1768,7 @@ impl Node {
             let _ = handle.await;
         }
 
-        for handle in self.direct_chat_admission_handles.lock().await.drain(..) {
-            handle.abort();
-        }
+        self.direct_chats.abort_admissions().await;
 
         // While the network is still up, so peers see us leave instead of timing us out.
         self.online_peers.leave_all().await;
@@ -2036,6 +1913,21 @@ impl Node {
                 .await
                 .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
             return Ok(AddContactResult::AlreadyRequested(direct_chat_id));
+        }
+
+        // They asked first: scanning their code is our answer, not a request
+        // of our own with a second space for the same chat.
+        if let Some(agent_id) = self
+            .unanswered_request_from(contact.device_pubkey)
+            .await
+            .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?
+        {
+            self.accept_contact(agent_id).await?;
+            let direct_chat_id = self
+                .known_direct_chat_id(contact.device_pubkey)
+                .await
+                .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+            return Ok(AddContactResult::Accepted(direct_chat_id));
         }
 
         // Register the scanned contact as a bootstrap so p2panda discovery can
@@ -2203,7 +2095,8 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        self.spawn_direct_chat_admission(contact.device_pubkey, direct_chat_topic_id)
+        self.direct_chats
+            .spawn_admission(self.clone(), contact.device_pubkey, direct_chat_topic_id)
             .await;
 
         Ok(AddContactResult::NewRequest(direct_chat_topic_id))
@@ -2283,12 +2176,9 @@ impl Node {
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
         // Joined on their request without waking the device for it; now it may.
         self.notify_topic_subscribed(direct_chat_topic.into()).await;
-        let node = self.clone();
-        tokio::spawn(async move {
-            if let Err(err) = node.publish_my_profile_to(direct_chat_topic).await {
-                tracing::warn!(?err, "failed to push my profile to the new direct chat");
-            }
-        });
+        if let Err(err) = self.publish_my_profile_to(direct_chat_topic).await {
+            tracing::warn!(?err, "failed to push my profile to the new direct chat");
+        }
 
         // Messages the requester sent before acceptance were processed but
         // deliberately not acked; now that they are a contact, cover them.
@@ -2330,6 +2220,29 @@ impl Node {
         // but dropped by the ack filter; now that they are a contact, cover them.
         self.mark_ack_topic_dirty(direct_chat_id);
         Ok(())
+    }
+
+    /// The agent behind `device`, if they requested contact, we neither
+    /// accepted nor blocked them, and their request can still be answered.
+    /// One we rejected counts: scanning their code is a change of mind.
+    async fn unanswered_request_from(&self, device: DeviceId) -> anyhow::Result<Option<AgentId>> {
+        let requested_us = self
+            .projection
+            .direct_chat_spaces(device)
+            .await?
+            .iter()
+            .any(|(_, requester)| *requester == device);
+        if !requested_us || self.projection.is_author_blocked(&device).await? {
+            return Ok(None);
+        }
+        let Some(agent_id) = self.lookup_contact(device).await? else {
+            return Ok(None);
+        };
+        let answerable = self
+            .find_contact_request_reply_topic(agent_id, device)
+            .await?
+            .is_some();
+        Ok(answerable.then_some(agent_id))
     }
 
     /// Returns true if we have an unexpired outgoing contact request to
@@ -2794,7 +2707,14 @@ impl Node {
             .requested_direct_chat_spaces(self.device_id())
             .await?
         {
-            self.spawn_direct_chat_admission(peer, direct_chat_id).await;
+            self.direct_chats
+                .spawn_admission(self.clone(), peer, direct_chat_id)
+                .await;
+        }
+
+        if let Err(err) = self.resume_split_direct_chats().await {
+            error!(?err, "failed to resume moving a direct chat to one space");
+            failures += 1;
         }
 
         match self.chat_topics().await {
@@ -3416,6 +3336,30 @@ mod forged_contact_request_tests {
                 .any(|inbox| inbox.topic == alice_inbox.topic)
         );
     }
+}
+
+fn chat_op(op: &ReadOperation) -> Option<(Hash, ChatOp)> {
+    let Ok(Some(body)) = &op.body else {
+        return None;
+    };
+    let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
+        return None;
+    };
+    let kind = match chat {
+        ChatPayload::Message(m) => ChatOpKind::Message { reply: m.reply() },
+        ChatPayload::EditMessage { edit_hash, .. } => ChatOpKind::Edit(edit_hash),
+        ChatPayload::DeleteMessage { hashes } => ChatOpKind::Delete(hashes),
+        _ => ChatOpKind::Other,
+    };
+    Some((
+        op.header.hash(),
+        ChatOp {
+            author: DeviceId::from(op.header.verifying_key),
+            timestamp: op.header.extensions.timestamp().into(),
+            seq_num: op.header.seq_num,
+            kind,
+        },
+    ))
 }
 
 fn space_group_id(topic: TopicId) -> p2panda::spaces::GroupId {
