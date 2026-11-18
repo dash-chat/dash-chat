@@ -2,9 +2,7 @@ import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
-// Message deletion is disabled until p2panda moves encrypted payloads into the
-// operation body: a delete drops only the body.
-describe.skip('Deleting messages', () => {
+describe('Deleting messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 

@@ -105,7 +105,7 @@ impl Space {
 
 type Event = p2panda::processor::Event<LogId, Extensions, Topic>;
 
-/// The ciphertext of a message published into a space, as its operation's header carries it.
+/// The ciphertext of a message published into a space.
 pub(crate) struct EncryptedMessage {
     pub group_secret_id: GroupSecretId,
     pub nonce: XAeadNonce,

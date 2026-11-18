@@ -299,10 +299,6 @@ pub struct Node {
 /// before failing.
 const BLOB_ENCRYPT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Off while p2panda keeps encrypted payloads in the operation header, which a
-/// tombstone (dropping only the body) cannot remove.
-const MESSAGE_DELETION_ENABLED: bool = false;
-
 /// Refuse to publish an encrypted media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
 fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
@@ -1502,10 +1498,6 @@ impl Node {
         topic: impl Into<ChatId>,
         target: Hash,
     ) -> Result<Header, DeleteMessageError> {
-        if !MESSAGE_DELETION_ENABLED {
-            unimplemented!("Deletion is temporarily disabled");
-        }
-
         let topic = topic.into();
         let ops = self.valid_chat_ops(topic).await?;
         let hashes = collect_deletable_edit_chain(&ops, &target)?;
@@ -1541,10 +1533,6 @@ impl Node {
         topic: impl Into<ChatId>,
         target: Hash,
     ) -> Result<Header, DeleteMessageError> {
-        if !MESSAGE_DELETION_ENABLED {
-            unimplemented!("Deletion is temporarily disabled");
-        }
-
         let chat_id = topic.into();
         let ops = self.valid_chat_ops(chat_id).await?;
         // Resolve to the original message when we can, but fall back to the raw

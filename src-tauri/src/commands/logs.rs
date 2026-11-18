@@ -108,7 +108,7 @@ impl SimplifiedHeader {
     /// As a p2panda::Header does not contain the raw topic (only the hashed representation in the
     /// form of a LogId) we need to pass this in as a separate argument.
     pub fn from_header(topic: TopicId, header: Header) -> Self {
-        let spaces_args = header.extensions.spaces_args();
+        let spaces_args = header.extensions.spaces_args(None);
         let auth = spaces_args.as_ref().and_then(AuthData::from_spaces_args);
         let previous = spaces_args
             .as_ref()
@@ -270,7 +270,7 @@ mod tests {
         };
         let header = Header::builder().build(
             &signing_key,
-            Extensions::builder(LogId::from_topic(topic)).build_space(args),
+            Extensions::builder(LogId::from_topic(topic)).build_space(args.into()),
         );
 
         let simplified = SimplifiedHeader::from_header(topic, header);

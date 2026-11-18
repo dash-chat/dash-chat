@@ -11,9 +11,7 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 
 const PHOTO = 'after-deleted-message';
 
-// Message deletion is disabled until p2panda moves encrypted payloads into the
-// operation body: a delete drops only the body.
-describe.skip('Photo already on screen', () => {
+describe('Photo already on screen', () => {
 	let agent: Agent;
 
 	before(async function () {
