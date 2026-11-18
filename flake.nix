@@ -8,8 +8,6 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     crane.url = "github:ipetkov/crane";
 
-    tauri-plugin-holochain.url = "github:darksoil-studio/tauri-plugin-holochain/main-0.6";
-
     # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
     # devices' WebView majors (physical phones on 149-157, the emulator image
     # on 124). The harness materializes packages.e2e-chromedrivers via
@@ -29,13 +27,9 @@
   nixConfig = {
     extra-substituters = [
       "https://dash-chat.cachix.org"
-      "https://holochain-ci.cachix.org"
-      "https://darksoil-studio.cachix.org"
     ];
     extra-trusted-public-keys = [
       "dash-chat.cachix.org-1:oAsoaEZ7e4UJlveRXF45MJ1P+Tf3OKFN5QkB8BuPaiM="
-      "holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8="
-      "darksoil-studio.cachix.org-1:UEi+aujy44s41XL/pscLw37KEVpTEIn8N/kn7jO8rkc="
     ];
   };
 
@@ -44,6 +38,7 @@
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         ./nix/docker.nix
+        ./nix/android.nix
         ./nix/android-emulator.nix
         ./nix/e2e-chromedrivers.nix
         ./nix/tauri-app.nix
@@ -61,7 +56,6 @@
 
       perSystem =
         {
-          inputs',
           self',
           lib,
           system,
@@ -174,7 +168,7 @@
               pkgs.cmake
             ]
             ++ lib.optionals (system == "x86_64-linux") [ self'.packages.boot-emulator ];
-            inputsFrom = [ inputs'.tauri-plugin-holochain.devShells.androidDev ];
+            inputsFrom = [ self'.devShells.androidSdk ];
             # The e2e harness consumes tools and artifacts from PATH and
             # conventional paths; this hook provides the chromedrivers dir.
             shellHook = hostBuildEnvHook + ''
