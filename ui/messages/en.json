@@ -39,7 +39,7 @@
 	"reply": "Reply",
 	"voiceMessage": "Voice message",
 	"messageDeleted": "Message deleted",
-	"messageNotDecrypted": "Message could not be decrypted",
+	"messageNotDecrypted": "There's a problem displaying this message",
 	"messageStatusUnsent": "Sending",
 	"messageStatusSending": "Trying to send",
 	"messageStatusMailbox": "Sent to server",
