@@ -2451,26 +2451,69 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        self.leave_requested_direct_chats(agent_id)
+        self.unfollow_unanswered_direct_chats(agent_id)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         Ok(())
     }
 
-    /// Stop following the spaces the devices of `agent_id` made by requesting
-    /// contact, unless we accepted them: nothing they put there is wanted.
-    async fn leave_requested_direct_chats(&self, agent_id: AgentId) -> anyhow::Result<()> {
+    /// The spaces the devices of `agent_id` made by requesting contact, unless
+    /// we accepted them.
+    async fn unanswered_direct_chats_of(&self, agent_id: AgentId) -> anyhow::Result<Vec<ChatId>> {
+        let mut unanswered = vec![];
         for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
             if self.is_accepted_contact(device_id).await? {
                 continue;
             }
             let spaces = self.projection.direct_chat_spaces(device_id).await?;
-            for (space, _) in spaces
-                .iter()
-                .filter(|(_, requester)| *requester == device_id)
-            {
-                self.leave_space(*space).await?;
+            unanswered.extend(
+                spaces
+                    .into_iter()
+                    .filter(|(_, requester)| *requester == device_id)
+                    .map(|(space, _)| space),
+            );
+        }
+        Ok(unanswered)
+    }
+
+    /// Stop following the spaces `agent_id` made by requesting contact:
+    /// nothing they put there is wanted. Undone by
+    /// [`Self::follow_unanswered_direct_chats`].
+    async fn unfollow_unanswered_direct_chats(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for space in self.unanswered_direct_chats_of(agent_id).await? {
+            self.leave_space(space).await?;
+        }
+        Ok(())
+    }
+
+    /// Follow the spaces `agent_id` made by requesting contact again, as when
+    /// their request arrived. Undoes [`Self::unfollow_unanswered_direct_chats`].
+    async fn follow_unanswered_direct_chats(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for space in self.unanswered_direct_chats_of(agent_id).await? {
+            self.register_and_join_space(space).await?;
+        }
+        Ok(())
+    }
+
+    /// Stop showing up to the devices of `agent_id`, and seeing them, in our
+    /// direct chat. Undone by [`Self::join_direct_chat_presence`].
+    async fn leave_direct_chat_presence(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+            if let Some(direct_chat_id) = self.direct_chat_id(device_id).await? {
+                self.online_peers.leave(*direct_chat_id).await;
+            }
+            self.online_peers.forget(device_id);
+        }
+        Ok(())
+    }
+
+    /// Show up to the devices of `agent_id` in our direct chat again. Undoes
+    /// [`Self::leave_direct_chat_presence`].
+    async fn join_direct_chat_presence(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+            if let Some(direct_chat_id) = self.direct_chat_id(device_id).await? {
+                self.join_presence(direct_chat_id).await?;
             }
         }
         Ok(())
@@ -2491,23 +2534,10 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
-        for device_id in self
-            .projection
-            .lookup_devices_by_agent_id(agent_id)
+        self.leave_direct_chat_presence(agent_id)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
-        {
-            if let Some(direct_chat_id) = self
-                .direct_chat_id(device_id)
-                .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            {
-                self.online_peers.leave(*direct_chat_id).await;
-            }
-            self.online_peers.forget(device_id);
-        }
-
-        self.leave_requested_direct_chats(agent_id)
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        self.unfollow_unanswered_direct_chats(agent_id)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
@@ -2515,7 +2545,8 @@ impl Node {
     }
 
     /// Unblock a previously blocked contact, allowing their operations to be
-    /// processed again.
+    /// processed again. Undoes each thing [`Self::block_contact`] did, last
+    /// first.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn unblock_contact(&self, agent_id: AgentId) -> Result<(), Error> {
         tracing::debug!("unblocking contact: {:?}", agent_id.aliased());
@@ -2528,28 +2559,19 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        self.follow_unanswered_direct_chats(agent_id)
+            .await
+            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+
         let is_contact = self
             .accepted_contact_agent_ids()
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
             .contains(&agent_id);
         if is_contact {
-            for device_id in self
-                .projection
-                .lookup_devices_by_agent_id(agent_id)
+            self.join_direct_chat_presence(agent_id)
                 .await
-                .map_err(|e| Error::AuthorOperation(e.to_string()))?
-            {
-                if let Some(direct_chat_id) = self
-                    .direct_chat_id(device_id)
-                    .await
-                    .map_err(|e| Error::AuthorOperation(e.to_string()))?
-                {
-                    self.join_presence(direct_chat_id)
-                        .await
-                        .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-                }
-            }
+                .map_err(|e| Error::InitializeTopic(e.to_string()))?;
             // Profile updates skipped them while they were blocked.
             let direct_chat = self
                 .accepted_contacts()
@@ -2757,8 +2779,9 @@ impl Node {
             }
         }
 
+        let accepted = self.accepted_contact_agent_ids().await?;
         for topic in subscribed_spaces.iter() {
-            if let Err(err) = self.initialize_space(*topic).await {
+            if let Err(err) = self.initialize_space(*topic, Some(&accepted)).await {
                 error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
                 failures += 1;
             }

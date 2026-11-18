@@ -473,6 +473,56 @@ async fn test_rejecting_a_request_leaves_the_requesters_space() {
     assert!(!followed.contains(&chat.into()));
 }
 
+/// Blocking Bobbi while his request is pending stops Alice following the
+/// space he made. Unblocking him undoes that: she reads what he writes next.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_unblocking_a_requester_follows_their_space_again() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    let chat = bobbi.direct_chat_with(&alice).await;
+    let follows = || async {
+        let followed = alice.local_store.subscribed_spaces().await.unwrap();
+        followed.contains(&chat.into())
+    };
+
+    poll.wait_for(|| async {
+        follows()
+            .await
+            .then_some(())
+            .ok_or("alice has not joined bobbi's space yet")
+    })
+    .await
+    .unwrap();
+
+    alice.block_contact(bobbi.agent_id()).await.unwrap();
+    assert!(!follows().await);
+
+    alice.unblock_contact(bobbi.agent_id()).await.unwrap();
+    assert!(follows().await);
+
+    bobbi.send_message_raw(chat, "after".into()).await.unwrap();
+    poll.wait_for(|| async {
+        (alice.get_messages(chat).await.unwrap().len() == 1)
+            .then_some(())
+            .ok_or("alice has not received what bobbi wrote after she unblocked him")
+    })
+    .await
+    .unwrap();
+}
+
 fn mailbox_only_config() -> NodeConfig {
     NodeConfig::testing().no_p2p().no_blob_sync()
 }

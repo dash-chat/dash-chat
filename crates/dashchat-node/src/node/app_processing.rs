@@ -104,7 +104,7 @@ impl Node {
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
         self.local_store.register_space_as_subscribed(topic).await?;
-        self.initialize_space(*topic).await?;
+        self.initialize_space(*topic, None).await?;
         Ok(())
     }
 
@@ -183,13 +183,20 @@ impl Node {
 
     /// Rejoin a registered space on node startup and import its mailbox stream.
     #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn initialize_space(&self, topic: TopicId) -> anyhow::Result<()> {
+    ///
+    /// `accepted` spares looking the accepted contacts up again for a caller
+    /// that initializes many spaces.
+    pub(crate) async fn initialize_space(
+        &self,
+        topic: TopicId,
+        accepted: Option<&BTreeSet<AgentId>>,
+    ) -> anyhow::Result<()> {
         topic.alias_numbered();
         tracing::info!(topic = ?topic.aliased(), "initialize space");
 
         self.streams.join_space(topic).await?;
         self.import_mailbox_stream(topic).await?;
-        if self.wakes_device(topic).await? {
+        if self.wakes_device(topic, accepted).await? {
             self.notify_topic_subscribed(topic).await;
         }
         Ok(())
@@ -198,7 +205,11 @@ impl Node {
     /// Whether traffic in a space is worth waking the device for. It is not in
     /// a space someone made by requesting contact, until we accept them:
     /// anyone holding our code could otherwise wake us at will.
-    async fn wakes_device(&self, topic: TopicId) -> anyhow::Result<bool> {
+    async fn wakes_device(
+        &self,
+        topic: TopicId,
+        accepted: Option<&BTreeSet<AgentId>>,
+    ) -> anyhow::Result<bool> {
         let chat_id = ChatId::from_topic_id(topic);
         let Some(peer) = self.projection.direct_chat_peer(chat_id).await? else {
             return Ok(true);
@@ -206,11 +217,17 @@ impl Node {
         if self.requested_direct_chat_id(peer).await? == Some(chat_id) {
             return Ok(true);
         }
-        self.is_accepted_contact(peer).await
+        let Some(agent_id) = self.lookup_contact(peer).await? else {
+            return Ok(false);
+        };
+        Ok(match accepted {
+            Some(accepted) => accepted.contains(&agent_id),
+            None => self.accepted_contact_agent_ids().await?.contains(&agent_id),
+        })
     }
 
     /// Stop following a space: it is not rejoined on restart and nothing more
-    /// of it is fetched.
+    /// of it is fetched. The inverse of [`Self::register_and_join_space`].
     pub(crate) async fn leave_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
         self.local_store
             .register_topic_as_unsubscribed(chat_id)
@@ -650,9 +667,12 @@ impl Node {
                             // what they write before we accept. Only if the
                             // projection recorded it as our chat with them: a
                             // request could name any space, even one of ours.
+                            // A read-only node (the push extension) leaves
+                            // following it to the app.
                             let direct_chat_id = *direct_chat_id;
-                            if self.projection.direct_chat_peer(direct_chat_id).await?
-                                == Some(author)
+                            if !self.config.read_only
+                                && self.projection.direct_chat_peer(direct_chat_id).await?
+                                    == Some(author)
                             {
                                 let node = self.clone();
                                 tokio::spawn(async move {
