@@ -233,8 +233,6 @@ impl Node {
         let _moving = self.direct_chats.moving.lock().await;
         let me = self.device_id();
         let mut already_moved = self.messages_by_timestamp(me, split.winning).await?;
-        // The copies come after what the space already holds, in their own order.
-        let mut lamport = self.next_lamport(split.winning).await?;
         // Replies name a hash of their target's edit chain; each leads to its copy.
         let mut copies: HashMap<Hash, Hash> = HashMap::new();
 
@@ -280,7 +278,9 @@ impl Node {
                     message.reply = message
                         .reply
                         .map(|target| copies.get(&target).copied().unwrap_or(target));
-                    message.lamport = lamport;
+                    // Without a lamport a copy is placed by its date, among
+                    // what the other side wrote meanwhile.
+                    message.lamport = 0;
                     match self.move_message(split.winning, message, written_at).await {
                         Ok(copy) => copy,
                         Err(err) => {
@@ -290,7 +290,6 @@ impl Node {
                     }
                 }
             };
-            lamport += 1;
             for hash in chain {
                 copies.insert(hash, copy);
             }
@@ -373,7 +372,8 @@ impl Node {
 
     /// Give up the losing space of a direct chat both sides requested, once
     /// nothing we hold of it is missing from the winning one. Until then both
-    /// stay, so no message disappears on its way over.
+    /// stay, so no message disappears on its way over: one its author never
+    /// moves, having deleted it for themself only, keeps the space for good.
     pub(crate) async fn drop_moved_direct_chat_space(&self, peer: DeviceId) -> anyhow::Result<()> {
         let Some(split) = self.split_direct_chat(peer).await? else {
             return Ok(());

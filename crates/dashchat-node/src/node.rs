@@ -2223,7 +2223,8 @@ impl Node {
     }
 
     /// The agent behind `device`, if they requested contact, we neither
-    /// answered nor blocked them, and their request can still be answered.
+    /// accepted nor blocked them, and their request can still be answered.
+    /// One we rejected counts: scanning their code is a change of mind.
     async fn unanswered_request_from(&self, device: DeviceId) -> anyhow::Result<Option<AgentId>> {
         let requested_us = self
             .projection

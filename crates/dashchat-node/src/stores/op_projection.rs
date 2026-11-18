@@ -278,7 +278,9 @@ impl OpProjection {
         requester: DeviceId,
     ) -> anyhow::Result<Vec<(DeviceId, ChatId)>> {
         let rows: Vec<(DeviceId, Topic<crate::topic::kind::Untyped>)> = sqlx::query_as(
-            "SELECT peer_device_id, space_id FROM direct_chat_spaces WHERE requester_device_id = ?",
+            "SELECT peer_device_id, space_id FROM direct_chat_spaces
+             WHERE requester_device_id = ?
+             AND space_id NOT IN (SELECT space_id FROM dropped_direct_chat_spaces)",
         )
         .bind(requester)
         .fetch_all(&self.pool)
