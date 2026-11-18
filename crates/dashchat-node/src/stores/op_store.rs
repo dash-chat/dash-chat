@@ -460,7 +460,7 @@ mod tests {
             .initiate_and_establish_contact(&bobbi)
             .await
             .unwrap();
-        let chat = alice.direct_chat_with(&bobbi);
+        let chat = alice.direct_chat_with(&bobbi).await;
         (alice, bobbi, chat)
     }
 

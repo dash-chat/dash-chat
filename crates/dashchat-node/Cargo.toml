@@ -69,5 +69,11 @@ p2panda-store = { workspace = true, features = ["test_utils"] }
 [features]
 default = ["instrument"]
 instrument = []
-testing = ["tempfile", "nanoid", "p2panda-store/test_utils", "mailbox-client/testing"]
+testing = [
+  "tempfile",
+  "nanoid",
+  "p2panda/test_space_ids",
+  "p2panda-store/test_utils",
+  "mailbox-client/testing",
+]
 p2p = []

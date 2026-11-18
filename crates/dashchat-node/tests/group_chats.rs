@@ -105,8 +105,8 @@ async fn test_direct_chat() {
         .await
         .unwrap();
 
-    let chat_id = alice.direct_chat_with(&bobbi);
-    assert_eq!(chat_id, bobbi.direct_chat_with(&alice));
+    let chat_id = alice.direct_chat_with(&bobbi).await;
+    assert_eq!(chat_id, bobbi.direct_chat_with(&alice).await);
 
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
@@ -163,8 +163,8 @@ async fn test_p2p_direct_chat() {
         .await
         .unwrap();
 
-    let chat_id = alice.direct_chat_with(&bobbi);
-    assert_eq!(chat_id, bobbi.direct_chat_with(&alice));
+    let chat_id = alice.direct_chat_with(&bobbi).await;
+    assert_eq!(chat_id, bobbi.direct_chat_with(&alice).await);
 
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));

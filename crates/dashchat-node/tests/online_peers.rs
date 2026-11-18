@@ -25,7 +25,7 @@ async fn contact_is_online_until_it_shuts_down_and_again_once_it_is_back() {
         .await
         .unwrap();
 
-    let topic = alice.direct_chat_with(&bobbi);
+    let topic = alice.direct_chat_with(&bobbi).await;
     let bobbi_device = bobbi.device_id();
 
     PollConfig::seconds(30)
@@ -177,7 +177,7 @@ async fn blocked_contact_is_offline_until_unblocked() {
             .unwrap();
     }
 
-    let direct_chat = alice.direct_chat_with(&bobbi);
+    let direct_chat = alice.direct_chat_with(&bobbi).await;
     let (alice_device, bobbi_device, cammy_device) =
         (alice.device_id(), bobbi.device_id(), cammy.device_id());
     let both = BTreeSet::from([bobbi_device, cammy_device]);
@@ -295,10 +295,9 @@ async fn contact_is_online_only_once_the_request_is_accepted() {
     let bobbi = TestNode::new(config, "bobbi").await;
     introduce_peers([&alice, &bobbi]).await.unwrap();
 
-    let direct_chat = alice.direct_chat_with(&bobbi);
-
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
+    let direct_chat = bobbi.direct_chat_with(&alice).await;
     tokio::join!(
         stays_offline(&alice, direct_chat.into(), Duration::from_secs(8)),
         stays_offline(&bobbi, direct_chat.into(), Duration::from_secs(8)),
@@ -344,7 +343,7 @@ async fn unblocking_right_after_blocking_keeps_both_online() {
         .await
         .unwrap();
 
-    let direct_chat = alice.direct_chat_with(&bobbi);
+    let direct_chat = alice.direct_chat_with(&bobbi).await;
     let (alice_device, bobbi_device) = (alice.device_id(), bobbi.device_id());
     PollConfig::seconds(30)
         .wait_for(|| async {

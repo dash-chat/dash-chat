@@ -237,7 +237,6 @@ impl Stream for Subscriber {
 
 #[derive(Clone)]
 enum StreamIntent {
-    CreateSpace,
     JoinSpace,
     SubscribeStream,
     ExistingOnly,
@@ -334,15 +333,6 @@ impl TopicStreams {
         }
 
         let (publisher, subscriber) = match space {
-            StreamIntent::CreateSpace => {
-                let (space, subscriber) = self
-                    .with_node(async |node| node.create_space_with_id(topic).await)
-                    .await??;
-                (
-                    Publisher::Space(Space::created(topic, space)),
-                    Subscriber::Space(subscriber),
-                )
-            }
             StreamIntent::JoinSpace => {
                 let (space, subscriber) = self
                     .with_node(async |node| node.space(topic).await)
@@ -370,19 +360,50 @@ impl TopicStreams {
             .map_err(|_| StreamsError::DrainClosed)
     }
 
-    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
-    pub(crate) async fn create_space(&self, topic: Topic) -> Result<Space, StreamsError> {
+    /// Create a space with only us in it, at an id p2panda generates.
+    pub(crate) async fn create_space<K: crate::topic::TopicKind>(
+        &self,
+    ) -> Result<(crate::Topic<K>, Space), StreamsError> {
+        let mut pubs = self.publishers.lock().await;
+        if self.shut_down.load(Ordering::Acquire) {
+            return Err(StreamsError::ShutDown);
+        }
+        let (space, subscriber) = self
+            .with_node(async |node| node.create_space().await)
+            .await??;
+        let (topic, space) = self.track_created_space(&mut pubs, space, subscriber)?;
+        Ok((crate::Topic::new(*topic.as_bytes()), space))
+    }
+
+    /// Create a space at an id of our choosing, as someone publishing their own
+    /// create for an id that is already taken would.
+    #[cfg(feature = "testing")]
+    pub(crate) async fn create_space_at(
+        &self,
+        topic: Topic,
+    ) -> Result<(Topic, Space), StreamsError> {
+        let mut pubs = self.publishers.lock().await;
+        let (space, subscriber) = self
+            .with_node(async |node| node.create_space_with_id(topic).await)
+            .await??;
+        self.track_created_space(&mut pubs, space, subscriber)
+    }
+
+    fn track_created_space(
+        &self,
+        pubs: &mut HashMap<Topic, Publisher>,
+        space: p2panda::spaces::Space<Payload>,
+        subscriber: SpaceSubscription<Payload>,
+    ) -> Result<(Topic, Space), StreamsError> {
+        let topic = Topic::from(space.id());
         tracing::info!(topic = ?topic.aliased(), "create_space");
-        let (publisher, created) = self.publisher(topic, StreamIntent::CreateSpace).await?;
-        if !created {
-            return Err(StreamsError::SpaceAlreadyExists(topic));
-        }
-        match publisher {
-            Publisher::Space(space) => Ok(space),
-            Publisher::Stream(_) => {
-                unreachable!("we created the space, so this is a space publisher")
-            }
-        }
+        let space = Space::created(topic, space);
+        pubs.insert(topic, Publisher::Space(space.clone()));
+        self.send_to_drain(DrainCommand::Subscribe(
+            topic,
+            Subscriber::Space(subscriber),
+        ))?;
+        Ok((topic, space))
     }
 
     /// Whether p2panda has materialized this space locally, because we created it or
@@ -830,9 +851,6 @@ pub enum StreamsError {
 
     #[error(transparent)]
     PublishSpace(#[from] Box<PublishSpaceError>),
-
-    #[error("can't create a space that already exists")]
-    SpaceAlreadyExists(Topic),
 
     #[error("topic is already subscribed to as a normal stream, not a space")]
     NotASpace(Topic),

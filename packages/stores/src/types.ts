@@ -352,6 +352,7 @@ export type InboxPayload = {
 		profile: Profile;
 		agent_id: AgentId;
 		reply_topic: TopicId;
+		direct_chat_id: ChatId;
 	};
 };
 
