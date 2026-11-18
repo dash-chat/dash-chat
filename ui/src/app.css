@@ -41,6 +41,11 @@
 	--color-page-surface: var(--color-ios-light-surface);
 }
 
+/* Grey bubbles blend into iOS's grey page surface. */
+:root:not(.dark):not(.wide-layout) .k-ios {
+	--color-incoming-surface: #fff;
+}
+
 :root.dark .k-ios {
 	--color-page-surface: var(--color-ios-dark-surface);
 }
@@ -200,7 +205,7 @@ li.plain span {
 }
 
 .qr-card > div {
-	/* Padding for the copy button below the QR code in add-contact */
+	/* Padding for the label below the QR code in add-contact */
 	padding-bottom: 8px;
 }
 .k-card.no-padding > div {

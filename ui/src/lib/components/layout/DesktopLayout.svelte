@@ -7,15 +7,10 @@
 	import AddContactPanel from './AddContactPanel.svelte';
 	import DesktopNavStrip from './DesktopNavStrip.svelte';
 	import EmptyState from './EmptyState.svelte';
-	import GetStarted from '$lib/components/GetStarted.svelte';
 	import TestBanner from './TestBanner.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
-	// Non-special URL schemes (tauri://) have empty pathname for the root,
-	// unlike http:// which normalizes to '/'.
-	const pathname: string = $derived(page.url.pathname);
-	const isHome = $derived(pathname === '/' || pathname === '');
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
 		page.url.pathname.startsWith('/new-message') ||
@@ -56,11 +51,6 @@
 				<AddContactPanel />
 			{:else if isSidebarRoute}
 				<EmptyState />
-				{#if isHome}
-					<div class="absolute bottom-3 inset-x-0 z-10">
-						<GetStarted />
-					</div>
-				{/if}
 			{:else}
 				{@render children()}
 			{/if}

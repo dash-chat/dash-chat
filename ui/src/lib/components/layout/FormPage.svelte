@@ -54,7 +54,7 @@
 	{/if}
 {/snippet}
 
-<Page>
+<Page class={isIosTheme ? '' : 'pb-8'}>
 	<Navbar
 		{title}
 		titleClass="opacity1"

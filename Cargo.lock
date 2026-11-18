@@ -2129,6 +2129,7 @@ dependencies = [
  "push-notifications-client",
  "push-notifications-server",
  "regex",
+ "rlimit",
  "rustls 0.23.46",
  "sentry-types 0.42.0",
  "serde",
@@ -9199,6 +9200,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rlimit"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f35ee2729c56bb610f6dba436bf78135f728b7373bdffae2ec815b2d3eb98cc3"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "rsa"
 version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11849,8 +11859,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-sharekit"
-version = "0.4.0-rc.7"
-source = "git+https://github.com/Choochmeque/tauri-plugin-sharekit?rev=61a7b9f40e67f43740538123e74f9ebb4c260fab#61a7b9f40e67f43740538123e74f9ebb4c260fab"
+version = "0.4.0-rc.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1a89a463a6eb1a098a250a89c95578d3d2797165c7f2d4ad84294f632f6f703"
 dependencies = [
  "log",
  "objc2 0.6.4",

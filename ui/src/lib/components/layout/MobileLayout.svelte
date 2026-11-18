@@ -54,4 +54,10 @@
 	.has-main-tabbar :global(.k-page) {
 		padding-bottom: calc(var(--main-tabbar-height) - var(--k-safe-area-bottom));
 	}
+
+	/* Signal's iOS lists run under the floating tab bar to the screen's edge. */
+	:global(.k-ios) .has-main-tabbar :global(.k-page) {
+		height: calc(100% + var(--k-safe-area-bottom));
+		padding-bottom: var(--main-tabbar-height);
+	}
 </style>

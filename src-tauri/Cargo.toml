@@ -28,10 +28,7 @@ tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
-# The #277 merge: its windows crates match Tauri 2.12, which no published
-# version does, so the Windows build fails on 0.3.1. Later commits want
-# compileSdk 37, which the nix Android SDK lacks.
-tauri-plugin-sharekit = { git = "https://github.com/Choochmeque/tauri-plugin-sharekit", rev = "61a7b9f40e67f43740538123e74f9ebb4c260fab" }
+tauri-plugin-sharekit = "=0.4.0-rc.8"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-opener = "2"
@@ -98,6 +95,9 @@ hyper-tls = "0.6"
 # Logging
 libc = "0.2"
 env_logger = "0.11"
+
+# Open files limit
+rlimit = "0.11"
 
 # Build openssl from source to cross-compile to each platform as needed
 openssl-sys = { version = "0.9", features = ["vendored"] }
