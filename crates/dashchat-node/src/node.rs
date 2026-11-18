@@ -1067,8 +1067,14 @@ impl Node {
         chat_id: ChatId,
         member: VerifyingKey,
     ) -> anyhow::Result<()> {
-        // TODO: this should use a transaction, but the race is not a big deal here
         let deps = self.group_store.heads(*chat_id).await?;
+
+        if deps.is_empty() {
+            return Err(anyhow::anyhow!(
+                "group must be known locally before promoting member: {chat_id:?}"
+            ));
+        }
+
         self.publish(
             chat_id,
             Payload::group_control(

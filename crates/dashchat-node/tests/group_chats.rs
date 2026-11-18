@@ -877,3 +877,73 @@ async fn test_admin_promotes_member_to_admin() {
     )
     .await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_cannot_promote_member_to_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&cammy)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+            *cammy.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let result = bobbi
+        .promote_group_member_to_admin(chat_id, *cammy.device_id())
+        .await;
+    assert!(
+        matches!(result, Ok(())),
+        "Expected the promote call to return OK, because the operation is published and only rejected when the group resolves it, but got error: {result:?}"
+    );
+
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi"), (&cammy, "cammy")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::write()),
+            (cammy.device_id(), Access::write()),
+        ],
+    )
+    .await;
+}

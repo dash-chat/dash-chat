@@ -15,6 +15,24 @@ describe('Making a group member an admin', () => {
 		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 	});
 
+	it('non-admin cannot make another member an admin', async () => {
+		await agent2.homePage.ready();
+		await agent2.homePage
+			.chatListItem('mygroup')
+			.waitForExist({ timeout: SYNC_TIMEOUT });
+		await agent2.homePage.chatListItem('mygroup').click();
+		await agent2.groupChatPage.ready();
+		await agent2.groupChatPage.infoLink.click();
+		await agent2.groupInfoPage.ready();
+
+		await agent2.groupInfoPage.memberItem('Alice').waitForExist();
+		await agent2.groupInfoPage.memberItem('Alice').click();
+		await expect(agent2.groupInfoPage.makeAdminButton).not.toBeExisting();
+
+		await agent2.groupInfoPage.back.click();
+		await agent2.groupChatPage.ready();
+	});
+
 	it('admin makes a member an admin', async () => {
 		await agent1.groupChatPage.infoLink.click();
 		await agent1.groupInfoPage.ready();
@@ -42,9 +60,6 @@ describe('Making a group member an admin', () => {
 			await agent1.tr('youMadeMemberAdmin', { name: 'Bob' }),
 		);
 
-		await agent2.homePage.ready();
-		await agent2.homePage.chatListItem('mygroup').click();
-		await agent2.groupChatPage.ready();
 		const aliceMadeYouAdmin = agent2.groupChatPage.messages.systemMessage(
 			'group_member_promoted',
 		);
@@ -52,11 +67,26 @@ describe('Making a group member an admin', () => {
 		await expect(aliceMadeYouAdmin).toHaveText(
 			await agent2.tr('someoneMadeYouAnAdmin', { name: 'Alice' }),
 		);
+	});
 
+	it('the new admin can remove a member', async () => {
 		await agent2.groupChatPage.infoLink.click();
 		await agent2.groupInfoPage.ready();
 		await agent2.groupInfoPage.memberAdminChip('Bob').waitForExist();
-		await expect(agent2.groupInfoPage.addMembersLink).toBeExisting();
-		await expect(agent2.groupInfoPage.editLink).toBeExisting();
+
+		await agent2.groupInfoPage.memberItem('Alice').click();
+		await agent2.groupInfoPage.removeMemberButton.waitForExist();
+		await agent2.groupInfoPage.removeMemberButton.click();
+		await agent2.groupInfoPage.removeMemberConfirmButton.waitForExist();
+		await agent2.groupInfoPage.removeMemberConfirmButton.click();
+
+		const bobRemovedYou = agent1.groupChatPage.messages.systemMessage(
+			'group_member_removed',
+		);
+		await bobRemovedYou.waitForExist({ timeout: SYNC_TIMEOUT });
+		await expect(bobRemovedYou).toHaveText(
+			await agent1.tr('someoneRemovedYouFromTheGroup', { name: 'Bob' }),
+		);
+		await expect(agent1.groupChatPage.notMemberNotice).toBeExisting();
 	});
 });
