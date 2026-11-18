@@ -214,10 +214,6 @@
 									chevron={false}
 									strongTitle={false}
 									innerClass="py-0!"
-									title={actorId === me.agentId
-										? m.you()
-										: member.profile?.name}
-									subtitle={activeOverP2p ? m.activeOverP2p() : undefined}
 									data-testid={`group-info-member-${member.profile?.name}`}
 									onclick={me.admin
 										? () => (sheetOpenFor = actorId)
@@ -232,10 +228,28 @@
 										</P2pBadge>
 									{/snippet}
 
-									{#snippet after()}
-										{#if member.admin}
-											<Chip>{m.administrator()}</Chip>
-										{/if}
+									<!-- Konsta centers `after` on the title line only, which
+									     leaves the chip off-center once a subtitle shows. -->
+									{#snippet inner()}
+										<div
+											class="row items-center justify-between gap-1 in-[.k-ios]:min-h-7"
+										>
+											<div
+												class="column min-w-0 text-[16px] in-[.k-ios]:text-[17px]"
+											>
+												<span class="leading-5">
+													{actorId === me.agentId
+														? m.you()
+														: member.profile?.name}
+												</span>
+												{#if activeOverP2p}
+													<span class="text-xs">{m.activeOverP2p()}</span>
+												{/if}
+											</div>
+											{#if member.admin}
+												<Chip class="shrink-0">{m.administrator()}</Chip>
+											{/if}
+										</div>
 									{/snippet}
 								</ListItem>
 							{/each}
