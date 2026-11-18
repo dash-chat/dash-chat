@@ -189,7 +189,35 @@ impl Node {
 
         self.streams.join_space(topic).await?;
         self.import_mailbox_stream(topic).await?;
-        self.notify_topic_subscribed(topic).await;
+        if self.wakes_device(topic).await? {
+            self.notify_topic_subscribed(topic).await;
+        }
+        Ok(())
+    }
+
+    /// Whether traffic in a space is worth waking the device for. It is not in
+    /// a space someone made by requesting contact, until we accept them:
+    /// anyone holding our code could otherwise wake us at will.
+    async fn wakes_device(&self, topic: TopicId) -> anyhow::Result<bool> {
+        let chat_id = ChatId::from_topic_id(topic);
+        let Some(peer) = self.projection.direct_chat_peer(chat_id).await? else {
+            return Ok(true);
+        };
+        if self.requested_direct_chat_id(peer).await? == Some(chat_id) {
+            return Ok(true);
+        }
+        self.is_accepted_contact(peer).await
+    }
+
+    /// Stop following a space: it is not rejoined on restart and nothing more
+    /// of it is fetched.
+    pub(crate) async fn leave_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        self.local_store
+            .register_topic_as_unsubscribed(chat_id)
+            .await?;
+        self.online_peers.leave(*chat_id).await;
+        self.mailboxes.unsubscribe(chat_id.into()).await?;
+        self.streams.unsubscribe(*chat_id).await;
         Ok(())
     }
 
@@ -203,7 +231,7 @@ impl Node {
     }
 
     /// Tell the host (push notifications) that this node now receives traffic for a topic.
-    async fn notify_topic_subscribed(&self, topic: TopicId) {
+    pub(super) async fn notify_topic_subscribed(&self, topic: TopicId) {
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
@@ -582,13 +610,14 @@ impl Node {
                         direct_chat_id,
                         ..
                     } => {
-                        // A request arrived on our advertised inbox. Perform no
-                        // network side-effects (bootstrap registration) and
-                        // disclose nothing about us until the user explicitly
-                        // accepts (see `accept_contact`). This
-                        // keeps an unsolicited request — e.g. anyone scanning a
-                        // shared QR — from amplifying our resources or handing our
-                        // profile to every scanner. The request is signed by the
+                        // A request arrived on our advertised inbox. Disclose
+                        // nothing about us and register no bootstrap node until
+                        // the user explicitly accepts (see `accept_contact`), so
+                        // that an unsolicited request — e.g. anyone scanning a
+                        // shared QR — is not handed our profile. All it gets is
+                        // that we follow the space it names, without waking the
+                        // device for it, until the request is rejected or its
+                        // sender blocked. The request is signed by the
                         // scanner's device key (author), so we map that device to
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.

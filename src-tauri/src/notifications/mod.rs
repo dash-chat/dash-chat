@@ -658,7 +658,6 @@ mod tests {
     /// has reached us. The chat already shows their message, so it must be
     /// announced, titled with the name their code carried (DASH-CHAT-4W).
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
     async fn announces_a_message_from_someone_we_scanned() {
         let mailbox = TestMailbox::from_env();
         let alice = TestNode::new(NodeConfig::testing(), "alice")
@@ -811,7 +810,6 @@ mod tests {
     /// Someone who scanned our code, and whom we have not accepted, writes to
     /// us. Their request is theirs to make, so nothing is announced.
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
     async fn stays_silent_for_someone_who_scanned_us() {
         let mailbox = TestMailbox::from_env();
         let alice = TestNode::new(NodeConfig::testing(), "alice")

@@ -403,15 +403,7 @@ async fn test_requester_messages_before_acceptance() {
     bobbi.add_contact(qr).await.unwrap();
     let chat = bobbi.direct_chat_with(&alice).await;
 
-    poll.wait_for(|| async {
-        bobbi
-            .send_message_raw(chat, "before".into())
-            .await
-            .map(|_| ())
-            .map_err(|err| format!("bobbi cannot send yet: {err}"))
-    })
-    .await
-    .unwrap();
+    bobbi.send_message_raw(chat, "before".into()).await.unwrap();
 
     poll.wait_for(|| async {
         (alice.get_messages(chat).await.unwrap().len() == 1)
@@ -440,6 +432,45 @@ async fn test_requester_messages_before_acceptance() {
         .await
         .unwrap();
     assert_eq!(bobbi.get_messages(chat).await.unwrap().len(), 2);
+}
+
+/// Alice follows the space Bobbi made by requesting contact, to read what he
+/// writes ahead of her answer. Rejecting him ends that.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_rejecting_a_request_leaves_the_requesters_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    let chat = bobbi.direct_chat_with(&alice).await;
+
+    poll.wait_for(|| async {
+        let followed = alice.local_store.subscribed_spaces().await.unwrap();
+        followed
+            .contains(&chat.into())
+            .then_some(())
+            .ok_or("alice has not joined bobbi's space yet")
+    })
+    .await
+    .unwrap();
+
+    alice
+        .reject_contact_request(bobbi.agent_id())
+        .await
+        .unwrap();
+    let followed = alice.local_store.subscribed_spaces().await.unwrap();
+    assert!(!followed.contains(&chat.into()));
 }
 
 fn mailbox_only_config() -> NodeConfig {

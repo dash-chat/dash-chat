@@ -368,6 +368,18 @@ impl Node {
             );
         }
 
+        // A mailbox must keep a code owner's key bundle for as long as the code
+        // can be scanned.
+        let max_contact_code_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)?;
+        if config.contact_code_expiry > max_contact_code_expiry {
+            anyhow::bail!(
+                "invalid NodeConfig: contact_code_expiry ({}) is longer than a mailbox keeps \
+                 messages ({})",
+                config.contact_code_expiry,
+                max_contact_code_expiry,
+            );
+        }
+
         // === p2panda node === //
 
         let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
@@ -636,12 +648,9 @@ impl Node {
     /// Create a new contact QR code with configured expiry time,
     /// subscribe to the inbox topic for it, and register the topic as active.
     pub async fn create_add_contact_qr_code(&self) -> Result<AddContactQrCode, crate::Error> {
-        // A mailbox must keep our key bundle for as long as the code can be scanned.
-        let max_expiry = Duration::from_std(mailbox_server::MESSAGE_MAX_AGE)
-            .expect("mailbox retention fits a chrono duration");
         let (inbox_topic, nonce) = InboxTopic::new_random(
             &self.device_id(),
-            Utc::now() + self.config.contact_code_expiry.min(max_expiry),
+            Utc::now() + self.config.contact_code_expiry,
         );
         self.initialize_stream(*inbox_topic.topic)
             .await
@@ -2272,6 +2281,8 @@ impl Node {
         self.join_space(direct_chat_topic)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
+        // Joined on their request without waking the device for it; now it may.
+        self.notify_topic_subscribed(direct_chat_topic.into()).await;
         let node = self.clone();
         tokio::spawn(async move {
             if let Err(err) = node.publish_my_profile_to(direct_chat_topic).await {
@@ -2297,6 +2308,7 @@ impl Node {
         let requested = self.requested_direct_chat_id(owner).await?;
         let direct_chat_id = self.known_direct_chat_id(owner).await?;
         self.join_space(direct_chat_id).await?;
+        self.notify_topic_subscribed(direct_chat_id.into()).await;
         // Recorded before admitting: an admission that fails is tried again
         // on the next start, an acceptance is only processed once.
         self.publish_add_contact(agent_id, direct_chat_id).await?;
@@ -2439,6 +2451,28 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        self.leave_requested_direct_chats(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Stop following the spaces the devices of `agent_id` made by requesting
+    /// contact, unless we accepted them: nothing they put there is wanted.
+    async fn leave_requested_direct_chats(&self, agent_id: AgentId) -> anyhow::Result<()> {
+        for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+            if self.is_accepted_contact(device_id).await? {
+                continue;
+            }
+            let spaces = self.projection.direct_chat_spaces(device_id).await?;
+            for (space, _) in spaces
+                .iter()
+                .filter(|(_, requester)| *requester == device_id)
+            {
+                self.leave_space(*space).await?;
+            }
+        }
         Ok(())
     }
 
@@ -2472,6 +2506,10 @@ impl Node {
             }
             self.online_peers.forget(device_id);
         }
+
+        self.leave_requested_direct_chats(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
         Ok(())
     }
@@ -3103,6 +3141,17 @@ mod config_validation_tests {
         config.enable_p2p = false;
         config.mdns_mode = MdnsDiscoveryMode::Active;
         assert!(init_result(config).await.is_err());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn init_rejects_contact_code_expiry_longer_than_mailbox_retention() {
+        let retention = chrono::Duration::from_std(mailbox_server::MESSAGE_MAX_AGE).unwrap();
+        let mut config = NodeConfig::testing();
+        config.contact_code_expiry = retention + chrono::Duration::seconds(1);
+        assert!(init_result(config.clone()).await.is_err());
+
+        config.contact_code_expiry = retention;
+        assert!(init_result(config).await.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread")]
