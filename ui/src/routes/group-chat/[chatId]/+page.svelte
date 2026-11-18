@@ -124,7 +124,7 @@
 	}
 </script>
 
-<div class="absolute inset-0" data-testid="group-chat-page">
+<div class="chat-page absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
 		bind:isAtBottom
@@ -336,21 +336,25 @@
 	{/if}
 
 	<div
-		class="absolute bottom-0 inset-x-0 z-30"
+		class="chat-bottom-bar absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
 		<div bind:clientHeight={bottomBarHeight}>
 			{#await $composerData then [me, info]}
 				{#if me.member}
-					<MessageComposer
-						bind:this={composer}
-						store={store.messages}
-						destinationName={info.name}
-						onSent={onMessageSent}
-					/>
+					<div class={theme === 'ios' ? 'pb-safe' : ''}>
+						<MessageComposer
+							bind:this={composer}
+							store={store.messages}
+							destinationName={info.name}
+							onSent={onMessageSent}
+						/>
+					</div>
 				{:else}
 					<div
-						class="quiet px-6 py-4 text-center text-sm"
+						class="quiet px-6 py-4 text-center text-sm {theme === 'ios'
+							? 'bg-page-surface pb-safe-4'
+							: ''}"
 						data-testid="group-chat-not-member"
 					>
 						{m.youAreNoLongerAMember()}

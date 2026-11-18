@@ -471,7 +471,8 @@
 			/>
 		{/if}
 
-		<div class="m-2 relative">
+		<!-- Signal's iOS composer keeps 16pt clear of the screen edges. -->
+		<div class="relative {theme === 'ios' ? 'mx-4 my-2' : 'm-2'}">
 			<VoiceRecordingBar
 				{voice}
 				onLeavingChange={leaving => (voiceBarLeaving = leaving)}
