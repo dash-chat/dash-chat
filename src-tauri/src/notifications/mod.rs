@@ -386,8 +386,6 @@ async fn in_conversation_thread(
     }
 }
 
-/// Whether `agent_id` is a contact we accepted. Unlike `Node::is_accepted_contact`
-/// this takes the agent id the caller already resolved for the sender's device.
 async fn is_direct_chat_with(node: &Node, topic: TopicId, peer: DeviceId) -> bool {
     match node
         .projection
@@ -402,6 +400,8 @@ async fn is_direct_chat_with(node: &Node, topic: TopicId, peer: DeviceId) -> boo
     }
 }
 
+/// Whether `agent_id` is a contact we accepted. Unlike `Node::is_accepted_contact`
+/// this takes the agent id the caller already resolved for the sender's device.
 async fn is_accepted_agent(node: &Node, agent_id: AgentId) -> bool {
     match node.accepted_contact_agent_ids().await {
         Ok(accepted) => accepted.contains(&agent_id),

@@ -267,13 +267,20 @@ impl LocalStore {
         Ok(Some(DeviceGroupId::new(arr)))
     }
 
-    pub async fn set_device_group_topic(&self, topic: DeviceGroupId) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO identity (key, value) VALUES (?, ?)")
+    /// Keep `topic` as the device group's space unless one is kept already,
+    /// and return the one that is.
+    pub async fn set_device_group_topic(
+        &self,
+        topic: DeviceGroupId,
+    ) -> anyhow::Result<DeviceGroupId> {
+        sqlx::query("INSERT OR IGNORE INTO identity (key, value) VALUES (?, ?)")
             .bind(DEVICE_GROUP_TOPIC_KEY)
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
-        Ok(())
+        self.device_group_topic()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("the device group topic was not stored"))
     }
 
     /// Inbox topics this node created and advertises via its QR code.

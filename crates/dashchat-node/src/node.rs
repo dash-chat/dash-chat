@@ -426,9 +426,13 @@ impl Node {
         let device_group_topic = match local_store.device_group_topic().await? {
             Some(topic) => topic,
             None => {
+                // A read-only node (the push extension) leaves creating it to the app.
+                anyhow::ensure!(
+                    !config.read_only,
+                    "a read-only node cannot start before the device group exists"
+                );
                 let (topic, _) = streams.create_space().await?;
-                local_store.set_device_group_topic(topic).await?;
-                topic
+                local_store.set_device_group_topic(topic).await?
             }
         };
 
@@ -877,10 +881,17 @@ impl Node {
             .map(|(space, _)| space))
     }
 
-    /// Create the space for a direct chat we are requesting, with only us in
-    /// it: the other side is admitted once their key bundle has reached us.
-    async fn create_direct_chat_space(&self) -> anyhow::Result<DirectChatId> {
+    /// Create the space for a direct chat we are requesting with `peer`, with
+    /// only us in it: the other side is admitted once their key bundle has
+    /// reached us.
+    async fn create_direct_chat_space(&self, peer: DeviceId) -> anyhow::Result<DirectChatId> {
         let (chat_id, _) = self.create_space(vec![]).await?;
+        // Recorded now rather than when our request is processed: the chat is
+        // known as soon as we return, and a request that fails to publish is
+        // sent again in the same space.
+        self.projection
+            .register_direct_chat_space(self.device_id(), self.device_id(), peer, chat_id)
+            .await?;
         self.publish_my_profile_to(chat_id).await?;
         tracing::info!(chat_id = ?chat_id.aliased(), "created direct chat space");
         Ok(chat_id)
@@ -2109,7 +2120,7 @@ impl Node {
         {
             Some(direct_chat_id) => direct_chat_id,
             None => self
-                .create_direct_chat_space()
+                .create_direct_chat_space(contact.device_pubkey)
                 .await
                 .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?,
         };
@@ -2273,14 +2284,18 @@ impl Node {
         owner: DeviceId,
         agent_id: AgentId,
     ) -> anyhow::Result<()> {
-        if let Some(requested) = self.requested_direct_chat_id(owner).await? {
+        let requested = self.requested_direct_chat_id(owner).await?;
+        if let Some(requested) = requested {
             self.admit_to_direct_chat(owner, requested).await?;
         }
         let direct_chat_id = self.known_direct_chat_id(owner).await?;
         self.join_space(direct_chat_id).await?;
         self.publish_add_contact(agent_id, direct_chat_id).await?;
-        if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
-            tracing::warn!(?err, "failed to push my profile to the new direct chat");
+        // A space we created has had our profile since then.
+        if requested != Some(direct_chat_id) {
+            if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
+                tracing::warn!(?err, "failed to push my profile to the new direct chat");
+            }
         }
         // Messages they sent before we recorded the acceptance were processed
         // but dropped by the ack filter; now that they are a contact, cover them.

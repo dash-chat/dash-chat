@@ -779,7 +779,7 @@ impl OpProjection {
     /// requester and the owner of the inbox it was sent to, when we are one of
     /// the two. A space already known as something else is not one a request
     /// may claim.
-    async fn register_direct_chat_space(
+    pub(crate) async fn register_direct_chat_space(
         &self,
         my_device: DeviceId,
         requester: DeviceId,
