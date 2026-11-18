@@ -15,7 +15,7 @@ val tauriProperties = Properties().apply {
 }
 
 android {
-    compileSdk = 36
+    compileSdk = 37
     namespace = "studio.darksoil.dashchat"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "true"

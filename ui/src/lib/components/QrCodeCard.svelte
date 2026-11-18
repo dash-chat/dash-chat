@@ -1,20 +1,14 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
-	import { Button, Card } from 'konsta/svelte';
-	import { mdiContentCopy } from '@mdi/js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { copyLinkToClipboard } from '$lib/utils/clipboard';
+	import { Card } from 'konsta/svelte';
 
 	let {
 		value,
 		color,
-		copyButtonTestId,
 		label,
 	}: {
 		value: string;
 		color: string;
-		copyButtonTestId: string;
 		label?: string | undefined;
 	} = $props();
 
@@ -35,24 +29,12 @@
 			></wa-qr-code>
 		</div>
 
-		<div class="pt-2 pb-1">
-			<Button
-				colors={{
-					touchRipple: isWhite ? 'black' : 'white',
-					textIos: isWhite ? 'text-black' : 'text-white',
-					textMaterial: isWhite ? 'text-black' : 'text-white',
-				}}
-				clearIos
-				clearMaterial
-				small
-				data-testid={copyButtonTestId}
-				onClick={() => void copyLinkToClipboard(value)}
-			>
-				<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
-				<div class="truncate max-w-40">
-					{label ?? value}
-				</div>
-			</Button>
+		<div
+			class="truncate max-w-40 pt-3.5 pb-2.5 in-[.k-ios]:pt-3 in-[.k-ios]:pb-2 text-sm font-medium {isWhite
+				? 'text-black'
+				: 'text-white'}"
+		>
+			{label ?? value}
 		</div>
 	</div>
 </Card>

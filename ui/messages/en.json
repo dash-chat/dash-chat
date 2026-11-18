@@ -177,7 +177,6 @@
 	"noChatsYet": "No chats yet.",
 	"noChatsYetSubtitle": "Get started by messaging a friend.",
 	"startFirstChatHere": "Start your first chat here.",
-	"getStarted": "Get started",
 
 	"waitingForProfile": "Waiting for profile…",
 
@@ -369,8 +368,8 @@
 	"connectionModeLocalHubHelp": "Dash Chat is always looking for a local message hub nearby. Make sure your device is on the same Wi-Fi network as the hub.",
 	"connectionModeLocalHubWifiOff": "If Wi-Fi is off: Turn on Wi-Fi to find a hub.",
 	"connectionModePhoneToPhoneTitle": "Phone to phone",
-	"connectionModePhoneToPhoneFound_one": "Found {{count}} nearby",
-	"connectionModePhoneToPhoneFound_other": "Found {{count}} nearby",
+	"connectionModePhoneToPhoneFound_one": "{{count}} active contact",
+	"connectionModePhoneToPhoneFound_other": "{{count}} active contacts",
 	"connectionModePhoneToPhoneNotFound": "No phones found on this network",
 	"connectionModePhoneToPhoneHelp": "Dash Chat is always looking for a phone-to-phone connection. Make sure another phone is on the same Wi-Fi network.",
 	"connectionModePhoneToPhoneWifiOff": "If Wi-Fi is off: Turn on Wi-Fi to find other phones.",

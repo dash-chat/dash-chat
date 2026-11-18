@@ -120,7 +120,10 @@
 		{#if photos.length > 0}
 			<StagedPhotosCarousel {photos} bind:index />
 		{:else if media?.kind !== 'file'}
-			<div class="flex min-h-0 flex-1 items-center justify-center">
+			<div
+				class="flex min-h-0 flex-1 items-center justify-center"
+				data-testid="staged-photo-pending"
+			>
 				<Preloader class="!text-white" />
 			</div>
 		{:else}

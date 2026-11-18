@@ -6,15 +6,6 @@ import { TestHelper } from './test-helper';
 /** Spelt once: `tid()` yields CSS, and the row lookup below needs XPath. */
 const CHAT_LIST_ID = 'all-chats-list';
 
-const GET_STARTED_CARD_IDS = [
-	'add-contact',
-	'add-photo',
-	'chat-color',
-	'new-group',
-] as const;
-
-type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
-
 /** One row of the chat list: what it is titled and what its unread badge
  *  reads. */
 export interface ChatRow {
@@ -174,21 +165,6 @@ export class HomePage extends TestHelper {
 			tid(CHAT_LIST_ID),
 			contactName,
 		);
-	}
-
-	getStartedCard(id: GetStartedCardId) {
-		return this.agent.$(tid(`get-started-${id}`));
-	}
-
-	dismissGetStartedCardButton(id: GetStartedCardId) {
-		return this.agent.$(tid(`get-started-dismiss-${id}`));
-	}
-
-	async visibleGetStartedCards(): Promise<GetStartedCardId[]> {
-		const checks = await Promise.all(
-			GET_STARTED_CARD_IDS.map(id => this.getStartedCard(id).isExisting()),
-		);
-		return GET_STARTED_CARD_IDS.filter((_, i) => checks[i]);
 	}
 
 	/** Returns descriptions of any chat-list items overflowing their container. */

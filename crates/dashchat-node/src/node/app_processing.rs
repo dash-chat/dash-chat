@@ -635,7 +635,6 @@ impl Node {
                                     }
                                     let topic_id =
                                         node.direct_chat_topic(crate::FakeAgentId::from(author));
-
                                     if let Err(err) = node.join_space(topic_id).await {
                                         tracing::error!(
                                             ?err,

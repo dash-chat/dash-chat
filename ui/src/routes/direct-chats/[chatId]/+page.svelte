@@ -285,7 +285,7 @@
 
 <div
 	bind:this={parentDivEl}
-	class="absolute inset-0"
+	class="chat-page absolute inset-0"
 	data-testid="direct-chat-page"
 >
 	{#await $myDeviceId then myDeviceId}
@@ -300,6 +300,7 @@
 						{#if searchMode}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 w-full min-w-0"
 								leftClass="shrink-0"
 								centerTitle={false}
@@ -325,6 +326,7 @@
 						{:else}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 min-w-0 flex-1"
 								leftClass={theme === 'ios' && !isWideScreen.value
 									? 'shrink-0 me-4'
@@ -698,7 +700,10 @@
 					{/await}
 				{/if}
 
-				<div class="absolute bottom-0 inset-x-0 z-30 bg-page-surface">
+				<div
+					class="chat-bottom-bar absolute bottom-0 inset-x-0 z-30"
+					class:bg-page-surface={theme === 'material'}
+				>
 					<div bind:clientHeight={bottomBarHeight}>
 						{#await $blocked then isBlocked}
 							{@const showComposer =
@@ -707,14 +712,19 @@
 								!contactRequest &&
 								!$pendingOutgoingRequest}
 							{#if showComposer}
-								<MessageComposer
-									bind:this={composer}
-									store={store.messages}
-									destinationName={profile ? fullName(profile) : undefined}
-									onSent={onMessageSent}
-								/>
+								<div class={theme === 'ios' ? 'pb-safe' : ''}>
+									<MessageComposer
+										bind:this={composer}
+										store={store.messages}
+										destinationName={profile ? fullName(profile) : undefined}
+										onSent={onMessageSent}
+									/>
+								</div>
 							{:else}
-								<div use:renderAboveKeyboard>
+								<div
+									use:renderAboveKeyboard
+									class={theme === 'ios' ? 'bg-page-surface pb-safe' : ''}
+								>
 									<div class="mx-4">
 										<Divider />
 									</div>
