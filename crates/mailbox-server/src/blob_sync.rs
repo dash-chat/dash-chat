@@ -18,6 +18,7 @@ use iroh_blobs::provider::events::{
 };
 use p2panda_net::NetworkId;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::watch;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
@@ -486,12 +487,14 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
+        let (provider_tx, _provider_rx) = watch::channel(None);
         let fetched = download_capped(
             &*self.downloader,
             hash,
             providers,
             attempt_timeout,
             &self.blobs,
+            provider_tx,
         )
         .await;
         if fetched {

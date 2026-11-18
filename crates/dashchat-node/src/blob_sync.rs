@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::{Mutex, Notify},
+    sync::{Mutex, Notify, watch},
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
@@ -128,6 +128,52 @@ impl BlobSync {
         self.downloader = downloader;
     }
 
+    /// Spawn a per-topic fetch task and return a handle that can be polled and
+    /// aborted while the download is in flight.
+    async fn spawn_fetch(
+        &self,
+        topic: TopicId,
+        hash: iroh_blobs::Hash,
+        attempt_timeout: Duration,
+    ) -> BlobFetchTask {
+        let sources = match self.sources.sources(topic).await {
+            Ok(sources) => sources,
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "blob source lookup failed");
+                return BlobFetchTask::failed();
+            }
+        };
+
+        if sources.is_empty() {
+            tracing::debug!(%hash, "no blob sources");
+            return BlobFetchTask::failed();
+        }
+
+        let source_count = sources.len();
+        let this = self.clone();
+        let (provider_tx, provider_rx) = watch::channel(None);
+        let handle = tokio::spawn(async move {
+            let fetched = download_capped(
+                &*this.downloader,
+                hash,
+                sources,
+                attempt_timeout,
+                &this.blobs,
+                provider_tx,
+            )
+            .await;
+            tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
+            fetched
+        });
+
+        BlobFetchTask {
+            handle,
+            current_provider: provider_rx,
+            topic,
+            hash,
+        }
+    }
+
     /// Attempt to fetch a single blob, returning `true` when it is present in
     /// the local store afterwards (already cached or newly downloaded).
     async fn try_fetch(
@@ -140,30 +186,8 @@ impl BlobSync {
             return true;
         }
 
-        let sources = match self.sources.sources(topic).await {
-            Ok(sources) => sources,
-            Err(err) => {
-                tracing::warn!(%hash, ?err, "blob source lookup failed");
-                return false;
-            }
-        };
-
-        if sources.is_empty() {
-            tracing::debug!(%hash, "no blob sources");
-            return false;
-        }
-
-        let source_count = sources.len();
-        let fetched = download_capped(
-            &*self.downloader,
-            hash,
-            sources,
-            attempt_timeout,
-            &self.blobs,
-        )
-        .await;
-        tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
-        fetched
+        let task = self.spawn_fetch(topic, hash, attempt_timeout).await;
+        task.await_complete().await
     }
 
     pub async fn add_to_fetch_pool(
@@ -274,9 +298,9 @@ impl BlobSync {
                 return false;
             }
             for topic in topics {
-                let this = self.clone();
-                let mut handle =
-                    tokio::spawn(async move { this.try_fetch(topic, hash, remaining).await });
+                let task = self.spawn_fetch(topic, hash, remaining).await;
+                let mut handle = task.handle;
+                let _current_provider = task.current_provider;
                 let poll_interval = Duration::from_millis(250);
                 loop {
                     tokio::select! {
@@ -304,6 +328,47 @@ impl BlobSync {
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+    }
+}
+
+/// Ongoing per-topic blob download that exposes its current provider and can
+/// be aborted.
+#[allow(dead_code)]
+struct BlobFetchTask {
+    handle: JoinHandle<bool>,
+    current_provider: watch::Receiver<Option<iroh::EndpointId>>,
+    topic: TopicId,
+    hash: iroh_blobs::Hash,
+}
+
+impl BlobFetchTask {
+    /// A task that has already failed without spawning a download.
+    fn failed() -> Self {
+        let (_tx, current_provider) = watch::channel(None);
+        Self {
+            handle: tokio::spawn(std::future::ready(false)),
+            current_provider,
+            topic: TopicId::random(),
+            hash: iroh_blobs::Hash::new([0u8; 32]),
+        }
+    }
+
+    /// Abort the in-flight download.
+    #[allow(dead_code)]
+    fn abort(&self) {
+        self.handle.abort_handle().abort();
+    }
+
+    /// Wait for the task to finish on its own.
+    async fn await_complete(self) -> bool {
+        match self.handle.await {
+            Ok(result) => result,
+            Err(join_err) if join_err.is_cancelled() => false,
+            Err(join_err) => {
+                tracing::warn!(?join_err, "fetch task panicked");
+                false
             }
         }
     }

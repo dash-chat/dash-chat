@@ -9,6 +9,7 @@ use iroh_blobs::api::downloader::{
     SplitStrategy,
 };
 use iroh_blobs::protocol::GetRequest;
+use tokio::sync::watch;
 use tokio::time::Duration;
 
 pub type BoxedDownloadStream = Pin<Box<dyn Stream<Item = DownloadProgressItem> + Send + 'static>>;
@@ -48,12 +49,14 @@ pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Download `hash` from `providers`, aborting if the transfer exceeds
 /// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
+/// `current_provider` is updated with the provider currently being attempted.
 pub async fn download_capped(
     downloader: &dyn BlobDownloader,
     hash: iroh_blobs::Hash,
     providers: impl ContentDiscovery,
     attempt_timeout: Duration,
     blobs: &iroh_blobs::BlobsProtocol,
+    current_provider: watch::Sender<Option<iroh::EndpointId>>,
 ) -> bool {
     let result = tokio::time::timeout(attempt_timeout, async {
         let options = DownloadRequest {
@@ -81,6 +84,15 @@ pub async fn download_capped(
                 }
                 DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
                 DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
+                DownloadProgressItem::TryProvider { id, .. } => {
+                    let _ = current_provider.send(Some(id));
+                }
+                DownloadProgressItem::ProviderFailed { id, .. } => {
+                    let current = *current_provider.borrow();
+                    if current == Some(id) {
+                        let _ = current_provider.send(None);
+                    }
+                }
                 _ => {}
             }
         }
