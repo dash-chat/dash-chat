@@ -7,7 +7,6 @@
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
-	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
@@ -24,8 +23,6 @@
 	// measured.
 	const navbarFallbackHeight = 'calc(max(16px, var(--k-safe-area-top)) + 44px)';
 
-	let getStartedVisible = $state(true);
-	let getStartedHeight = $state(0);
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
 	const loadedChatSummaries = useReactiveValue(chatsStore.allChatsSummaries);
@@ -67,10 +64,7 @@
 {#snippet chatList()}
 	<UpdaterBanner />
 
-	<AllChats
-		class="flex flex-1 flex-col {listNeedsFabClearance
-			? 'pb-22'
-			: 'pb-(--get-started-clearance)'}"
+	<AllChats class="flex flex-1 flex-col {listNeedsFabClearance ? 'pb-22' : ''}"
 	></AllChats>
 {/snippet}
 
@@ -96,20 +90,12 @@
 					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 				</Fab>
 			{/if}
-			<div bind:clientHeight={getStartedHeight}>
-				<GetStarted bind:visible={getStartedVisible} />
-			</div>
 		</div>
 	{/if}
 {/snippet}
 
 {#if theme === 'ios'}
-	<Page
-		class="!overflow-hidden"
-		style="--get-started-clearance: {getStartedHeight > 0
-			? getStartedHeight + 16
-			: 0}px"
-	>
+	<Page class="!overflow-hidden">
 		<!-- The list scrolls in its own container under the navbar: inside the
 			scrolling page, iOS's overscroll bounce dragged the navbar along. -->
 		<div
@@ -142,12 +128,7 @@
 		{@render bottomActions()}
 	</Page>
 {:else}
-	<Page
-		class="flex flex-col"
-		style="--get-started-clearance: {getStartedHeight > 0
-			? getStartedHeight + 16
-			: 0}px"
-	>
+	<Page class="flex flex-col">
 		<Navbar
 			title={m.chats()}
 			titleClass="opacity1"
