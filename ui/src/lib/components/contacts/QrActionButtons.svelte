@@ -4,9 +4,9 @@
 		mdiLinkVariant,
 		mdiTrayArrowDown,
 		mdiPalette,
+		mdiQrcode,
 		mdiUpload,
 	} from '@mdi/js';
-	import { mdiShare } from '$lib/utils/icon';
 	import LabelledIconButton from '$lib/components/contacts/LabelledIconButton.svelte';
 	import { isMobile } from '$lib/utils/environment';
 
@@ -37,7 +37,7 @@
 		/>
 		<LabelledIconButton
 			label={m.share()}
-			icon={mdiShare}
+			icon={mdiQrcode}
 			onClick={onShare}
 			testId="add-contact-share-btn"
 		/>
