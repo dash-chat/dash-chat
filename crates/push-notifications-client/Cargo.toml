@@ -10,3 +10,6 @@ netwatch-http-client = { workspace = true }
 derive_more = { version = "2.1.1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

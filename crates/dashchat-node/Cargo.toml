@@ -71,3 +71,6 @@ default = ["instrument"]
 instrument = []
 testing = ["tempfile", "nanoid", "p2panda-store/test_utils", "mailbox-client/testing"]
 p2p = []
+
+[lints]
+workspace = true

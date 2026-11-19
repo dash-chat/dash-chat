@@ -161,3 +161,6 @@ dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
 push-notifications-server = { path = "../crates/push-notifications-server", features = ["test-utils"] }
+
+[lints]
+workspace = true

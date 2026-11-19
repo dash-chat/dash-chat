@@ -25,3 +25,6 @@ tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread"
 default = ["iroh"]
 iroh = ["dep:iroh", "dep:iroh-blobs", "dep:dashmap"]
 cbor = ["dep:serde", "dep:ciborium"]
+
+[lints]
+workspace = true
