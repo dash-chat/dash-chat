@@ -1,7 +1,7 @@
 //! Nodes and mailboxes on a virtual network whose links between regions can
 //! be slowed down, built on patchbay's Linux network namespaces.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use dashchat_node::NodeConfig;
@@ -14,11 +14,28 @@ use tokio::task::JoinHandle;
 
 use crate::common;
 
+/// Result of entering a user namespace, captured before the test harness spawns
+/// additional threads. On kernels or containers that disallow unprivileged user
+/// namespaces the initialization fails; tests that need it can then skip rather
+/// than abort.
+static USERNS: OnceLock<Result<(), String>> = OnceLock::new();
+
 /// A process can only enter a user namespace while it has a single thread,
 /// and the test harness starts its threads before any test runs.
 #[ctor::ctor(unsafe)]
 fn enter_user_namespace() {
-    patchbay::init_userns().expect("failed to enter a user namespace");
+    let result = patchbay::init_userns().map_err(|e| format!("{e}"));
+    // Ignore set errors: this runs once per process under ctor.
+    let _ = USERNS.set(result);
+}
+
+/// Whether the user namespace was entered successfully. Tests that require
+/// patchbay's network isolation should check this and skip gracefully.
+pub fn userns_available() -> Result<(), String> {
+    USERNS
+        .get()
+        .cloned()
+        .unwrap_or_else(|| Err("user namespace initialization did not run".to_string()))
 }
 
 pub enum Rate {
@@ -36,6 +53,7 @@ pub struct Network {
 
 impl Network {
     pub async fn new() -> anyhow::Result<Self> {
+        userns_available().map_err(|e| anyhow::anyhow!(e))?;
         Ok(Self {
             lab: patchbay::Lab::new().await?,
             mailbox_links: Mutex::default(),
