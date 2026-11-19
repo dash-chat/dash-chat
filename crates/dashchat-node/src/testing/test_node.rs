@@ -17,7 +17,7 @@ use crate::{
     filesystem::Filesystem,
     mailbox::MailboxOperation,
     node::Node,
-    stores::{LocalStore, OpProjection, TombstoneStore},
+    stores::{LocalStore, OpProjection},
     testing::{TestMailbox, behavior::Behavior},
     topic::TopicId,
 };
@@ -50,8 +50,7 @@ impl TestNode {
         .pool()
         .clone();
         let local_store = LocalStore::new(pool.clone()).await.unwrap();
-        let tombstones = TombstoneStore::new(pool.clone()).await.unwrap();
-        let _projection = OpProjection::new(pool.clone(), tombstones).await.unwrap();
+        let _projection = OpProjection::new(pool.clone()).await.unwrap();
         if config.use_alias {
             local_store.device_id().await.unwrap().alias_named(name);
             local_store.agent_id().await.unwrap().alias_named(name);
@@ -105,8 +104,7 @@ impl TestNode {
         .pool()
         .clone();
         let local_store = LocalStore::new(pool.clone()).await.unwrap();
-        let tombstones = TombstoneStore::new(pool.clone()).await.unwrap();
-        let _projection = OpProjection::new(pool, tombstones).await.unwrap();
+        let _projection = OpProjection::new(pool).await.unwrap();
         local_store.device_id().await.unwrap().alias_named(name);
         local_store.agent_id().await.unwrap().alias_named(name);
         drop(local_store);
@@ -133,8 +131,7 @@ impl TestNode {
         .unwrap()
         .pool()
         .clone();
-        let tombstones = TombstoneStore::new(pool.clone()).await.unwrap();
-        let projection = OpProjection::new(pool.clone(), tombstones).await.unwrap();
+        let projection = OpProjection::new(pool.clone()).await.unwrap();
         projection.clear().await.unwrap();
         pool.close().await;
     }

@@ -18,8 +18,6 @@ use crate::{
     AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
 };
 
-use super::{TombstoneReason, TombstoneStore};
-
 // TODO: rework this not as migrations, but as a single schema that, when changed,
 //       triggers a re-projection of the db.
 const MIGRATIONS: &[&str] = &[
@@ -30,11 +28,16 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS agents (
         agent_id BLOB PRIMARY KEY,
         profile BLOB NULL,
-        profile_timestamp INTEGER NULL,
         blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
+    )",
+    "CREATE TABLE IF NOT EXISTS tombstones (
+        topic_id BLOB NOT NULL,
+        op_hash BLOB NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (topic_id, op_hash)
     )",
     "CREATE TABLE IF NOT EXISTS chat_log_heads (
         topic_id BLOB NOT NULL,
@@ -65,6 +68,7 @@ const PROJECTED_TABLES: &[&str] = &[
     "devices",
     "agents",
     "group_chats",
+    "tombstones",
     "chat_log_heads",
     "message_acks",
     "chat_lamports",
@@ -74,6 +78,37 @@ const PROJECTED_TABLES: &[&str] = &[
 /// hex-encoded so two snapshots diff readably.
 #[cfg(any(test, feature = "testing"))]
 pub type ProjectionSnapshot = BTreeMap<&'static str, BTreeSet<Vec<String>>>;
+
+/// Why an operation was tombstoned.
+//
+// TODO: ACID: The tombstone state for `DeletedForMe` is actually required for
+// full reconstruction of the OpProjection, because when operations are dropped,
+// there is nothing left to establish the edit chain and to know to transitively
+// tombstone new Edits that may come in. This means that purging the OpProjection
+// and replaying the operation streams is not sufficient to restore the OpProjection.
+// Possible solutions include:
+// - Storing EditMessage references on the Header as a custom extension (requires p2panda support)
+// - Persisting either edit chains or tombstones in a non-purgable store so that it can be used for projection reconstruction
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TombstoneReason {
+    DeletedForEveryone,
+    DeletedForMe,
+}
+
+impl TombstoneReason {
+    fn to_db(self) -> String {
+        serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .expect("TombstoneReason serializes to a string")
+    }
+
+    fn from_db(value: &str) -> anyhow::Result<Self> {
+        Ok(serde_json::from_value(serde_json::Value::String(
+            value.to_owned(),
+        ))?)
+    }
+}
 
 /// The [`OpProjection`] is a projection of the [`crate::stores::OpStore`] that is used to make streamlined queries.
 /// It only contains data already present in the operations, just reshaped to be more queryable.
@@ -85,24 +120,18 @@ pub type ProjectionSnapshot = BTreeMap<&'static str, BTreeSet<Vec<String>>>;
 /// - To achieve ACID compliance:
 ///   - every write must be idempotent in case operations need to be replayed.
 ///   - every write must be deterministic: e.g. a write cannot depend on [`crate::stores::LocalStore`] state.
-///   - every write must commute with the writes of other topics' operations,
-///     because a replay interleaves the topics differently.
-///
-/// Tombstones are the exception: [`Self::reduce`] records them, but in the
-/// [`TombstoneStore`], which a purge of the projection leaves alone.
 #[derive(Clone)]
 pub struct OpProjection {
     pool: SqlitePool,
-    tombstones: TombstoneStore,
 }
 
 impl OpProjection {
-    pub async fn new(pool: SqlitePool, tombstones: TombstoneStore) -> anyhow::Result<Self> {
+    pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
             sqlx::query(*sql).execute(&pool).await?;
         }
 
-        let projection = Self { pool, tombstones };
+        let projection = Self { pool };
         Ok(projection)
     }
 
@@ -335,6 +364,71 @@ impl OpProjection {
         Ok(rows.into_iter().map(|(id,)| TopicId::from(id)).collect())
     }
 
+    pub async fn is_tombstoned(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM tombstones WHERE topic_id = ? AND op_hash = ?")
+                .bind(topic.as_bytes().to_vec())
+                .bind(op_hash.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.is_some())
+    }
+
+    pub async fn tombstoned_hashes(&self, topic: TopicId) -> anyhow::Result<BTreeSet<Hash>> {
+        let rows: Vec<(Vec<u8>,)> =
+            sqlx::query_as("SELECT op_hash FROM tombstones WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(bytes,)| {
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
+                Ok(Hash::from_bytes(arr))
+            })
+            .collect()
+    }
+
+    /// The reason `op_hash` was tombstoned in `topic`, or `None` if it isn't
+    /// tombstoned.
+    pub async fn tombstone_reason(
+        &self,
+        topic: TopicId,
+        op_hash: Hash,
+    ) -> anyhow::Result<Option<TombstoneReason>> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT reason FROM tombstones WHERE topic_id = ? AND op_hash = ?")
+                .bind(topic.as_bytes().to_vec())
+                .bind(op_hash.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        row.map(|(reason,)| TombstoneReason::from_db(&reason))
+            .transpose()
+    }
+
+    /// Every tombstone in `topic`, paired with its reason. The frontend uses
+    /// this to drop delete-for-me messages (and their edits) from view while
+    /// keeping the delete-for-everyone placeholders.
+    pub async fn tombstones(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<HashMap<Hash, TombstoneReason>> {
+        let rows: Vec<(Vec<u8>, String)> =
+            sqlx::query_as("SELECT op_hash, reason FROM tombstones WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(bytes, reason)| {
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("tombstone op_hash is not 32 bytes"))?;
+                Ok((Hash::from_bytes(arr), TombstoneReason::from_db(&reason)?))
+            })
+            .collect()
+    }
+
     pub async fn reduce(
         &self,
         me: AgentId,
@@ -346,21 +440,9 @@ impl OpProjection {
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
         let topic = operation.topic();
-        let header = &operation.event.operation.header;
 
+        self.enforce_blocklist(operation).await?;
         Self::enforce_lamport_bound(operation.message())?;
-
-        // Recorded ahead of the payload's own validation, whose verdict can
-        // change once the operations it reads have lost their bodies.
-        if let Payload::Chat(chat_payload) = &payload {
-            if let ChatPayload::Message(message) = chat_payload {
-                self.record_chat_lamport(topic, message.lamport).await?;
-            }
-            if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
-                self.record_chat_log_head(topic, author, header.seq_num, header.hash())
-                    .await?;
-            }
-        }
 
         let event = match &payload {
             Payload::Chat(ChatPayload::MessageAck { acks }) => {
@@ -397,8 +479,7 @@ impl OpProjection {
                 self.validate_delete(topic, &operation.event.operation.header, hashes, node)
                     .await?;
                 for hash in hashes {
-                    self.tombstones
-                        .add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
+                    self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
                         .await?;
                 }
                 Some(SystemNotification::Tombstones {
@@ -415,15 +496,9 @@ impl OpProjection {
                 // arrive after the delete, and it keeps a delete-for-everyone's
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
-                if let Some(reason) = self
-                    .tombstones
-                    .tombstone_reason(topic.into(), *edit_hash)
-                    .await?
-                {
+                if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
                     let self_hash = operation.event.operation.header.hash();
-                    self.tombstones
-                        .add_tombstone(topic.into(), self_hash, reason)
-                        .await?;
+                    self.add_tombstone(topic.into(), self_hash, reason).await?;
                     Some(SystemNotification::Tombstones {
                         topic: topic.into(),
                         hashes: BTreeSet::from_iter([*edit_hash]),
@@ -443,14 +518,13 @@ impl OpProjection {
 
                 tracing::info!(me = ?me.aliased(), agent_id = ?agent_id.aliased(), ?profile, "save_profile");
 
-                self.save_profile(agent_id, profile.clone(), header.extensions.timestamp())
-                    .await?;
+                self.save_profile(agent_id, profile.clone()).await?;
                 None
             }
 
             Payload::DeviceGroup(p) => match p {
                 DeviceGroupPayload::AddContact { agent_id, .. } => {
-                    self.save_agent(*agent_id).await?;
+                    self.save_agent_mapping(author, *agent_id).await?;
                     None
                 }
                 DeviceGroupPayload::BlockAgent(agent_id) => {
@@ -481,8 +555,7 @@ impl OpProjection {
             })
             | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
-                self.save_profile(*agent_id, profile.clone(), header.extensions.timestamp())
-                    .await?;
+                self.save_profile(*agent_id, profile.clone()).await?;
                 Some(SystemNotification::AgentsIntroduced {
                     agents: BTreeMap::from([(author, *agent_id)]),
                 })
@@ -519,31 +592,44 @@ impl OpProjection {
             }
         };
 
+        if let Payload::Chat(chat_payload) = &payload {
+            if let ChatPayload::Message(message) = chat_payload {
+                self.record_chat_lamport(topic, message.lamport).await?;
+            }
+            if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
+                let header = &operation.event.operation.header;
+                self.record_chat_log_head(topic, author, header.seq_num, header.hash())
+                    .await?;
+            }
+        }
+
         Ok(event)
     }
 
     // === helpers === //
 
-    /// Whether the app must ignore `operation` because its author is blocked.
-    ///
-    /// [`Self::reduce`] folds it in regardless: whether the author was blocked
-    /// when it arrived is not something a replay can reproduce.
-    pub async fn is_blocked(
+    /// While the contact is blocked, invalidate all operations from them except for the necessary ones.
+    async fn enforce_blocklist(
         &self,
         operation: &ProcessedOperation<Payload>,
-    ) -> anyhow::Result<bool> {
-        let exempt = match operation.message() {
-            // Group control messages are necessary to maintain group chats.
-            Payload::GroupControl(_) => true,
-            // Group info messages are necessary to maintain group chats.
-            Payload::Chat(ChatPayload::GroupInfo(_)) => true,
-            _ => false,
+    ) -> Result<(), ProjectionError> {
+        let author = DeviceId::from(operation.author());
+        if self.is_author_blocked(&author).await? {
+            let allow = match operation.message() {
+                // Group control messages are necessary to maintain group chats.
+                Payload::GroupControl(_) => true,
+                // Group info messages are necessary to maintain group chats.
+                Payload::Chat(ChatPayload::GroupInfo(_)) => true,
+                // All other operations are invalid.
+                _ => false,
+            };
+            if !allow {
+                return Err(ProjectionError::invalid(format!(
+                    "author {author} is blocked"
+                )));
+            }
         };
-        if exempt {
-            return Ok(false);
-        }
-        self.is_author_blocked(&DeviceId::from(operation.author()))
-            .await
+        Ok(())
     }
 
     fn enforce_lamport_bound(payload: &Payload) -> Result<(), ProjectionError> {
@@ -573,7 +659,7 @@ impl OpProjection {
         // fail validation; skip silently instead.
         let mut already_applied = true;
         for h in payload.iter() {
-            if !self.tombstones.is_tombstoned(topic, *h).await? {
+            if !self.is_tombstoned(topic, *h).await? {
                 already_applied = false;
                 break;
             }
@@ -644,10 +730,6 @@ impl OpProjection {
             .execute(&self.pool)
             .await?;
 
-        self.save_agent(agent_id).await
-    }
-
-    async fn save_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
         sqlx::query("INSERT OR IGNORE INTO agents (agent_id) VALUES (?)")
             .bind(agent_id)
             .execute(&self.pool)
@@ -655,42 +737,25 @@ impl OpProjection {
         Ok(())
     }
 
-    /// Keep the profile of the newest operation, whichever order the
-    /// operations carrying one are processed in.
-    async fn save_profile(
-        &self,
-        agent_id: AgentId,
-        profile: Profile,
-        timestamp: p2panda_core::Timestamp,
-    ) -> anyhow::Result<()> {
+    async fn save_profile(&self, agent_id: AgentId, profile: Profile) -> anyhow::Result<()> {
         sqlx::query(
             "
-            INSERT INTO agents (agent_id, profile, profile_timestamp) VALUES (?, ?, ?)
-            ON CONFLICT(agent_id) DO UPDATE SET
-                profile = excluded.profile,
-                profile_timestamp = excluded.profile_timestamp
-            WHERE agents.profile_timestamp IS NULL
-                OR excluded.profile_timestamp > agents.profile_timestamp
-                OR (excluded.profile_timestamp = agents.profile_timestamp
-                    AND excluded.profile > agents.profile)
+            INSERT INTO agents (agent_id, profile) VALUES (?, ?) 
+            ON CONFLICT(agent_id) DO UPDATE SET profile = excluded.profile
         ",
         )
         .bind(agent_id)
         .bind(profile)
-        .bind(i64::try_from(u64::from(timestamp))?)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
     async fn block_agent(&self, agent_id: AgentId) -> anyhow::Result<()> {
-        sqlx::query(
-            "INSERT INTO agents (agent_id, blocked) VALUES (?, TRUE)
-             ON CONFLICT(agent_id) DO UPDATE SET blocked = TRUE",
-        )
-        .bind(agent_id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE agents SET blocked = TRUE WHERE agent_id = ?")
+            .bind(agent_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -726,8 +791,7 @@ impl OpProjection {
 
         let hashes = forward_edit_closure(&valid_ops, root);
         for hash in &hashes {
-            self.tombstones
-                .add_tombstone(chat_topic, *hash, TombstoneReason::DeletedForMe)
+            self.add_tombstone(chat_topic, *hash, TombstoneReason::DeletedForMe)
                 .await?;
         }
         Ok(hashes)
@@ -851,6 +915,36 @@ impl OpProjection {
         .await?;
         Ok(seq.map(|seq| SeqNum::try_from(seq)).transpose()?)
     }
+
+    /// Record an operation hash in the per-topic tombstone set with the reason
+    /// it was tombstoned.
+    ///
+    /// Reasons are first-write-wins, with one deliberate
+    /// exception: a `DeletedForMe` upgrades an existing `DeletedForEveryone` (so
+    /// a message I deleted for myself vanishes even when it's also deleted for
+    /// everyone). Every other combination keeps the existing reason.
+    async fn add_tombstone(
+        &self,
+        topic: TopicId,
+        op_hash: Hash,
+        reason: TombstoneReason,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO tombstones (topic_id, op_hash, reason) VALUES (?, ?, ?)
+             ON CONFLICT(topic_id, op_hash) DO UPDATE SET reason = excluded.reason
+             WHERE excluded.reason = ? AND tombstones.reason = ?",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(op_hash.as_bytes().to_vec())
+        .bind(reason.to_db())
+        // Only the specific DeletedForEveryone -> DeletedForMe upgrade replaces
+        // an existing reason.
+        .bind(TombstoneReason::DeletedForMe.to_db())
+        .bind(TombstoneReason::DeletedForEveryone.to_db())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -929,8 +1023,7 @@ mod tests {
         // Keep the tempdir alive for the duration of the pool by leaking it; the
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
-        let tombstones = TombstoneStore::new(pool.clone()).await.unwrap();
-        OpProjection::new(pool, tombstones).await.unwrap()
+        OpProjection::new(pool).await.unwrap()
     }
 
     #[test]
@@ -1002,49 +1095,6 @@ mod tests {
         db.save_agent_mapping(device(11), agent_a).await.unwrap();
 
         assert!(db.is_author_blocked(&device(11)).await.unwrap());
-    }
-
-    /// Blocking an agent no operation has introduced yet still takes hold
-    /// once its device shows up.
-    #[tokio::test]
-    async fn test_block_precedes_the_agent_being_known() {
-        let db = projection().await;
-        let agent_a = agent(1);
-
-        db.block_agent(agent_a).await.unwrap();
-        db.save_agent_mapping(device(10), agent_a).await.unwrap();
-
-        assert!(db.is_author_blocked(&device(10)).await.unwrap());
-    }
-
-    /// The newest profile is kept whichever order the profiles arrive in.
-    #[tokio::test]
-    async fn test_profile_of_the_newest_operation_wins() {
-        let db = projection().await;
-        let agent_a = agent(1);
-        let profile = |name: &str| Profile {
-            name: name.into(),
-            surname: None,
-            avatar: None,
-            about: None,
-        };
-
-        db.save_agent(agent_a).await.unwrap();
-        db.save_profile(agent_a, profile("new"), 20.into())
-            .await
-            .unwrap();
-        db.save_profile(agent_a, profile("old"), 10.into())
-            .await
-            .unwrap();
-        assert_eq!(db.get_profile(agent_a).await.unwrap(), Some(profile("new")));
-
-        db.save_profile(agent_a, profile("newer"), 30.into())
-            .await
-            .unwrap();
-        assert_eq!(
-            db.get_profile(agent_a).await.unwrap(),
-            Some(profile("newer"))
-        );
     }
 
     /// `all_contact_agent_ids` returns one entry per agent, even when an agent
@@ -1233,6 +1283,102 @@ mod tests {
         assert_eq!(
             delivered,
             maplit::btreemap![author_a => newest_a, author_b => head_b]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tombstones_per_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_tombstones.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
+        let db = OpProjection::new(pool.clone()).await.unwrap();
+
+        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
+        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
+        let hash1 = Hash::digest(b"op1");
+        let hash2 = Hash::digest(b"op2");
+
+        assert!(!db.is_tombstoned(topic_a, hash1).await.unwrap());
+
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        db.add_tombstone(topic_a, hash2, TombstoneReason::DeletedForMe)
+            .await
+            .unwrap();
+        db.add_tombstone(topic_b, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        // Adding the same hash again is idempotent.
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+
+        assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert!(db.is_tombstoned(topic_a, hash2).await.unwrap());
+        // The reason is recorded per tombstone.
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForEveryone)
+        );
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash2).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
+        // Tombstones are scoped per-topic: hash2 in topic_a does not leak into topic_b.
+        assert!(db.is_tombstoned(topic_b, hash1).await.unwrap());
+        assert!(!db.is_tombstoned(topic_b, hash2).await.unwrap());
+        assert_eq!(db.tombstone_reason(topic_b, hash2).await.unwrap(), None);
+
+        // Delete-for-me always wins: it upgrades an existing delete-for-everyone,
+        // and a later delete-for-everyone never downgrades it back.
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForMe)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
+        db.add_tombstone(topic_a, hash1, TombstoneReason::DeletedForEveryone)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.tombstone_reason(topic_a, hash1).await.unwrap(),
+            Some(TombstoneReason::DeletedForMe)
+        );
+
+        assert_eq!(
+            db.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
+        );
+        assert_eq!(
+            db.tombstoned_hashes(topic_b).await.unwrap(),
+            maplit::btreeset![hash1]
+        );
+
+        // Tombstones persist across reopening the database.
+        drop(db);
+        pool.close().await;
+
+        let pool = create_sqlite_pool(
+            dir.path().join("test_tombstones.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
+        let db = OpProjection::new(pool).await.unwrap();
+        assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
+        assert_eq!(
+            db.tombstoned_hashes(topic_a).await.unwrap(),
+            maplit::btreeset![hash1, hash2]
         );
     }
 }

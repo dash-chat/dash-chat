@@ -45,7 +45,7 @@ use crate::chat::{
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore, TombstoneStore};
+use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
@@ -266,7 +266,6 @@ pub struct Node {
 
     pub local_store: LocalStore,
     pub projection: OpProjection,
-    pub tombstones: TombstoneStore,
     /// Held only so the gate keeps watching these pools for as long as the node lives.
     _local_pool: sqlite_gate::GatedPool,
     _op_store_pool: sqlite_gate::GatedPool,
@@ -311,8 +310,7 @@ impl Node {
             crate::stores::create_sqlite_pool(filesystem.local_store_path(), &config.sqlite_gate)
                 .await?;
         let local_store = LocalStore::new(local_pool.pool().clone()).await?;
-        let tombstones = TombstoneStore::new(local_pool.pool().clone()).await?;
-        let projection = OpProjection::new(local_pool.pool().clone(), tombstones.clone()).await?;
+        let projection = OpProjection::new(local_pool.pool().clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
@@ -320,7 +318,6 @@ impl Node {
             local_pool,
             local_store,
             projection,
-            tombstones,
             node_keys,
             config,
             notification_tx,
@@ -335,7 +332,6 @@ impl Node {
         local_pool: sqlite_gate::GatedPool,
         local_store: LocalStore,
         projection: OpProjection,
-        tombstones: TombstoneStore,
         node_keys: NodeKeys,
         config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
@@ -485,7 +481,6 @@ impl Node {
             filesystem,
             local_store,
             projection,
-            tombstones,
             _local_pool: local_pool,
             _op_store_pool: op_store_pool,
             group_store,
@@ -1528,7 +1523,7 @@ impl Node {
         &self,
         chat_id: impl Into<ChatId>,
     ) -> anyhow::Result<HashMap<Hash, crate::stores::TombstoneReason>> {
-        self.tombstones.tombstones(chat_id.into().into()).await
+        self.projection.tombstones(chat_id.into().into()).await
     }
 
     /// Publish a delete without validating it. For testing the receiving-side
@@ -2233,10 +2228,9 @@ impl Node {
         Ok(())
     }
 
-    /// Block a contact. While blocked, the operations the contact's devices
-    /// author are folded into the projection but otherwise ignored (except
-    /// those needed to maintain group chats, and deletes of their own
-    /// messages), so their messages never reach us.
+    /// Block a contact. While blocked, all operations authored by the contact's
+    /// devices are invalidated by the projection layer (except those needed to
+    /// maintain group chats), so their messages never reach us.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn block_contact(&self, agent_id: AgentId) -> Result<(), Error> {
         tracing::debug!("blocking contact: {:?}", agent_id.aliased());
