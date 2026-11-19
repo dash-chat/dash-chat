@@ -270,11 +270,25 @@ jobs:
       - name: build mailbox-local-server
         run: nix run --inputs-from . nixpkgs#just -- mailbox ${{ matrix.recipe }}
 
+      # Run inside target/ so the checksum file names the bare asset, which is what `sha256sum -c` looks for next to it
+      - name: Write the binary's sha256 checksum
+        working-directory: target
+        run: sha256sum ${{ matrix.asset }} > ${{ matrix.asset }}.sha256
+
       - name: Upload mailbox-local-server binary to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: target/${{ matrix.asset }}
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
+          draft: true
+          overwrite: true
+
+      - name: Upload mailbox-local-server checksum to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.asset }}.sha256
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
           overwrite: true
