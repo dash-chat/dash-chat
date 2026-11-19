@@ -92,7 +92,7 @@
 				<BlobImage
 					item={thumbnail}
 					alt={m.photo()}
-					imgClass="h-full w-full object-cover"
+					imgClass="absolute inset-0 h-full w-full object-cover"
 				/>
 			</span>
 		{/if}
