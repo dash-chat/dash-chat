@@ -30,13 +30,6 @@ const MIGRATIONS: &[&str] = &[
         profile BLOB NULL,
         blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
-        topic_id BLOB PRIMARY KEY
-    )",
-    "CREATE TABLE IF NOT EXISTS active_inboxes (
-        topic_id BLOB NOT NULL PRIMARY KEY,
-        expires_at_nanos INTEGER NOT NULL
-    )",
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
     )",
@@ -1031,6 +1024,19 @@ mod tests {
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
         OpProjection::new(pool).await.unwrap()
+    }
+
+    #[test]
+    fn test_projected_tables_match_migrations() {
+        let created: Vec<&str> = MIGRATIONS
+            .iter()
+            .map(|sql| {
+                sql.strip_prefix("CREATE TABLE IF NOT EXISTS ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .expect("migration creates a table")
+            })
+            .collect();
+        assert_eq!(created, PROJECTED_TABLES);
     }
 
     /// Blocking an agent blocks every device that maps to it, and unblocking
