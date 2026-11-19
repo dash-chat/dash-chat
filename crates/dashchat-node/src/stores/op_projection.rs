@@ -69,6 +69,23 @@ const MIGRATIONS: &[&str] = &[
 
 const MAX_LAMPORT: u64 = (1 << 53) - 1;
 
+/// The tables [`OpProjection::reduce`] writes to.
+#[cfg(any(test, feature = "testing"))]
+const PROJECTED_TABLES: &[&str] = &[
+    "devices",
+    "agents",
+    "group_chats",
+    "tombstones",
+    "chat_log_heads",
+    "message_acks",
+    "chat_lamports",
+];
+
+/// Every row of every projected table, keyed by table name. Blobs are
+/// hex-encoded so two snapshots diff readably.
+#[cfg(any(test, feature = "testing"))]
+pub type ProjectionSnapshot = BTreeMap<&'static str, BTreeSet<Vec<String>>>;
+
 /// Why an operation was tombstoned.
 //
 // TODO: ACID: The tombstone state for `DeletedForMe` is actually required for
@@ -123,6 +140,33 @@ impl OpProjection {
 
         let projection = Self { pool };
         Ok(projection)
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn snapshot(&self) -> anyhow::Result<ProjectionSnapshot> {
+        let mut snapshot = ProjectionSnapshot::new();
+        for table in PROJECTED_TABLES {
+            let rows = sqlx::query(sqlx::AssertSqlSafe(format!("SELECT * FROM {table}")))
+                .fetch_all(&self.pool)
+                .await?;
+            let rows = rows
+                .iter()
+                .map(snapshot_row)
+                .collect::<anyhow::Result<_>>()?;
+            snapshot.insert(*table, rows);
+        }
+        Ok(snapshot)
+    }
+
+    /// Delete everything [`Self::reduce`] has written.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn clear(&self) -> anyhow::Result<()> {
+        for table in PROJECTED_TABLES {
+            sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
@@ -908,6 +952,23 @@ impl OpProjection {
         .await?;
         Ok(())
     }
+}
+
+#[cfg(any(test, feature = "testing"))]
+fn snapshot_row(row: &sqlx::sqlite::SqliteRow) -> anyhow::Result<Vec<String>> {
+    use sqlx::{Row, TypeInfo, ValueRef};
+
+    (0..row.len())
+        .map(|column| {
+            let type_name = row.try_get_raw(column)?.type_info().name().to_owned();
+            Ok(match type_name.as_str() {
+                "NULL" => "NULL".to_owned(),
+                "BLOB" => hex::encode(row.try_get::<Vec<u8>, _>(column)?),
+                "TEXT" => row.try_get::<String, _>(column)?,
+                _ => row.try_get::<i64, _>(column)?.to_string(),
+            })
+        })
+        .collect()
 }
 
 fn hash_from_db(bytes: Vec<u8>) -> anyhow::Result<Hash> {
