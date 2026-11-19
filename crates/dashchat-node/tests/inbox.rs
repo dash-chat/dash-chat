@@ -1,3 +1,4 @@
+use dashchat_node::topic::application_log_id;
 use dashchat_node::{testing::*, *};
 
 const TRACING_FILTER: [&str; 5] = [
@@ -415,6 +416,53 @@ async fn test_direct_chat_takes_place_in_the_requesters_space() {
     assert!(carol.get_messages(bobbi_chat).await.unwrap().is_empty());
 }
 
+/// The profile of whoever accepts reaches the space the requester created.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acceptor_profile_reaches_the_requesters_space() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let poll = PollConfig::seconds(20);
+    let mailbox = mailbox_client::backends::mem::MemMailbox::<mailbox::MailboxOperation>::new();
+    let alice = TestNode::new(mailbox_only_config(), "alice")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+    let bobbi = TestNode::new(mailbox_only_config(), "bobbi")
+        .await
+        .add_mailbox_client(mailbox.client())
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    let AddContactResult::NewRequest(chat) = bobbi.add_contact(qr).await.unwrap() else {
+        panic!("bobbi's scan must send a request");
+    };
+    poll.wait_for(|| async {
+        alice
+            .accept_contact(bobbi.agent_id())
+            .await
+            .map_err(|err| format!("alice cannot accept yet: {err}"))
+    })
+    .await
+    .unwrap();
+
+    poll.wait_for(|| async {
+        let published = bobbi
+            .op_store
+            .get_log(&alice.device_id(), &application_log_id(chat.into()), None)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter_map(|op| Payload::try_from_body(&op.body.unwrap()?).ok())
+            .filter(|payload| matches!(payload, Payload::Chat(ChatPayload::SetProfile(_))))
+            .count();
+        (published == 1).then_some(()).ok_or(format!(
+            "bobbi holds {published} profiles of alice in the chat"
+        ))
+    })
+    .await
+    .unwrap();
+}
+
 /// Alice and Bobbi scan each other's codes before either request arrives, so
 /// each created a space for the chat. Both must end up talking in the same one.
 #[tokio::test(flavor = "multi_thread")]
@@ -461,6 +509,12 @@ async fn test_crossed_requests_settle_on_one_direct_chat_space() {
 
     let chat = alice.direct_chat_with(&bobbi).await;
     assert_eq!(chat, bobbi.direct_chat_with(&alice).await);
+    let requested_by_lower_device = if alice.device_id() < bobbi.device_id() {
+        alice_chat
+    } else {
+        bobbi_chat
+    };
+    assert_eq!(chat, requested_by_lower_device);
 
     poll.wait_for(|| async {
         alice

@@ -50,10 +50,6 @@ export class MockContactsClient implements IContactsClient {
 		);
 	}
 
-	async directChatId(devicePubkey: DeviceId): Promise<string> {
-		return chatIdForDevices(this.deviceId, devicePubkey);
-	}
-
 	async setProfile(profile: Profile): Promise<void> {
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',

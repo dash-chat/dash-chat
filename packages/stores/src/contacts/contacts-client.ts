@@ -43,9 +43,6 @@ export interface IContactsClient {
 		handler: (agentId: AgentId | undefined) => void,
 	): UnsubscribeFunction;
 
-	// The direct-chat topic id shared with the peer device.
-	directChatId(devicePubkey: DeviceId): Promise<ChatId>;
-
 	// Sets the profile for this user
 	setProfile(profile: Profile): Promise<void>;
 
@@ -129,10 +126,6 @@ export class ContactsClient implements IContactsClient {
 		return onSystemEvent('ProfileChanged', event =>
 			handler(event.payload.agent_id ?? undefined),
 		);
-	}
-
-	directChatId(devicePubkey: DeviceId): Promise<ChatId> {
-		return invokeAfterSetup('direct_chat_id', { peer: devicePubkey });
 	}
 
 	async setProfile(profile: Profile): Promise<void> {

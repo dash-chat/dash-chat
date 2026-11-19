@@ -173,25 +173,6 @@ impl AgentId {
     }
 }
 
-#[deprecated = "XXX: represents our current false equivalence between DeviceId and AgentId. This must be removed and cleaned up before device groups can work."]
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    From,
-    Into,
-    Deref,
-)]
-pub struct FakeAgentId(DeviceId);
-
 // TODO: when device groups are implemented, this switches to AgentId.
 pub type ChatMember = DeviceId;
 

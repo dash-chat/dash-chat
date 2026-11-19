@@ -40,7 +40,7 @@ use tokio::sync::{Mutex, mpsc};
 
 use mailbox_client::MailboxesConfig;
 use mailboxes_manager::Mailboxes;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 use crate::NodeBlobSource;
 use crate::OnlinePeers;
@@ -55,8 +55,8 @@ use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore, ReadOperation};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
-    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
-    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
+    DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, MediaBundle, MediaMetadata,
+    OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
 };
 use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
 use tracing::error;
@@ -292,7 +292,8 @@ pub struct Node {
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    direct_chat_admission_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    direct_chat_tasks: Arc<Mutex<JoinSet<()>>>,
+    space_members_changed: Arc<tokio::sync::Notify>,
     direct_chat_admission: Arc<Mutex<()>>,
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
@@ -528,7 +529,8 @@ impl Node {
             network_change_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
-            direct_chat_admission_handles: Default::default(),
+            direct_chat_tasks: Default::default(),
+            space_members_changed: Default::default(),
             direct_chat_admission: Default::default(),
             device_group_topic,
             dirty_ack_topics: Default::default(),
@@ -665,10 +667,6 @@ impl Node {
 
     pub fn device_id(&self) -> DeviceId {
         self.node_keys.device_id()
-    }
-
-    pub fn fake_agent_id(&self) -> FakeAgentId {
-        self.device_id().into()
     }
 
     pub fn blob_sync_optional(&self) -> Option<&crate::blob_sync::BlobSync> {
@@ -875,10 +873,14 @@ impl Node {
         peer: DeviceId,
     ) -> anyhow::Result<Option<DirectChatId>> {
         let spaces = self.projection.direct_chat_spaces(peer).await?;
-        Ok(spaces
+        let requested = spaces
             .into_iter()
             .find(|(_, requester)| *requester == self.device_id())
-            .map(|(space, _)| space))
+            .map(|(space, _)| space);
+        match requested {
+            Some(space) => Ok(Some(space)),
+            None => self.local_store.created_direct_chat_space(peer).await,
+        }
     }
 
     /// Create the space for a direct chat we are requesting with `peer`, with
@@ -886,11 +888,9 @@ impl Node {
     /// reached us.
     async fn create_direct_chat_space(&self, peer: DeviceId) -> anyhow::Result<DirectChatId> {
         let (chat_id, _) = self.create_space(vec![]).await?;
-        // Recorded now rather than when our request is processed: the chat is
-        // known as soon as we return, and a request that fails to publish is
-        // sent again in the same space.
-        self.projection
-            .register_direct_chat_space(self.device_id(), self.device_id(), peer, chat_id)
+        // A request that fails to publish is sent again in the same space.
+        self.local_store
+            .set_created_direct_chat_space(peer, chat_id)
             .await?;
         self.publish_my_profile_to(chat_id).await?;
         tracing::info!(chat_id = ?chat_id.aliased(), "created direct chat space");
@@ -928,12 +928,51 @@ impl Node {
     /// bundle of someone whose code we scanned only arrives with their answer.
     pub(crate) async fn spawn_direct_chat_admission(&self, peer: DeviceId, chat_id: DirectChatId) {
         let node = self.clone();
-        let handle = tokio::spawn(async move {
+        self.spawn_direct_chat_task(async move {
             if let Err(err) = node.admit_to_direct_chat(peer, chat_id).await {
                 tracing::warn!(?err, peer = ?peer.aliased(), "failed to admit to direct chat");
             }
-        });
-        self.direct_chat_admission_handles.lock().await.push(handle);
+        })
+        .await;
+    }
+
+    async fn spawn_direct_chat_task(&self, task: impl Future<Output = ()> + Send + 'static) {
+        let mut tasks = self.direct_chat_tasks.lock().await;
+        while tasks.try_join_next().is_some() {}
+        tasks.spawn(task);
+    }
+
+    /// Wait until the creator of the space `chat_id` has added us to it.
+    async fn admitted_to_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        loop {
+            let changed = self.space_members_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            let members = self.space_members(chat_id.into()).await?;
+            if members
+                .iter()
+                .any(|(member, _)| *member == self.device_id())
+            {
+                return Ok(());
+            }
+            changed.await;
+        }
+    }
+
+    /// Push our profile to a direct chat space someone else created, once
+    /// they have admitted us: until then we cannot publish in it.
+    async fn spawn_profile_push_once_admitted(&self, chat_id: DirectChatId) {
+        let node = self.clone();
+        self.spawn_direct_chat_task(async move {
+            let pushed = async {
+                node.admitted_to_space(chat_id).await?;
+                node.publish_my_profile_to(chat_id).await
+            };
+            if let Err(err) = pushed.await {
+                tracing::warn!(?err, "failed to push my profile to the new direct chat");
+            }
+        })
+        .await;
     }
 
     pub async fn create_chat_group(
@@ -1870,9 +1909,7 @@ impl Node {
             let _ = handle.await;
         }
 
-        for handle in self.direct_chat_admission_handles.lock().await.drain(..) {
-            handle.abort();
-        }
+        self.direct_chat_tasks.lock().await.shutdown().await;
 
         // While the network is still up, so peers see us leave instead of timing us out.
         self.online_peers.leave_all().await;
@@ -2125,11 +2162,27 @@ impl Node {
                 .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?,
         };
 
+        self.publish(
+            inbox_topic.topic,
+            Payload::Inbox(InboxPayload::ContactRequest {
+                profile,
+                keybundle,
+                agent_id: self.agent_id(),
+                reply_topic: reply_inbox.topic.clone(),
+                recipient: contact.device_pubkey,
+                direct_chat_id: direct_chat_topic_id,
+            }),
+            Some(&format!(
+                "add_contact/contact_request({:?})",
+                contact.device_pubkey.aliased()
+            )),
+        )
+        .await
+        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
         // Our request lives only on this (possibly shared) inbox, so we keep
         // serving it across restarts — but only until the owner accepts or the
         // first restart after the code expires, not for good like the owner does.
-        // Recorded before publishing: processing our own request looks up
-        // whose inbox it is on.
         // TODO: make this more private. Rejoining the inbox's gossip overlay
         // shows us to (and syncs us the requests of) everyone else who scanned
         // the same QR; sync the topic only with its owner's node instead, and
@@ -2138,31 +2191,6 @@ impl Node {
             .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
-
-        let published = self
-            .publish(
-                inbox_topic.topic,
-                Payload::Inbox(InboxPayload::ContactRequest {
-                    profile,
-                    keybundle,
-                    agent_id: self.agent_id(),
-                    reply_topic: reply_inbox.topic.clone(),
-                    direct_chat_id: direct_chat_topic_id,
-                }),
-                Some(&format!(
-                    "add_contact/contact_request({:?})",
-                    contact.device_pubkey.aliased()
-                )),
-            )
-            .await;
-        if let Err(err) = published {
-            // Or the next scan would take the request as already sent.
-            self.local_store
-                .remove_requested_inbox_topics_of(contact.device_pubkey)
-                .await
-                .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
-            return Err(Error::AuthorOperation(err.to_string()).into());
-        }
 
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
@@ -2262,12 +2290,8 @@ impl Node {
         self.join_space(direct_chat_topic)
             .await
             .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?;
-        let node = self.clone();
-        tokio::spawn(async move {
-            if let Err(err) = node.publish_my_profile_to(direct_chat_topic).await {
-                tracing::warn!(?err, "failed to push my profile to the new direct chat");
-            }
-        });
+        self.spawn_profile_push_once_admitted(direct_chat_topic)
+            .await;
 
         // Messages the requester sent before acceptance were processed but
         // deliberately not acked; now that they are a contact, cover them.
@@ -3249,6 +3273,7 @@ mod forged_contact_request_tests {
                     keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: bobbi.agent_id(),
                     reply_topic: Topic::inbox(),
+                    recipient: alice.device_id(),
                     direct_chat_id: Topic::random(),
                 }),
                 None,
@@ -3305,6 +3330,7 @@ mod forged_contact_request_tests {
                     keybundle: mallory.keybundle().await.unwrap(),
                     agent_id: mallory.agent_id(),
                     reply_topic: alice_inbox.topic,
+                    recipient: alice.device_id(),
                     direct_chat_id: Topic::random(),
                 }),
                 None,

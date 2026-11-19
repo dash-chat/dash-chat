@@ -89,6 +89,10 @@ const MIGRATIONS: &[&str] = &[
         hash BLOB PRIMARY KEY,
         topic_id BLOB NOT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS created_direct_chat_spaces (
+        peer_device_id BLOB PRIMARY KEY,
+        space_id BLOB NOT NULL
+    )",
 ];
 
 fn bytes32(bytes: Vec<u8>, column: &str) -> anyhow::Result<[u8; 32]> {
@@ -284,6 +288,41 @@ impl LocalStore {
     }
 
     /// Inbox topics this node created and advertises via its QR code.
+    /// The space we created for a direct chat with `peer`. Kept here because
+    /// the projection only learns of it from our contact request, which may
+    /// not have been published.
+    pub async fn created_direct_chat_space(
+        &self,
+        peer: DeviceId,
+    ) -> anyhow::Result<Option<ChatId>> {
+        let row: Option<(Vec<u8>,)> = sqlx::query_as(
+            "SELECT space_id FROM created_direct_chat_spaces WHERE peer_device_id = ?",
+        )
+        .bind(peer)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some((bytes,)) = row else {
+            return Ok(None);
+        };
+        let arr = bytes32(bytes, "created_direct_chat_spaces.space_id")?;
+        Ok(Some(ChatId::from_topic_id(TopicId::from(arr))))
+    }
+
+    pub async fn set_created_direct_chat_space(
+        &self,
+        peer: DeviceId,
+        space: ChatId,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT OR REPLACE INTO created_direct_chat_spaces (peer_device_id, space_id) VALUES (?, ?)",
+        )
+        .bind(peer)
+        .bind(space.to_vec())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
         self.get_inbox_topics(InboxRole::Advertised).await
     }

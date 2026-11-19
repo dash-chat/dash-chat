@@ -465,10 +465,6 @@ impl OpProjection {
     pub async fn reduce(
         &self,
         me: AgentId,
-        my_device: DeviceId,
-        // The device whose contact code advertises the inbox the operation is
-        // on, when it is on one we know.
-        inbox_owner: Option<DeviceId>,
         operation: &ProcessedOperation<Payload>,
         // XXX: once refined operation logs (e.g. `all_valid_ops`) are moved
         //      to the projection layer, this Node injection must be removed.
@@ -615,31 +611,30 @@ impl OpProjection {
             // ACID: TODO: it's not correct to unconditionally save contact info here.
             //             This needs to be limited to only accepted requests.
             Payload::Inbox(InboxPayload::ContactRequest {
-                agent_id, profile, ..
-            })
-            | Payload::Inbox(InboxPayload::ContactRequestAccept {
-                agent_id, profile, ..
+                agent_id,
+                profile,
+                recipient,
+                direct_chat_id,
+                ..
             }) => {
-                if let (
-                    Payload::Inbox(InboxPayload::ContactRequest { direct_chat_id, .. }),
-                    Some(inbox_owner),
-                ) = (&payload, inbox_owner)
-                {
-                    self.register_direct_chat_space(
-                        my_device,
-                        author,
-                        inbox_owner,
-                        *direct_chat_id,
-                    )
-                    .await?;
-                }
-                self.save_agent_mapping(author, *agent_id).await?;
-                self.save_profile(author, profile.clone(), operation_timestamp(operation))
-                    .await?;
-                Some(SystemNotification::AgentsIntroduced {
-                    agents: BTreeMap::from([(author, *agent_id)]),
-                })
+                self.register_direct_chat_space(
+                    node.device_id(),
+                    author,
+                    *recipient,
+                    *direct_chat_id,
+                )
+                .await?;
+                Some(
+                    self.introduce_agent(author, *agent_id, profile, operation)
+                        .await?,
+                )
             }
+            Payload::Inbox(InboxPayload::ContactRequestAccept {
+                agent_id, profile, ..
+            }) => Some(
+                self.introduce_agent(author, *agent_id, profile, operation)
+                    .await?,
+            ),
 
             _ => {
                 // Nothing to do.
@@ -794,19 +789,18 @@ impl OpProjection {
     // === setters === //
 
     /// Record the space a contact request names for the direct chat between its
-    /// requester and the owner of the inbox it was sent to, when we are one of
-    /// the two. A space already known as something else is not one a request
-    /// may claim.
-    pub(crate) async fn register_direct_chat_space(
+    /// requester and recipient, when we are one of the two. A space already
+    /// known as something else is not one a request may claim.
+    async fn register_direct_chat_space(
         &self,
         my_device: DeviceId,
         requester: DeviceId,
-        inbox_owner: DeviceId,
+        recipient: DeviceId,
         space: ChatId,
     ) -> anyhow::Result<()> {
         let peer = if requester == my_device {
-            inbox_owner
-        } else if inbox_owner == my_device {
+            recipient
+        } else if recipient == my_device {
             requester
         } else {
             return Ok(());
@@ -831,6 +825,21 @@ impl OpProjection {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn introduce_agent(
+        &self,
+        device_id: DeviceId,
+        agent_id: AgentId,
+        profile: &Profile,
+        operation: &ProcessedOperation<Payload>,
+    ) -> anyhow::Result<SystemNotification> {
+        self.save_agent_mapping(device_id, agent_id).await?;
+        self.save_profile(device_id, profile.clone(), operation_timestamp(operation))
+            .await?;
+        Ok(SystemNotification::AgentsIntroduced {
+            agents: BTreeMap::from([(device_id, agent_id)]),
+        })
     }
 
     async fn save_agent_mapping(

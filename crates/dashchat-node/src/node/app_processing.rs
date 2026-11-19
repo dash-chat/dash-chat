@@ -137,24 +137,6 @@ impl Node {
         Ok((chat_id, space))
     }
 
-    /// The device whose contact code advertises the inbox `topic`: us, or
-    /// someone whose code we scanned. An inbox topic is derived from its
-    /// owner's device id, so whoever holds the code knows who it is for.
-    async fn inbox_owner(&self, topic: TopicId) -> anyhow::Result<Option<DeviceId>> {
-        let advertised = self.local_store.get_advertised_inbox_topics().await?;
-        if advertised.iter().any(|inbox| *inbox.topic == topic) {
-            return Ok(Some(self.device_id()));
-        }
-        let requested = self
-            .local_store
-            .get_requested_inbox_topics_with_owner()
-            .await?;
-        Ok(requested
-            .into_iter()
-            .find(|(inbox, _)| *inbox.topic == topic)
-            .map(|(_, owner)| owner))
-    }
-
     pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
         if !self.config.enable_p2p {
             return Ok(());
@@ -260,6 +242,7 @@ impl Node {
                             node.notify(SystemNotification::Membership { topic: topic.into(), header }.into());
                         }
                         Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
+                            node.space_members_changed.notify_waiters();
                             if let Err(err) = node.notify_group_members_changed(topic).await {
                                 warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
                             }
@@ -492,22 +475,11 @@ impl Node {
         let topic = operation.topic();
         let header = operation.processed().header();
 
-        let inbox_owner = match operation.message() {
-            Payload::Inbox(_) => self.inbox_owner(topic).await?,
-            _ => None,
-        };
-
         // If an operation is invalidated by the projection layer, we don't process it,
         // but still allow it to be acknowledged as processed.
         match self
             .projection
-            .reduce(
-                self.agent_id(),
-                self.device_id(),
-                inbox_owner,
-                operation,
-                BadUseOfNode::from(self.clone()),
-            )
+            .reduce(self.agent_id(), operation, BadUseOfNode::from(self.clone()))
             .await
         {
             // Continue processing.

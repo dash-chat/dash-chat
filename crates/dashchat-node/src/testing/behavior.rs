@@ -51,7 +51,8 @@ impl Behavior {
     async fn settle_direct_chat(&self, other: &TestNode) -> anyhow::Result<()> {
         let chat: TopicId = self.node.direct_chat_with(other).await.into();
         let nodes = [&self.node, other];
-        // A test may hold a node's acks back on purpose.
+        // A test may hold a node's acks back on purpose, with a debounce far
+        // above the default. 15s leaves room for a default one and the sync.
         let acks_promptly = |node: &TestNode| {
             node.config.enable_message_acks
                 && node.config.message_ack_debounce < Duration::from_secs(5)
