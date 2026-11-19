@@ -398,6 +398,7 @@ async function buildGroupControlEvent(
 	if ('Promote' in action) {
 		return {
 			kind: 'group_member_promoted',
+			isMine: targetsMe,
 			promotedByMe: actorIsMe,
 			memberName,
 			adminName,

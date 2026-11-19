@@ -56,8 +56,9 @@
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isMobile } from '$lib/utils/environment';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import PeerActiveOverP2p from '$lib/components/connection/PeerActiveOverP2p.svelte';
 	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
@@ -72,7 +73,6 @@
 	} from '$lib/components/messages/message-helpers';
 	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
 	import { useDeviceId } from '$lib/stores/my-device-id';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
@@ -280,15 +280,9 @@
 	const theme = $derived(useTheme());
 </script>
 
-{#snippet connectionStatus()}
-	<div class="grid size-11 shrink-0 place-items-center">
-		<ConnectionStatusIndicator {chatId} />
-	</div>
-{/snippet}
-
 <div
 	bind:this={parentDivEl}
-	class="absolute inset-0"
+	class="chat-page absolute inset-0"
 	data-testid="direct-chat-page"
 >
 	{#await $myDeviceId then myDeviceId}
@@ -303,6 +297,7 @@
 						{#if searchMode}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 w-full min-w-0"
 								leftClass="shrink-0"
 								centerTitle={false}
@@ -328,12 +323,12 @@
 						{:else}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 min-w-0 flex-1"
 								leftClass={theme === 'ios' && !isWideScreen.value
 									? 'shrink-0 me-4'
 									: 'shrink-0'}
 								centerTitle={false}
-								right={theme === 'ios' ? connectionStatus : undefined}
 							>
 								{#snippet left()}
 									{#if !isWideScreen.value}
@@ -355,7 +350,11 @@
 													{profile}
 													blocked={isBlocked}
 													nameTestId="direct-chat-peer-name"
-												/>
+												>
+													{#snippet subtitle()}
+														<PeerActiveOverP2p {chatId} />
+													{/snippet}
+												</AvatarWithName>
 											{/await}
 										{:else}
 											{#await $peerName then peerName}
@@ -363,7 +362,7 @@
 													class="flex w-full min-w-0 flex-row items-center gap-4"
 												>
 													<span class="shrink-0">
-														<Avatar waitingForProfile size="2.25rem" />
+														<PeerAvatar size="2.25rem" />
 													</span>
 													<span
 														class="flex-1 min-w-0 truncate {peerName
@@ -378,10 +377,6 @@
 										{/if}
 									</Link>
 								{/snippet}
-
-								{#if theme === 'material'}
-									<div class="me-2">{@render connectionStatus()}</div>
-								{/if}
 							</Navbar>
 						{/if}
 					{/snippet}
@@ -426,9 +421,8 @@
 													}}
 													onclick={() => (showPeerProfile = true)}
 												>
-													<Avatar
-														image={profile.avatar}
-														initials={profile.name.slice(0, 2)}
+													<PeerAvatar
+														{profile}
 														size={80}
 														testId="direct-chat-peer-avatar"
 													/>
@@ -445,8 +439,7 @@
 												</Link>
 											{:else}
 												<div class="column gap-2 items-center">
-													<Avatar
-														waitingForProfile
+													<PeerAvatar
 														size={80}
 														testId="direct-chat-peer-avatar"
 													/>
@@ -562,7 +555,6 @@
 																	{message}
 																	{position}
 																	{myDeviceId}
-																	{chatId}
 																	{readOnly}
 																	showDeliveryStatus={endsDeliveryStatusRun(
 																		messageGroup,
@@ -595,7 +587,6 @@
 																	{message}
 																	{position}
 																	{myDeviceId}
-																	{chatId}
 																	{readOnly}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	sender={profile}
@@ -706,20 +697,28 @@
 					{/await}
 				{/if}
 
-				<div class="absolute bottom-0 inset-x-0 z-30 bg-page-surface">
+				<div
+					class="chat-bottom-bar absolute bottom-0 inset-x-0 z-30"
+					class:bg-page-surface={theme === 'material'}
+				>
 					<div bind:clientHeight={bottomBarHeight}>
 						{#await $blocked then isBlocked}
 							{@const showComposer =
 								!searchMode && !isBlocked && !contactRequest}
 							{#if showComposer}
-								<MessageComposer
-									bind:this={composer}
-									store={store.messages}
-									destinationName={profile ? fullName(profile) : undefined}
-									onSent={onMessageSent}
-								/>
+								<div class={theme === 'ios' ? 'pb-safe' : ''}>
+									<MessageComposer
+										bind:this={composer}
+										store={store.messages}
+										destinationName={profile ? fullName(profile) : undefined}
+										onSent={onMessageSent}
+									/>
+								</div>
 							{:else}
-								<div use:renderAboveKeyboard>
+								<div
+									use:renderAboveKeyboard
+									class={theme === 'ios' ? 'bg-page-surface pb-safe' : ''}
+								>
 									<div class="mx-4">
 										<Divider />
 									</div>

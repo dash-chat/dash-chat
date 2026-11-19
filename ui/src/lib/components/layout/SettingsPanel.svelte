@@ -31,7 +31,7 @@
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isIos } from '$lib/utils/environment';
-	import Avatar from '../profiles/Avatar.svelte';
+	import PeerAvatar from '../profiles/PeerAvatar.svelte';
 	import WarningIcon from '../WarningIcon.svelte';
 
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -86,9 +86,8 @@
 				titleFontSizeMaterial="text-xl"
 			>
 				{#snippet media()}
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
+					<PeerAvatar
+						profile={myProfile}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
 							: '--size: 64px; margin-inline-start: 6px'}

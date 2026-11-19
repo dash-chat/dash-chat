@@ -119,6 +119,14 @@ pub struct NodeConfig {
     /// disables this — its short-lived background node must not author
     /// operations.
     pub enable_message_acks: bool,
+    /// Whether this node must not author any operations at all. On for the
+    /// iOS push extension: it shares the app's store and signs with the app's
+    /// key, but an operation it publishes into a topic the app already
+    /// follows never passes through the running app's processor — the store
+    /// is shared, the streams are not. Side effects that publish are left to
+    /// the app, which re-processes the operations this node recorded (see
+    /// [`Self::record_processed_operations`]) and performs them itself.
+    pub read_only: bool,
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
@@ -190,6 +198,7 @@ impl NodeConfig {
             blob_sync_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            read_only: false,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
@@ -221,6 +230,7 @@ impl Default for NodeConfig {
             blob_sync_interval: std::time::Duration::from_secs(4),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            read_only: false,
             stream_cursor_prefix: None,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
@@ -1054,6 +1064,44 @@ impl Node {
         Ok(())
     }
 
+    pub async fn promote_group_member_to_admin(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+    ) -> anyhow::Result<()> {
+        let deps = self.group_store.heads(*chat_id).await?;
+
+        if deps.is_empty() {
+            return Err(anyhow::anyhow!(
+                "group must be known locally before promoting member: {chat_id:?}"
+            ));
+        }
+
+        if !self.is_admin(chat_id, self.device_id()).await? {
+            return Err(anyhow::anyhow!(
+                "only an admin can promote a member: {chat_id:?}"
+            ));
+        }
+
+        self.publish(
+            chat_id,
+            Payload::group_control(
+                chat_id,
+                GroupAction::Promote {
+                    member: GroupMember::Individual(member),
+                    access: p2panda_auth::Access::manage(),
+                },
+                deps,
+            )?,
+            Some(&format!(
+                "promote_group_member_to_admin({:?})",
+                chat_id.aliased()
+            )),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_group_members(
         &self,
         chat_id: ChatId,
@@ -1076,6 +1124,13 @@ impl Node {
             .any(|(m, _)| *m != member);
 
         Ok(!found_other_member)
+    }
+
+    async fn is_admin(&self, chat_id: ChatId, member: DeviceId) -> anyhow::Result<bool> {
+        Ok(self
+            .get_group_members(chat_id)
+            .await?
+            .contains(&(member, p2panda_auth::Access::manage())))
     }
 
     async fn has_other_admins(&self, chat_id: ChatId, exclude: DeviceId) -> anyhow::Result<bool> {

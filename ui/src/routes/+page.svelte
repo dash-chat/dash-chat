@@ -2,12 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import type { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
-	import GetStarted from '$lib/components/GetStarted.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
 	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
@@ -18,9 +17,20 @@
 
 	const theme = $derived(useTheme());
 
-	let getStartedVisible = $state(true);
+	let scrollEl: HTMLDivElement | null = $state(null);
+	let navbarHeight = $state(0);
+	// Konsta's iOS navbar height, so the list sits clear of it before it is
+	// measured.
+	const navbarFallbackHeight = 'calc(max(16px, var(--k-safe-area-top)) + 44px)';
+
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const loadedChatSummaries = useReactiveValue(chatsStore.allChatsSummaries);
+	const listNeedsFabClearance = $derived(
+		theme === 'material' &&
+			!isWideScreen.value &&
+			($loadedChatSummaries?.length ?? 0) > 0,
+	);
 </script>
 
 {#snippet connectionStatus()}
@@ -51,21 +61,14 @@
 	{/if}
 {/snippet}
 
-<Page>
-	<Navbar
-		title={m.chats()}
-		titleClass={theme === 'ios' ? '' : 'opacity1'}
-		large={theme === 'ios'}
-		titleLargeFontSizeIos="mt-2 text-[34px]"
-		left={connectionStatus}
-		right={theme === 'ios' ? composeActions : materialActions}
-		transparent={true}
-	/>
-
+{#snippet chatList()}
 	<UpdaterBanner />
 
-	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
+	<AllChats class="flex flex-1 flex-col {listNeedsFabClearance ? 'pb-22' : ''}"
+	></AllChats>
+{/snippet}
 
+{#snippet bottomActions()}
 	{#if !isWideScreen.value}
 		<div
 			class="flex flex-col fixed bottom-[calc(var(--main-tabbar-height)+1rem)] inset-x-0 z-10 pointer-events-none"
@@ -87,7 +90,55 @@
 					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 				</Fab>
 			{/if}
-			<GetStarted bind:visible={getStartedVisible} />
 		</div>
 	{/if}
-</Page>
+{/snippet}
+
+{#if theme === 'ios'}
+	<Page class="!overflow-hidden">
+		<!-- The list scrolls in its own container under the navbar: inside the
+			scrolling page, iOS's overscroll bounce dragged the navbar along. -->
+		<div
+			bind:this={scrollEl}
+			class="absolute inset-0 flex flex-col overflow-y-auto pb-(--main-tabbar-height)"
+			style:padding-top={navbarHeight > 0
+				? `${navbarHeight}px`
+				: navbarFallbackHeight}
+		>
+			<h1 class="flex h-13 items-center px-safe-4 mt-2 text-[34px] font-bold">
+				{m.chats()}
+			</h1>
+			{@render chatList()}
+		</div>
+
+		<div class="absolute inset-x-0 top-0 z-20" bind:clientHeight={navbarHeight}>
+			<!-- Konsta only attaches its scroll listener on mount. It fades the
+				bar's title in as the large title scrolls under the bar. -->
+			{#if scrollEl}
+				<Navbar
+					{scrollEl}
+					title={m.chats()}
+					left={connectionStatus}
+					right={composeActions}
+					transparent={true}
+				/>
+			{/if}
+		</div>
+
+		{@render bottomActions()}
+	</Page>
+{:else}
+	<Page class="flex flex-col">
+		<Navbar
+			title={m.chats()}
+			titleClass="opacity1"
+			left={connectionStatus}
+			right={materialActions}
+			transparent={true}
+		/>
+
+		{@render chatList()}
+
+		{@render bottomActions()}
+	</Page>
+{/if}

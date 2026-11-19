@@ -17,7 +17,6 @@ import {
 	formatStatusTrace,
 	samplesOnResume,
 } from '../helpers/components/connection-status-indicator';
-import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 /** How long the app stays backgrounded. Android cuts a backgrounded app's
@@ -51,14 +50,11 @@ describe('Connection status after resuming from the background', function () {
 		// users have: it is the foreground service that keeps the process alive,
 		// and enabling it is precisely what stops Android reclaiming the app —
 		// the thing this spec is about.
-
-		// A members-less group chat is the cheapest way to a page where
-		// ConnectionStatusIndicator is mounted.
-		await createGroup(agent, 'Solo Group', []);
+		await agent.homePage.ready();
 	});
 
 	it('does not show the disconnected chip on returning from a long background', async () => {
-		const indicator = agent.groupChatPage.connectionStatusIndicator;
+		const indicator = agent.homePage.connectionStatusIndicator;
 
 		// Let startup settle: the cloud mailbox is registered after a `/health`
 		// round trip and a first poll, so the chip can legitimately read pending
@@ -101,16 +97,12 @@ describe('Connection status after resuming from the background', function () {
 		await agent.backgroundApp();
 		await agent.pause(BACKGROUND_MS);
 		await agent.startApp();
-		await agent.groupChatPage.ready();
+		await agent.homePage.ready();
 
 		// `recordedStatuses` throws if the recording did not survive — the webview
 		// is then a new one, meaning Android reclaimed the app, and what was on
 		// screen in between was never observed. That is inconclusive, not a pass.
-		const onScreen = samplesOnResume(
-			await agent.groupChatPage.connectionStatusIndicator.recordedStatuses(
-				token,
-			),
-		);
+		const onScreen = samplesOnResume(await indicator.recordedStatuses(token));
 		if (onScreen === null) {
 			throw new Error(
 				'the page never reported becoming visible, so what the user saw on resume is unknown',

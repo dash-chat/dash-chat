@@ -253,12 +253,7 @@
 				{@const color = savedColor ?? defaultQrColor()}
 				<div class="column" style="flex:1">
 					<div class="column center-in-desktop gap-4 mx-4 mt-4">
-						<QrCodeCard
-							value={deepLink}
-							label={name}
-							{color}
-							copyButtonTestId="add-contact-copy-btn"
-						/>
+						<QrCodeCard value={deepLink} label={name} {color} />
 
 						<QrActionButtons
 							onLink={() => {

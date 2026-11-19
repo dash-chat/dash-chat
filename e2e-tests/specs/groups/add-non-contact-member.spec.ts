@@ -47,7 +47,7 @@ describe('Adding a member the other members are not contacts with', () => {
 			.waitForExist({ timeout: SYNC_TIMEOUT });
 	});
 
-	it('reads p2p in the group chip when only the newcomer is online', async function () {
+	it('reads p2p and badges the newcomer in the group when only the newcomer is online', async function () {
 		if (isRemoteMailbox()) this.skip();
 		await newcomer.homePage
 			.chatListItem('mygroup')
@@ -58,13 +58,17 @@ describe('Adding a member the other members are not contacts with', () => {
 		await member.stopApp();
 		await member.startApp();
 		await member.homePage.ready();
-		await member.homePage.chatListItem('mygroup').click();
-		await member.groupChatPage.ready();
-
-		await member.groupChatPage.connectionStatusIndicator.waitForStatus(
+		await member.homePage.connectionStatusIndicator.waitForStatus(
 			'p2p',
 			UI_TIMEOUT,
-			'the group chip did not read p2p with only a non-contact member online',
+			'the chip did not read p2p with only a non-contact member online',
 		);
+
+		await member.homePage.chatListItem('mygroup').click();
+		await member.groupChatPage.ready();
+		await member.groupChatPage.connectedPeersCount.waitForDisplayed();
+		await member.groupChatPage.infoLink.click();
+		await member.groupInfoPage.ready();
+		await member.groupInfoPage.memberP2pBadge('Cat').waitForDisplayed();
 	});
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
+	import { mdiAccountGroupOutline } from '@mdi/js';
 	import { m } from '$lib/paraglide/messages.js';
 
 	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
@@ -101,11 +102,11 @@
 			{/snippet}
 		</Navbar>
 
-		{#await $info then info}
+		{#await $info then}
 			<Container class="pt-2">
 				<EditableAvatar
 					{image}
-					initials={info.name?.slice(0, 2)}
+					fallbackIcon={mdiAccountGroupOutline}
 					onEdit={startEditPhoto}
 				/>
 

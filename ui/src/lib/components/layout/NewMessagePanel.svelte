@@ -31,7 +31,7 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import Avatar from '../profiles/Avatar.svelte';
+	import PeerAvatar from '../profiles/PeerAvatar.svelte';
 	import IconButton from '../IconButton.svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 	import ContactActionsMenu from '$lib/components/contacts/ContactActionsMenu.svelte';
@@ -169,10 +169,7 @@
 							data-contact-name={profile.name}
 						>
 							{#snippet media()}
-								<Avatar
-									image={profile.avatar}
-									initials={profile.name.slice(0, 2)}
-								/>
+								<PeerAvatar {profile} />
 							{/snippet}
 							{#snippet after()}
 								{#if !isMobile}

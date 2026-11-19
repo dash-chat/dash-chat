@@ -357,9 +357,6 @@ export class ExpectedModel {
 	private readonly profiles = new Map<string, Op[]>();
 	/** The name each contact request carries, by the op that carries it. */
 	private readonly requestNames = new Map<OpId, string>();
-	/** Agent name → the group preparation made for it to read its connection
-	 * chip in. */
-	private readonly chipChats = new Map<string, ExpectedChat>();
 	/** Group id → the joins and departures of that group, in the order they
 	 * happened: what each device has heard of them is its membership. */
 	private readonly membership = new Map<string, MembershipOp[]>();
@@ -574,13 +571,6 @@ export class ExpectedModel {
 
 	registeredWithCloud(name: string): void {
 		this.startedWithoutCloud.delete(name);
-	}
-
-	/** Whether every agent has a members-less group to read its connection
-	 * chip in: a run with LANs reads hubs on it, one with a cloud reads the
-	 * cloud. */
-	watchesChip(): boolean {
-		return this.hasNetworks() || this.hasCloud();
 	}
 
 	/** Zero-padded so `hub-01` can never substring-match `hub-010`. */
@@ -850,26 +840,10 @@ export class ExpectedModel {
 		return chat;
 	}
 
-	/** The members-less group `name` reads its connection chip in, which
-	 *  preparation makes and moves leave alone; null in a run with no chip to
-	 *  read. */
-	chipChatOf(name: string): ExpectedChat | null {
-		return this.chipChats.get(name) ?? null;
-	}
-
-	/** Record the group preparation made for `name` to read its chip in. */
-	setChipChat(name: string, chat: ExpectedChat): void {
-		this.chipChats.set(name, chat);
-	}
-
-	/** Groups `name` created and may act on: its chip chat is the run's own
-	 *  fixture, not its subject, so nothing renames or leaves it. */
+	/** Groups `name` created and may act on. */
 	groupsCreatedBy(name: string): ExpectedChat[] {
 		return this.chatsFor(name).filter(
-			chat =>
-				chat.kind === 'group' &&
-				chat.creator === name &&
-				chat !== this.chipChatOf(name),
+			chat => chat.kind === 'group' && chat.creator === name,
 		);
 	}
 
@@ -896,7 +870,6 @@ export class ExpectedModel {
 		return this.chatsFor(name).filter(
 			chat =>
 				chat.kind === 'group' &&
-				chat !== this.chipChatOf(name) &&
 				(chat.creator !== name || this.membersFor(chat, name).length === 1),
 		);
 	}

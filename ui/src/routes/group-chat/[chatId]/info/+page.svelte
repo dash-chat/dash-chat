@@ -2,18 +2,23 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import type { ChatsStore } from 'dash-chat-stores';
+	import type {
+		ChatsStore,
+		IOnlinePeersStore,
+		MailboxTrackerStore,
+	} from 'dash-chat-stores';
+	import { fullName } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
-		mdiAccountGroup,
 		mdiDelete,
 		mdiExport,
 		mdiKeyVariant,
 		mdiPencil,
 		mdiPlusCircle,
+		mdiShieldAccount,
 	} from '@mdi/js';
 	import {
 		Page,
@@ -28,9 +33,14 @@
 	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
 
 	import { page } from '$app/state';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
+	import P2pBadge from '$lib/components/connection/P2pBadge.svelte';
+	import { peersConnectedOverP2p } from '$lib/components/connection/connection-status';
+	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
+	import MakeAdminDialog from '$lib/components/chats/MakeAdminDialog.svelte';
 	import RemoveMemberDialog from '$lib/components/chats/RemoveMemberDialog.svelte';
 	import LeaveGroupDialog from '$lib/components/chats/LeaveGroupDialog.svelte';
 	let chatId = page.params.chatId!;
@@ -41,6 +51,24 @@
 	const info = useReactivePromise(groupChatStore.info);
 	const members = useReactivePromise(groupChatStore.allMembers);
 	const me = useReactivePromise(groupChatStore.me);
+
+	const mailboxTrackerStore: MailboxTrackerStore = getContext(
+		'mailbox-tracker-store',
+	);
+	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
+	const mailboxes = useReactiveValue(
+		mailboxTrackerStore.connectionStatusForAllMailboxes,
+	);
+	const onlinePeers = useReactiveValue(onlinePeersStore.onlinePeers, chatId);
+	const membersActiveOverP2p = $derived(
+		$mailboxes !== undefined && $onlinePeers !== undefined
+			? peersConnectedOverP2p(
+					$mailboxes,
+					$onlinePeers,
+					renderingResumedAt.value,
+				)
+			: [],
+	);
 
 	let sheetOpenFor = $state<string | null>(null);
 	let dialogType = $state<
@@ -53,18 +81,6 @@
 	// 	loading = true;
 	// 	try {
 	// 		await groupChatStore.client.demoteFromAdministrator(chatId, actorId);
-	// 		dialogType = null;
-	// 		dialogActorId = null;
-	// 	} catch (e) {
-	// 		console.error(e);
-	// 	}
-	// 	loading = false;
-	// }
-
-	// async function handlePromote(actorId: string) {
-	// 	loading = true;
-	// 	try {
-	// 		await groupChatStore.client.promoteToAdministrator(chatId, actorId);
 	// 		dialogType = null;
 	// 		dialogActorId = null;
 	// 	} catch (e) {
@@ -117,11 +133,7 @@
 			{#snippet title()}
 				<div class="flex w-full min-w-0 items-center justify-start gap-2">
 					<span class="shrink-0">
-						<Avatar
-							image={info.image}
-							initials={info.name.slice(0, 2)}
-							size="2.5rem"
-						/>
+						<GroupAvatar image={info.image} size="2.5rem" />
 					</span>
 					<span
 						class="flex-1 min-w-0 truncate"
@@ -153,14 +165,11 @@
 			<div class="column" style="flex: 1">
 				<div class="column center-in-desktop gap-8 p-2">
 					<div class="column" style="align-items: center; gap: 1rem">
-						<Avatar
+						<GroupAvatar
 							image={info.image}
-							initials={info.name.slice(0, 2)}
 							size="5rem"
 							testId="group-info-avatar"
-						>
-							<wa-icon src={wrapPathInSvg(mdiAccountGroup)}> </wa-icon>
-						</Avatar>
+						/>
 
 						<span
 							class="text-xl font-semibold break-words text-center max-w-full"
@@ -190,29 +199,52 @@
 							{/if}
 
 							{#each Object.entries(members) as [actorId, member]}
+								{@const activeOverP2p = membersActiveOverP2p.includes(actorId)}
 								<ListItem
 									link
 									chevron={false}
-									title={actorId === me.agentId
-										? m.you()
-										: member.profile?.name}
+									strongTitle={false}
+									innerClass="py-0! self-stretch flex flex-col justify-center"
 									data-testid={`group-info-member-${member.profile?.name}`}
 									onclick={me.admin
 										? () => (sheetOpenFor = actorId)
 										: undefined}
 								>
 									{#snippet media()}
-										<Avatar
-											image={member.profile?.avatar}
-											initials={member.profile?.name.slice(0, 2)}
-											size={32}
-										/>
+										<P2pBadge
+											show={activeOverP2p}
+											testId={`group-info-member-p2p-badge-${member.profile?.name}`}
+										>
+											<PeerAvatar profile={member.profile} size={32} />
+										</P2pBadge>
 									{/snippet}
 
-									{#snippet after()}
-										{#if member.admin}
-											<Chip>{m.administrator()}</Chip>
-										{/if}
+									<!-- Konsta centers `after` on the title line only, which
+									     leaves the chip off-center once a subtitle shows. -->
+									{#snippet inner()}
+										<div
+											class="row items-center justify-between gap-1 in-[.k-ios]:min-h-7"
+										>
+											<div
+												class="column min-w-0 text-[16px] in-[.k-ios]:text-[17px]"
+											>
+												<span class="leading-5">
+													{actorId === me.agentId
+														? m.you()
+														: member.profile?.name}
+												</span>
+												{#if activeOverP2p}
+													<span class="text-xs">{m.activeOverP2p()}</span>
+												{/if}
+											</div>
+											{#if member.admin}
+												<Chip
+													class="shrink-0"
+													data-testid="group-info-member-admin-chip"
+													>{m.administrator()}</Chip
+												>
+											{/if}
+										</div>
 									{/snippet}
 								</ListItem>
 							{/each}
@@ -248,11 +280,7 @@
 									class="flex-col gap-4 py-4"
 									style="display: flex; align-items: center;"
 								>
-									<Avatar
-										image={sheetMember.profile?.avatar}
-										initials={sheetMember.profile?.name.slice(0, 2)}
-										size={32}
-									/>
+									<PeerAvatar profile={sheetMember.profile} size={32} />
 									<span class="font-semibold">{sheetMember.profile?.name}</span>
 								</div>
 
@@ -268,17 +296,19 @@
 												}}
 												icon={mdiKeyVariant}
 											/>
-										{:else}
+										{/if} -->
+										{#if !sheetMember.admin}
 											<ListAction
-												title={m.promoteToAdministrator()}
+												title={m.makeAdmin()}
 												onClick={() => {
 													dialogType = 'promote';
 													dialogActorId = sheetOpenFor;
 													sheetOpenFor = null;
 												}}
-												icon={mdiKeyVariant}
+												icon={mdiShieldAccount}
+												data-testid="group-info-make-admin"
 											/>
-										{/if} -->
+										{/if}
 
 										{#if sheetOpenFor === me.agentId}
 											<ListAction
@@ -304,6 +334,26 @@
 								</ActionList>
 							{/if}
 						</SwipeableSheet>
+
+						{@const dialogMemberProfile =
+							dialogActorId !== null
+								? members[dialogActorId]?.profile
+								: undefined}
+						<!-- dialogActorId outlives the close so the member's name stays in
+						     the description while the dialog animates out. -->
+						<MakeAdminDialog
+							bind:opened={
+								() => dialogType === 'promote' && dialogActorId !== null,
+								opened => {
+									if (!opened) dialogType = null;
+								}
+							}
+							{chatId}
+							actorId={dialogActorId}
+							memberName={dialogMemberProfile
+								? fullName(dialogMemberProfile)
+								: undefined}
+						/>
 					{/await}
 				</div>
 			</div>
@@ -334,34 +384,6 @@
 					disabled={loading}
 				>
 					{loading ? '...' : m.demote()}
-				</DialogButton>
-			{/snippet}
-		</Dialog> -->
-
-		<!-- <Dialog
-			opened={dialogType === 'promote' && dialogActorId !== null}
-			onBackdropClick={() => {
-				dialogType = null;
-				dialogActorId = null;
-			}}
-			title={m.promoteToAdministrator()}
-		>
-			<span>{m.areYouSurePromote()}</span>
-			{#snippet buttons()}
-				<DialogButton
-					onClick={() => {
-						dialogType = null;
-						dialogActorId = null;
-					}}
-				>
-					{m.cancel()}
-				</DialogButton>
-				<DialogButton
-					onClick={() => dialogActorId && handlePromote(dialogActorId)}
-					disabled={loading}
-					strong
-				>
-					{loading ? '...' : m.promote()}
 				</DialogButton>
 			{/snippet}
 		</Dialog> -->

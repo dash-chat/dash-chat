@@ -4,6 +4,7 @@
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
 	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
@@ -14,7 +15,16 @@
 </script>
 
 <div class="flex flex-col relative h-full">
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1 min-w-0 truncate"
+		transparent={true}
+	>
+		{#snippet left()}
+			<div class="grid size-11 place-items-center">
+				<ConnectionStatusIndicator />
+			</div>
+		{/snippet}
 		{#snippet right()}
 			<AddContactNavbarButton />
 			<Link

@@ -71,6 +71,7 @@ import {
 } from './platforms/desktop';
 import {
 	APP_STATE_NOT_RUNNING,
+	backgroundIosApp,
 	clearIosAppData,
 	iosHasInternet,
 	killIosPushExtension,
@@ -88,6 +89,7 @@ import {
 import {
 	deviceUdid,
 	isOnWebview,
+	returnToWebviewBeforeDrivingIt,
 	switchToWebview,
 	waitForTestUtils,
 } from './webview';
@@ -164,7 +166,10 @@ export type Agent = WebdriverIO.Browser & {
 	 *  self-restarts into). */
 	stopApp(): Promise<void>;
 	/** Send the app to the background (home button) without killing it.
-	 *  On Android this is a home-key press; on desktop it is currently a no-op. */
+	 *  On Android this is a home-key press; on iOS the phone is also locked and
+	 *  left for iOS to suspend the app and reclaim its sockets, as a phone put
+	 *  away does, then unlocked with the app still in the background; on
+	 *  desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
 	/** Whether the app's process is alive, foreground or background. A phone
 	 *  app the OS killed while it was backgrounded reports false. */
@@ -426,9 +431,7 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 			return;
 		}
 		if (agent.platform === 'ios') {
-			// A real home-button press. `terminateApp` is not a substitute here:
-			// XCUITest's terminate reads to iOS as a user force-quit
-			await b.execute('mobile: backgroundApp');
+			await backgroundIosApp(b);
 			return;
 		}
 		pressAndroidHome(deviceUdid(b));
@@ -973,6 +976,7 @@ async function setupAgent(
 		// Before makeAgent: it resolves every page object's element, and an
 		// element built before the overwrite keeps the original click.
 		tapWebElementsAtTheirRect(b, 'touch');
+		returnToWebviewBeforeDrivingIt(b, 'ios');
 	} else if (platform === 'desktop') {
 		tapWebElementsAtTheirRect(b, 'mouse');
 		skipSessionDeleteOnceAppIsGone(b, slot);

@@ -5,17 +5,12 @@
 	import SettingsPanel from './SettingsPanel.svelte';
 	import NewMessagePanel from './NewMessagePanel.svelte';
 	import AddContactPanel from './AddContactPanel.svelte';
-	import MainTabbar from './MainTabbar.svelte';
+	import DesktopNavStrip from './DesktopNavStrip.svelte';
 	import EmptyState from './EmptyState.svelte';
-	import GetStarted from '$lib/components/GetStarted.svelte';
 	import TestBanner from './TestBanner.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
-	// Non-special URL schemes (tauri://) have empty pathname for the root,
-	// unlike http:// which normalizes to '/'.
-	const pathname: string = $derived(page.url.pathname);
-	const isHome = $derived(pathname === '/' || pathname === '');
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
 	const isNewMessage = $derived(
 		page.url.pathname.startsWith('/new-message') ||
@@ -39,6 +34,7 @@
 <div class="desktop-shell pb-keyboard-safe">
 	<TestBanner />
 	<div class="desktop-layout no-safe-areas-top">
+		<DesktopNavStrip />
 		<div class="desktop-sidebar">
 			<div class="desktop-sidebar-panel">
 				{#if isSettings}
@@ -49,22 +45,12 @@
 					<ChatListPanel />
 				{/if}
 			</div>
-			{#if isSettings || !isNewMessage}
-				<div class="desktop-sidebar-tabbar">
-					<MainTabbar />
-				</div>
-			{/if}
 		</div>
 		<div class="desktop-content" class:desktop-content-settings={isSettings}>
 			{#if page.state.contentPanel === 'add-contact'}
 				<AddContactPanel />
 			{:else if isSidebarRoute}
 				<EmptyState />
-				{#if isHome}
-					<div class="absolute bottom-3 inset-x-0 z-10">
-						<GetStarted />
-					</div>
-				{/if}
 			{:else}
 				{@render children()}
 			{/if}
@@ -99,12 +85,14 @@
 	.desktop-sidebar-panel {
 		flex: 1;
 		min-height: 0;
-		overflow-y: auto;
-		overflow-x: hidden;
 	}
 
-	.desktop-sidebar-tabbar {
-		border-top: 1px solid var(--k-hairline-color);
+	/* The panel itself scrolls, not this wrapper: Konsta's navbar fills in on
+	   the scroll of its own parent element. */
+	.desktop-sidebar-panel > :global(*) {
+		height: 100%;
+		overflow-y: auto;
+		overflow-x: hidden;
 	}
 
 	.desktop-content {

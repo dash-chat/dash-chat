@@ -8,7 +8,7 @@ import { TestHelper } from '../../test-helper';
 
 export class EditPhotoPage extends TestHelper {
 	back = this.el(tid('edit-photo-back'));
-	avatar = new Avatar(this.agent, 'avatar-preview');
+	avatar = new Avatar(this.agent, tid('avatar-preview'));
 	close = this.el(tid('edit-photo-close'));
 	saveButton = this.el(tid('edit-photo-save-btn'));
 	cameraButton = this.el(tid('edit-photo-camera'));

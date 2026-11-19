@@ -2,7 +2,8 @@
  * The cloud mailbox over networks as slow as the ones measured across the
  * global majority, where connection setup alone takes seconds. The mailbox
  * answers every request eventually, so the chip must keep reading cloud and a message
- * must reach the mailbox. One agent in a solo group, so the chip is on screen.
+ * must reach the mailbox. One agent in a solo group, read from the home page,
+ * where the chip is.
  */
 import { formatStatusTrace } from '../helpers/components/connection-status-indicator';
 import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
@@ -21,7 +22,7 @@ describe('Cloud mailbox over slow networks', function () {
 	let agent: Agent;
 	let linkOpened = false;
 
-	const chip = () => agent.groupChatPage.connectionStatusIndicator;
+	const chip = () => agent.homePage.connectionStatusIndicator;
 	const messages = () => agent.groupChatPage.messages;
 
 	before(async function () {
@@ -30,10 +31,12 @@ describe('Cloud mailbox over slow networks', function () {
 		linkOpened = true;
 		await agent.createProfilePage.createProfile('Alice', 'Slow');
 		await createGroup(agent, 'Solo Group', []);
+		await agent.groupChatPage.back.click();
+		await agent.homePage.ready();
 		await chip().waitForStatus(
 			'cloud',
 			UI_TIMEOUT,
-			'the chip did not read cloud once the chat opened',
+			'the chip did not read cloud once the app settled',
 		);
 	});
 
@@ -52,10 +55,14 @@ describe('Cloud mailbox over slow networks', function () {
 				UI_TIMEOUT,
 				`the chip did not read cloud once the link was shaped as ${network}`,
 			);
-			const token = await chip().startRecordingStatus();
 			const text = `over ${network}`;
+			await agent.homePage.chatListItem('Solo Group').click();
+			await agent.groupChatPage.ready();
 			await agent.groupChatPage.composer.sendMessage(text);
 			await messages().waitForMessageStatus(text, ['mailbox']);
+			await agent.groupChatPage.back.click();
+			await agent.homePage.ready();
+			const token = await chip().startRecordingStatus();
 			// As long as a mailbox that never answers takes to flip the chip, so
 			// requests failing at the full budget would have shown by now.
 			await agent.pause(MAILBOX_HUNG_MS);

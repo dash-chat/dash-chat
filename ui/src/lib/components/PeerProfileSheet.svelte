@@ -6,7 +6,7 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccount, mdiAccountGroup } from '@mdi/js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import Avatar from './profiles/Avatar.svelte';
+	import PeerAvatar from './profiles/PeerAvatar.svelte';
 	import SwipeableSheet from './SwipeableSheet.svelte';
 	import SheetHandle from './SheetHandle.svelte';
 
@@ -22,11 +22,7 @@
 {#snippet profileContent()}
 	{#if profile}
 		<div class="shrink-0">
-			<Avatar
-				image={profile.avatar}
-				initials={profile.name.slice(0, 2)}
-				size={200}
-			/>
+			<PeerAvatar {profile} size={200} />
 		</div>
 
 		<div class="flex w-full min-w-0 flex-col gap-3 px-2">
