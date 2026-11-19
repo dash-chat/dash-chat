@@ -179,7 +179,7 @@ async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
         .unwrap();
     poll.wait_for(|| async {
         bobbi
-            .projection
+            .tombstones
             .is_tombstoned(*chat, deleted.hash())
             .await
             .unwrap()

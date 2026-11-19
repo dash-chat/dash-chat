@@ -104,7 +104,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
     // Alice: message tombstoned in the chat topic, payload gone, no longer shown.
     assert!(
         alice
-            .projection
+            .tombstones
             .is_tombstoned(*chat, msg.hash())
             .await
             .unwrap()
@@ -116,7 +116,7 @@ async fn delete_for_me_tombstones_locally_without_affecting_peer() {
     // peer's copy.
     assert!(
         !bobbi
-            .projection
+            .tombstones
             .is_tombstoned(*chat, msg.hash())
             .await
             .unwrap()
@@ -185,7 +185,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 
     // Alice tombstoned the whole chain and no longer shows the message.
     for hash in [msg.hash(), edit.hash()] {
-        assert!(alice.projection.is_tombstoned(*chat, hash).await.unwrap());
+        assert!(alice.tombstones.is_tombstoned(*chat, hash).await.unwrap());
         assert_eq!(
             payload_present(&alice, *chat, alice.device_id(), hash).await,
             Some(false)
@@ -195,7 +195,7 @@ async fn delete_for_me_covers_edit_chain_of_own_message() {
 
     // Bobbi still sees the (edited) message intact.
     for hash in [msg.hash(), edit.hash()] {
-        assert!(!bobbi.projection.is_tombstoned(*chat, hash).await.unwrap());
+        assert!(!bobbi.tombstones.is_tombstoned(*chat, hash).await.unwrap());
         assert_eq!(
             payload_present(&bobbi, *chat, alice.device_id(), hash).await,
             Some(true)
@@ -271,7 +271,7 @@ async fn delete_for_me_hides_edits_arriving_after_the_delete() {
     .unwrap();
     assert!(
         alice
-            .projection
+            .tombstones
             .is_tombstoned(*chat, edit.hash())
             .await
             .unwrap()
@@ -334,7 +334,7 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
     .unwrap();
     assert_eq!(
         alice
-            .projection
+            .tombstones
             .tombstone_reason(*chat, msg.hash())
             .await
             .unwrap(),
@@ -346,7 +346,7 @@ async fn delete_for_me_of_an_already_deleted_for_everyone_message() {
     alice.delete_message_for_me(chat, msg.hash()).await.unwrap();
     poll.wait_for(|| async {
         match alice
-            .projection
+            .tombstones
             .tombstone_reason(*chat, msg.hash())
             .await
             .unwrap()

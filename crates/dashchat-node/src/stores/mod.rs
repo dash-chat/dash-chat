@@ -3,12 +3,14 @@ mod group_store;
 mod local_store;
 mod op_projection;
 mod op_store;
+mod tombstone_store;
 
 pub use author_store::*;
 pub use group_store::*;
 pub use local_store::*;
 pub use op_projection::*;
 pub use op_store::*;
+pub use tombstone_store::*;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use std::path::Path;

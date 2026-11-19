@@ -196,14 +196,14 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
     // undeleted message and its edit are untouched.
     for node in [&alice, &bobbi] {
         for hash in [msg1.hash(), edit1.hash()] {
-            assert!(node.projection.is_tombstoned(*chat, hash).await.unwrap());
+            assert!(node.tombstones.is_tombstoned(*chat, hash).await.unwrap());
             assert_eq!(
                 payload_present(node, *chat, alice.device_id(), hash).await,
                 Some(false)
             );
         }
         for hash in [msg2.hash(), edit2.hash()] {
-            assert!(!node.projection.is_tombstoned(*chat, hash).await.unwrap());
+            assert!(!node.tombstones.is_tombstoned(*chat, hash).await.unwrap());
             assert_eq!(
                 payload_present(node, *chat, alice.device_id(), hash).await,
                 Some(true)
@@ -424,7 +424,7 @@ async fn invalid_deletes_are_rejected() {
     for node in [&alice, &bobbi] {
         assert!(
             !node
-                .projection
+                .tombstones
                 .is_tombstoned(*chat, msg.hash())
                 .await
                 .unwrap()
@@ -504,7 +504,7 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
     for node in [&alice, &bobbi] {
         assert!(
             !node
-                .projection
+                .tombstones
                 .is_tombstoned(*chat, msg.hash())
                 .await
                 .unwrap(),
@@ -617,7 +617,7 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
     // which nothing ever removes.
     assert!(
         !alice
-            .projection
+            .tombstones
             .is_tombstoned(*chat, msg.hash())
             .await
             .unwrap(),
@@ -639,7 +639,7 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
     .unwrap();
     assert!(
         !bobbi
-            .projection
+            .tombstones
             .is_tombstoned(*chat, msg.hash())
             .await
             .unwrap()
@@ -700,7 +700,7 @@ async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
         .unwrap();
     assert!(
         !bobbi
-            .projection
+            .tombstones
             .is_tombstoned(*chat, edit.hash())
             .await
             .unwrap(),
@@ -724,7 +724,7 @@ async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
 
     assert!(
         !bobbi
-            .projection
+            .tombstones
             .is_tombstoned(*chat, edit.hash())
             .await
             .unwrap(),

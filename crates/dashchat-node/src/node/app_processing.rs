@@ -434,7 +434,7 @@ impl Node {
         tombstoned_op: &Operation,
     ) -> anyhow::Result<bool> {
         let hash = tombstoned_op.hash;
-        if self.projection.is_tombstoned(topic, hash).await? {
+        if self.tombstones.is_tombstoned(topic, hash).await? {
             self.unprocess_app(tombstoned_op).await?;
             self.op_store.delete_body(&hash).await?;
             Ok(true)
@@ -646,10 +646,31 @@ impl Node {
         let hash = operation.id();
         let author = DeviceId::from(operation.author());
         let payload = operation.message();
+        let blocked = self.projection.is_blocked(operation).await?;
 
         match &payload {
             Payload::GroupControl(_) => {
                 // Nothing to do.
+            }
+
+            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
+                // Enforce the tombstones the projection just recorded, dropping
+                // the targets' payloads. The delete op's *own* payload is only a
+                // list of hashes (nothing sensitive), so we fall through to
+                // `notify_payload` below: the frontend needs it to learn which
+                // messages were deleted and render their placeholders.
+                for hash in hashes {
+                    if let Some(op) = self.op_store.get_operation(hash).await? {
+                        self.enforce_tombstone(topic, &op).await?;
+                    }
+                }
+            }
+
+            // Ahead of every arm with an effect a blocked author must not
+            // cause; only their deletes of their own messages are honored.
+            _ if blocked => {
+                tracing::info!(op = ?hash.aliased(), "ignoring operation of a blocked author");
+                return Ok(());
             }
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (_, agent_id) in agents {
@@ -837,19 +858,6 @@ impl Node {
                 if let Err(err) = candidate.validate(&valid_ops) {
                     warn!(?err, op = ?hash.aliased(), "ignoring invalid edit message");
                     return Ok(());
-                }
-            }
-
-            Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                // Enforce the tombstones the projection just recorded, dropping
-                // the targets' payloads. The delete op's *own* payload is only a
-                // list of hashes (nothing sensitive), so we fall through to
-                // `notify_payload` below: the frontend needs it to learn which
-                // messages were deleted and render their placeholders.
-                for hash in hashes {
-                    if let Some(op) = self.op_store.get_operation(hash).await? {
-                        self.enforce_tombstone(topic, &op).await?;
-                    }
                 }
             }
 
