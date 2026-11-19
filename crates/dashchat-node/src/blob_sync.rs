@@ -1015,19 +1015,9 @@ mod tests {
                 Ok(FetchResponse(BTreeMap::new()))
             }
 
-            async fn announce_blob_hashes(
-                &self,
-                hashes: Vec<iroh_blobs::Hash>,
-                _expect_upload: bool,
-            ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+            async fn has_blob(&self, hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
                 let count = self.queried.fetch_add(1, Ordering::SeqCst);
-                if count >= self.report_available_after_queries
-                    && hashes.contains(&self.target_hash)
-                {
-                    Ok(vec![self.target_hash])
-                } else {
-                    Ok(Vec::new())
-                }
+                Ok(count >= self.report_available_after_queries && hash == self.target_hash)
             }
         }
 

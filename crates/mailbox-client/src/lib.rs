@@ -107,12 +107,12 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         Ok(Vec::new())
     }
 
-    /// Probe whether this mailbox already holds a single blob. Built on top of
-    /// [`announce_blob_hashes`] so each client only needs to implement the
-    /// announce primitive.
-    async fn has_blob(&self, hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
-        let stored = self.announce_blob_hashes(vec![hash], false).await?;
-        Ok(stored.contains(&hash))
+    /// Probe whether this mailbox already holds a single blob.
+    /// The default returns `false`; HTTP-backed clients override it with a
+    /// dedicated query endpoint so this does not accidentally register the
+    /// caller as a source.
+    async fn has_blob(&self, _hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
+        Ok(false)
     }
 
     /// Push one blob's raw bytes to the mailbox. The default errors:
