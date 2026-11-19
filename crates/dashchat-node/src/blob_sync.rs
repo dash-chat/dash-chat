@@ -273,28 +273,35 @@ impl BlobSync {
         }
     }
 
+    /// Whether the active provider reported by iroh is a peer (not a mailbox
+    /// and not unknown). We only switch away from a download when we are sure
+    /// it is coming from a peer; otherwise we risk aborting an already-running
+    /// mailbox transfer.
+    async fn current_provider_is_peer(
+        &self,
+        current_provider: &watch::Receiver<Option<iroh::EndpointId>>,
+    ) -> bool {
+        let Some(id) = *current_provider.borrow() else {
+            return false;
+        };
+        !self.sources.is_mailbox(id).await
+    }
+
     /// Whether it makes sense to abort the current in-topic download and restart
-    /// it from a mailbox. True when the active provider is a peer (or not yet
-    /// known) and at least one registered mailbox reports already holding the
-    /// blob.
+    /// it from a mailbox. True only when we are sure the active provider is a
+    /// peer and at least one registered mailbox reports already holding the blob.
     async fn can_switch_to_mailbox(
         &self,
         topic: TopicId,
         hash: iroh_blobs::Hash,
         current_provider: &watch::Receiver<Option<iroh::EndpointId>>,
     ) -> bool {
-        let current = *current_provider.borrow();
-        let from_peer = match current {
-            Some(id) => !self.sources.is_mailbox(id).await,
-            None => true,
-        };
-        if !from_peer {
-            return false;
-        }
-        self.sources
-            .any_mailbox_has_blob(topic, hash)
-            .await
-            .unwrap_or(false)
+        self.current_provider_is_peer(current_provider).await
+            && self
+                .sources
+                .any_mailbox_has_blob(topic, hash)
+                .await
+                .unwrap_or(false)
     }
 
     /// Keep attempting an on-demand download of `hash` until it is present
