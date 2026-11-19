@@ -63,6 +63,10 @@ lint:
 lint-custom:
     cargo dylint --all --workspace
 
+# rank the functions most in need of refactoring that nobody touched for a while (e.g. just refactoring-candidates --min-days 21 --top 10)
+refactoring-candidates *args:
+    node scripts/refactoring-candidates.ts {{args}}
+
 # typecheck every TS package and the rust workspace
 check:
     cargo check --workspace
