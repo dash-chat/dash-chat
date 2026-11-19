@@ -46,7 +46,7 @@ pub use get_blips::{
     get_blips_for_topics, GetBlipsForTopicResponse, GetBlipsRequest, GetBlipsResponse,
 };
 pub use register_hashes::{
-    record_blob_sources, register_hashes, upload_blob, RegisterHashesRequest,
+    record_blob_sources, register_hashes, upload_blob, BlobStoredResponse, RegisterHashesRequest,
     RegisterHashesResponse, UploadBlobResponse,
 };
 pub use register_peer::RegisterPeerRequest;
@@ -285,7 +285,11 @@ pub fn create_app(
         )
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
-        .route("/report", post(report::report));
+        .route("/report", post(report::report))
+        .route(
+            "/blobs/{hash}/stored",
+            get(register_hashes::query_blob_stored),
+        );
 
     // The disabled knob rejects explicitly: a bare 404 would read as a routing
     // bug in client logs, where 410 says the server refuses on purpose.
