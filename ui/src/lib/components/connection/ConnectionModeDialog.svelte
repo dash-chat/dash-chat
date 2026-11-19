@@ -179,7 +179,7 @@
 	{#snippet children(modal)}
 		<!-- Wide enough for the longest status to stay on one line. -->
 		<Dialog
-			class="w-84!"
+			class="w-[calc(100vw-2rem)]! max-w-96!"
 			data-testid="connection-status-dialog"
 			opened={modal.opened}
 			onBackdropClick={modal.close}
