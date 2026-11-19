@@ -4,6 +4,7 @@ use aliased::Aliasing;
 use p2panda::operation::Header;
 use tracing::warn;
 
+use crate::topic::application_log_id;
 use crate::{AgentId, AsBody, ChatId, ChatPayload, DeviceGroupPayload, Error, Payload, Profile};
 
 impl crate::Node {
@@ -41,10 +42,45 @@ impl crate::Node {
     }
 
     /// Push my current profile, if I have one, into a chat I just joined or
-    /// may publish to again.
+    /// may publish to again, unless it is the last one I published there.
     pub(crate) async fn publish_my_profile_to(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        if let Some(profile) = self.my_profile().await? {
-            self.publish_profile_to(chat_id, profile).await?;
+        // Two pushes at once would both find the profile missing.
+        let _pushing = self.profile_push.lock().await;
+        let Some(profile) = self.my_profile().await? else {
+            return Ok(());
+        };
+        if self.last_profile_published_to(chat_id).await? == Some(profile.clone()) {
+            return Ok(());
+        }
+        self.publish_profile_to(chat_id, profile).await
+    }
+
+    async fn last_profile_published_to(&self, chat_id: ChatId) -> anyhow::Result<Option<Profile>> {
+        let log_id = application_log_id(chat_id.into());
+        let ops = self
+            .op_store
+            .get_log(&self.device_id(), &log_id, None)
+            .await?;
+        for op in ops.into_iter().rev() {
+            let Some(body) = op.body? else { continue };
+            if let Ok(Payload::Chat(ChatPayload::SetProfile(profile))) =
+                Payload::try_from_body(&body)
+            {
+                return Ok(Some(profile));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Make up for a profile push that failed or never ran, in every chat my
+    /// profile should reach.
+    pub(crate) async fn push_my_profile_where_missing(&self) -> anyhow::Result<()> {
+        // A read-only node (the push extension) leaves publishing to the app.
+        if self.config.read_only {
+            return Ok(());
+        }
+        for chat_id in self.profile_chats().await? {
+            self.spawn_profile_push_once_admitted(chat_id).await;
         }
         Ok(())
     }

@@ -287,7 +287,6 @@ impl LocalStore {
             .ok_or_else(|| anyhow::anyhow!("the device group topic was not stored"))
     }
 
-    /// Inbox topics this node created and advertises via its QR code.
     /// The space we created for a direct chat with `peer`. Kept here because
     /// the projection only learns of it from our contact request, which may
     /// not have been published.
@@ -323,6 +322,7 @@ impl LocalStore {
         Ok(())
     }
 
+    /// Inbox topics this node created and advertises via its QR code.
     pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
         self.get_inbox_topics(InboxRole::Advertised).await
     }

@@ -352,6 +352,19 @@ async fn test_p2p_acceptance_survives_acceptor_restart() {
         .unwrap();
 }
 
+/// How many profiles `author` published to `chat`, as `holder` has them.
+async fn profiles_in(holder: &TestNode, author: DeviceId, chat: ChatId) -> usize {
+    holder
+        .op_store
+        .get_log(&author, &application_log_id(chat.into()), None)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter_map(|op| Payload::try_from_body(&op.body.unwrap()?).ok())
+        .filter(|payload| matches!(payload, Payload::Chat(ChatPayload::SetProfile(_))))
+        .count()
+}
+
 fn mailbox_only_config() -> NodeConfig {
     NodeConfig::testing().no_p2p().no_blob_sync()
 }
@@ -446,15 +459,7 @@ async fn test_acceptor_profile_reaches_the_requesters_space() {
     .unwrap();
 
     poll.wait_for(|| async {
-        let published = bobbi
-            .op_store
-            .get_log(&alice.device_id(), &application_log_id(chat.into()), None)
-            .await
-            .unwrap()
-            .into_iter()
-            .filter_map(|op| Payload::try_from_body(&op.body.unwrap()?).ok())
-            .filter(|payload| matches!(payload, Payload::Chat(ChatPayload::SetProfile(_))))
-            .count();
+        let published = profiles_in(&bobbi, alice.device_id(), chat).await;
         (published == 1).then_some(()).ok_or(format!(
             "bobbi holds {published} profiles of alice in the chat"
         ))
@@ -538,4 +543,8 @@ async fn test_crossed_requests_settle_on_one_direct_chat_space() {
         .await
         .unwrap();
     assert_eq!(alice.get_messages(chat).await.unwrap().len(), 2);
+    // Whoever created the space accepted in it too, and pushed one profile.
+    for author in [&alice, &bobbi] {
+        assert_eq!(profiles_in(&alice, author.device_id(), chat).await, 1);
+    }
 }

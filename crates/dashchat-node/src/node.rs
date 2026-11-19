@@ -295,6 +295,7 @@ pub struct Node {
     direct_chat_tasks: Arc<Mutex<JoinSet<()>>>,
     space_members_changed: Arc<tokio::sync::Notify>,
     direct_chat_admission: Arc<Mutex<()>>,
+    pub(crate) profile_push: Arc<Mutex<()>>,
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
@@ -532,6 +533,7 @@ impl Node {
             direct_chat_tasks: Default::default(),
             space_members_changed: Default::default(),
             direct_chat_admission: Default::default(),
+            profile_push: Default::default(),
             device_group_topic,
             dirty_ack_topics: Default::default(),
         };
@@ -959,9 +961,9 @@ impl Node {
         }
     }
 
-    /// Push our profile to a direct chat space someone else created, once
-    /// they have admitted us: until then we cannot publish in it.
-    async fn spawn_profile_push_once_admitted(&self, chat_id: DirectChatId) {
+    /// Push our profile to a space once we are a member of it: until its
+    /// creator has admitted us we cannot publish in it.
+    pub(crate) async fn spawn_profile_push_once_admitted(&self, chat_id: ChatId) {
         let node = self.clone();
         self.spawn_direct_chat_task(async move {
             let pushed = async {
@@ -2162,27 +2164,11 @@ impl Node {
                 .map_err(|e| AddContactError::CreateDirectChat(e.to_string()))?,
         };
 
-        self.publish(
-            inbox_topic.topic,
-            Payload::Inbox(InboxPayload::ContactRequest {
-                profile,
-                keybundle,
-                agent_id: self.agent_id(),
-                reply_topic: reply_inbox.topic.clone(),
-                recipient: contact.device_pubkey,
-                direct_chat_id: direct_chat_topic_id,
-            }),
-            Some(&format!(
-                "add_contact/contact_request({:?})",
-                contact.device_pubkey.aliased()
-            )),
-        )
-        .await
-        .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-
         // Our request lives only on this (possibly shared) inbox, so we keep
         // serving it across restarts — but only until the owner accepts or the
         // first restart after the code expires, not for good like the owner does.
+        // Recorded before publishing, so a request that went out is never
+        // taken as unsent.
         // TODO: make this more private. Rejoining the inbox's gossip overlay
         // shows us to (and syncs us the requests of) everyone else who scanned
         // the same QR; sync the topic only with its owner's node instead, and
@@ -2191,6 +2177,32 @@ impl Node {
             .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
             .await
             .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+
+        let published = self
+            .publish(
+                inbox_topic.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile,
+                    keybundle,
+                    agent_id: self.agent_id(),
+                    reply_topic: reply_inbox.topic.clone(),
+                    recipient: contact.device_pubkey,
+                    direct_chat_id: direct_chat_topic_id,
+                }),
+                Some(&format!(
+                    "add_contact/contact_request({:?})",
+                    contact.device_pubkey.aliased()
+                )),
+            )
+            .await;
+        if let Err(err) = published {
+            // Or the next scan would take the request as already sent.
+            self.local_store
+                .remove_requested_inbox_topics_of(contact.device_pubkey)
+                .await
+                .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
+            return Err(Error::AuthorOperation(err.to_string()).into());
+        }
 
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
@@ -2322,12 +2334,7 @@ impl Node {
                 );
             }
         }
-        // A space we created has had our profile since then.
-        if requested != Some(direct_chat_id) {
-            if let Err(err) = self.publish_my_profile_to(direct_chat_id).await {
-                tracing::warn!(?err, "failed to push my profile to the new direct chat");
-            }
-        }
+        self.spawn_profile_push_once_admitted(direct_chat_id).await;
         // Messages they sent before we recorded the acceptance were processed
         // but dropped by the ack filter; now that they are a contact, cover them.
         self.mark_ack_topic_dirty(direct_chat_id);
@@ -2748,6 +2755,11 @@ impl Node {
             .await?
         {
             self.spawn_direct_chat_admission(peer, direct_chat_id).await;
+        }
+
+        if let Err(err) = self.push_my_profile_where_missing().await {
+            error!(?err, "failed to look up the chats my profile goes to");
+            failures += 1;
         }
 
         match self.chat_topics().await {
