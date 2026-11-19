@@ -138,3 +138,6 @@ redundant_closure_for_method_calls = "warn"
 implicit_clone = "warn"
 cloned_instead_of_copied = "warn"
 wildcard_imports = "warn"
+
+[workspace.metadata.dylint]
+libraries = [{ path = "lints/*" }]

@@ -55,6 +55,14 @@ format:
     cargo fmt
     pnpm -r --if-present format
 
+# run clippy with the workspace lints (see [workspace.lints] in Cargo.toml and clippy.toml)
+lint:
+    cargo clippy --workspace --all-targets
+
+# run the custom lints in lints/ (needs `cargo +stable install cargo-dylint dylint-link`)
+lint-custom:
+    cargo dylint --all --workspace
+
 # typecheck every TS package and the rust workspace
 check:
     cargo check --workspace
