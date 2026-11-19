@@ -55,6 +55,7 @@ const MIGRATIONS: &[&str] = &[
         device_id BLOB NOT NULL,
         profile BLOB NOT NULL,
         timestamp INTEGER NOT NULL,
+        op_hash BLOB NOT NULL,
         PRIMARY KEY (chat_id, device_id)
     )",
     "CREATE TABLE IF NOT EXISTS direct_chat_spaces (
@@ -572,8 +573,22 @@ impl OpProjection {
             }
 
             Payload::Chat(ChatPayload::SetProfile(profile)) => {
-                self.save_chat_profile(topic, author, profile, operation_timestamp(operation))
+                let repeated = self
+                    .is_repeated_chat_profile(topic, author, profile, operation.id())
                     .await?;
+                if repeated {
+                    return Err(ProjectionError::invalid(
+                        "profile is already the one published to this chat",
+                    ));
+                }
+                self.save_chat_profile(
+                    topic,
+                    author,
+                    profile,
+                    operation_timestamp(operation),
+                    operation.id(),
+                )
+                .await?;
                 self.reduce_profile(author, profile, operation).await?
             }
 
@@ -851,19 +866,44 @@ impl OpProjection {
         Ok(())
     }
 
+    /// Whether `profile` is what another operation of `device_id` already
+    /// published to the chat: pushing it twice in a row changes nothing.
+    async fn is_repeated_chat_profile(
+        &self,
+        chat: TopicId,
+        device_id: DeviceId,
+        profile: &Profile,
+        op_hash: Hash,
+    ) -> anyhow::Result<bool> {
+        let row: Option<(Profile, Vec<u8>)> = sqlx::query_as(
+            "SELECT profile, op_hash FROM chat_profiles WHERE chat_id = ? AND device_id = ?",
+        )
+        .bind(chat.as_bytes().to_vec())
+        .bind(device_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some((held, held_hash)) = row else {
+            return Ok(false);
+        };
+        Ok(held == *profile && hash_from_db(held_hash)? != op_hash)
+    }
+
     async fn save_chat_profile(
         &self,
         chat: TopicId,
         device_id: DeviceId,
         profile: &Profile,
         timestamp: u64,
+        op_hash: Hash,
     ) -> anyhow::Result<()> {
         sqlx::query(
             "
-            INSERT INTO chat_profiles (chat_id, device_id, profile, timestamp) VALUES (?, ?, ?, ?)
+            INSERT INTO chat_profiles (chat_id, device_id, profile, timestamp, op_hash)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(chat_id, device_id) DO UPDATE SET
                 profile = excluded.profile,
-                timestamp = excluded.timestamp
+                timestamp = excluded.timestamp,
+                op_hash = excluded.op_hash
             WHERE excluded.timestamp > chat_profiles.timestamp
             ",
         )
@@ -871,6 +911,7 @@ impl OpProjection {
         .bind(device_id)
         .bind(profile.clone())
         .bind(i64::try_from(timestamp)?)
+        .bind(op_hash.as_bytes().to_vec())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -1366,6 +1407,38 @@ mod tests {
         assert_eq!(delta.get(&author), Some(&AckedOp { hash: h5, seq: 5 }));
 
         assert_eq!(db.ack_topic_ids().await.unwrap(), vec![topic]);
+    }
+
+    /// A profile pushed to a chat twice in a row is a repeat the second
+    /// time, while replaying the first push or changing the profile is not.
+    #[tokio::test]
+    async fn test_repeated_chat_profile() {
+        let db = projection().await;
+        let topic = *Topic::<kind::Untyped>::new([1; 32]);
+        let author = device(10);
+        let profile = |name: &str| Profile {
+            name: name.to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        };
+        let (first, second) = (Hash::digest(b"first"), Hash::digest(b"second"));
+
+        let repeated = |profile: Profile, hash| {
+            let db = db.clone();
+            async move {
+                db.is_repeated_chat_profile(topic, author, &profile, hash)
+                    .await
+                    .unwrap()
+            }
+        };
+        assert!(!repeated(profile("a"), first).await);
+        db.save_chat_profile(topic, author, &profile("a"), 1, first)
+            .await
+            .unwrap();
+        assert!(!repeated(profile("a"), first).await);
+        assert!(repeated(profile("a"), second).await);
+        assert!(!repeated(profile("b"), second).await);
     }
 
     /// The per-topic lamport maximum only ever moves forward: a replayed
