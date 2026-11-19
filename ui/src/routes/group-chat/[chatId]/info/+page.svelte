@@ -10,6 +10,7 @@
 		IOnlinePeersStore,
 		MailboxTrackerStore,
 	} from 'dash-chat-stores';
+	import { fullName } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import {
 		mdiDelete,
@@ -17,6 +18,7 @@
 		mdiKeyVariant,
 		mdiPencil,
 		mdiPlusCircle,
+		mdiShieldAccount,
 	} from '@mdi/js';
 	import {
 		Page,
@@ -38,6 +40,7 @@
 	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
+	import MakeAdminDialog from '$lib/components/chats/MakeAdminDialog.svelte';
 	import RemoveMemberDialog from '$lib/components/chats/RemoveMemberDialog.svelte';
 	import LeaveGroupDialog from '$lib/components/chats/LeaveGroupDialog.svelte';
 	let chatId = page.params.chatId!;
@@ -78,18 +81,6 @@
 	// 	loading = true;
 	// 	try {
 	// 		await groupChatStore.client.demoteFromAdministrator(chatId, actorId);
-	// 		dialogType = null;
-	// 		dialogActorId = null;
-	// 	} catch (e) {
-	// 		console.error(e);
-	// 	}
-	// 	loading = false;
-	// }
-
-	// async function handlePromote(actorId: string) {
-	// 	loading = true;
-	// 	try {
-	// 		await groupChatStore.client.promoteToAdministrator(chatId, actorId);
 	// 		dialogType = null;
 	// 		dialogActorId = null;
 	// 	} catch (e) {
@@ -247,7 +238,11 @@
 												{/if}
 											</div>
 											{#if member.admin}
-												<Chip class="shrink-0">{m.administrator()}</Chip>
+												<Chip
+													class="shrink-0"
+													data-testid="group-info-member-admin-chip"
+													>{m.administrator()}</Chip
+												>
 											{/if}
 										</div>
 									{/snippet}
@@ -301,17 +296,19 @@
 												}}
 												icon={mdiKeyVariant}
 											/>
-										{:else}
+										{/if} -->
+										{#if !sheetMember.admin}
 											<ListAction
-												title={m.promoteToAdministrator()}
+												title={m.makeAdmin()}
 												onClick={() => {
 													dialogType = 'promote';
 													dialogActorId = sheetOpenFor;
 													sheetOpenFor = null;
 												}}
-												icon={mdiKeyVariant}
+												icon={mdiShieldAccount}
+												data-testid="group-info-make-admin"
 											/>
-										{/if} -->
+										{/if}
 
 										{#if sheetOpenFor === me.agentId}
 											<ListAction
@@ -337,6 +334,26 @@
 								</ActionList>
 							{/if}
 						</SwipeableSheet>
+
+						{@const dialogMemberProfile =
+							dialogActorId !== null
+								? members[dialogActorId]?.profile
+								: undefined}
+						<!-- dialogActorId outlives the close so the member's name stays in
+						     the description while the dialog animates out. -->
+						<MakeAdminDialog
+							bind:opened={
+								() => dialogType === 'promote' && dialogActorId !== null,
+								opened => {
+									if (!opened) dialogType = null;
+								}
+							}
+							{chatId}
+							actorId={dialogActorId}
+							memberName={dialogMemberProfile
+								? fullName(dialogMemberProfile)
+								: undefined}
+						/>
 					{/await}
 				</div>
 			</div>
@@ -367,34 +384,6 @@
 					disabled={loading}
 				>
 					{loading ? '...' : m.demote()}
-				</DialogButton>
-			{/snippet}
-		</Dialog> -->
-
-		<!-- <Dialog
-			opened={dialogType === 'promote' && dialogActorId !== null}
-			onBackdropClick={() => {
-				dialogType = null;
-				dialogActorId = null;
-			}}
-			title={m.promoteToAdministrator()}
-		>
-			<span>{m.areYouSurePromote()}</span>
-			{#snippet buttons()}
-				<DialogButton
-					onClick={() => {
-						dialogType = null;
-						dialogActorId = null;
-					}}
-				>
-					{m.cancel()}
-				</DialogButton>
-				<DialogButton
-					onClick={() => dialogActorId && handlePromote(dialogActorId)}
-					disabled={loading}
-					strong
-				>
-					{loading ? '...' : m.promote()}
 				</DialogButton>
 			{/snippet}
 		</Dialog> -->

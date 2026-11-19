@@ -386,6 +386,7 @@ export type GroupControlEvent =
 	  }
 	| {
 			kind: 'group_member_promoted';
+			isMine: boolean;
 			promotedByMe: boolean;
 			memberName: string | undefined;
 			adminName: string | undefined;
