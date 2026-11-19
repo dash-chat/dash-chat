@@ -218,6 +218,44 @@ where
             .await)
     }
 
+    /// Whether `endpoint` identifies one of the currently registered mailboxes.
+    pub async fn is_mailbox(&self, endpoint: iroh::EndpointId) -> bool {
+        self.mailbox_registry
+            .with_all(|mailboxes| {
+                mailboxes.keys().any(|id| {
+                    mailbox_server::decode_mailbox_id(id)
+                        .map_or(false, |decoded| decoded == endpoint)
+                })
+            })
+            .await
+    }
+
+    /// Probe every registered mailbox and return whether any reports already
+    /// holding `hash`.
+    pub async fn any_mailbox_has_blob(
+        &self,
+        _topic: &Item::Topic,
+        hash: iroh_blobs::Hash,
+    ) -> anyhow::Result<bool> {
+        for (mailbox_id, tracked) in self.registered_mailboxes().await {
+            if tracked.health().borrow().status != mailbox_client::SyncStatus::Active {
+                continue;
+            }
+            let client = tracked.client().await;
+            match client.has_blob(hash).await {
+                Ok(true) => {
+                    tracing::debug!(%hash, %mailbox_id, "mailbox reports blob available");
+                    return Ok(true);
+                }
+                Ok(false) => {}
+                Err(err) => {
+                    tracing::debug!(%hash, %mailbox_id, ?err, "mailbox blob probe failed");
+                }
+            }
+        }
+        Ok(false)
+    }
+
     /// Whether an upload of `hash` to the given registered mailbox would start
     /// now: not in flight and not backing off. Test-only accessor for the
     /// upload tracker's wiring; production paths go through `claim_upload`.
