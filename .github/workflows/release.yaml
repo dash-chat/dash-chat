@@ -228,10 +228,20 @@ jobs:
         shell: bash
         run: pnpm dlx @sentry/cli@2 debug-files upload ${{ matrix.debug_files }}
 
-  release-mailbox-local-server-arm:
+  release-mailbox-local-server:
     needs: create-release-draft
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            recipe: local-message-hub-arm
+            asset: local-message-hub-aarch64-linux
+          - target: x86_64-unknown-linux-gnu
+            recipe: local-message-hub-x86
+            asset: local-message-hub-x86_64-linux
     # Same recipe as local builds, so a release binary matches one built on a dev machine
     runs-on: ubuntu-22.04
     steps:
@@ -248,22 +258,23 @@ jobs:
       - name: install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          target: aarch64-unknown-linux-gnu
+          target: ${{ matrix.target }}
           rustflags: ''
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          key: ${{ matrix.target }}
 
       - name: build mailbox-local-server
-        run: nix run --inputs-from . nixpkgs#just -- mailbox local-message-server-arm
+        run: nix run --inputs-from . nixpkgs#just -- mailbox ${{ matrix.recipe }}
 
       - name: Upload mailbox-local-server binary to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/local-message-server-aarch64-linux
+          file: target/${{ matrix.asset }}
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
           overwrite: true
