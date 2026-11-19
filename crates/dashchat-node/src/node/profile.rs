@@ -4,7 +4,6 @@ use aliased::Aliasing;
 use p2panda::operation::Header;
 use tracing::warn;
 
-use crate::topic::application_log_id;
 use crate::{AgentId, AsBody, ChatId, ChatPayload, DeviceGroupPayload, Error, Payload, Profile};
 
 impl crate::Node {
@@ -49,27 +48,14 @@ impl crate::Node {
         let Some(profile) = self.my_profile().await? else {
             return Ok(());
         };
-        if self.last_profile_published_to(chat_id).await? == Some(profile.clone()) {
+        let published = self
+            .projection
+            .chat_profile(chat_id, self.device_id())
+            .await?;
+        if published.as_ref() == Some(&profile) {
             return Ok(());
         }
         self.publish_profile_to(chat_id, profile).await
-    }
-
-    async fn last_profile_published_to(&self, chat_id: ChatId) -> anyhow::Result<Option<Profile>> {
-        let log_id = application_log_id(chat_id.into());
-        let ops = self
-            .op_store
-            .get_log(&self.device_id(), &log_id, None)
-            .await?;
-        for op in ops.into_iter().rev() {
-            let Some(body) = op.body? else { continue };
-            if let Ok(Payload::Chat(ChatPayload::SetProfile(profile))) =
-                Payload::try_from_body(&body)
-            {
-                return Ok(Some(profile));
-            }
-        }
-        Ok(None)
     }
 
     /// Make up for a profile push that failed or never ran, in every chat my

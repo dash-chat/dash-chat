@@ -50,6 +50,13 @@ const MIGRATIONS: &[&str] = &[
         profile BLOB NOT NULL,
         timestamp INTEGER NOT NULL
     )",
+    "CREATE TABLE IF NOT EXISTS chat_profiles (
+        chat_id BLOB NOT NULL,
+        device_id BLOB NOT NULL,
+        profile BLOB NOT NULL,
+        timestamp INTEGER NOT NULL,
+        PRIMARY KEY (chat_id, device_id)
+    )",
     "CREATE TABLE IF NOT EXISTS direct_chat_spaces (
         peer_device_id BLOB NOT NULL,
         space_id BLOB NOT NULL,
@@ -244,6 +251,21 @@ impl OpProjection {
         .bind(agent_id)
         .fetch_optional(&self.pool)
         .await?;
+        Ok(row.map(|(profile,)| profile))
+    }
+
+    /// The newest profile `device_id` published to the chat.
+    pub async fn chat_profile(
+        &self,
+        chat_id: ChatId,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<Profile>> {
+        let row: Option<(Profile,)> =
+            sqlx::query_as("SELECT profile FROM chat_profiles WHERE chat_id = ? AND device_id = ?")
+                .bind(chat_id.to_vec())
+                .bind(device_id)
+                .fetch_optional(&self.pool)
+                .await?;
         Ok(row.map(|(profile,)| profile))
     }
 
@@ -550,6 +572,8 @@ impl OpProjection {
             }
 
             Payload::Chat(ChatPayload::SetProfile(profile)) => {
+                self.save_chat_profile(topic, author, profile, operation_timestamp(operation))
+                    .await?;
                 self.reduce_profile(author, profile, operation).await?
             }
 
@@ -822,6 +846,31 @@ impl OpProjection {
         .bind(peer)
         .bind(space.to_vec())
         .bind(requester)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn save_chat_profile(
+        &self,
+        chat: TopicId,
+        device_id: DeviceId,
+        profile: &Profile,
+        timestamp: u64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "
+            INSERT INTO chat_profiles (chat_id, device_id, profile, timestamp) VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, device_id) DO UPDATE SET
+                profile = excluded.profile,
+                timestamp = excluded.timestamp
+            WHERE excluded.timestamp > chat_profiles.timestamp
+            ",
+        )
+        .bind(chat.as_bytes().to_vec())
+        .bind(device_id)
+        .bind(profile.clone())
+        .bind(i64::try_from(timestamp)?)
         .execute(&self.pool)
         .await?;
         Ok(())
