@@ -292,11 +292,14 @@ pub struct Node {
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+
+    // Items largely to do with creation of direct chat space
     direct_chat_tasks: Arc<Mutex<JoinSet<()>>>,
     space_members_changed: Arc<tokio::sync::Notify>,
     direct_chat_admission: Arc<Mutex<()>>,
     /// The profile last pushed to each chat since this node started.
     pub(crate) pushed_profiles: Arc<Mutex<HashMap<ChatId, crate::Profile>>>,
+
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
