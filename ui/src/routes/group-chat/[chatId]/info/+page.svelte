@@ -186,74 +186,75 @@
 					</div>
 
 					{#await $members then members}
-						<BlockTitle>
-							{m.membersCount({
-								count: Object.keys(members).length,
-							})}</BlockTitle
-						>
-						<ActionList data-testid="group-info-members">
-							{#if me.admin}
-								<ListAction
-									title={m.addMembers()}
-									icon={mdiPlusCircle}
-									href={`/group-chat/${chatId}/info/add-members`}
-									data-testid="group-info-add-members"
-								/>
-							{/if}
+						{#if me.member}
+							<BlockTitle>
+								{m.membersCount({
+									count: Object.keys(members).length,
+								})}</BlockTitle
+							>
+							<ActionList data-testid="group-info-members">
+								{#if me.admin}
+									<ListAction
+										title={m.addMembers()}
+										icon={mdiPlusCircle}
+										href={`/group-chat/${chatId}/info/add-members`}
+										data-testid="group-info-add-members"
+									/>
+								{/if}
 
-							{#each Object.entries(members) as [actorId, member]}
-								{@const activeOverP2p = membersActiveOverP2p.includes(actorId)}
-								<ListItem
-									link={me.admin && actorId !== me.agentId}
-									chevron={false}
-									strongTitle={false}
-									innerClass="py-0! self-stretch flex flex-col justify-center"
-									data-testid={`group-info-member-${member.profile?.name}`}
-									onclick={me.admin && actorId !== me.agentId
-										? () => openMemberActions(actorId)
-										: undefined}
-								>
-									{#snippet media()}
-										<P2pBadge
-											show={activeOverP2p}
-											testId={`group-info-member-p2p-badge-${member.profile?.name}`}
-										>
-											<PeerAvatar profile={member.profile} size={32} />
-										</P2pBadge>
-									{/snippet}
-
-									<!-- Konsta centers `after` on the title line only, which
-									     leaves the chip off-center once a subtitle shows. -->
-									{#snippet inner()}
-										<div
-											class="row items-center justify-between gap-1 in-[.k-ios]:min-h-7"
-										>
-											<div
-												class="column min-w-0 text-[16px] in-[.k-ios]:text-[17px]"
+								{#each Object.entries(members) as [actorId, member]}
+									{@const activeOverP2p =
+										membersActiveOverP2p.includes(actorId)}
+									<ListItem
+										link={me.admin && actorId !== me.agentId}
+										chevron={false}
+										strongTitle={false}
+										innerClass="py-0! self-stretch flex flex-col justify-center"
+										data-testid={`group-info-member-${member.profile?.name}`}
+										onclick={me.admin && actorId !== me.agentId
+											? () => openMemberActions(actorId)
+											: undefined}
+									>
+										{#snippet media()}
+											<P2pBadge
+												show={activeOverP2p}
+												testId={`group-info-member-p2p-badge-${member.profile?.name}`}
 											>
-												<span class="leading-5">
-													{actorId === me.agentId
-														? m.you()
-														: member.profile?.name}
-												</span>
-												{#if activeOverP2p}
-													<span class="text-xs">{m.activeOverP2p()}</span>
+												<PeerAvatar profile={member.profile} size={32} />
+											</P2pBadge>
+										{/snippet}
+
+										<!-- Konsta centers `after` on the title line only, which
+										     leaves the chip off-center once a subtitle shows. -->
+										{#snippet inner()}
+											<div
+												class="row items-center justify-between gap-1 in-[.k-ios]:min-h-7"
+											>
+												<div
+													class="column min-w-0 text-[16px] in-[.k-ios]:text-[17px]"
+												>
+													<span class="leading-5">
+														{actorId === me.agentId
+															? m.you()
+															: member.profile?.name}
+													</span>
+													{#if activeOverP2p}
+														<span class="text-xs">{m.activeOverP2p()}</span>
+													{/if}
+												</div>
+												{#if member.admin}
+													<Chip
+														class="shrink-0"
+														data-testid="group-info-member-admin-chip"
+														>{m.administrator()}</Chip
+													>
 												{/if}
 											</div>
-											{#if member.admin}
-												<Chip
-													class="shrink-0"
-													data-testid="group-info-member-admin-chip"
-													>{m.administrator()}</Chip
-												>
-											{/if}
-										</div>
-									{/snippet}
-								</ListItem>
-							{/each}
-						</ActionList>
+										{/snippet}
+									</ListItem>
+								{/each}
+							</ActionList>
 
-						{#if me.member}
 							<ActionList>
 								<ListAction
 									title={m.leaveGroup()}

@@ -8,6 +8,7 @@ export class GroupInfoPage extends TestHelper {
 	headerName = this.el(tid('group-info-header-name'));
 	name = this.el(tid('group-info-name'));
 	description = this.el(tid('group-info-description'));
+	members = this.el(tid('group-info-members'));
 	addMembersLink = this.el(tid('group-info-add-members'));
 	editLink = this.el(tid('group-info-edit-link'));
 	leaveButton = this.el(tid('group-info-leave'));
