@@ -12,25 +12,20 @@
 	} from 'dash-chat-stores';
 	import { fullName } from 'dash-chat-stores';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import {
-		mdiDelete,
-		mdiExport,
-		mdiKeyVariant,
-		mdiPencil,
-		mdiPlusCircle,
-		mdiShieldAccount,
-	} from '@mdi/js';
+	import { mdiExport, mdiKeyVariant, mdiPencil, mdiPlusCircle } from '@mdi/js';
 	import {
 		Page,
 		Navbar,
 		NavbarBackLink,
 		ListItem,
 		Chip,
+		Dialog,
 		BlockTitle,
 		useTheme,
 		Link,
 	} from 'konsta/svelte';
 	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	import { page } from '$app/state';
 	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
@@ -70,7 +65,15 @@
 			: [],
 	);
 
-	let sheetOpenFor = $state<string | null>(null);
+	// selectedMemberId outlives the close so the member's actions stay
+	// rendered while the sheet or dialog animates out.
+	let selectedMemberId = $state<string | null>(null);
+	let memberActionsOpened = $state(false);
+
+	function openMemberActions(actorId: string) {
+		selectedMemberId = actorId;
+		memberActionsOpened = true;
+	}
 	let dialogType = $state<
 		'demote' | 'promote' | 'remove' | 'leave' | 'delete' | null
 	>(null);
@@ -201,13 +204,13 @@
 							{#each Object.entries(members) as [actorId, member]}
 								{@const activeOverP2p = membersActiveOverP2p.includes(actorId)}
 								<ListItem
-									link
+									link={me.admin && actorId !== me.agentId}
 									chevron={false}
 									strongTitle={false}
 									innerClass="py-0! self-stretch flex flex-col justify-center"
 									data-testid={`group-info-member-${member.profile?.name}`}
-									onclick={me.admin
-										? () => (sheetOpenFor = actorId)
+									onclick={me.admin && actorId !== me.agentId
+										? () => openMemberActions(actorId)
 										: undefined}
 								>
 									{#snippet media()}
@@ -269,71 +272,92 @@
 							</ActionList>
 						{/if}
 
-						{@const sheetMember = sheetOpenFor ? members[sheetOpenFor] : null}
-						<SwipeableSheet
-							class="pb-safe"
-							opened={sheetOpenFor !== null}
-							onClose={() => (sheetOpenFor = null)}
-						>
-							{#if sheetMember}
-								<div
-									class="flex-col gap-4 py-4"
-									style="display: flex; align-items: center;"
-								>
-									<PeerAvatar profile={sheetMember.profile} size={32} />
-									<span class="font-semibold">{sheetMember.profile?.name}</span>
-								</div>
-
-								<ActionList>
+						{@const selectedMember = selectedMemberId
+							? members[selectedMemberId]
+							: null}
+						{@const memberActionsVisible =
+							memberActionsOpened && !!selectedMember && me.admin}
+						{#snippet memberActions(listClass?: string)}
+							{#if selectedMember}
+								<ActionList class={listClass}>
 									{#if me.admin}
-										<!-- {#if sheetMember.admin}
+										<!-- {#if selectedMember.admin}
 											<ListAction
 												title={m.demoteFromAdministrator()}
 												onClick={() => {
 													dialogType = 'demote';
-													dialogActorId = sheetOpenFor;
-													sheetOpenFor = null;
+													dialogActorId = selectedMemberId;
+													memberActionsOpened = false;
 												}}
 												icon={mdiKeyVariant}
 											/>
 										{/if} -->
-										{#if !sheetMember.admin}
+										{#if !selectedMember.admin}
 											<ListAction
 												title={m.makeAdmin()}
 												onClick={() => {
 													dialogType = 'promote';
-													dialogActorId = sheetOpenFor;
-													sheetOpenFor = null;
+													dialogActorId = selectedMemberId;
+													memberActionsOpened = false;
 												}}
-												icon={mdiShieldAccount}
+												icon={mdiKeyVariant}
 												data-testid="group-info-make-admin"
 											/>
 										{/if}
 
-										{#if sheetOpenFor === me.agentId}
-											<ListAction
-												title={m.leaveGroup()}
-												actionType="danger"
-												icon={mdiExport}
-												onClick={() => (dialogType = 'leave')}
-												data-testid="group-info-leave-self"
-											/>
-										{:else}
-											<ListAction
-												title={m.removeMember()}
-												onClick={() => {
-													dialogType = 'remove';
-													dialogActorId = sheetOpenFor;
-													sheetOpenFor = null;
-												}}
-												icon={mdiDelete}
-												data-testid="group-info-remove-member"
-											/>
-										{/if}
+										<ListAction
+											title={m.removeMember()}
+											onClick={() => {
+												dialogType = 'remove';
+												dialogActorId = selectedMemberId;
+												memberActionsOpened = false;
+											}}
+											icon={mdiExport}
+											data-testid="group-info-remove-member"
+										/>
 									{/if}
 								</ActionList>
 							{/if}
-						</SwipeableSheet>
+						{/snippet}
+
+						{#if isWideScreen.value}
+							<Dialog
+								opened={memberActionsVisible}
+								onBackdropClick={() => (memberActionsOpened = false)}
+							>
+								{#if selectedMember}
+									<div class="flex flex-col items-center gap-3 px-4 pt-2 pb-5">
+										<PeerAvatar profile={selectedMember.profile} size={80} />
+										<span
+											class="text-xl font-medium break-words text-center max-w-full"
+											>{selectedMember.profile
+												? fullName(selectedMember.profile)
+												: m.someone()}</span
+										>
+									</div>
+								{/if}
+								{@render memberActions('!mx-0')}
+							</Dialog>
+						{:else}
+							<SwipeableSheet
+								class="pb-safe"
+								opened={memberActionsVisible}
+								onClose={() => (memberActionsOpened = false)}
+							>
+								{#if selectedMember}
+									<div class="flex flex-col items-center gap-3 px-4 pt-6 pb-4">
+										<PeerAvatar profile={selectedMember.profile} size={80} />
+										<span
+											class="text-xl font-medium break-words text-center max-w-full"
+											>{selectedMember.profile
+												? fullName(selectedMember.profile)
+												: m.someone()}</span
+										>
+									</div>
+								{/if}
+								{@render memberActions()}
+							</SwipeableSheet>
+						{/if}
 
 						{@const dialogMemberProfile =
 							dialogActorId !== null
