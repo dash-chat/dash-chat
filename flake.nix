@@ -9,9 +9,10 @@
     crane.url = "github:ipetkov/crane";
 
     # nixpkgs revs pinned only for the chromedrivers matching the e2e Android
-    # devices' WebView majors (physical phones on 149-157, the emulator image
+    # devices' WebView majors (physical phones on 149-158, the emulator image
     # on 124). The harness materializes packages.e2e-chromedrivers via
     # `nix build --out-link` and Appium picks the right one per device.
+    nixpkgs-chromedriver-158.url = "github:nixos/nixpkgs/0bb8272318b4ca41bf0edc6224df3e3e3046b70d";
     nixpkgs-chromedriver-157.url = "github:nixos/nixpkgs/cbe094a83aad0c6d7f9ddcebf2401e724ec62272";
     nixpkgs-chromedriver-156.url = "github:nixos/nixpkgs/0bb2eedc20e4739f29e8045034f2828ad7054f8f";
     nixpkgs-chromedriver-155.url = "github:nixos/nixpkgs/a3fd85e95837ce5d2e879357445c6eb5cd02d280";

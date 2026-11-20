@@ -209,6 +209,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-chromedriver-158": {
+      "locked": {
+        "lastModified": 1795085501,
+        "narHash": "sha256-S5keGWzaKpuXo9MNoIC2FfTIuTyTnx8P4NhYJMEsTLI=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "0bb8272318b4ca41bf0edc6224df3e3e3046b70d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "0bb8272318b4ca41bf0edc6224df3e3e3046b70d",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1790477367,
@@ -255,6 +271,7 @@
         "nixpkgs-chromedriver-155": "nixpkgs-chromedriver-155",
         "nixpkgs-chromedriver-156": "nixpkgs-chromedriver-156",
         "nixpkgs-chromedriver-157": "nixpkgs-chromedriver-157",
+        "nixpkgs-chromedriver-158": "nixpkgs-chromedriver-158",
         "rust-overlay": "rust-overlay"
       }
     },
