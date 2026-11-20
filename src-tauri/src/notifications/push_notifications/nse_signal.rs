@@ -81,9 +81,9 @@ fn cf_string(value: &str) -> CFStringRef {
 /// the app, which imports what the extension recorded. The push handler is
 /// not the place to nudge from: a group the extension joins has its
 /// operations fetched and processed by the node after the handler returned.
-pub fn nudge_on_processed_operations() -> mpsc::Sender<Notification> {
-    static TX: LazyLock<mpsc::Sender<Notification>> = LazyLock::new(|| {
-        let (tx, mut rx) = mpsc::channel::<Notification>(256);
+pub fn nudge_on_processed_operations() -> mpsc::UnboundedSender<Notification> {
+    static TX: LazyLock<mpsc::UnboundedSender<Notification>> = LazyLock::new(|| {
+        let (tx, mut rx) = mpsc::unbounded_channel::<Notification>();
         tauri::async_runtime::spawn(async move {
             while rx.recv().await.is_some() {
                 // One post per burst: the app debounces nudges anyway.

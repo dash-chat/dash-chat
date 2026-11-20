@@ -257,7 +257,7 @@ pub struct Node {
 
     pub config: NodeConfig,
 
-    notification_tx: Option<mpsc::Sender<Notification>>,
+    notification_tx: Option<mpsc::UnboundedSender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
     streams: Arc<TopicStreams>,
@@ -316,7 +316,7 @@ impl Node {
     pub async fn new(
         data_path: PathBuf,
         config: NodeConfig,
-        notification_tx: Option<mpsc::Sender<Notification>>,
+        notification_tx: Option<mpsc::UnboundedSender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
@@ -348,7 +348,7 @@ impl Node {
         projection: OpProjection,
         node_keys: NodeKeys,
         config: NodeConfig,
-        notification_tx: Option<mpsc::Sender<Notification>>,
+        notification_tx: Option<mpsc::UnboundedSender<Notification>>,
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         // A no-p2p config must fully disable p2p: `enable_p2p == false` is only

@@ -73,7 +73,7 @@ pub struct NodeContext {
     pub role: NodeRole,
     /// Channel for forwarding node notifications to the app (webview + system
     /// notifications). None when running outside the main app process.
-    pub notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
+    pub notification_tx: Option<mpsc::UnboundedSender<dashchat_node::Notification>>,
     /// The Tauri app handle; `None` in a push process, which runs without the
     /// app. Used to spawn app-lifetime tasks like local-mailbox mDNS discovery
     /// and to read the app's settings.
@@ -90,7 +90,7 @@ impl NodeContext {
     /// no P2P, no blob sync, and no app-lifetime channels.
     #[cfg_attr(not(mobile), allow(dead_code))]
     pub fn for_push_notifications(
-        notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
+        notification_tx: Option<mpsc::UnboundedSender<dashchat_node::Notification>>,
     ) -> Self {
         Self {
             role: NodeRole::PushNotification,
@@ -119,7 +119,7 @@ impl NodeContext {
     /// background on iOS): full networking and notification channels enabled.
     pub fn for_app(
         app: &AppHandle,
-        notification_tx: mpsc::Sender<dashchat_node::Notification>,
+        notification_tx: mpsc::UnboundedSender<dashchat_node::Notification>,
         sqlite_gate: sqlite_gate::SqliteGate,
         local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     ) -> Self {
