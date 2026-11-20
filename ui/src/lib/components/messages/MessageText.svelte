@@ -47,7 +47,7 @@
 			graphemes.length > displayLimit + BUFFER,
 	);
 	const shown = $derived(
-		truncated ? graphemes.slice(0, displayLimit).join('') : text,
+		truncated ? graphemes.slice(0, displayLimit).join('').trimEnd() : text,
 	);
 
 	function expand() {

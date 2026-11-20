@@ -11,7 +11,6 @@ export class GroupInfoPage extends TestHelper {
 	addMembersLink = this.el(tid('group-info-add-members'));
 	editLink = this.el(tid('group-info-edit-link'));
 	leaveButton = this.el(tid('group-info-leave'));
-	leaveSelfButton = this.el(tid('group-info-leave-self'));
 	leaveConfirmButton = this.el(tid('group-info-leave-confirm'));
 	leaveCancelButton = this.el(tid('group-info-leave-cancel'));
 	removeMemberButton = this.el(tid('group-info-remove-member'));
