@@ -161,8 +161,27 @@ impl sqlx::Decode<'_, Sqlite> for Topic<kind::Untyped> {
 
 // conversion traits for p2panda core types.
 
-impl<K: TopicKind> From<Topic<K>> for LogId {
-    fn from(value: Topic<K>) -> Self {
+/// The log an author's application operations on a space-backed topic live
+/// in. Chats and the device group are spaces; p2panda keeps what is published
+/// into a space apart from the space's control logs.
+pub fn application_log_id(topic: TopicId) -> LogId {
+    p2panda::spaces::application_log_id(topic.into())
+}
+
+impl From<Topic<kind::Chat>> for LogId {
+    fn from(value: Topic<kind::Chat>) -> Self {
+        application_log_id(value.into())
+    }
+}
+
+impl From<Topic<kind::DeviceGroup>> for LogId {
+    fn from(value: Topic<kind::DeviceGroup>) -> Self {
+        application_log_id(value.into())
+    }
+}
+
+impl From<Topic<kind::Inbox>> for LogId {
+    fn from(value: Topic<kind::Inbox>) -> Self {
         LogId::from_topic(value.into())
     }
 }
@@ -207,6 +226,7 @@ impl<K: TopicKind> Topic<K> {
     pub fn alias_named(self, name: &str) -> Self {
         self.id.alias_named(name);
         LogId::from_topic(self.id).alias_named(name);
+        application_log_id(self.id).alias_named(name);
         self
     }
 }

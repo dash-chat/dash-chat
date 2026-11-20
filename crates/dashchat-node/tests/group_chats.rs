@@ -492,10 +492,8 @@ async fn test_admin_removes_themself_there_is_another_admin() {
         .await
         .unwrap();
 
-    poll.consistency([&alice, &bobbi], &[chat_id.into()])
-        .await
-        .unwrap();
-
+    // No consistency check: alice's ops after the removal are encrypted to a secret bobbi
+    // no longer holds, so he never processes them.
     assert_group_members(
         &poll,
         &[(&alice, "alice"), (&bobbi, "bobbi")],
@@ -574,7 +572,55 @@ async fn test_non_admin_removes_themself() {
         .await
         .unwrap();
 
+    // No consistency check: alice's ops after the removal are encrypted to a secret bobbi
+    // no longer holds, so he never processes them.
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![(alice.device_id(), Access::manage())],
+    )
+    .await;
+}
+
+/// Bobbi leaves right after messaging, so alice's debounced ack of the message is published
+/// after the removal, encrypted to a secret bobbi no longer holds.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_member_removes_themself_before_their_message_is_acked() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
     poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    bobbi.send_message_raw(chat_id, "bye".into()).await.unwrap();
+    bobbi
+        .remove_group_member(chat_id, *bobbi.device_id())
         .await
         .unwrap();
 
@@ -625,10 +671,8 @@ async fn test_admin_removes_non_admin() {
         .await
         .unwrap();
 
-    poll.consistency([&alice, &bobbi], &[chat_id.into()])
-        .await
-        .unwrap();
-
+    // No consistency check: alice's ops after the removal are encrypted to a secret bobbi
+    // no longer holds, so he never processes them.
     assert_group_members(
         &poll,
         &[(&alice, "alice"), (&bobbi, "bobbi")],
@@ -951,7 +995,7 @@ async fn test_group_control_ops_are_served_to_every_member() {
         ops.iter()
             .all(|op| op.header.verifying_key == *alice.device_id())
     );
-    assert!(ops.iter().all(|op| op.body.is_none()));
+    assert!(ops.iter().all(|op| matches!(op.body, Ok(None))));
 }
 
 #[tokio::test(flavor = "multi_thread")]

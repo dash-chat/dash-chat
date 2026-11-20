@@ -39,7 +39,7 @@ async fn ack_maps_authored_by(
         .await
         .unwrap()
     {
-        let Some(body) = op.body else { continue };
+        let Ok(Some(body)) = op.body else { continue };
         if let Ok(Payload::Chat(ChatPayload::MessageAck { acks })) = Payload::try_from_body(&body) {
             maps.push(acks);
         }
@@ -175,7 +175,7 @@ async fn acks_are_delta_encoded_and_never_cascade() {
                 .await
                 .unwrap()
             {
-                let Some(body) = op.body else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 if let Ok(Payload::Chat(ChatPayload::MessageAck { .. })) =
                     Payload::try_from_body(&body)
                 {

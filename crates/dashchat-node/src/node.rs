@@ -51,7 +51,7 @@ use crate::chat::{
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
 use crate::payload::{ChatPayload, InboxPayload, Payload};
-use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore};
+use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore, ReadOperation};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
@@ -425,7 +425,7 @@ impl Node {
         // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
         // can reduce the need for these wrappers by either moving generally useful methods into
         // p2panda or finding alternative routes to achieve the same queries.
-        let op_store = OpStore::from_sqlite(store.clone());
+        let op_store = OpStore::from_sqlite(store.clone(), streams.clone());
 
         // === mailboxes === //
 
@@ -950,6 +950,16 @@ impl Node {
         topic: ChatId,
         initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
     ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
+        // Boxed: p2panda's space futures are large enough to overflow the stack when
+        // inlined into every caller up the chain.
+        Box::pin(self.create_space_unboxed(topic, initial_members)).await
+    }
+
+    async fn create_space_unboxed(
+        &self,
+        topic: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
         let space = self.register_and_create_space(topic).await?;
         let mut added = BTreeMap::new();
         for (member, access) in initial_members {
@@ -1151,7 +1161,10 @@ impl Node {
     }
 
     /// Every author's group-control operations for `chat_id`'s space
-    pub async fn get_group_control_ops(&self, chat_id: ChatId) -> anyhow::Result<Vec<Operation>> {
+    pub async fn get_group_control_ops(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Vec<ReadOperation>> {
         let log_id = p2panda::spaces::group_log_id(space_group_id(chat_id.into()));
         let mut ops = Vec::new();
         for author in self.op_store.get_authors(log_id).await? {
@@ -1177,7 +1190,7 @@ impl Node {
                 let group = manager.group(group_id).created().await?;
                 Ok(group.members().await?)
             })
-            .await?;
+            .await??;
         Ok(members
             .into_iter()
             .map(|(member, access)| {
@@ -1243,13 +1256,16 @@ impl Node {
     }
 
     pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
-        Ok(self.streams.with_node(async |node| node.me().await).await?)
+        Ok(self
+            .streams
+            .with_node(async |node| node.me().await)
+            .await??)
     }
 
     pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
         self.streams
             .with_node(async |node| node.register_member(keybundle).await)
-            .await?;
+            .await??;
         Ok(())
     }
 
@@ -1299,7 +1315,7 @@ impl Node {
         let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
         for author in self.op_store.get_authors(log_id).await? {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Some(body) = op.body? else { continue };
                 let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
                     Payload::try_from_body(&body)
                 else {
@@ -1627,7 +1643,7 @@ impl Node {
         let mut ops = std::collections::HashMap::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
@@ -1672,7 +1688,7 @@ impl Node {
         let mut edits = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
@@ -1711,7 +1727,7 @@ impl Node {
         let mut replies = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
@@ -1761,12 +1777,12 @@ impl Node {
         &self,
         topic_id: TopicId,
     ) -> anyhow::Result<Option<crate::GroupInfo>> {
-        let log_id = LogId::from_topic(topic_id);
+        let log_id = crate::topic::application_log_id(topic_id);
         let authors = self.op_store.get_authors(log_id).await?;
         let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body)
                 else {
                     continue;
@@ -2186,7 +2202,7 @@ impl Node {
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
             for op in self.op_store.get_log(&device_id, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Some(body) = op.body? else { continue };
                 let Ok(Payload::Inbox(InboxPayload::ContactRequest {
                     agent_id: req_agent,
                     reply_topic,
@@ -2411,10 +2427,13 @@ impl Node {
         let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
         for (hash, topic) in self.local_store.extension_processed_operations().await? {
             // Without a body there is nothing left for the app layer to see.
-            match self.op_store.get_operation(&hash).await? {
-                Some(operation) if operation.body.is_some() => {
-                    by_topic.entry(topic).or_default().push(operation)
-                }
+            let readable = self
+                .op_store
+                .get_operation(&hash)
+                .await?
+                .is_some_and(|operation| matches!(operation.body, Ok(Some(_))));
+            match self.op_store.get_stored_operation(&hash).await? {
+                Some(operation) if readable => by_topic.entry(topic).or_default().push(operation),
                 _ => {
                     if let Err(err) = self
                         .local_store
@@ -2750,19 +2769,20 @@ impl Node {
 
     /// Decrypt a media blob with the space secret pinned in its message metadata.
     ///
-    /// A blob with no decrypt-index entry was stored outside a chat message (only possible
-    /// internally, e.g. in tests) and is returned as-is. An unknown secret id means the
-    /// space's key agreement hasn't caught up with the message yet, so with a `deadline` the
-    /// decrypt is retried until then; failure to decrypt with a known secret is permanent.
+    /// Fails for a blob no readable message names: nothing says how to decrypt it. An unknown
+    /// secret id means the space's key agreement hasn't caught up with the message yet, so
+    /// with a `deadline` the decrypt is retried until then; failure to decrypt with a known
+    /// secret is permanent.
     async fn decrypt_blob(
         &self,
         hash: iroh_blobs::Hash,
         ciphertext: bytes::Bytes,
         deadline: Option<std::time::Instant>,
     ) -> anyhow::Result<Vec<u8>> {
-        let Some(info) = self.blob_decrypt_index.get(&hash) else {
-            return Ok(ciphertext.to_vec());
-        };
+        let info = self
+            .blob_decrypt_index
+            .get(&hash)
+            .with_context(|| format!("no readable message names blob {hash}"))?;
         let space = self.streams.space(info.topic).await?;
         loop {
             let ciphertext = ciphertext.clone();
@@ -2930,18 +2950,74 @@ mod config_validation_tests {
 
 #[cfg(test)]
 mod blob_load_tests {
-    use crate::NodeConfig;
-    use crate::testing::TestNode;
+    use crate::testing::*;
+    use crate::*;
     use std::time::Duration;
+
+    /// Alice sends bobbi a photo. Gives both, the photo's bytes and its blob hash.
+    async fn sent_photo() -> (TestNode, TestNode, Vec<u8>, iroh_blobs::Hash) {
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat = alice.direct_chat_with(&bobbi);
+
+        let bytes = rand::random::<[u8; 1024]>().to_vec();
+        let photo = OutgoingMedia::Photos {
+            photos: vec![OutgoingPhoto {
+                data: bytes.clone(),
+                name: "pic.png".into(),
+                mime_type: "image/png".into(),
+                width: 640,
+                height: 480,
+            }],
+        };
+        alice
+            .send_message(chat, "look at this", Some(photo), None)
+            .await
+            .unwrap();
+        let hash = alice
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .find_map(|m| m.content.media().cloned())
+            .expect("the sent message has media")
+            .first()
+            .expect("one media item")
+            .hash();
+
+        PollConfig::default()
+            .wait_for(|| async {
+                let received = bobbi
+                    .get_messages(chat)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|m| m.content.media().is_some());
+                received.then_some(()).ok_or("photo message not received")
+            })
+            .await
+            .unwrap();
+        (alice, bobbi, bytes, hash)
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn load_blob_present_returns_bytes_without_timeout() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let tag = node.blobs().add_bytes(b"hello".to_vec()).await.unwrap();
-        let hash = tag.hash.to_string();
+        let (alice, _bobbi, bytes, hash) = sent_photo().await;
 
-        let got = node.load_blob(&hash, None).await.unwrap();
-        assert_eq!(got, b"hello");
+        let got = alice.load_blob(&hash.to_string(), None).await.unwrap();
+        assert_eq!(got, bytes);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2967,23 +3043,14 @@ mod blob_load_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn load_blob_with_timeout_returns_blob_that_lands_mid_wait() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let content = b"arrives-late".to_vec();
-        let hash = iroh_blobs::Hash::new(&content);
+    async fn load_blob_with_timeout_fetches_a_received_photo() {
+        let (_alice, bobbi, bytes, hash) = sent_photo().await;
 
-        let blobs = node.blobs();
-        let content2 = content.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-            blobs.add_bytes(content2).await.unwrap();
-        });
-
-        let got = node
-            .load_blob(&hash.to_string(), Some(Duration::from_secs(3)))
+        let got = bobbi
+            .load_blob(&hash.to_string(), Some(Duration::from_secs(30)))
             .await
             .unwrap();
-        assert_eq!(got, content);
+        assert_eq!(got, bytes);
     }
 }
 

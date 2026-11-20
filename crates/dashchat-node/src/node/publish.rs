@@ -26,17 +26,32 @@ impl Node {
         // published or processed yet.
         let process_fut = warn_if_slow(
             "awaiting publish",
-            self.streams.publish(topic.into(), payload),
+            // Boxed: this future is inlined into every caller of `publish`, and p2panda's
+            // space futures make it large enough to overflow their stacks.
+            Box::pin(self.streams.publish(topic.into(), payload)),
         )
         .await?;
 
         // Now we await the operation being published and processed on the system layer.
-        let event = warn_if_slow("awaiting process_fut", process_fut).await?;
+        let header = warn_if_slow("awaiting process_fut", process_fut).await?;
 
         // Re-announce any still-unfetched blobs now that we've published.
         self.notify_blobs_changed();
 
-        Ok(event.header().to_owned())
+        Ok(header)
+    }
+}
+
+impl Node {
+    /// Get the application LogId for a topic, i.e. where messages go for this topic.
+    /// For Space-based topics, this will be the application log of the space.
+    /// For other topics, this will be the log id derived from the topic itself.
+    pub async fn app_message_log_id(&self, topic: TopicId) -> LogId {
+        if self.streams.is_space(topic).await {
+            crate::topic::application_log_id(topic)
+        } else {
+            LogId::from_topic(topic)
+        }
     }
 }
 
