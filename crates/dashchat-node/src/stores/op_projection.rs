@@ -30,13 +30,6 @@ const MIGRATIONS: &[&str] = &[
         profile BLOB NULL,
         blocked BOOLEAN NOT NULL DEFAULT FALSE
     )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
-        topic_id BLOB PRIMARY KEY
-    )",
-    "CREATE TABLE IF NOT EXISTS active_inboxes (
-        topic_id BLOB NOT NULL PRIMARY KEY,
-        expires_at_nanos INTEGER NOT NULL
-    )",
     "CREATE TABLE IF NOT EXISTS group_chats (
         chat_id BLOB NOT NULL PRIMARY KEY
     )",
@@ -68,6 +61,23 @@ const MIGRATIONS: &[&str] = &[
 ];
 
 const MAX_LAMPORT: u64 = (1 << 53) - 1;
+
+/// The tables [`OpProjection::reduce`] writes to.
+#[cfg(any(test, feature = "testing"))]
+const PROJECTED_TABLES: &[&str] = &[
+    "devices",
+    "agents",
+    "group_chats",
+    "tombstones",
+    "chat_log_heads",
+    "message_acks",
+    "chat_lamports",
+];
+
+/// Every row of every projected table, keyed by table name. Blobs are
+/// hex-encoded so two snapshots diff readably.
+#[cfg(any(test, feature = "testing"))]
+pub type ProjectionSnapshot = BTreeMap<&'static str, BTreeSet<Vec<String>>>;
 
 /// Why an operation was tombstoned.
 //
@@ -123,6 +133,33 @@ impl OpProjection {
 
         let projection = Self { pool };
         Ok(projection)
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn snapshot(&self) -> anyhow::Result<ProjectionSnapshot> {
+        let mut snapshot = ProjectionSnapshot::new();
+        for table in PROJECTED_TABLES {
+            let rows = sqlx::query(sqlx::AssertSqlSafe(format!("SELECT * FROM {table}")))
+                .fetch_all(&self.pool)
+                .await?;
+            let rows = rows
+                .iter()
+                .map(snapshot_row)
+                .collect::<anyhow::Result<_>>()?;
+            snapshot.insert(*table, rows);
+        }
+        Ok(snapshot)
+    }
+
+    /// Delete everything [`Self::reduce`] has written.
+    #[cfg(any(test, feature = "testing"))]
+    pub async fn clear(&self) -> anyhow::Result<()> {
+        for table in PROJECTED_TABLES {
+            sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
@@ -910,6 +947,23 @@ impl OpProjection {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+fn snapshot_row(row: &sqlx::sqlite::SqliteRow) -> anyhow::Result<Vec<String>> {
+    use sqlx::{Row, TypeInfo, ValueRef};
+
+    (0..row.len())
+        .map(|column| {
+            let type_name = row.try_get_raw(column)?.type_info().name().to_owned();
+            Ok(match type_name.as_str() {
+                "NULL" => "NULL".to_owned(),
+                "BLOB" => hex::encode(row.try_get::<Vec<u8>, _>(column)?),
+                "TEXT" => row.try_get::<String, _>(column)?,
+                _ => row.try_get::<i64, _>(column)?.to_string(),
+            })
+        })
+        .collect()
+}
+
 fn hash_from_db(bytes: Vec<u8>) -> anyhow::Result<Hash> {
     let arr: [u8; 32] = bytes
         .try_into()
@@ -970,6 +1024,19 @@ mod tests {
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
         OpProjection::new(pool).await.unwrap()
+    }
+
+    #[test]
+    fn test_projected_tables_match_migrations() {
+        let created: Vec<&str> = MIGRATIONS
+            .iter()
+            .map(|sql| {
+                sql.strip_prefix("CREATE TABLE IF NOT EXISTS ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .expect("migration creates a table")
+            })
+            .collect();
+        assert_eq!(created, PROJECTED_TABLES);
     }
 
     /// Blocking an agent blocks every device that maps to it, and unblocking
