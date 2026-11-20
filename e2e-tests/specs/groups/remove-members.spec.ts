@@ -126,6 +126,12 @@ describe('Removing group members', () => {
 		await expect(
 			agent2.groupChatPage.messages.systemMessage('group_member_added'),
 		).not.toBeExisting();
+		await agent2.groupChatPage.infoLink.click();
+		await agent2.groupInfoPage.ready();
+		await agent2.groupInfoPage.name.waitForExist();
+		await expect(agent2.groupInfoPage.members).not.toBeExisting();
+		await agent2.groupInfoPage.back.click();
+		await agent2.groupChatPage.ready();
 		await agent2.groupChatPage.back.click();
 		await agent2.homePage.ready();
 	});
