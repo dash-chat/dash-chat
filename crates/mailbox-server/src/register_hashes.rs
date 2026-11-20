@@ -1,4 +1,9 @@
-use axum::{body::Bytes, extract::State, http::StatusCode, Json};
+use axum::{
+    body::Bytes,
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{AppState, BlobSync};
@@ -40,6 +45,12 @@ pub struct UploadBlobResponse {
     /// The hash the uploaded bytes hash to, so the client can confirm the
     /// mailbox stored what it intended.
     pub hash: iroh_blobs::Hash,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BlobStoredResponse {
+    /// Whether the mailbox currently has this blob stored.
+    pub stored: bool,
 }
 
 /// Register `source` as a provider for each hash the mailbox does not yet hold.
@@ -87,6 +98,16 @@ pub async fn register_hashes(
     )
     .await;
     Json(RegisterHashesResponse { already_stored })
+}
+
+/// Handle `GET /blobs/:hash/stored`: read-only check whether the mailbox has
+/// already stored the given blob.
+pub async fn query_blob_stored(
+    State(state): State<AppState>,
+    Path(hash): Path<iroh_blobs::Hash>,
+) -> Json<BlobStoredResponse> {
+    let stored = state.blob_sync.blobs.has(hash).await.unwrap_or(false);
+    Json(BlobStoredResponse { stored })
 }
 
 /// Handle `POST /blobs/upload`: store the raw blob bytes in the request body and
@@ -245,6 +266,60 @@ mod tests {
 
         assert_eq!(stored, iroh_blobs::Hash::new(&data));
         assert!(blob_sync.blobs.has(stored).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn query_blob_stored_reports_true_after_upload_and_false_before() {
+        let (server, _tmp) = crate::test_utils::create_test_server().await;
+        let data = bytes::Bytes::from_static(b"probed blob");
+        let hash = iroh_blobs::Hash::new(&data);
+
+        let before = server.get(&format!("/blobs/{hash}/stored")).await;
+        before.assert_status_ok();
+        assert!(!before.json::<BlobStoredResponse>().stored);
+
+        server
+            .post("/blobs/upload")
+            .bytes(data)
+            .await
+            .assert_status_ok();
+
+        let after = server.get(&format!("/blobs/{hash}/stored")).await;
+        after.assert_status_ok();
+        assert!(after.json::<BlobStoredResponse>().stored);
+    }
+
+    #[tokio::test]
+    async fn query_blob_stored_does_not_register_a_source() {
+        let (db, _temp_file) = crate::test_utils::create_test_db();
+        let push_tasks = std::sync::Arc::new(tokio::sync::Mutex::new(tokio::task::JoinSet::new()));
+        let blob_sync = crate::test_utils::test_blob_sync().await;
+        let app = crate::create_app(
+            std::sync::Arc::new(db),
+            None,
+            push_tasks,
+            blob_sync.clone(),
+            crate::ServerConfig::default(),
+        );
+        let config = axum_test::TestServerConfig {
+            transport: Some(axum_test::Transport::HttpRandomPort),
+            ..axum_test::TestServerConfig::default()
+        };
+        let server = axum_test::TestServer::new_with_config(app, config).unwrap();
+        let hash = iroh_blobs::Hash::new([42u8; 32]);
+
+        server
+            .get(&format!("/blobs/{hash}/stored"))
+            .await
+            .assert_status_ok();
+
+        // A source would only be registered by /blobs/register-hashes, so the
+        // fetch pool must stay empty after the probe.
+        assert!(blob_sync
+            .fetch_pool_for_test()
+            .next_untried(&std::collections::HashSet::new())
+            .await
+            .is_none());
     }
 
     #[tokio::test]

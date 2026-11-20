@@ -186,6 +186,18 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         Ok(response.already_stored)
     }
 
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
+        let url = format!("{}/blobs/{hash}/stored", self.base_url);
+        let response = HTTP_CLIENT.get(url).send().await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to query blob storage: {status} - {body}");
+        }
+        let response: mailbox_server::BlobStoredResponse = response.json().await?;
+        Ok(response.stored)
+    }
+
     async fn upload_blob(&self, bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
         let response = HTTP_CLIENT
             .post(format!("{}/blobs/upload", self.base_url))

@@ -21,6 +21,8 @@ use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
+#[cfg(feature = "testing")]
+use dashchat_utils::blob_sync::BlobDownloader;
 use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
@@ -779,8 +781,8 @@ impl Node {
 
     #[cfg(feature = "testing")]
     /// The node's blob downloader, for an in-process mailbox to fetch blobs
-    /// into the shared store over the node's endpoint.
-    pub fn blob_downloader(&self) -> iroh_blobs::api::downloader::Downloader {
+    /// into the shared blob store over the node's endpoint.
+    pub fn blob_downloader(&self) -> Arc<dyn BlobDownloader> {
         self.blob_sync
             .as_ref()
             .expect("blob sync is enabled for p2p (testing) nodes")

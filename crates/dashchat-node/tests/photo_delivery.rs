@@ -6,6 +6,7 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
+use common::media;
 use dashchat_node::{testing::*, *};
 use mailbox_client::{FetchRequest, FetchResponse, MailboxClient, MailboxItem};
 
@@ -46,11 +47,11 @@ async fn photo_reaches_receiver_when_sender_and_receiver_are_never_online_togeth
 
     link.throttle_uploads(WEAK_UPLINK_BYTES_PER_SEC);
     alice
-        .send_message(chat, "look at this", Some(photo()), None)
+        .send_message(chat, "look at this", Some(media::photo(PHOTO_BYTES)), None)
         .await
         .unwrap();
-    let meta = sent_media(&alice, chat).await;
-    wait_until_mailbox_holds_message(&mailbox, *chat, photo_hash(&meta)).await;
+    let meta = media::sent_media(&alice, chat).await;
+    wait_until_mailbox_holds_message(&mailbox, *chat, media::photo_hash(&meta)).await;
     tokio::time::sleep(CRAWLING).await;
     let alice_dir = alice.shutdown().await;
     // A closed app's connections die with it, even where an in-process node
@@ -98,11 +99,11 @@ async fn photo_reaches_receiver_when_online_senders_first_transfer_fails() {
 
     link.throttle_uploads(WEAK_UPLINK_BYTES_PER_SEC);
     alice
-        .send_message(chat, "look at this", Some(photo()), None)
+        .send_message(chat, "look at this", Some(media::photo(PHOTO_BYTES)), None)
         .await
         .unwrap();
-    let meta = sent_media(&alice, chat).await;
-    wait_until_mailbox_holds_message(&mailbox, *chat, photo_hash(&meta)).await;
+    let meta = media::sent_media(&alice, chat).await;
+    wait_until_mailbox_holds_message(&mailbox, *chat, media::photo_hash(&meta)).await;
     tokio::time::sleep(CRAWLING).await;
     link.drop_connections();
     link.unthrottle();
@@ -163,16 +164,16 @@ async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
         .add_mailbox_client(common::app_mailbox_client(&alice, &mailbox.id, &link.url))
         .await;
     let deleted = alice
-        .send_message(chat, "deleted", Some(photo()), None)
+        .send_message(chat, "deleted", Some(media::photo(PHOTO_BYTES)), None)
         .await
         .unwrap();
     alice
-        .send_message(chat, "kept", Some(photo()), None)
+        .send_message(chat, "kept", Some(media::photo(PHOTO_BYTES)), None)
         .await
         .unwrap();
     let deleted_meta = media_of(&alice, chat, "deleted").await;
     let kept_meta = media_of(&alice, chat, "kept").await;
-    wait_until_mailbox_holds_message(&mailbox, *chat, photo_hash(&kept_meta)).await;
+    wait_until_mailbox_holds_message(&mailbox, *chat, media::photo_hash(&kept_meta)).await;
     alice
         .delete_message_for_everyone(chat, deleted.hash())
         .await
@@ -192,13 +193,13 @@ async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
     alice.shutdown().await;
     link.drop_connections();
     assert!(
-        !mailbox_holds_blob(&mailbox, photo_hash(&kept_meta)).await,
+        !mailbox_holds_blob(&mailbox, media::photo_hash(&kept_meta)).await,
         "alice's upload of the kept photo landed, so bobbi has nothing to relay"
     );
 
     connect_to_mailbox(&bobbi, &mailbox).await;
     poll.wait_for(|| async {
-        mailbox_holds_blob(&mailbox, photo_hash(&kept_meta))
+        mailbox_holds_blob(&mailbox, media::photo_hash(&kept_meta))
             .await
             .then_some(())
             .ok_or("bobbi has not uploaded the kept photo to the mailbox")
@@ -206,37 +207,18 @@ async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
     .await
     .unwrap();
     bobbi.shutdown().await;
-    assert!(!mailbox_holds_blob(&mailbox, photo_hash(&deleted_meta)).await);
+    assert!(!mailbox_holds_blob(&mailbox, media::photo_hash(&deleted_meta)).await);
 
     let carol = TestNode::new_at_path(config.clone(), "carol", carol_dir).await;
     connect_to_mailbox(&carol, &mailbox).await;
     wait_for_photo(&carol, chat, kept_meta).await;
-    assert!(!carol.blobs().has(photo_hash(&deleted_meta)).await.unwrap());
-}
-
-fn photo() -> OutgoingMedia {
-    OutgoingMedia::Photos {
-        photos: vec![OutgoingPhoto {
-            data: (0..PHOTO_BYTES).map(|_| rand::random::<u8>()).collect(),
-            name: "pic.png".into(),
-            mime_type: "image/png".into(),
-            width: 640,
-            height: 480,
-        }],
-    }
-}
-
-fn photo_hash(meta: &[MediaMetadata]) -> iroh_blobs::Hash {
-    meta.first().expect("at least one media item").hash()
-}
-
-async fn sent_media(node: &TestNode, chat: ChatId) -> Vec<MediaMetadata> {
-    node.get_messages(chat)
-        .await
-        .unwrap()
-        .into_iter()
-        .find_map(|m| m.content.media().cloned())
-        .expect("the message carries media metadata")
+    assert!(
+        !carol
+            .blobs()
+            .has(media::photo_hash(&deleted_meta))
+            .await
+            .unwrap()
+    );
 }
 
 async fn media_of(node: &TestNode, chat: ChatId, text: &str) -> Vec<MediaMetadata> {
@@ -300,19 +282,7 @@ async fn wait_until_mailbox_holds_message(
 }
 
 async fn wait_for_photo(receiver: &TestNode, chat: ChatId, meta: Vec<MediaMetadata>) {
-    PollConfig::seconds(30)
-        .wait_for(|| async {
-            receiver
-                .get_messages(chat)
-                .await
-                .unwrap()
-                .iter()
-                .any(|m| m.content.media().is_some())
-                .then_some(())
-                .ok_or("the receiver has not synced the photo message")
-        })
-        .await
-        .unwrap();
+    media::wait_for_photo_message(receiver, chat).await;
     PollConfig::seconds(30)
         .wait_for(|| async {
             receiver

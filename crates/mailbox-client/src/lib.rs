@@ -107,6 +107,14 @@ pub trait MailboxClient<Item: MailboxItem>: Send + Sync + 'static {
         Ok(Vec::new())
     }
 
+    /// Probe whether this mailbox already holds a single blob.
+    /// The default returns `false`; HTTP-backed clients override it with a
+    /// dedicated query endpoint so this does not accidentally register the
+    /// caller as a source.
+    async fn has_blob(&self, _hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
+        Ok(false)
+    }
+
     /// Push one blob's raw bytes to the mailbox. The default errors:
     /// mailboxes that don't store blobs have nothing to upload to.
     async fn upload_blob(&self, _bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
