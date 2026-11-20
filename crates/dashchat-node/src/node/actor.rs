@@ -15,7 +15,7 @@ use p2panda::streams::{
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
 use p2panda_auth::group::GroupCrdtError;
 use p2panda_stream::Processor;
-use p2panda_stream::groups::{GroupsArgs as GroupsProcessorArgs, GroupsError, GroupsOperation};
+use p2panda_stream::groups::{GroupsArgs as GroupsProcessorArgs, GroupsError};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
@@ -25,7 +25,6 @@ use tracing::{error, warn};
 
 use crate::Payload;
 use crate::online_peers::PresenceStream;
-use crate::stores::GROUPS_STATE_ID;
 
 type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
 
@@ -394,9 +393,7 @@ impl Actor {
 
                 if let Payload::GroupControl(_) = operation.message() {
                     // Process any groups control messages.
-                    let result = self
-                        .process_groups_control(groups_processor_args(operation))
-                        .await;
+                    let result = self.process_groups_control(operation).await;
                     if let Err(err) = result.as_ref() {
                         warn!("groups processing error: {err:?}");
                     }
@@ -428,9 +425,13 @@ impl Actor {
 
     async fn process_groups_control(
         &self,
-        args: GroupsProcessorArgs<()>,
+        operation: &ProcessedOperation<Payload>,
     ) -> Result<(), ProcessorError> {
-        match self.groups_processor.process(args).await {
+        match self
+            .groups_processor
+            .process(operation.event.groups_args.clone())
+            .await
+        {
             Ok(()) => {}
             // Another process sharing the groups state (the iOS push extension)
             // already applied it. A failed `process` enqueues nothing, so there
@@ -452,24 +453,6 @@ impl Actor {
             .await
             .map(|_| ())
             .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))
-    }
-}
-
-// Built from the header rather than taken from `operation.event.groups_args`: an operation the
-// orderer held back for a missing dependency is released with those set to `Ignore`.
-fn groups_processor_args(operation: &ProcessedOperation<Payload>) -> GroupsProcessorArgs<()> {
-    let Some(args) = operation.processed().header().extensions.group_args() else {
-        return GroupsProcessorArgs::Ignore;
-    };
-    GroupsProcessorArgs::Process {
-        state_id: *GROUPS_STATE_ID,
-        operation: GroupsOperation {
-            id: operation.id(),
-            author: operation.author(),
-            dependencies: args.dependencies,
-            group_id: args.group_id,
-            action: args.action,
-        },
     }
 }
 
