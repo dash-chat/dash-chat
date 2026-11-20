@@ -47,9 +47,9 @@ function assertStunnelAvailable(): void {
 	}
 }
 
-/** Every address an agent may dial the mailbox at: loopback for desktop and
- *  Android (through `adb reverse`), the host's LAN addresses for iPhones, and
- *  whatever `E2E_HOST_IP` pins them to instead. */
+/** Every address an agent may dial the mailbox at: loopback for desktop, the
+ *  host's LAN addresses for phones, and whatever `E2E_HOST_IP` pins them to
+ *  instead. */
 function mailboxHostNames(): string[] {
 	const lanAddresses = Object.values(os.networkInterfaces())
 		.flat()

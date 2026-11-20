@@ -40,11 +40,22 @@ async function leaveWifi(ssid: string): Promise<void> {
 	}
 	const device = wifiDevice();
 	if (device === null) return;
-	await waitForAddress(
-		() => address(device),
+	const home = await waitForAddress(
+		() => addressOnceConnected(device),
 		() => {},
 		`${device} never got back on a network after leaving "${ssid}"`,
 	);
+	console.log(`[wifi] ${device} left ${ssid}, back at ${home}`);
+}
+
+const CONNECTED = '100';
+
+/** '' until the card has finished joining a network: the address of the one
+ *  it just left is still reported for a moment, and would pass for the next
+ *  network's. */
+function addressOnceConnected(device: string): string {
+	const state = nmcliField('GENERAL.STATE', 'device', device);
+	return state.startsWith(CONNECTED) ? address(device) : '';
 }
 
 function wifiDevice(): string | null {

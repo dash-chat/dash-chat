@@ -47,7 +47,7 @@
 			graphemes.length > displayLimit + BUFFER,
 	);
 	const shown = $derived(
-		truncated ? graphemes.slice(0, displayLimit).join('') : text,
+		truncated ? graphemes.slice(0, displayLimit).join('').trimEnd() : text,
 	);
 
 	function expand() {
@@ -96,7 +96,13 @@
 		cursor: pointer;
 	}
 
+	/* WebAwesome's native styles turn every <button> into a form-control-high,
+	   middle-aligned inline-flex box, which stretches the last line of the
+	   bubble. WebKit still lays a button out as an inline-block. */
 	.read-more {
+		display: inline;
+		height: auto;
+		vertical-align: baseline;
 		padding: 0;
 		border: none;
 		background: transparent;

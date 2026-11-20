@@ -58,13 +58,15 @@ reporting = { path = "crates/reporting" }
 #   16 MB composer cap fits in its header.
 # - An application message's ciphertext is a CBOR byte string, not an array of
 #   integers, so it costs one byte per byte in the header.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "26549935" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "26549935", features = [
+# - From `dashchat-071`: sync lets go of a session once its protocol finishes,
+#   and starts and ends sync only on a topic's own neighbour changes.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "26549935" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "26549935" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "26549935", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -72,9 +74,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "26549935"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "26549935" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "26549935" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "26549935" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.4.1", default-features = false, features = [

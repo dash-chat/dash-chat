@@ -8,17 +8,25 @@ export class GroupInfoPage extends TestHelper {
 	headerName = this.el(tid('group-info-header-name'));
 	name = this.el(tid('group-info-name'));
 	description = this.el(tid('group-info-description'));
+	members = this.el(tid('group-info-members'));
 	addMembersLink = this.el(tid('group-info-add-members'));
 	editLink = this.el(tid('group-info-edit-link'));
 	leaveButton = this.el(tid('group-info-leave'));
-	leaveSelfButton = this.el(tid('group-info-leave-self'));
 	leaveConfirmButton = this.el(tid('group-info-leave-confirm'));
 	leaveCancelButton = this.el(tid('group-info-leave-cancel'));
 	removeMemberButton = this.el(tid('group-info-remove-member'));
 	removeMemberConfirmButton = this.el(tid('group-info-remove-member-confirm'));
+	makeAdminButton = this.el(tid('group-info-make-admin'));
+	makeAdminConfirmButton = this.el(tid('group-info-make-admin-confirm'));
 
 	memberItem(name: string) {
 		return this.agent.$(tid(`group-info-member-${name}`));
+	}
+
+	memberAdminChip(name: string) {
+		return this.agent.$(
+			`${tid(`group-info-member-${name}`)} ${tid('group-info-member-admin-chip')}`,
+		);
 	}
 
 	memberP2pBadge(name: string) {

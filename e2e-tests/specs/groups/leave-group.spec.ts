@@ -2,7 +2,6 @@ import { backToHome } from '../../helpers/flows/back-to-home';
 import { createProfiles } from '../../helpers/flows/create-profiles';
 import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
 import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
-import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -53,12 +52,11 @@ describe('Leaving group', () => {
 		const expectedText = await agent1.tr('youLeftTheGroup');
 		await expect(systemMessage).toHaveText(expectedText);
 
-		// Leave button is gone — already left, and Alice no longer in members list
+		// Leave button is gone — already left, and so is the members list
 		await agent1.groupChatPage.infoLink.click();
 		await agent1.groupInfoPage.ready();
 		await expect(agent1.groupInfoPage.leaveButton).not.toBeDisplayed();
-		const membersList = agent1.$(tid('group-info-members'));
-		await expect(membersList.$('=Alice')).not.toBeExisting();
+		await expect(agent1.groupInfoPage.members).not.toBeExisting();
 
 		await agent1.groupInfoPage.back.click();
 		await agent1.groupChatPage.ready();

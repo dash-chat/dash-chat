@@ -59,6 +59,13 @@ export class UndecodablePhotoError extends Error {
 	}
 }
 
+export class UnreadableFileError extends Error {
+	constructor() {
+		super('could not read file');
+		this.name = 'UnreadableFileError';
+	}
+}
+
 /**
  * Draft media held in the composer before sending. Photos are staged already
  * compressed and measured, so one that can't be decoded is never in a draft.
@@ -70,7 +77,11 @@ export type DraftMedia =
 	| { kind: 'file'; file: File }
 	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
-export type StagingError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
+export type StagingError =
+	| 'tooMany'
+	| 'filesWithPhotos'
+	| 'oneFileAtATime'
+	| 'unreadableFile';
 
 /** What a batch of picked files may add to a draft. */
 export interface StagingPlan {
@@ -169,6 +180,9 @@ export function planStaging(
  * exceeds it.
  */
 export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
+	if (draft.kind === 'file' && draft.file.size > MAX_MESSAGE_BYTES) {
+		throw new AttachmentTooLargeError(draft.file.size);
+	}
 	const media = await buildMedia(draft);
 	const total = totalMediaBytes(media);
 	if (total > MAX_MESSAGE_BYTES) {
@@ -177,10 +191,10 @@ export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return media;
 }
 
-/** Compress and measure a picked photo. Rejects with `UndecodablePhotoError`
- * when it can't be decoded. */
+/** Compress and measure a picked photo. Rejects with `UnreadableFileError`
+ * when it can't be read and `UndecodablePhotoError` when it can't be decoded. */
 export async function prepareOutgoingPhoto(file: File): Promise<OutgoingPhoto> {
-	const compressed = await compressImage(file);
+	const compressed = await compressImage(await inMemoryCopy(file));
 	const { width, height } = await imageDimensions(compressed);
 	return {
 		data: new Uint8Array(await compressed.arrayBuffer()),
@@ -189,6 +203,20 @@ export async function prepareOutgoingPhoto(file: File): Promise<OutgoingPhoto> {
 		width,
 		height,
 	};
+}
+
+/** Rejects with `UnreadableFileError` when `file` can't be read. */
+// A picked file is a reference its provider can withdraw between reads (seen
+// on Android), so it is read once and used from that copy.
+export async function inMemoryCopy(file: File): Promise<File> {
+	try {
+		return new File([await file.arrayBuffer()], file.name, {
+			type: file.type,
+		});
+	} catch (e) {
+		if (e instanceof DOMException) throw new UnreadableFileError();
+		throw e;
+	}
 }
 
 async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {

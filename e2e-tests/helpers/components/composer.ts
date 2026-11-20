@@ -299,6 +299,24 @@ export class Composer extends TestHelper {
 		);
 	}
 
+	/** Paste a photo that decodes but can't be read. Doesn't wait for anything
+	 * to stage: the composer is expected to drop it. */
+	async pasteUnreadablePhoto(label: string): Promise<void> {
+		await this.messageInput.waitForExist();
+		await this.agent.execute(async (name: string) => {
+			await window.__test.pasteUnreadablePhoto(name);
+		}, `${label}.jpg`);
+	}
+
+	/** Paste a file that can't be read. Doesn't wait for anything to stage: the
+	 * composer is expected to drop it. */
+	async pasteUnreadableFile(name: string): Promise<void> {
+		await this.messageInput.waitForExist();
+		await this.agent.execute((n: string) => {
+			window.__test.pasteUnreadableFile(n);
+		}, name);
+	}
+
 	/** Drop a single synthesized PNG named `${label}.png` onto the window. */
 	async dropPhotos(label: string): Promise<void> {
 		await this.messageInput.waitForExist();

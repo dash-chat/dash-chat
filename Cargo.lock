@@ -1261,6 +1261,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cap"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f125eb85b84a24c36b02ed1d22c9dd8632f53b3cde6e4d23512f94021030003"
+
+[[package]]
 name = "cargo-platform"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2158,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.22.2"
+version = "0.22.3"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -2277,6 +2283,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "bytes",
+ "cap",
  "chrono",
  "dashchat-compat",
  "dashchat-node",
@@ -7761,7 +7768,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7787,7 +7794,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7799,7 +7806,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7814,7 +7821,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7829,7 +7836,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "chacha20poly1305 0.10.1",
  "curve25519-dalek 4.1.3",
@@ -7852,7 +7859,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7880,7 +7887,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7897,7 +7904,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7915,7 +7922,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7933,7 +7940,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.8.0"
-source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
+source = "git+https://github.com/dash-chat/p2panda?rev=4fb6b52b#4fb6b52b9fa332419e7cf502520242c3c8314d17"
 dependencies = [
  "futures-channel",
  "futures-util",

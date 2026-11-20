@@ -1841,7 +1841,7 @@ export class ExpectedModel {
 	}
 
 	/** The holders that can sync with each other right now, grouped: per LAN,
-	 * plus everyone with the cloud while its link is usable, plus the phones
+	 * plus everyone on a network with the cloud while its link is usable, plus the phones
 	 * a push reaches. An agent away from the foreground is on no LAN — the OS
 	 * cuts a backgrounded app off within seconds, and a stopped one is not
 	 * there at all. */
@@ -1854,7 +1854,9 @@ export class ExpectedModel {
 					...direct(this.activeNamesOn(n.name)),
 				])
 			: [direct(this.activeNames())];
-		const cloud = this.cloudUsable() ? [[CLOUD, ...this.activeNames()]] : [];
+		const cloud = this.cloudUsable()
+			? [[CLOUD, ...this.activeNames().filter(n => this.hasInternet(n))]]
+			: [];
 		return [...lans, ...cloud, ...this.pushed()];
 	}
 

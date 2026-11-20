@@ -50,6 +50,11 @@ export function groupEventText(event: GroupControlEvent): string {
 			}
 			return m.memberRemovedFromGroup();
 		case 'group_member_promoted':
+			if (event.isMine) {
+				return event.adminName
+					? m.someoneMadeYouAnAdmin({ name: event.adminName })
+					: m.someoneMadeYouAnAdminNoName();
+			}
 			if (event.promotedByMe) {
 				return m.youMadeMemberAdmin({ name: event.memberName || m.someone() });
 			}
