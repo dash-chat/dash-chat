@@ -69,7 +69,7 @@ describe('Voice messages', () => {
 		expect(message).not.toBeNull();
 
 		await message!.openActions();
-		await message!.replyAction.waitForDisplayed();
+		await message!.deleteAction.waitForDisplayed();
 		expect(await message!.editAction.isExisting()).toBe(false);
 	});
 });

@@ -121,7 +121,6 @@ async fn photo_reaches_receiver_when_online_senders_first_transfer_fails() {
 /// in the sender's log, which itself must never reach the mailbox. The member
 /// offline throughout then gets the kept photo from the mailbox alone.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
     setup_photo_delivery_tracing();
     let poll = PollConfig::seconds(30);

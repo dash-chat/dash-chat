@@ -9,9 +9,7 @@ use dashchat_node::mailbox::MailboxOperation;
 use dashchat_node::{testing::*, *};
 use mailbox_client::{FetchRequest, FetchResponse, MailboxClient};
 use maplit::btreemap;
-use p2panda::operation::ExtensionsVariantV1;
 use p2panda_core::cbor::encode_cbor;
-use p2panda_spaces::SpacesArgs;
 
 fn setup() {
     dashchat_node::testing::setup_tracing(
@@ -60,14 +58,8 @@ async fn assert_message_only_travels_encrypted(
         .await
         .unwrap()
         .unwrap();
-    assert!(stored.body.is_none(), "the payload is stored in plaintext");
-    let ExtensionsVariantV1::Space(space) = &stored.header.extensions.variant else {
-        panic!("a chat message is published into a space");
-    };
-    let SpacesArgs::Application { ciphertext, .. } = &space.args else {
-        panic!("a chat message is an application message");
-    };
-    assert!(!contains(ciphertext, text.as_bytes()));
+    let ciphertext = stored.body.expect("a chat message has a body");
+    assert!(!contains(ciphertext.as_bytes(), text.as_bytes()));
 
     poll.wait_for(|| async {
         let items = mailbox_items(mb, chat).await;
@@ -151,7 +143,7 @@ async fn chat_messages_reach_the_mailbox_only_encrypted() {
 }
 
 /// A message as large as the composer allows a message to be (16 MB, the cap on its media)
-/// still reaches the other member. Its whole ciphertext travels in the operation's header.
+/// still reaches the other member.
 #[tokio::test(flavor = "multi_thread")]
 async fn largest_message_reaches_the_other_member() {
     setup();
