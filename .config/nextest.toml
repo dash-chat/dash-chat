@@ -192,3 +192,8 @@ slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
 platform = 'cfg(windows)'
 filter = 'package(mailbox-server) & binary(stress)'
 slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
+
+# Nine nodes form a group and are then left alone for a minute.
+[[profile.default.overrides]]
+filter = 'binary(large_group_memory)'
+slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "fail" }
