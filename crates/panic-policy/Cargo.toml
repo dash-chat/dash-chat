@@ -14,3 +14,6 @@ libc = "0.2"
 [target.'cfg(target_vendor = "apple")'.dev-dependencies]
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSException", "NSObjCRuntime", "NSString", "NSObject", "NSDictionary"] }
+
+[lints]
+workspace = true

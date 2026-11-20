@@ -1,0 +1,21 @@
+[package]
+name = "mixed_abstraction"
+version = "0.1.0"
+description = "Flags functions that mix delegation with inline low-level work"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "dc57fd7f5379e2e790761662430a1690e9770fdb" }
+dylint_linting = "=6.3.2"
+
+[dev-dependencies]
+dylint_testing = "=6.3.2"
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[workspace]
