@@ -63,6 +63,7 @@ mailbox-local-server = { workspace = true }
 itertools = "0.14.0"
 maplit = "1.0"
 pretty_assertions = "1.4.1"
+cap = { version = "0.1.2", features = ["stats"] }
 tempfile = "3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
 
