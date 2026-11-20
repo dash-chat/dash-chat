@@ -295,7 +295,8 @@ pub struct Node {
     direct_chat_tasks: Arc<Mutex<JoinSet<()>>>,
     space_members_changed: Arc<tokio::sync::Notify>,
     direct_chat_admission: Arc<Mutex<()>>,
-    pub(crate) profile_push: Arc<Mutex<()>>,
+    /// The profile last pushed to each chat since this node started.
+    pub(crate) pushed_profiles: Arc<Mutex<HashMap<ChatId, crate::Profile>>>,
     device_group_topic: DeviceGroupId,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
 }
@@ -533,7 +534,7 @@ impl Node {
             direct_chat_tasks: Default::default(),
             space_members_changed: Default::default(),
             direct_chat_admission: Default::default(),
-            profile_push: Default::default(),
+            pushed_profiles: Default::default(),
             device_group_topic,
             dirty_ack_topics: Default::default(),
         };

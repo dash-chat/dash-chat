@@ -25,8 +25,12 @@ impl crate::Node {
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         for chat_id in chats {
-            if let Err(err) = self.publish_profile_to(chat_id, profile.clone()).await {
-                warn!(chat_id = ?chat_id.aliased(), ?err, "failed to push my profile to a chat");
+            let mut pushed = self.pushed_profiles.lock().await;
+            match self.publish_profile_to(chat_id, profile.clone()).await {
+                Ok(()) => drop(pushed.insert(chat_id, profile.clone())),
+                Err(err) => {
+                    warn!(chat_id = ?chat_id.aliased(), ?err, "failed to push my profile to a chat")
+                }
             }
         }
         Ok(header)
@@ -43,8 +47,9 @@ impl crate::Node {
     /// Push my current profile, if I have one, into a chat I just joined or
     /// may publish to again, unless it is the last one I published there.
     pub(crate) async fn publish_my_profile_to(&self, chat_id: ChatId) -> anyhow::Result<()> {
-        // Two pushes at once would both find the profile missing.
-        let _pushing = self.profile_push.lock().await;
+        // The projection only learns of a push once it has been processed,
+        // so a second one right behind it goes by what this node remembers.
+        let mut pushed = self.pushed_profiles.lock().await;
         let Some(profile) = self.my_profile().await? else {
             return Ok(());
         };
@@ -52,10 +57,12 @@ impl crate::Node {
             .projection
             .chat_profile(chat_id, self.device_id())
             .await?;
-        if published.as_ref() == Some(&profile) {
+        if published.as_ref() == Some(&profile) || pushed.get(&chat_id) == Some(&profile) {
             return Ok(());
         }
-        self.publish_profile_to(chat_id, profile).await
+        self.publish_profile_to(chat_id, profile.clone()).await?;
+        pushed.insert(chat_id, profile);
+        Ok(())
     }
 
     /// Make up for a profile push that failed or never ran, in every chat my
