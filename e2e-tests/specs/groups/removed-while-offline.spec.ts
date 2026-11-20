@@ -40,6 +40,9 @@ describe('A member removed while offline, after admins took turns', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
+		// Turning Wi-Fi off is how Rob stops getting pushes while keeping the
+		// mailbox, which only holds for Android: it reaches the mailbox over adb.
+		if (rob.platform === 'ios') this.skip();
 		await createProfiles({ Ann: ann, Rob: rob, Cat: cat, Dan: dan });
 		for (const contact of [rob, cat, dan]) {
 			await exchangeContacts([ann, contact]);
@@ -79,7 +82,7 @@ describe('A member removed while offline, after admins took turns', () => {
 	});
 
 	after(async () => {
-		if (rob !== undefined && rob.platform !== 'desktop') await rob.enableWifi();
+		if (rob?.platform === 'android') await rob.enableWifi();
 	});
 
 	it('finds itself removed when it comes back', async () => {
@@ -87,7 +90,7 @@ describe('A member removed while offline, after admins took turns', () => {
 		await rob.homePage.ready();
 		// A stopped phone app is still woken by every push, one change at a
 		// time and in order; without a network it gets them all at once later.
-		if (rob.platform !== 'desktop') await rob.disableWifi();
+		if (rob.platform === 'android') await rob.disableWifi();
 		await rob.stopApp();
 
 		await ann.groupInfoPage.addMembersLink.click();
@@ -143,7 +146,7 @@ describe('A member removed while offline, after admins took turns', () => {
 		before(async function () {
 			if (rob.platform === 'desktop' || !pushTestingEnabled()) this.skip();
 			notifications = notificationHelperFor(rob);
-			await rob.enableWifi();
+			if (rob.platform === 'android') await rob.enableWifi();
 		});
 
 		it('posts no notification for a message sent after the removal', async () => {
