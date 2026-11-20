@@ -81,6 +81,14 @@ export class Messages extends TestHelper {
 		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
 	}
 
+	/** The text of every system message of `kind`, in display order. */
+	async systemMessageTexts(kind: SystemMessageKind): Promise<string[]> {
+		const els = await this.agent.$$(
+			`${this.messagesSelector} ${tid(`system-message-${kind}`)}`,
+		);
+		return els.map(el => el.getText());
+	}
+
 	/** Read the data-status of the most recent message-status indicator. */
 	async lastMessageStatus(): Promise<MessageStatus | null> {
 		return this.agent.execute(
