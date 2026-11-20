@@ -28,6 +28,8 @@ import { E2E_RELAY_URL } from '../../relay';
 import {
 	type AgentPlatform,
 	type PrepareContext,
+	lanBakedEnv,
+	lanBakedUrls,
 	remoteBakedEnv,
 } from '../platform';
 
@@ -56,14 +58,6 @@ const ABIS: Record<string, { flavor: string; target: string }> = {
 	'armeabi-v7a': { flavor: 'arm', target: 'armv7' },
 	x86_64: { flavor: 'x86_64', target: 'x86_64' },
 };
-
-// The device's own loopback port baked into the APK as MAILBOX_URL; onPrepare
-// bridges it to the host's mailbox via adb reverse.
-const DEVICE_MAILBOX_PORT = 3200;
-
-// The device's loopback port baked as PUSH_NOTIFICATIONS_SERVER_URL for the
-// real-device push spec; bridged to the host's push server via adb reverse.
-const DEVICE_PUSH_PORT = 3201;
 
 /** `android` = physical device, `android-emulator` = running emulator. */
 export type AndroidKind = 'android' | 'android-emulator';
@@ -402,28 +396,6 @@ function installedApkMd5(udid: string): string | null {
 	}
 }
 
-/** Bridge the device's baked loopback ports to the host's servers. A device
- * that re-enumerates on the USB bus (a marginal cable renegotiates the link
- * and adb sees a brand new transport) loses every reverse it had, and the app
- * then fails every mailbox poll for the rest of the run while the host servers
- * look perfectly healthy. Re-asserted per session rather than once per run so
- * a blip costs at most the spec it happens in. */
-function bridgeHostPorts(udid: string): void {
-	const mailboxPort = process.env._WDIO_MAILBOX_PORT;
-	if (mailboxPort === undefined) return;
-	execSync(
-		`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${mailboxPort}`,
-		{
-			env: androidEnv,
-		},
-	);
-	const pushPort = process.env._WDIO_PUSH_PORT;
-	if (pushPort === undefined) return;
-	execSync(`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${pushPort}`, {
-		env: androidEnv,
-	});
-}
-
 /** Comfortably longer than the slowest spec, so no wait can outlive the screen. */
 const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -749,13 +721,31 @@ export function pressAndroidBack(udid: string): void {
 /** Whether the device reaches the internet over its current network: a TCP
  *  connection to a public address opens. */
 export function androidHasInternet(udid: string): boolean {
+	return androidOpensTcp(udid, '1.1.1.1', 443);
+}
+
+function androidOpensTcp(udid: string, host: string, port: number): boolean {
 	try {
 		// No `-z`: older toybox nc (Android 12) rejects it. An empty stdin
 		// closes the connection as soon as it opens.
-		adbShell(udid, "'nc -w 3 1.1.1.1 443 </dev/null'");
+		adbShell(udid, `'nc -w 3 ${host} ${port} </dev/null'`);
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/** Fail by name when the device cannot open the mailbox and push server its
+ *  build bakes. Nothing else surfaces it: the app just shows its offline
+ *  state and each cross-device wait burns its full timeout. */
+export function assertAndroidReachesBakedHost(udid: string): void {
+	for (const url of lanBakedUrls()) {
+		if (androidOpensTcp(udid, url.hostname, Number(url.port))) continue;
+		throw new Error(
+			`${udid} cannot open ${url.host}, which its build reaches the host's ` +
+				'servers at. Open that port in the firewall of this host, and check ' +
+				'that the access point lets its clients reach each other.',
+		);
 	}
 }
 
@@ -764,9 +754,9 @@ export function androidHasInternet(udid: string): boolean {
  * through Appium (UiAutomator2) sessions that land directly in the app's
  * webview context, so specs and page objects work exactly as on desktop.
  *
- * The e2e APK is built with MAILBOX_URL=https://127.0.0.1:3200 baked in;
- * onPrepare bridges each device's loopback port 3200 to the host's mailbox
- * server via `adb reverse`.
+ * The e2e APK bakes the host's LAN address as its mailbox, as the iOS build
+ * does, and not a loopback port bridged over `adb reverse`: USB would keep
+ * the mailbox within reach of a phone that has left the network.
  */
 export class AndroidPlatform implements AgentPlatform {
 	readonly slots: number[];
@@ -843,24 +833,12 @@ export class AndroidPlatform implements AgentPlatform {
 		const targets = new Set(
 			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
 		);
-		// Against a local mailbox the APK bakes the device's own loopback ports,
-		// bridged to the host below; against a remote deployment it bakes that
-		// deployment's urls directly and there is nothing to bridge.
-		const mailboxEnv: Record<string, string> =
-			ctx.mailboxPort === null
-				? remoteBakedEnv()
-				: {
-						MAILBOX_URL: `https://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
-						...(ctx.pushPort !== null
-							? {
-									PUSH_NOTIFICATIONS_SERVER_URL: `http://127.0.0.1:${DEVICE_PUSH_PORT}`,
-								}
-							: {}),
-					};
 		const bakedEnv: Record<string, string> = {
 			E2E_NETWORK_ID,
 			E2E_RELAY_URL,
-			...mailboxEnv,
+			...(ctx.mailboxPort === null
+				? remoteBakedEnv()
+				: lanBakedEnv(ctx.mailboxPort, ctx.pushPort)),
 			CARGO_PROFILE_DEV_DEBUG: '0',
 			CARGO_PROFILE_DEV_STRIP: 'symbols',
 		};
@@ -882,34 +860,14 @@ export class AndroidPlatform implements AgentPlatform {
 			envWithoutWdioLoader(bakedEnv, androidEnv),
 		);
 
-		// A remote mailbox is reached directly; only a local one is bridged.
-		// Pinned in the env so the workers' beforeSession can re-assert the
-		// bridge, the same way ports are pinned for capabilities.
-		if (ctx.mailboxPort !== null) {
-			process.env._WDIO_MAILBOX_PORT = String(ctx.mailboxPort);
-			if (ctx.pushPort !== null) {
-				process.env._WDIO_PUSH_PORT = String(ctx.pushPort);
-			}
-		}
-
 		for (const udid of this.udids.values()) {
 			ensureApkInstalled(udid);
 			keepScreenAwake(udid);
-			bridgeHostPorts(udid);
 		}
 	}
 
 	async beforeSession() {
 		for (const [slot, udid] of this.udids) {
-			try {
-				bridgeHostPorts(udid);
-			} catch (err) {
-				// The spec is going to fail on its own if the device is really
-				// gone; a warning here is what names the reason.
-				console.warn(
-					`[android] could not bridge ports to ${udid}: ${String(err)}`,
-				);
-			}
 			this.loggers.get(slot)?.kill();
 			this.loggers.set(slot, startLogcatLogger(`agent-${slot}`, udid));
 		}
@@ -933,15 +891,6 @@ export class AndroidPlatform implements AgentPlatform {
 
 	async onComplete() {
 		for (const udid of this.udids.values()) {
-			for (const port of [DEVICE_MAILBOX_PORT, DEVICE_PUSH_PORT]) {
-				try {
-					execSync(`adb -s ${udid} reverse --remove tcp:${port}`, {
-						env: androidEnv,
-					});
-				} catch {
-					/* device gone or reverse already removed */
-				}
-			}
 			release(udid);
 		}
 		for (const logger of this.loggers.values()) {

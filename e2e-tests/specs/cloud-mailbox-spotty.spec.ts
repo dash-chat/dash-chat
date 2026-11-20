@@ -119,9 +119,9 @@ describe('Cloud mailbox on a spotty link', function () {
 	});
 
 	it('reads disconnected as soon as the phone loses its network, and connected again once it is back', async function () {
-		// Android reaches the run's mailbox over adb reverse, which Wi-Fi does
-		// not carry, and a desktop cannot leave its network.
-		if (agent.platform !== 'ios') this.skip();
+		// A desktop cannot leave its network, and an emulator has no radio to
+		// turn off.
+		if (agent.platform !== 'ios' && agent.platform !== 'android') this.skip();
 		await agent.disableWifi();
 		try {
 			await expectDisconnected('Wi-Fi went off', MAILBOX_UNANSWERED_MS);

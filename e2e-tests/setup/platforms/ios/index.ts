@@ -34,11 +34,6 @@ import {
 } from '../../claims';
 import { deviceHasBuild, recordInstalled } from '../../device-installs';
 import { envWithoutWdioLoader } from '../../harness-env';
-import {
-	assertHostStillHolds,
-	lanHostAddress,
-	nonInternalIpv4s,
-} from '../../host-ip';
 import { E2E_NETWORK_ID } from '../../network-id';
 import { E2E_RELAY_URL } from '../../relay';
 import {
@@ -51,6 +46,7 @@ import {
 import {
 	type AgentPlatform,
 	type PrepareContext,
+	lanBakedEnv,
 	remoteBakedEnv,
 } from '../platform';
 
@@ -110,24 +106,6 @@ function assertIosToolsAvailable() {
 			);
 		}
 	}
-}
-
-/** Host IPv4 the device reaches the mailbox at. Baked into the build, so
- *  picking a wrong-but-plausible one costs a whole run: every cross-device
- *  assertion times out with the app quietly showing its offline state. */
-function detectHostIp(): string {
-	const host = lanHostAddress();
-	if (host === null) {
-		const seen = nonInternalIpv4s()
-			.map(({ name, address }) => `${name}=${address}`)
-			.join(', ');
-		throw new Error(
-			'No private LAN IPv4 for the iOS devices to reach the mailbox on — ' +
-				`set E2E_HOST_IP. Non-internal IPv4 seen: ${seen || 'none'}`,
-		);
-	}
-	console.log(`[ios] baking mailbox host ip ${host.address} (${host.name})`);
-	return host.address;
 }
 
 function connectedDevices(): string[] {
@@ -728,24 +706,6 @@ export class IosPlatform implements AgentPlatform {
 		};
 	}
 
-	/** The host's LAN address for the local mailbox and push server. */
-	private localBakedEnv(
-		mailboxPort: number,
-		pushPort: number | null,
-	): Record<string, string> {
-		const hostIp = detectHostIp();
-		// Workers inherit the launcher's env, so this is what they check the
-		// host still holds before each session.
-		process.env._WDIO_IOS_HOST_IP = hostIp;
-		const bakedEnv: Record<string, string> = {
-			MAILBOX_URL: `https://${hostIp}:${mailboxPort}`,
-		};
-		if (pushPort !== null) {
-			bakedEnv.PUSH_NOTIFICATIONS_SERVER_URL = `http://${hostIp}:${pushPort}`;
-		}
-		return bakedEnv;
-	}
-
 	async onPrepare(ctx: PrepareContext) {
 		// The app reaches its mailbox and push server at whatever this bakes in.
 		// Against a local mailbox that is the host's LAN address; against a
@@ -761,7 +721,7 @@ export class IosPlatform implements AgentPlatform {
 			E2E_RELAY_URL,
 			...(ctx.mailboxPort === null
 				? remoteBakedEnv()
-				: this.localBakedEnv(ctx.mailboxPort, ctx.pushPort)),
+				: lanBakedEnv(ctx.mailboxPort, ctx.pushPort)),
 		};
 		// `ENV` and the `SENTRY_*` vars are `MANAGED` too: pass the shell's through
 		// so a run doesn't strip what `just ios build` wrote for the dSYM upload.
@@ -802,9 +762,6 @@ export class IosPlatform implements AgentPlatform {
 	}
 
 	async beforeSession() {
-		const bakedHostIp = process.env._WDIO_IOS_HOST_IP;
-		if (bakedHostIp !== undefined)
-			assertHostStillHolds(bakedHostIp, 'mailbox url');
 		for (const logger of this.loggers.values()) logger.kill();
 		this.loggers.clear();
 		// No reinstall here: onPrepare installed the build once for the whole

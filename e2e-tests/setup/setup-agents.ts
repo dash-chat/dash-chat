@@ -50,6 +50,7 @@ import {
 	APP_PACKAGE,
 	androidAsksNotificationPermission,
 	androidHasInternet,
+	assertAndroidReachesBakedHost,
 	denyAndroidNotificationPermission,
 	isAndroidAppRunning,
 	pocketAndroidDevice,
@@ -81,6 +82,7 @@ import {
 } from './platforms/ios';
 import { iosWifi, iosWifiInfo } from './platforms/ios/wifi';
 import { launchDesktopAgentWithoutLocalNetworkAccess } from './platforms/macos';
+import { assertBakedHostStillHolds } from './platforms/platform';
 import {
 	type AgentPlatformName,
 	type PhonePlatformName,
@@ -1214,7 +1216,15 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	);
 	specAgents.push(...agents);
 	forgetTestNetworksOnSignal();
+	// Here and not in wdio's beforeSession, whose errors it only logs.
+	if (slots.some(slot => slot !== null)) assertBakedHostStillHolds();
 	await convergeNetworks(agents);
+	for (const slot of slots) {
+		if (slot === null || phones[slot - 1] === 'ios') continue;
+		assertAndroidReachesBakedHost(
+			deviceUdid(browser.getInstance(`agent${slot}`)),
+		);
+	}
 	// However the suite ends, its phones go back on the host's LAN: an iPhone
 	// left on a test network would get the next run's build installed with no
 	// internet to verify it.
