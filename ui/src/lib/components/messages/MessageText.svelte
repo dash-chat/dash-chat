@@ -96,7 +96,12 @@
 		cursor: pointer;
 	}
 
+	/* WebAwesome's native styles turn every <button> into a form-control-high
+	   inline-flex box, which stretches the last line of the bubble. */
 	.read-more {
+		display: inline;
+		height: auto;
+		vertical-align: baseline;
 		padding: 0;
 		border: none;
 		background: transparent;
