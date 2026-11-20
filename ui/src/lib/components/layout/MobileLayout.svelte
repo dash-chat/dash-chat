@@ -55,9 +55,15 @@
 		padding-bottom: calc(var(--main-tabbar-height) - var(--k-safe-area-bottom));
 	}
 
-	/* Signal's iOS lists run under the floating tab bar to the screen's edge. */
-	:global(.k-ios) .has-main-tabbar :global(.k-page) {
+	/* Signal's iOS pages scroll under the home indicator to the screen's edge.
+	   Chat pages reach it through .chat-page instead. */
+	:global(.k-ios) .mobile-content :global(.k-page:not(.reverse-scroll-host)) {
 		height: calc(100% + var(--k-safe-area-bottom));
+		padding-bottom: var(--k-safe-area-bottom);
+	}
+
+	/* Signal's iOS lists run under the floating tab bar too. */
+	:global(.k-ios) .mobile-content.has-main-tabbar :global(.k-page) {
 		padding-bottom: var(--main-tabbar-height);
 	}
 </style>

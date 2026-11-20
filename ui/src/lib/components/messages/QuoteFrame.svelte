@@ -64,6 +64,16 @@
 		border-radius: 0.5rem;
 	}
 
+	/* The white tint and bar vanish on iOS's white incoming bubbles. */
+	:global(:root:not(.dark):not(.wide-layout) .k-ios) .quote-frame-others {
+		background-color: #dfdfe1;
+	}
+	:global(:root:not(.dark):not(.wide-layout) .k-ios)
+		.quote-frame-others
+		.quote-frame-bar {
+		background-color: #c1c1c3;
+	}
+
 	.quote-frame-composer {
 		border-radius: 18px 18px 4px 4px;
 	}
