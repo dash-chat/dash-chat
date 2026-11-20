@@ -219,18 +219,18 @@ export function killIosPushExtension(udid: string): void {
 	}
 }
 
-/** How many times [`backgroundIosApp`] backgrounds the app before giving up on
+/** How many times [`pocketIosDevice`] locks the phone before giving up on
  *  iOS reclaiming its sockets. Each costs up to a minute (the reclaim wait and
  *  a runner restart), which spec timeouts have to leave room for. */
 const RECLAIM_ATTEMPTS = 3;
-/** What the transition into the background gets before the runner goes: iOS
- *  holds the phone awake for about a second around it. */
-const BACKGROUND_TRANSITION_MS = 1_500;
+/** What the lock gets before the runner goes: iOS holds the phone awake for
+ *  about a second around it. */
+const LOCK_TRANSITION_MS = 1_500;
 /** What each home-button press gets to land before the next. */
 const UNLOCK_PRESS_MS = 1_000;
 /** What iOS gets to suspend the app once nothing holds the phone awake. */
 const RECLAIM_TIMEOUT_MS = 20_000;
-/** What runningboardd logs when iOS reclaims the backgrounded app's sockets:
+/** What runningboardd logs when iOS reclaims the suspended app's sockets:
  *  the reclaim of every app suspended so far, once nothing holds the phone
  *  awake any more, or the app being suspended with all of them ("ALL") rather
  *  than only its AF_UNIX ones ("SVC"). iOS 26 only ever logs the former. */
@@ -238,19 +238,33 @@ const SOCKETS_RECLAIMED = new RegExp(
 	`Shutdown sockets for all suspended processes|: \\[app<${APP_BUNDLE_ID.replace(/\./g, '\\.')}\\(.*?\\)>:\\d+\\] Shutdown sockets \\(ALL\\)`,
 );
 
-/** Send the app to the background as a phone put away does: locked, with
- *  nothing holding it awake, so iOS suspends the app and reclaims every socket
- *  it holds. The phone is unlocked again afterwards with the app still in the
- *  background, and the session is back for whatever the caller does next.
+/** Press the home button, returning once iOS no longer reports the app in the
+ *  foreground, so whatever follows sees it backgrounded. */
+export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
+	// `terminateApp` is not a substitute: XCUITest's terminate reads to iOS as
+	// a user force-quit.
+	await b.execute('mobile: backgroundApp');
+	await b.waitUntil(
+		async () =>
+			Number(await b.queryAppState(APP_BUNDLE_ID)) !== APP_STATE_FOREGROUND,
+		{ timeoutMsg: 'the app stayed in the foreground after a home press' },
+	);
+}
+
+/** Lock the phone as one put away does, with nothing holding it awake, so iOS
+ *  suspends the app, on screen or in the background, and reclaims every socket
+ *  it holds. The phone is unlocked again afterwards with the app where it was,
+ *  and the session is back for whatever the caller does next.
  *
  *  The XCUITest runner holds the phone awake for as long as the host's
  *  xcodebuild is attached, and an app suspended while it is held awake keeps
  *  its sockets: the runner goes for the suspension. This checks runningboardd
  *  said iOS reclaimed them, and tries again until it does. */
-export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
+export async function pocketIosDevice(b: WebdriverIO.Browser): Promise<void> {
 	const udid = deviceUdid(b);
+	const wasForeground = await isIosAppForeground(b);
 	// The new session starts out native; a caller driving the webview carries on
-	// in it once the app is back on screen, as after a plain home-button press.
+	// in it once the app is back on screen.
 	const onWebview = await isOnWebview(b);
 	for (let attempt = 1; attempt <= RECLAIM_ATTEMPTS; attempt++) {
 		// Not waited on to attach: the reclaim comes after the runner is killed,
@@ -258,11 +272,8 @@ export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
 		const reclaim = watchRunningboardd(udid, SOCKETS_RECLAIMED);
 		let reclaimed: string | null;
 		try {
-			// A real home-button press: XCUITest's terminate reads to iOS as a
-			// force-quit.
-			await b.execute('mobile: backgroundApp');
 			await b.execute('mobile: lock');
-			await b.pause(BACKGROUND_TRANSITION_MS);
+			await b.pause(LOCK_TRANSITION_MS);
 			// Killed rather than ending the session: ending it terminates the app
 			// (`appium:shouldTerminateApp`).
 			killWebDriverAgentHost(udid);
@@ -275,17 +286,28 @@ export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
 			console.log(
 				`[ios] ${udid}: iOS reclaimed the app's sockets: ${reclaimed}`,
 			);
+			// The unlock presses home blind, and one press too many sends the app
+			// off screen.
+			if (wasForeground && !(await isIosAppForeground(b))) {
+				await b.activateApp(APP_BUNDLE_ID);
+			}
 			if (onWebview) returnToWebviewOnNextUse(b);
 			return;
 		}
 		console.log(
-			`[ios] ${udid}: iOS kept the backgrounded app's sockets (attempt ${attempt}), backgrounding again`,
+			`[ios] ${udid}: iOS kept the app's sockets (attempt ${attempt}), pocketing again`,
 		);
+		// Woken so that iOS suspends it afresh on the next lock.
 		await b.activateApp(APP_BUNDLE_ID);
+		if (!wasForeground) await backgroundIosApp(b);
 	}
 	throw new Error(
-		`iOS never reclaimed the backgrounded app's sockets on ${udid} in ${RECLAIM_ATTEMPTS} attempts`,
+		`iOS never reclaimed the app's sockets on ${udid} in ${RECLAIM_ATTEMPTS} attempts`,
 	);
+}
+
+async function isIosAppForeground(b: WebdriverIO.Browser): Promise<boolean> {
+	return Number(await b.queryAppState(APP_BUNDLE_ID)) === APP_STATE_FOREGROUND;
 }
 
 /** End the host's xcodebuild for the phone's runner, which holds the phone
@@ -299,7 +321,7 @@ function killWebDriverAgentHost(udid: string): void {
 }
 
 /** A new session on the phone whose runner was killed, leaving the app where
- *  it is, and the phone unlocked on its home screen. */
+ *  it is, and the phone unlocked. */
 async function reattachIosSession(b: WebdriverIO.Browser): Promise<void> {
 	// Neither reset, launch nor attach to the app: the first two restart it,
 	// and attaching brings it to the foreground.
@@ -549,7 +571,7 @@ async function reinstallApp(udid: string): Promise<boolean> {
  *  A surviving tail of the app's processes has made every later one connect to
  *  a stream that stays empty — which is silent, and looks exactly like an app
  *  that logged nothing. A tail of other processes alongside it (the
- *  runningboardd watcher of [`backgroundIosApp`]) has not. */
+ *  runningboardd watcher of [`pocketIosDevice`]) has not. */
 function killStaleSyslogLoggers(udid: string): void {
 	try {
 		execSync(`pkill -f "idevicesyslog -u ${udid}"`, { stdio: 'ignore' });

@@ -730,6 +730,18 @@ export function pressAndroidHome(udid: string): void {
 	adbShell(udid, 'input keyevent KEYCODE_HOME');
 }
 
+/** Turn the screen off and back on, clearing the lock screen, as a phone put
+ *  away and taken out again does. */
+export async function pocketAndroidDevice(
+	udid: string,
+	pocketedMs: number,
+): Promise<void> {
+	adbShell(udid, 'input keyevent KEYCODE_SLEEP');
+	await new Promise(resolve => setTimeout(resolve, pocketedMs));
+	adbShell(udid, 'input keyevent KEYCODE_WAKEUP');
+	adbShell(udid, 'wm dismiss-keyguard');
+}
+
 export function pressAndroidBack(udid: string): void {
 	adbShell(udid, 'input keyevent KEYCODE_BACK');
 }
