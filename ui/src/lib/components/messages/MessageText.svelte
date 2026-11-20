@@ -96,8 +96,9 @@
 		cursor: pointer;
 	}
 
-	/* WebAwesome's native styles turn every <button> into a form-control-high
-	   inline-flex box, which stretches the last line of the bubble. */
+	/* WebAwesome's native styles turn every <button> into a form-control-high,
+	   middle-aligned inline-flex box, which stretches the last line of the
+	   bubble. WebKit still lays a button out as an inline-block. */
 	.read-more {
 		display: inline;
 		height: auto;

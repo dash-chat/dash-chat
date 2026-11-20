@@ -134,7 +134,7 @@
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge class="self-center" data-testid="chat-row-unread-badge"
+				<Badge data-testid="chat-row-unread-badge"
 					>{summary.unreadMessages}</Badge
 				>
 			{/if}

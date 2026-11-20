@@ -26,6 +26,8 @@
 
 <style>
 	.quote-frame {
+		--ios-quote-surface: #dfdfe1;
+		--ios-quote-bar: #c1c1c3;
 		display: flex;
 		align-items: stretch;
 		width: 100%;
@@ -64,14 +66,16 @@
 		border-radius: 0.5rem;
 	}
 
-	/* The white tint and bar vanish on iOS's white incoming bubbles. */
-	:global(:root:not(.dark):not(.wide-layout) .k-ios) .quote-frame-others {
-		background-color: #dfdfe1;
+	/* The white tint and bar vanish on iOS's white incoming bubbles, which
+	   app.css paints under this same guard. */
+	:global(:root:not(.dark):not(.wide-layout) .k-ios)
+		.quote-frame-others:not(.quote-frame-composer) {
+		background-color: var(--ios-quote-surface);
 	}
 	:global(:root:not(.dark):not(.wide-layout) .k-ios)
-		.quote-frame-others
+		.quote-frame-others:not(.quote-frame-composer)
 		.quote-frame-bar {
-		background-color: #c1c1c3;
+		background-color: var(--ios-quote-bar);
 	}
 
 	.quote-frame-composer {
@@ -80,11 +84,11 @@
 
 	/* The iOS theme copies Signal's composer reply-banner greys. */
 	:global(.k-ios) .quote-frame-composer {
-		background-color: #dfdfe1;
+		background-color: var(--ios-quote-surface);
 		border-radius: 16px;
 	}
 	:global(.k-ios) .quote-frame-composer .quote-frame-bar {
-		background-color: #c1c1c3;
+		background-color: var(--ios-quote-bar);
 	}
 	:global(.dark .k-ios) .quote-frame-composer {
 		background-color: #454547;
