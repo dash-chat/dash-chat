@@ -2206,7 +2206,7 @@ dependencies = [
  "oslog",
  "p2panda",
  "p2panda-auth",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "p2panda-spaces",
  "panic-policy",
  "push-notifications-client",
@@ -2268,14 +2268,14 @@ dependencies = [
 [[package]]
 name = "dash-router"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/dash-router?branch=main#472257d3f082dd519fab7c13ced50eac61ca1045"
+source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#4d2fbae15f86c8147511a876e681b64e8e53cfc7"
 dependencies = [
  "anyhow",
  "dash-router-core",
  "dash-router-policy",
  "futures-util",
- "p2panda-core 0.7.1",
- "p2panda-net 0.7.1",
+ "p2panda-core",
+ "p2panda-net",
  "polestar",
  "postcard",
  "rand 0.9.5",
@@ -2289,7 +2289,7 @@ dependencies = [
 [[package]]
 name = "dash-router-core"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/dash-router?branch=main#472257d3f082dd519fab7c13ced50eac61ca1045"
+source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#4d2fbae15f86c8147511a876e681b64e8e53cfc7"
 dependencies = [
  "anyhow",
  "polestar",
@@ -2300,7 +2300,7 @@ dependencies = [
 [[package]]
 name = "dash-router-policy"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/dash-router?branch=main#472257d3f082dd519fab7c13ced50eac61ca1045"
+source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#4d2fbae15f86c8147511a876e681b64e8e53cfc7"
 dependencies = [
  "rand 0.9.5",
  "serde",
@@ -2348,11 +2348,11 @@ dependencies = [
  "network-watch",
  "p2panda",
  "p2panda-auth",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "p2panda-encryption",
- "p2panda-net 0.8.0",
+ "p2panda-net",
  "p2panda-spaces",
- "p2panda-store 0.8.0",
+ "p2panda-store",
  "p2panda-stream",
  "postcard",
  "pretty_assertions",
@@ -3557,19 +3557,6 @@ checksum = "b1f9e3d69d39e4862ffed03ed071a76f9a13ba1d9109d355b0f0aa6b15e393c4"
 dependencies = [
  "futures-core",
  "futures-sink",
-]
-
-[[package]]
-name = "futures-concurrency"
-version = "7.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "175cd8cca9e1d45b87f18ffa75088f2099e3c4fe5e2f83e42de112560bea8ea6"
-dependencies = [
- "fixedbitset",
- "futures-core",
- "futures-lite 2.6.1",
- "pin-project",
- "smallvec",
 ]
 
 [[package]]
@@ -5231,33 +5218,6 @@ dependencies = [
 
 [[package]]
 name = "iroh-gossip"
-version = "0.101.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e1dc4b05f73e7a1b9e83b531eb63c3fd671b0af3aeb13b59c546dd7ca747515"
-dependencies = [
- "blake3",
- "bytes",
- "data-encoding",
- "derive_more 2.1.1",
- "futures-concurrency",
- "hex",
- "indexmap 2.14.2",
- "iroh",
- "iroh-base",
- "iroh-metrics",
- "irpc",
- "n0-error",
- "n0-future",
- "postcard",
- "rand 0.10.3",
- "serde",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "iroh-gossip"
 version = "0.102.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f78267c0d936a3f51b8aa24419a7a267e42d1800ac99315f48045f2540c57922"
@@ -5294,26 +5254,6 @@ dependencies = [
  "pin-project",
  "smallvec",
  "tokio",
-]
-
-[[package]]
-name = "iroh-mdns-address-lookup"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cad3dfcaddd5c3681bf0a42606498fc6e8891de793408dfbc46a9fbe76f370b3"
-dependencies = [
- "data-encoding",
- "derive_more 2.1.1",
- "futures-util",
- "iroh",
- "iroh-base",
- "n0-error",
- "n0-future",
- "n0-watcher",
- "swarm-discovery",
- "tokio",
- "tokio-stream",
- "tracing",
 ]
 
 [[package]]
@@ -6091,7 +6031,7 @@ dependencies = [
  "nanoid",
  "netwatch-http-client",
  "once_cell",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "pretty_assertions",
  "reporting",
  "reqwest 0.12.28",
@@ -6139,7 +6079,7 @@ dependencies = [
  "iroh",
  "iroh-blobs",
  "mailbox-server",
- "p2panda-net 0.8.0",
+ "p2panda-net",
  "panic-policy",
  "push-notifications-client",
  "push-notifications-server",
@@ -7917,13 +7857,13 @@ source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746
 dependencies = [
  "futures-util",
  "p2panda-auth",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "p2panda-encryption",
- "p2panda-net 0.8.0",
+ "p2panda-net",
  "p2panda-spaces",
- "p2panda-store 0.8.0",
+ "p2panda-store",
  "p2panda-stream",
- "p2panda-sync 0.8.0",
+ "p2panda-sync",
  "pin-project",
  "rand 0.10.3",
  "serde",
@@ -7941,7 +7881,7 @@ name = "p2panda-auth"
 version = "0.8.0"
 source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
 dependencies = [
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "petgraph",
  "serde",
  "thiserror 2.0.20",
@@ -7950,21 +7890,6 @@ dependencies = [
 
 [[package]]
 name = "p2panda-core"
-version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
-dependencies = [
- "blake3",
- "cbor-core",
- "ed25519-dalek 2.2.0",
- "hex",
- "rand 0.8.8",
- "serde",
- "serde_bytes",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "p2panda-core"
 version = "0.8.0"
 source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
 dependencies = [
@@ -7980,28 +7905,13 @@ dependencies = [
 
 [[package]]
 name = "p2panda-discovery"
-version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
-dependencies = [
- "blake3",
- "futures-util",
- "p2panda-core 0.7.1",
- "p2panda-store 0.7.1",
- "rand 0.10.3",
- "serde",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "p2panda-discovery"
 version = "0.8.0"
 source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
 dependencies = [
  "blake3",
  "futures-util",
- "p2panda-core 0.8.0",
- "p2panda-store 0.8.0",
+ "p2panda-core",
+ "p2panda-store",
  "rand 0.10.3",
  "serde",
  "thiserror 2.0.20",
@@ -8020,7 +7930,7 @@ dependencies = [
  "hpke-rs",
  "hpke-rs-crypto",
  "hpke-rs-rust-crypto",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "rand_chacha 0.9.0",
  "serde",
  "serde_bytes",
@@ -8033,34 +7943,6 @@ dependencies = [
 
 [[package]]
 name = "p2panda-net"
-version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
-dependencies = [
- "futures-channel",
- "futures-util",
- "hex",
- "iroh",
- "iroh-base",
- "iroh-gossip 0.101.0",
- "iroh-mdns-address-lookup 0.5.0",
- "p2panda-core 0.7.1",
- "p2panda-discovery 0.7.1",
- "p2panda-store 0.7.1",
- "p2panda-sync 0.7.1",
- "postcard",
- "ractor",
- "rand 0.10.3",
- "rand_chacha 0.10.0",
- "serde",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "p2panda-net"
 version = "0.8.0"
 source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
 dependencies = [
@@ -8069,12 +7951,12 @@ dependencies = [
  "hex",
  "iroh",
  "iroh-base",
- "iroh-gossip 0.102.0",
- "iroh-mdns-address-lookup 0.6.1",
- "p2panda-core 0.8.0",
- "p2panda-discovery 0.8.0",
- "p2panda-store 0.8.0",
- "p2panda-sync 0.8.0",
+ "iroh-gossip",
+ "iroh-mdns-address-lookup",
+ "p2panda-core",
+ "p2panda-discovery",
+ "p2panda-store",
+ "p2panda-sync",
  "postcard",
  "ractor",
  "rand 0.10.3",
@@ -8093,9 +7975,9 @@ version = "0.8.0"
 source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
 dependencies = [
  "p2panda-auth",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "p2panda-encryption",
- "p2panda-store 0.8.0",
+ "p2panda-store",
  "petgraph",
  "serde",
  "serde_bytes",
@@ -8106,27 +7988,13 @@ dependencies = [
 
 [[package]]
 name = "p2panda-store"
-version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
-dependencies = [
- "async-stream",
- "futures-util",
- "p2panda-core 0.7.1",
- "serde",
- "sqlx 0.9.0",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "p2panda-store"
 version = "0.8.0"
 source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746a8b292a1b364b77eed23cd6b"
 dependencies = [
  "async-stream",
  "futures-util",
  "p2panda-auth",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "p2panda-encryption",
  "rand 0.10.3",
  "rand_chacha 0.10.0",
@@ -8144,30 +8012,13 @@ dependencies = [
  "futures-util",
  "indexmap 2.14.2",
  "p2panda-auth",
- "p2panda-core 0.8.0",
+ "p2panda-core",
  "p2panda-spaces",
- "p2panda-store 0.8.0",
+ "p2panda-store",
  "pin-project",
  "serde",
  "thiserror 2.0.20",
  "tokio",
- "tracing",
-]
-
-[[package]]
-name = "p2panda-sync"
-version = "0.7.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=64bc5b54#64bc5b5479852caf8578e49adf159408e68ee0b4"
-dependencies = [
- "futures-channel",
- "futures-util",
- "p2panda-core 0.7.1",
- "p2panda-store 0.7.1",
- "pin-project-lite",
- "serde",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
  "tracing",
 ]
 
@@ -8178,8 +8029,8 @@ source = "git+https://github.com/dash-chat/p2panda?rev=26549935#265499359c7a4746
 dependencies = [
  "futures-channel",
  "futures-util",
- "p2panda-core 0.8.0",
- "p2panda-store 0.8.0",
+ "p2panda-core",
+ "p2panda-store",
  "pin-project-lite",
  "serde",
  "thiserror 2.0.20",
