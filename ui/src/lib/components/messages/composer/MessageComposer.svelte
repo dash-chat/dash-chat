@@ -227,6 +227,7 @@
 		tooMany: () => m.errorTooManyAttachments(),
 		filesWithPhotos: () => m.errorFilesWithPhotos(),
 		oneFileAtATime: () => m.errorOneFileAtATime(),
+		unreadableFile: () => m.errorUnreadableFile(),
 	};
 
 	/** Add files to the draft and toast why anything was left out. */
@@ -240,7 +241,11 @@
 	}
 
 	// One toast at a time: a rule error explains more than the damaged count.
-	function showStagingToast({ error, undecodablePhotos }: StagingOutcome) {
+	function showStagingToast({
+		error,
+		undecodablePhotos,
+		unreadablePhotos,
+	}: StagingOutcome) {
 		if (error) {
 			showToast(stagingErrorMessages[error](), 'error');
 		} else if (undecodablePhotos > 0) {
@@ -248,6 +253,8 @@
 				m.errorUndecodablePhotos({ count: undecodablePhotos }),
 				'error',
 			);
+		} else if (unreadablePhotos > 0) {
+			showToast(m.errorUnreadablePhotos({ count: unreadablePhotos }), 'error');
 		}
 	}
 

@@ -38,14 +38,15 @@ export function stateAt(
 	return value;
 }
 
-/** Drops chat ops authored while `myDeviceId` was outside this chat, so a
- * group carries on showing its history but nothing published after we left.
+/** Drops ops authored while `myDeviceId` was outside this chat, so a group
+ * carries on showing its history but nothing published after we left.
  *
  * Ops predating our first membership event are kept: a late joiner is given
  * the history from before she was added, and only a `Remove` ever starts
- * hiding anything. Chats whose `controlOps` never name the device in a
- * membership action — a direct chat, or a group whose `Create` has not synced
- * yet — are untouched.
+ * hiding anything. The ops that change our own membership are always kept, so
+ * our removal shows and being added back still applies. Chats whose
+ * `controlOps` never name the device in a membership action — a direct chat,
+ * or a group whose `Create` has not synced yet — are untouched.
  */
 export function dropOpsAuthoredWhileNotAMember(
 	opsOrdered: SimplifiedOperation<Payload>[],
@@ -54,10 +55,26 @@ export function dropOpsAuthoredWhileNotAMember(
 ): SimplifiedOperation<Payload>[] {
 	const windows = membershipWindows(controlOps, myDeviceId);
 	if (windows.length === 0) return opsOrdered;
-	return opsOrdered.filter(op => {
-		if (op.body?.type !== 'Chat') return true;
-		return stateAt(windows, op.header.timestamp, true);
-	});
+	return opsOrdered.filter(
+		op =>
+			myMembershipAfter(op, myDeviceId) !== undefined ||
+			stateAt(windows, op.header.timestamp, true),
+	);
+}
+
+/** Drops ops authored since `myDeviceId` last left this chat, and nothing while
+ * it is a member: what a state every member converges on, like the group's
+ * name, is read from, so that coming back catches up on what changed
+ * meanwhile. */
+export function dropOpsAuthoredSinceLeaving(
+	opsOrdered: SimplifiedOperation<Payload>[],
+	controlOps: SimplifiedOperation<Payload>[],
+	myDeviceId: DeviceId,
+): SimplifiedOperation<Payload>[] {
+	const windows = membershipWindows(controlOps, myDeviceId);
+	const lastChange = windows[windows.length - 1];
+	if (lastChange === undefined || lastChange.value) return opsOrdered;
+	return opsOrdered.filter(op => op.header.timestamp < lastChange.timestamp);
 }
 
 /** When `myDeviceId` joined and left this chat, from the group-control ops,
@@ -71,21 +88,32 @@ function membershipWindows(
 		(a, b) => a.header.timestamp - b.header.timestamp,
 	);
 	for (const op of opsOrdered) {
-		const action = op.header.auth?.action;
-		if (!action) continue;
-		const timestamp = op.header.timestamp;
-		if ('Create' in action) {
-			const included = action.Create.initial_members.some(([member]) =>
-				isMe(member, myDeviceId),
-			);
-			if (included) windows.push({ value: true, timestamp });
-		} else if ('Add' in action && isMe(action.Add.member, myDeviceId)) {
-			windows.push({ value: true, timestamp });
-		} else if ('Remove' in action && isMe(action.Remove.member, myDeviceId)) {
-			windows.push({ value: false, timestamp });
-		}
+		const value = myMembershipAfter(op, myDeviceId);
+		if (value === undefined) continue;
+		windows.push({ value, timestamp: op.header.timestamp });
 	}
 	return windows;
+}
+
+/** Whether `op` leaves `myDeviceId` in the group, or undefined when it does
+ * not change that. */
+function myMembershipAfter(
+	op: SimplifiedOperation<Payload>,
+	myDeviceId: DeviceId,
+): boolean | undefined {
+	const action = op.header.auth?.action;
+	if (!action) return undefined;
+	if ('Create' in action) {
+		const included = action.Create.initial_members.some(([member]) =>
+			isMe(member, myDeviceId),
+		);
+		return included ? true : undefined;
+	}
+	if ('Add' in action && isMe(action.Add.member, myDeviceId)) return true;
+	if ('Remove' in action && isMe(action.Remove.member, myDeviceId)) {
+		return false;
+	}
+	return undefined;
 }
 
 function isMe(member: AuthGroupMember, myDeviceId: DeviceId): boolean {

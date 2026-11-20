@@ -122,6 +122,7 @@ describe('Local hub discovery', function () {
 		await stopLocalHub(hub);
 		await expectNoHub('the hub stopped');
 		await agent.backgroundApp();
+		await agent.pocketDevice();
 		await agent.pause(BACKGROUNDED_MS);
 		hub = await restartLocalHub(hub);
 		await agent.startApp();
@@ -132,6 +133,7 @@ describe('Local hub discovery', function () {
 	it('drops a hub that stopped while the app was in the background', async function () {
 		if (!agent.isMobile) this.skip();
 		await agent.backgroundApp();
+		await agent.pocketDevice();
 		await agent.pause(BACKGROUNDED_MS);
 		await stopLocalHub(hub);
 		await agent.startApp();

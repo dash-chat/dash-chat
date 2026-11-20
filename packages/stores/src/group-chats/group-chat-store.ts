@@ -2,6 +2,10 @@ import { reactive, signal } from 'signalium';
 
 import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
+import {
+	dropOpsAuthoredSinceLeaving,
+	dropOpsAuthoredWhileNotAMember,
+} from '../chats/op-visibility';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { MessageAckStore } from '../message-acks/message-ack-store';
@@ -76,25 +80,27 @@ export class GroupChatStore {
 	}
 
 	info = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const opsAuthoredBeforeLeaving = dropOpsAuthoredSinceLeaving(
+			await this.messages.opsByTimestamp(),
+			await this.controlOps(),
+			await this.contactsStore.myDeviceId(),
+		);
 
 		let latest:
 			| { info: GroupInfo; timestamp: number; seqNum: number }
 			| undefined;
-		for (const operations of Object.values(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type !== 'Chat') continue;
-				if (body.payload.type !== 'GroupInfo') continue;
-				const timestamp = operation.header.timestamp;
-				const seqNum = operation.header.seq_num;
-				if (
-					!latest ||
-					timestamp > latest.timestamp ||
-					(timestamp === latest.timestamp && seqNum > latest.seqNum)
-				) {
-					latest = { info: body.payload.payload, timestamp, seqNum };
-				}
+		for (const operation of opsAuthoredBeforeLeaving) {
+			const body = operation.body;
+			if (body?.type !== 'Chat') continue;
+			if (body.payload.type !== 'GroupInfo') continue;
+			const timestamp = operation.header.timestamp;
+			const seqNum = operation.header.seq_num;
+			if (
+				!latest ||
+				timestamp > latest.timestamp ||
+				(timestamp === latest.timestamp && seqNum > latest.seqNum)
+			) {
+				latest = { info: body.payload.payload, timestamp, seqNum };
 			}
 		}
 
@@ -128,11 +134,16 @@ export class GroupChatStore {
 	});
 
 	controlEvents = reactive(async () => {
-		const ops = await this.controlOps();
+		const controlOps = await this.controlOps();
 		const myDeviceId = await this.contactsStore.myDeviceId();
+		const opsAuthoredWhileAMember = dropOpsAuthoredWhileNotAMember(
+			controlOps,
+			controlOps,
+			myDeviceId,
+		);
 
 		const events: Record<Hash, GroupControlEvent> = {};
-		for (const op of ops) {
+		for (const op of opsAuthoredWhileAMember) {
 			const event = await buildGroupControlEvent(
 				op,
 				myDeviceId,
@@ -404,6 +415,7 @@ async function buildGroupControlEvent(
 	if ('Promote' in action) {
 		return {
 			kind: 'group_member_promoted',
+			isMine: targetsMe,
 			promotedByMe: actorIsMe,
 			memberName,
 			adminName,

@@ -11,10 +11,12 @@ use tokio_util::task::AbortOnDropHandle;
 
 use crate::{base_discoverer, mailbox_id_to_label, multicast_interfaces_v4, GOODBYE_ATTRIBUTE};
 
-/// One announce round of swarm-discovery's interactive cadence (700ms plus
-/// jitter), charged to every shutdown: `set_txt_attribute` only queues the
-/// goodbye, and dropping the announcement before that round would send nothing.
-const GOODBYE_LINGER: Duration = Duration::from_millis(1000);
+/// Charged to every shutdown: `set_txt_attribute` only queues the goodbye, and
+/// dropping the announcement before a round would send nothing. A round of
+/// swarm-discovery's interactive cadence is 700ms plus a jitter that grows with
+/// the swarm and can pass a second, and each goodbye is one multicast packet
+/// Wi-Fi may drop, so this spans more than one.
+const GOODBYE_LINGER: Duration = Duration::from_millis(2500);
 
 pub struct LocalHubAnnouncementService {
     announcement: Arc<Mutex<Option<DropGuard>>>,

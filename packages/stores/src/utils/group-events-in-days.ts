@@ -98,6 +98,8 @@ export function groupEventsInDays<T>(
 				Math.abs(event.timestamp - lastEvent.timestamp) <
 				MESSAGE_SET_TIMEFRAME_INTERVAL_MS;
 			const sameType = lastEvent.type === event.type;
+			const bothSystemEvents =
+				lastEvent.type !== 'Message' && event.type !== 'Message';
 
 			const date = new Date(event.timestamp);
 			date.setHours(0);
@@ -109,7 +111,7 @@ export function groupEventsInDays<T>(
 			// event after one with a later wall-clock day; clamping into the
 			// current day keeps the day headers monotonic.
 			if (date.valueOf() <= lastEventGroupsInDay.day.valueOf()) {
-				if (sameProvenance && sameTimeframe && sameType) {
+				if (bothSystemEvents || (sameProvenance && sameTimeframe && sameType)) {
 					lastEventGroup.push([eventHash, event]);
 				} else {
 					lastEventGroupsInDay.eventsGroups.push([[eventHash, event]]);

@@ -1,8 +1,11 @@
 import {
 	type DraftMedia,
 	type DraftVoiceNote,
+	MAX_MESSAGE_BYTES,
 	type StagingError,
 	UndecodablePhotoError,
+	UnreadableFileError,
+	inMemoryCopy,
 	planStaging,
 	prepareOutgoingPhoto,
 } from '$lib/utils/media';
@@ -11,7 +14,13 @@ import type { OutgoingPhoto } from 'dash-chat-stores';
 export interface StagingOutcome {
 	error?: StagingError;
 	undecodablePhotos: number;
+	unreadablePhotos: number;
 }
+
+const NOTHING_LEFT_OUT: StagingOutcome = {
+	undecodablePhotos: 0,
+	unreadablePhotos: 0,
+};
 
 /** Owns the composer's staged attachments and is the only writer of the
  * draft, so a photo is in it only once it has been prepared for sending. */
@@ -87,39 +96,59 @@ export class MediaDraft {
 	}
 
 	async #stage(files: File[], generation: number): Promise<StagingOutcome> {
-		if (generation !== this.#generation) return { undecodablePhotos: 0 };
+		if (generation !== this.#generation) return NOTHING_LEFT_OUT;
 		const plan = planStaging(this.#media, files);
-		if (plan.file) this.#media = { kind: 'file', file: plan.file };
-		if (!plan.file && plan.photos.length === 0) {
-			return { error: plan.error, undecodablePhotos: 0 };
+		if (plan.file) return this.#stageFile(plan.file, generation);
+		if (plan.photos.length === 0) {
+			return { ...NOTHING_LEFT_OUT, error: plan.error };
 		}
 		this.#pendingPhotos = plan.photos.length;
 		this.onStagingStarted();
-		const undecodablePhotos = await this.#stagePhotos(plan.photos, generation);
-		if (generation !== this.#generation) return { undecodablePhotos: 0 };
-		return { error: plan.error, undecodablePhotos };
+		const leftOut = await this.#stagePhotos(plan.photos, generation);
+		if (generation !== this.#generation) return NOTHING_LEFT_OUT;
+		return { ...leftOut, error: plan.error };
 	}
 
-	/** Returns how many of `files` couldn't be decoded. */
-	async #stagePhotos(files: File[], generation: number): Promise<number> {
-		let undecodablePhotos = 0;
+	async #stageFile(file: File, generation: number): Promise<StagingOutcome> {
+		this.onStagingStarted();
+		// One over the cap is only ever rejected at send, so it isn't read.
+		const staged =
+			file.size > MAX_MESSAGE_BYTES
+				? file
+				: await inMemoryCopyOrUnreadable(file);
+		if (generation !== this.#generation) return NOTHING_LEFT_OUT;
+		if (staged === 'unreadable') {
+			return { ...NOTHING_LEFT_OUT, error: 'unreadableFile' };
+		}
+		this.#media = { kind: 'file', file: staged };
+		return NOTHING_LEFT_OUT;
+	}
+
+	/** Returns how many of `files` were left out, by reason. */
+	async #stagePhotos(
+		files: File[],
+		generation: number,
+	): Promise<StagingOutcome> {
+		const leftOut = { ...NOTHING_LEFT_OUT };
 		try {
 			// One at a time: decoding a batch of full-size photos at once can
 			// exhaust the Android webview's memory.
 			for (const file of files) {
-				const photo = await prepareOrUndecodable(file);
-				if (generation !== this.#generation) return 0;
+				const photo = await prepareOrReasonLeftOut(file);
+				if (generation !== this.#generation) return NOTHING_LEFT_OUT;
 				this.#pendingPhotos--;
-				if (photo) {
-					this.#appendPhoto(photo);
+				if (photo === 'undecodable') {
+					leftOut.undecodablePhotos++;
+				} else if (photo === 'unreadable') {
+					leftOut.unreadablePhotos++;
 				} else {
-					undecodablePhotos++;
+					this.#appendPhoto(photo);
 				}
 			}
 		} finally {
 			if (generation === this.#generation) this.#pendingPhotos = 0;
 		}
-		return undecodablePhotos;
+		return leftOut;
 	}
 
 	#appendPhoto(photo: OutgoingPhoto) {
@@ -133,13 +162,25 @@ export class MediaDraft {
 	}
 }
 
-async function prepareOrUndecodable(
+async function prepareOrReasonLeftOut(
 	file: File,
-): Promise<OutgoingPhoto | undefined> {
+): Promise<OutgoingPhoto | 'undecodable' | 'unreadable'> {
 	try {
 		return await prepareOutgoingPhoto(file);
 	} catch (e) {
-		if (e instanceof UndecodablePhotoError) return undefined;
+		if (e instanceof UndecodablePhotoError) return 'undecodable';
+		if (e instanceof UnreadableFileError) return 'unreadable';
+		throw e;
+	}
+}
+
+async function inMemoryCopyOrUnreadable(
+	file: File,
+): Promise<File | 'unreadable'> {
+	try {
+		return await inMemoryCopy(file);
+	} catch (e) {
+		if (e instanceof UnreadableFileError) return 'unreadable';
 		throw e;
 	}
 }

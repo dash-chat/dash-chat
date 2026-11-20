@@ -1103,3 +1103,218 @@ async fn late_joiner_decrypts_pre_join_media() {
     };
     assert_eq!(photos[0].data, photo_bytes);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_promotes_member_to_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    alice
+        .promote_group_member_to_admin(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::manage()),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_cannot_promote_member_to_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&cammy)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+            *cammy.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let result = bobbi
+        .promote_group_member_to_admin(chat_id, *cammy.device_id())
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected the promote call to be refused for a non-admin"
+    );
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi"), (&cammy, "cammy")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::write()),
+            (cammy.device_id(), Access::write()),
+        ],
+    )
+    .await;
+}
+
+/// Catching up from the mailbox, a node is handed each author's log whole. When
+/// two admins took turns, whichever log comes first holds a change that depends
+/// on one in the other, so the orderer has to hold it back and release it later.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_member_removed_while_offline_after_admins_took_turns() {
+    setup();
+
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing().no_p2p();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let cammy = TestNode::new(config.clone(), "cammy")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let danny = TestNode::new(config.clone(), "danny")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    for other in [&bobbi, &cammy, &danny] {
+        alice
+            .behavior()
+            .initiate_and_establish_contact(other)
+            .await
+            .unwrap();
+    }
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+            *cammy.device_id() => Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+    for member in [&bobbi, &cammy] {
+        member
+            .behavior()
+            .accept_next_group_invitation()
+            .await
+            .unwrap();
+    }
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let bobbi_device_id = bobbi.device_id();
+    let bobbi_store_dir = bobbi.shutdown().await;
+
+    alice
+        .add_group_member(chat_id, *danny.device_id(), Access::write())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+    cammy
+        .remove_group_member(chat_id, *danny.device_id())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+    alice
+        .remove_group_member(chat_id, *bobbi_device_id)
+        .await
+        .unwrap();
+    poll.consistency([&alice, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_store_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&cammy, "cammy"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (cammy.device_id(), Access::manage()),
+        ],
+    )
+    .await;
+}

@@ -78,27 +78,36 @@ export class MessagesStore {
 		public controlOps: () => ReactivePromise<SimplifiedOperation<Payload>[]>,
 	) {}
 
-	/** The chat's visible ops, each after the ops it references. Reactions sit at
-	 * the end, so this is an order to apply them in, not to display them in. */
-	causalOps = reactive(async () => {
+	opsByTimestamp = reactive(async () => {
 		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
-
-		const opsByTimestamp = Object.values(logs)
+		return Object.values(logs)
 			.flat()
 			.sort(
 				(a, b) =>
 					a.header.timestamp - b.header.timestamp ||
 					a.hash.localeCompare(b.hash),
 			);
+	});
+
+	opsAuthoredWhileAMember = reactive(async () =>
+		dropOpsAuthoredWhileNotAMember(
+			await this.opsByTimestamp(),
+			await this.controlOps(),
+			await this.contactsStore.myDeviceId(),
+		),
+	);
+
+	/** The chat's visible ops, each after the ops it references. Reactions sit at
+	 * the end, so this is an order to apply them in, not to display them in. */
+	causalOps = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 		const deviceAgents = await this.contactsStore.agentsForDevices(
 			new Set(Object.keys(logs)),
 		);
-		const myDeviceId = await this.contactsStore.myDeviceId();
 		return opsInCausalOrder(
-			dropOpsAuthoredWhileNotAMember(
-				await this.dropOpsAuthoredWhileBlocked(opsByTimestamp, deviceAgents),
-				await this.controlOps(),
-				myDeviceId,
+			await this.dropOpsAuthoredWhileBlocked(
+				await this.opsAuthoredWhileAMember(),
+				deviceAgents,
 			),
 		);
 	});
