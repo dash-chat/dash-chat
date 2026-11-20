@@ -380,6 +380,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		for (const slot of iosSlots) {
 			await clearIosAppData(browser.getInstance(`agent${slot}`));
 		}
+		android?.clearAppData();
 		killLeftoverLocalHubs();
 		if (!isRemoteMailbox()) await ensureHealthyRelay();
 		await ensureHealthyMailbox();

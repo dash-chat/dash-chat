@@ -903,6 +903,15 @@ export class AndroidPlatform implements AgentPlatform {
 		}
 	}
 
+	/** The next session's reset comes too late for a spec that worked with the
+	 *  mailbox down: the app uploads what it held back as soon as the mailbox
+	 *  returns, and the pushes for it reach the phone during the next spec. */
+	clearAppData(): void {
+		for (const udid of this.udids.values()) {
+			adbShell(udid, `pm clear ${APP_PACKAGE}`);
+		}
+	}
+
 	async afterSession() {
 		for (const logger of this.loggers.values()) {
 			logger.kill();
