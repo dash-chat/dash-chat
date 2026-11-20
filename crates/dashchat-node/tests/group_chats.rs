@@ -492,10 +492,8 @@ async fn test_admin_removes_themself_there_is_another_admin() {
         .await
         .unwrap();
 
-    poll.consistency([&alice, &bobbi], &[chat_id.into()])
-        .await
-        .unwrap();
-
+    // No consistency check: alice's ops after the removal are encrypted to a secret bobbi
+    // no longer holds, so he never processes them.
     assert_group_members(
         &poll,
         &[(&alice, "alice"), (&bobbi, "bobbi")],
@@ -574,10 +572,8 @@ async fn test_non_admin_removes_themself() {
         .await
         .unwrap();
 
-    poll.consistency([&alice, &bobbi], &[chat_id.into()])
-        .await
-        .unwrap();
-
+    // No consistency check: alice's ops after the removal are encrypted to a secret bobbi
+    // no longer holds, so he never processes them.
     assert_group_members(
         &poll,
         &[(&alice, "alice"), (&bobbi, "bobbi")],
