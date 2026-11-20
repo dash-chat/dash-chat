@@ -18,6 +18,7 @@
 		".direnv": true,
 		"ui/.svelte-kit": true,
 		"ui/build": true,
+		"ui/.build-stage": true,
 		"*.log": true
 	},
 	"tailwindCSS.lint.suggestCanonicalClasses": "ignore",

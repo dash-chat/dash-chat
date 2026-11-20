@@ -18,6 +18,7 @@
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	const chatsStore: ChatsStore = getContext('chats-store');
 	let selectedContacts = $state<VerifyingKey[]>([]);
+	let addingMembers = $state(false);
 
 	const contacts = useReactiveValue(contactsStore.profilesForUnblockedContacts);
 	const groupChatStore = chatsStore.groupChats(chatId);
@@ -42,9 +43,14 @@
 	});
 
 	async function addMembers() {
-		const store = chatsStore.groupChats(chatId);
-		await store.addMembers(selectedContacts);
-		goto(`/group-chat/${chatId}/info`);
+		addingMembers = true;
+		try {
+			const store = chatsStore.groupChats(chatId);
+			await store.addMembers(selectedContacts);
+			goto(`/group-chat/${chatId}/info`);
+		} finally {
+			addingMembers = false;
+		}
 	}
 </script>
 
@@ -52,7 +58,7 @@
 	title={m.addMembers()}
 	actionLabel={m.add()}
 	onAction={addMembers}
-	actionDisabled={selectedContacts.length === 0}
+	actionDisabled={selectedContacts.length === 0 || addingMembers}
 	onBack={() => goto(`/group-chat/${chatId}/info`)}
 	constrainedWidth
 	backTestId="add-members-back"

@@ -1,3 +1,5 @@
+import type { WifiNetwork } from '../test-env';
+
 /** What a platform's Wi-Fi tooling has to do for a run: the operations the
  *  index exports, minus the platform choice. */
 export interface HostWifi {
@@ -9,9 +11,16 @@ export interface HostWifi {
 	/** Join `ssid` on `device` and resolve with the IPv4 address obtained on
 	 *  it. */
 	joinWifi(device: string, ssid: string, passphrase: string): Promise<string>;
+	/** Which of the test networks `ssids` the card has joined and not left
+	 *  yet: what it could be on instead of its usual network. */
+	joinedTestNetworks(ssids: string[]): string[];
 	/** Leave `ssid` and resolve once the card is back on its usual network,
 	 *  with an address — where every hub is again from then on. */
 	leaveWifi(ssid: string): Promise<void>;
+	/** The network `device` is on with its passphrase, or null when it is on
+	 *  none, on one of `testNetworks`, or on one whose secret the platform
+	 *  withholds. */
+	currentNetwork(device: string, testNetworks: string[]): WifiNetwork | null;
 }
 
 /** Poll `read` every 500ms until it answers an address, for up to 20s; past

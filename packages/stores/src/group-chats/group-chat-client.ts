@@ -1,6 +1,10 @@
+import { type UnsubscribeFunction } from 'emittery';
+
+import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId } from '../p2panda/types';
-import { ChatId, GroupInfo } from '../types';
+import { ChatId, GroupInfo, Payload } from '../types';
 import { invokeAfterSetup } from '../utils/invoke-after-setup';
+import { onSystemEvent } from '../utils/system-events';
 
 export interface GroupMember {
 	agentId: AgentId;
@@ -10,6 +14,17 @@ export interface GroupMember {
 
 export interface IGroupChatClient {
 	getMembers(chatId: ChatId): Promise<GroupMember[]>;
+
+	/** The group's control operations from every member, carrying their action in `header.auth`.
+	 *  */
+	getControlOps(chatId: ChatId): Promise<SimplifiedOperation<Payload>[]>;
+
+	/** `chatId`'s members changed. */
+	onGroupMembersChanged(
+		chatId: ChatId,
+		handler: () => void,
+	): UnsubscribeFunction;
+
 	addMember(chatId: ChatId, member: AgentId): Promise<void>;
 	removeMember(chatId: ChatId, member: AgentId): Promise<void>;
 
@@ -25,6 +40,10 @@ export interface IGroupChatClient {
 export class GroupChatClient implements IGroupChatClient {
 	async getMembers(chatId: ChatId): Promise<GroupMember[]> {
 		return invokeAfterSetup('get_group_members', { chatId });
+	}
+
+	async getControlOps(chatId: ChatId): Promise<SimplifiedOperation<Payload>[]> {
+		return invokeAfterSetup('get_group_control_log', { chatId });
 	}
 
 	async addMember(chatId: ChatId, member: AgentId): Promise<void> {
@@ -51,4 +70,15 @@ export class GroupChatClient implements IGroupChatClient {
 	}
 
 	async deleteGroup(): Promise<void> {}
+
+	onGroupMembersChanged(
+		chatId: ChatId,
+		handler: () => void,
+	): UnsubscribeFunction {
+		// Its creation sets the member list too, for a store that already
+		// existed when the group's own operations arrived.
+		return onSystemEvent(['GroupMembersChanged', 'GroupChatAdded'], event => {
+			if (event.payload.chat_id === chatId) handler();
+		});
+	}
 }

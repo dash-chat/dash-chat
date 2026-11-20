@@ -101,13 +101,31 @@ fn sniff_content_type(bytes: &[u8]) -> &'static str {
     "application/octet-stream"
 }
 
+/// How long a blob request waits for a node that is not up yet (startup) or is
+/// being rebuilt (iOS resume). Commands get this from the frontend's
+/// `invokeAfterSetup` retries; an `<img>` cannot retry, and a failed one shows
+/// its reload placeholder until the user taps it, so the wait happens here.
+const NODE_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const NODE_READY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
-    let node = app
-        .try_state::<AppNodeManager>()
-        .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let node = wait_for_node(app).await?;
     node.load_blob(hash, Some(std::time::Duration::from_secs(30)))
         .await
+}
+
+async fn wait_for_node<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> anyhow::Result<dashchat_node::Node> {
+    let deadline = std::time::Instant::now() + NODE_READY_TIMEOUT;
+    loop {
+        let node = match app.try_state::<AppNodeManager>() {
+            Some(manager) => manager.get().await.map_err(|e| anyhow::anyhow!(e)),
+            None => Err(anyhow::anyhow!("node not yet initialized")),
+        };
+        if node.is_ok() || std::time::Instant::now() >= deadline {
+            return node;
+        }
+        tokio::time::sleep(NODE_READY_POLL).await;
+    }
 }

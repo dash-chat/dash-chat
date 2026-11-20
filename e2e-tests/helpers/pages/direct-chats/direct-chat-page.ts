@@ -1,6 +1,7 @@
+import { Avatar } from '../../components/avatar';
 import { Composer } from '../../components/composer';
-import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
 import { type MessageStatus, Messages } from '../../components/messages';
+import { Navbar } from '../../components/navbar';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { SYNC_TIMEOUT } from '../../timeouts';
@@ -21,6 +22,8 @@ export class DirectChatPage extends TestHelper {
 	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
 	nameNotVerifiedPill = this.el(tid('direct-chat-name-not-verified'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
+	// TODO: pre-accept: goes away with the AwaitingAcceptanceBar.
+	awaitingAcceptBar = this.el(tid('direct-chat-awaiting-accept'));
 	requestMessages = this.el(tid('direct-chat-request-messages'));
 	requestMessagesToggle = this.el(tid('direct-chat-request-messages-toggle'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
@@ -35,6 +38,7 @@ export class DirectChatPage extends TestHelper {
 	reportMessage = this.el(tid('direct-chat-report-message'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
+	navbar = new Navbar(this.agent, tid('direct-chat-page'));
 	composer = new Composer(this.agent);
 	messages = new Messages(
 		this.agent,
@@ -42,7 +46,7 @@ export class DirectChatPage extends TestHelper {
 		'direct-chat-unread-divider',
 		this.composer,
 	);
-	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
+	activeOverP2p = this.el(tid('direct-chat-active-over-p2p'));
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
@@ -103,11 +107,10 @@ export class DirectChatPage extends TestHelper {
 	/** Whether the peer-header avatar is the profile placeholder (person icon,
 	 * shown while the full profile is still syncing) rather than a real one. */
 	peerAvatarIsPlaceholder(): Promise<boolean> {
-		return this.agent.execute(
-			(sel: string) =>
-				document.querySelector(sel)?.getAttribute('data-waiting') === 'true',
+		return new Avatar(
+			this.agent,
 			tid('direct-chat-peer-avatar'),
-		);
+		).showsFallbackIcon();
 	}
 
 	isContactRequestBannerVisible(): Promise<boolean> {
@@ -126,35 +129,5 @@ export class DirectChatPage extends TestHelper {
 	async acceptContactRequest(): Promise<void> {
 		await this.domClick(tid('direct-chat-accept-btn'));
 		await this.domClick(tid('direct-chat-accept-confirm'));
-	}
-
-	/** Returns descriptions of any direct-chat navbar overflow issues. */
-	checkNavbarOverflow(): Promise<string[]> {
-		return this.agent.execute(() => {
-			const navbar = document.querySelector('.k-navbar');
-			if (!navbar) return ['Navbar element not found'];
-			const issues: string[] = [];
-			if (navbar.scrollWidth > navbar.clientWidth + 2) {
-				issues.push('Navbar has horizontal overflow');
-			}
-			navbar.querySelectorAll('*').forEach(el => {
-				const style = window.getComputedStyle(el);
-				const clipped =
-					style.overflowX === 'hidden' ||
-					style.overflowX === 'clip' ||
-					style.overflow === 'hidden' ||
-					style.overflow === 'clip' ||
-					style.textOverflow === 'ellipsis';
-				if (clipped) return;
-				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
-					const text = el.textContent?.substring(0, 60).trim();
-					if (text)
-						issues.push(
-							`Overflow in navbar <${el.tagName.toLowerCase()}>: "${text}"`,
-						);
-				}
-			});
-			return issues.slice(0, 10);
-		});
 	}
 }

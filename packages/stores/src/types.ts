@@ -116,8 +116,18 @@ export type MediaMetadata =
 			width: number;
 			height: number;
 			hash: Hash;
+			group_secret_id: string;
+			nonce: string;
 	  }
-	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'File';
+			name: string;
+			mime_type: string;
+			size: number;
+			hash: Hash;
+			group_secret_id: string;
+			nonce: string;
+	  }
 	| {
 			kind: 'VoiceNote';
 			mime_type: string;
@@ -125,6 +135,8 @@ export type MediaMetadata =
 			duration_ms: number;
 			waveform: Uint8Array;
 			hash: Hash;
+			group_secret_id: string;
+			nonce: string;
 	  };
 
 /** Matches `dashchat_node::MediaBundle`, which serializes as a flat array. */
@@ -191,12 +203,13 @@ export type MessageContentV1 = {
 	 * `EditMessage` in the same chat, any author's log). Absent on the wire
 	 * for non-replies. */
 	reply?: Hash;
+	/** Lamport counter assigned by the sender's node; the primary display
+	 * ordering criterion (timestamp and author tie-break). Absent on messages
+	 * from clients that predate the field. */
+	lamport?: number;
 };
 export type MessageContent = MessageContentV1;
 
-export type AnnouncementPayload =
-	| { type: 'SetProfile'; payload: Profile }
-	| { type: 'SetCapabilities'; payload: unknown };
 export interface GroupInfo {
 	name: string;
 	description: string | undefined;
@@ -221,9 +234,14 @@ export type ChatPayload =
 	| { type: 'Reaction'; payload: ChatReaction }
 	| { type: 'EditMessage'; payload: EditMessagePayload }
 	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
-	| { type: 'JoinGroup'; payload: { chat_id: string } }
+	| {
+			type: 'JoinGroup';
+			payload: { chat_id: string; add_member_operation_hash: Hash };
+	  }
 	| { type: 'GroupInfo'; payload: GroupInfo }
-	| { type: 'MessageAck'; payload: MessageAckPayload };
+	| { type: 'SetProfile'; payload: Profile }
+	| { type: 'MessageAck'; payload: MessageAckPayload }
+	| { type: 'IntroduceAgents'; payload: { agents: Record<DeviceId, AgentId> } };
 
 /** An entry in a `MessageAck` map: the latest operation of one author that the
  * acker has processed. Covers everything at or below `seq` in that author's
@@ -267,6 +285,14 @@ export interface DeleteForMePayload {
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
 export type SystemEvent =
+	| { type: 'GroupChatAdded'; payload: { chat_id: ChatId } }
+	| { type: 'GroupMembersChanged'; payload: { chat_id: ChatId } }
+	| { type: 'AgentsIntroduced'; payload: { agents: Record<DeviceId, AgentId> } }
+	| {
+			type: 'ProfileChanged';
+			/** `agent_id` is null while the device's agent is unknown. */
+			payload: { device_id: DeviceId; agent_id: AgentId | null };
+	  }
 	| {
 			type: 'Tombstones';
 			payload: {
@@ -293,6 +319,7 @@ export interface Tombstone {
 export type Tombstones = Record<Hash, TombstoneReason>;
 
 export type DeviceGroupPayload =
+	| { type: 'SetProfile'; payload: Profile }
 	| {
 			type: 'AddContact';
 			payload: { agent_id: AgentId; direct_chat_topic_id: ChatId };
@@ -335,7 +362,6 @@ export interface GroupControlPayload {
 }
 
 export type Payload =
-	| { type: 'Announcements'; payload: AnnouncementPayload }
 	| { type: 'Chat'; payload: ChatPayload }
 	| { type: 'DeviceGroupPayload'; payload: DeviceGroupPayload }
 	| { type: 'Inbox'; payload: InboxPayload }
@@ -412,8 +438,12 @@ export interface MessageBody {
 
 /** The renderable content of a message, or `'deleted-for-everyone'` once a
  * delete op replaces the body entirely — dropping text, media, reactions and
- * edits — and it renders as the deleted placeholder. */
-export type MessageDisplay = MessageBody | 'deleted-for-everyone';
+ * edits — and it renders as the deleted placeholder. An operation that does
+ * not decrypt renders as the `'undecryptable'` placeholder. */
+export type MessageDisplay =
+	| MessageBody
+	| 'deleted-for-everyone'
+	| 'undecryptable';
 
 /** Whether a message still has a live body. Written as a type guard so the
  * `true` branch narrows `content` to `MessageBody`. */
@@ -430,6 +460,13 @@ export function isDeleted(
 	content: MessageDisplay,
 ): content is 'deleted-for-everyone' {
 	return content === 'deleted-for-everyone';
+}
+
+/** Whether a message stands in for an operation that does not decrypt. */
+export function isUndecryptable(
+	content: MessageDisplay,
+): content is 'undecryptable' {
+	return content === 'undecryptable';
 }
 
 export type ChatSummaryLastEvent =

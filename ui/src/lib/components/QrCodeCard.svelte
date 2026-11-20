@@ -1,24 +1,19 @@
 <script lang="ts">
-	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import '@awesome.me/webawesome/dist/components/qr-code/qr-code.js';
-	import { Button, Card } from 'konsta/svelte';
-	import { mdiContentCopy } from '@mdi/js';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { copyLinkToClipboard } from '$lib/utils/clipboard';
+	import { Card } from 'konsta/svelte';
 
 	let {
 		value,
 		color,
-		copyButtonTestId,
 		label,
 	}: {
 		value: string;
 		color: string;
-		copyButtonTestId: string;
 		label?: string | undefined;
 	} = $props();
 
 	const isWhite = $derived(color === '#ffffff');
+	const qrColor = $derived(isWhite ? '#000000' : color);
 </script>
 
 <Card class="qr-card qr-code-card p-4 pb-0" style="background-color: {color}">
@@ -27,28 +22,19 @@
 			class="column w-full p-3"
 			style="align-items: center; justify-content: center; background-color: white; border-radius: 10px;"
 		>
-			<wa-qr-code {value} size="180" fill={isWhite ? '#000000' : color}
+			<wa-qr-code
+				{value}
+				size="180"
+				style="color: {qrColor}; --corner-color: {qrColor}"
 			></wa-qr-code>
 		</div>
 
-		<div class="pt-2 pb-1">
-			<Button
-				colors={{
-					touchRipple: isWhite ? 'black' : 'white',
-					textIos: isWhite ? 'text-black' : 'text-white',
-					textMaterial: isWhite ? 'text-black' : 'text-white',
-				}}
-				clearIos
-				clearMaterial
-				small
-				data-testid={copyButtonTestId}
-				onClick={() => void copyLinkToClipboard(value)}
-			>
-				<wa-icon src={wrapPathInSvg(mdiContentCopy)}> </wa-icon>
-				<div class="truncate max-w-40">
-					{label ?? value}
-				</div>
-			</Button>
+		<div
+			class="truncate max-w-40 pt-3.5 pb-2.5 in-[.k-ios]:pt-3 in-[.k-ios]:pb-2 text-sm font-medium {isWhite
+				? 'text-black'
+				: 'text-white'}"
+		>
+			{label ?? value}
 		</div>
 	</div>
 </Card>

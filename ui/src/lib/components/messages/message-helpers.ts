@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages.js';
 import { withinWindow } from '$lib/utils/time';
 import {
 	DELETE_FOR_EVERYONE_WINDOW_MS,
@@ -6,11 +7,25 @@ import {
 	EDIT_WINDOW_MS,
 	type Hash,
 	type Message,
+	type MessageBody,
+	type MessageDisplay,
 	hasBody,
 } from 'dash-chat-stores';
 import { find } from 'linkifyjs';
 
 export type MessagePosition = 'first' | 'middle' | 'last' | 'single';
+
+/** What a message with no body to show says in its place. */
+export function messagePlaceholderText(
+	content: Exclude<MessageDisplay, MessageBody>,
+): string {
+	switch (content) {
+		case 'deleted-for-everyone':
+			return m.messageDeleted();
+		case 'undecryptable':
+			return m.messageNotDecrypted();
+	}
+}
 
 export function canEditMessage(
 	message: Message,
@@ -24,6 +39,25 @@ export function canEditMessage(
 	// `timestamp` is the original message op's; edits never change it.
 	return withinWindow(message.timestamp, EDIT_WINDOW_MS);
 }
+
+export function canCopyMessage(message: Message): boolean {
+	return hasBody(message.content) && message.content.message !== '';
+}
+
+/** Whether the actions menu has any item to offer on this message. */
+export function hasMessageActions(
+	message: Message,
+	myDeviceId: DeviceId,
+	readOnly: boolean,
+	canReply: boolean,
+): boolean {
+	if (MESSAGE_DELETION_ENABLED || canCopyMessage(message)) return true;
+	return !readOnly && (canReply || canEditMessage(message, myDeviceId));
+}
+
+/** Off while p2panda keeps encrypted payloads in the operation header, which
+ * a delete (dropping only the body) cannot remove. */
+export const MESSAGE_DELETION_ENABLED = false;
 
 export function canDeleteMessageForEveryone(
 	message: Message,
@@ -72,6 +106,30 @@ export function messagePosition(
 	if (index === 0) return 'first';
 	if (index === setLength - 1) return 'last';
 	return 'middle';
+}
+
+export interface GroupedEvent<T> {
+	hash: Hash;
+	item: T;
+	group: Array<[Hash, T]>;
+	indexInGroup: number;
+}
+
+/** A day's groups as one list of events, each still knowing its group, so the
+ * list can be keyed by event hash alone: keying rows under their group would
+ * re-mount every row of a group whenever a late arrival or a deletion changes
+ * which event starts it. */
+export function groupedEvents<T>(
+	eventsGroups: Array<Array<[Hash, T]>>,
+): Array<GroupedEvent<T>> {
+	return eventsGroups.flatMap(group =>
+		group.map(([hash, item], indexInGroup) => ({
+			hash,
+			item,
+			group,
+			indexInGroup,
+		})),
+	);
 }
 
 const SENDER_COLOR_COUNT = 12;

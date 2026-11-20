@@ -35,4 +35,7 @@ pub(crate) async fn on_resume(app: AppHandle<Wry>) {
         return;
     };
     crate::mailbox::probe_cloud_mailbox(&node).await;
+    // Uploads cut off while we were away go out again now.
+    node.mailboxes.reset_uploads();
+    node.notify_blobs_changed();
 }

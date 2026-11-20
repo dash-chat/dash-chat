@@ -2,7 +2,8 @@
  * Lightbox E2E — opening photos from a message bubble, navigating between
  * them (buttons, keyboard, filmstrip), and closing with focus restored.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Photo lightbox', () => {
@@ -14,10 +15,14 @@ describe('Photo lightbox', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 
 		for (let i = 0; i < 3; i++) {
-			await agent1.directChatPage.composer.attachPhotos('lightbox');
+			// Distinct names: the lightbox's force-error test hook targets images
+			// by alt (= filename), so photos sharing one name would all fail
+			// together instead of just the one under test.
+			await agent1.directChatPage.composer.attachPhotos(`lightbox-${i}`);
 		}
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('lightbox');
@@ -39,6 +44,20 @@ describe('Photo lightbox', () => {
 		await agent1.waitUntil(
 			async () => !(await agent1.directChatPage.messages.lightbox.isOpen()),
 		);
+	});
+
+	it('opens on the photo that was tapped', async () => {
+		const lb = agent1.directChatPage.messages.lightbox;
+		await agent1.directChatPage.messages.photoCellButton(2).click();
+		await lb.root.waitForExist();
+		await agent1.waitUntil(async () => (await lb.activeIndex()) === 2);
+		// The filmstrip follows the stage; a stage that fell back to the first
+		// photo drags the selection back with it.
+		await agent1.pause(1000);
+		expect(await lb.activeIndex()).toBe(2);
+
+		await lb.clickClose();
+		await agent1.waitUntil(async () => !(await lb.isOpen()));
 	});
 
 	it('navigates with arrows, keyboard, and filmstrip', async () => {

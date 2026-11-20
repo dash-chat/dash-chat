@@ -27,10 +27,26 @@ describe('Deep links', () => {
 		});
 
 		it('shows an error toast for a scheme-based deep link with an invalid contact code', async () => {
-			// The dash-chat:// scheme is only registered with the OS on desktop,
-			// so mobile has no native delivery path for it — inject straight into
-			// the app's routing to cover the scheme parsing on every platform.
+			// Inject straight into the app's routing to cover the scheme parsing
+			// the same way on every platform.
 			await agent1.injectDeepLink('dash-chat://add-contact/invalidcode');
+			await agent1.toast.expectMessage(
+				await agent1.tr('errorAddContactInvalidLink'),
+			);
+			await agent1.homePage.ready();
+		});
+
+		it('delivers a scheme-based deep link through the OS on mobile', async function () {
+			// The add-contact page on dashchat.org can only open the app through
+			// this scheme: a tap on a same-domain https link stays in the browser.
+			// Desktop e2e builds have no OS delivery path at all.
+			if (agent1.platform === 'desktop') return this.skip();
+
+			// The previous test's identical toast would otherwise pass this one,
+			// even if the OS never delivered the link.
+			await agent1.toast.root.waitForDisplayed({ reverse: true });
+
+			await agent1.handleDeepLink('dash-chat://add-contact/invalidcode');
 			await agent1.toast.expectMessage(
 				await agent1.tr('errorAddContactInvalidLink'),
 			);
@@ -68,6 +84,19 @@ describe('Deep links', () => {
 
 			await agent1.stopApp();
 			await agent1.handleDeepLink(link);
+			await agent1.startApp();
+			await agent1.directChatPage.ready();
+		});
+
+		it('handles a scheme-based deep link that launches the app from cold start', async function () {
+			// What someone who just installed the app hits when they tap "Add
+			// contact" on the dashchat.org page.
+			if (agent1.platform === 'desktop') return this.skip();
+
+			await agent1.stopApp();
+			await agent1.handleDeepLink(
+				link.replace('https://dashchat.org/', 'dash-chat://'),
+			);
 			await agent1.startApp();
 			await agent1.directChatPage.ready();
 		});

@@ -1,11 +1,12 @@
 import { m } from '$lib/paraglide/messages.js';
-import { isMobile } from '$lib/utils/environment';
+import { isAndroid, isMobile } from '$lib/utils/environment';
 import type { DraftVoiceNote } from '$lib/utils/media';
 import { showToast } from '$lib/utils/toasts';
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, remove } from '@tauri-apps/plugin-fs';
 import { invokeAfterSetup } from 'dash-chat-stores';
 import {
+	checkPermission,
 	getDevices,
 	getStatus,
 	requestPermission,
@@ -165,8 +166,8 @@ export class VoiceRecorder {
 		// time before it can render.
 		this.elapsedMs = 0;
 		try {
-			const permission = await requestPermission();
-			if (!permission.granted) {
+			const granted = await requestMicPermission();
+			if (!granted) {
 				this.phase = 'idle';
 				showToast(m.voiceMicDenied(), 'error');
 				return;
@@ -262,6 +263,26 @@ export class VoiceRecorder {
 			clearInterval(this.#timer);
 			this.#timer = undefined;
 		}
+	}
+}
+
+async function requestMicPermission(): Promise<boolean> {
+	if (!isAndroid) return (await requestPermission()).granted;
+	if ((await checkPermission()).granted) return true;
+	await askAndroidForMicrophone();
+	return (await checkPermission()).granted;
+}
+
+// The Android plugin resolves `requestPermission` 500ms after opening the
+// system dialog, not when the user answers it. The webview's getUserMedia
+// prompt does wait for the answer, but rejects even when it's granted, so
+// only its timing is trusted.
+async function askAndroidForMicrophone(): Promise<void> {
+	try {
+		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		stream.getTracks().forEach(track => track.stop());
+	} catch {
+		// The caller reads the outcome from `checkPermission`.
 	}
 }
 

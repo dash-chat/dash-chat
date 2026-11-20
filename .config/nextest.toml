@@ -175,3 +175,26 @@ flaky-fail-status = "failure"
 
 # This profile is activated if MIRI_SYSROOT is set.
 [profile.default-miri]
+# The LAN sync tests keep nodes idle or away from the network for minutes on purpose.
+[[profile.default.overrides]]
+filter = 'binary(lan_sync_crowded_address_book)'
+slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
+
+# Setting up seven nodes, their contacts and the group takes 35-45s on CI on its own,
+# and the presence wait that follows is allowed 30s.
+[[profile.default.overrides]]
+filter = 'binary(online_peers) & test(every_member_of_a_large_group_is_online)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Every write commits to disk, and commits are an order of magnitude slower on
+# Windows runners: 5000 sequential writes take ~12s on Linux and over 60s there.
+[[profile.default.overrides]]
+platform = 'cfg(windows)'
+filter = 'package(mailbox-server) & binary(stress)'
+slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
+
+# Encrypting, storing, syncing and decrypting a 16 MB message takes ~17s locally in a debug
+# build, close to the default limit on slower CI runners.
+[[profile.default.overrides]]
+filter = 'binary(message_encryption) & test(largest_message_reaches_the_other_member)'
+slow-timeout = { period = "60s", terminate-after = 3, on-timeout = "fail" }

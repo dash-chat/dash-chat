@@ -56,14 +56,22 @@ describe('Group details spec', () => {
 		);
 	});
 
+	it('Shows the group icon, not initials, for a group without a photo', async () => {
+		expect(await agent2.groupInfoPage.avatar.showsFallbackIcon()).toBe(true);
+		expect(await agent2.groupInfoPage.avatar.initials()).toBe(null);
+	});
+
 	it('Shows a new photo and description to all members if the admin changes them', async () => {
 		await agent1.groupInfoPage.editLink.click();
 		await agent1.groupInfoEditPage.ready();
+		expect(await agent1.groupInfoEditPage.avatar.showsFallbackIcon()).toBe(
+			true,
+		);
 		await agent1.groupInfoEditPage.setDescription('A group about nothing');
 
 		await agent1.groupInfoEditPage.editPhotoButton.click();
 		await agent1.editPhotoPage.ready();
-		await agent1.editPhotoPage.pickPhoto(PHOTO);
+		await agent1.editPhotoPage.setPhoto(PHOTO);
 		const savedPhoto = await agent1.editPhotoPage.avatar.imageSrc();
 		await agent1.editPhotoPage.save();
 		await agent1.groupInfoEditPage.ready();
@@ -71,6 +79,7 @@ describe('Group details spec', () => {
 		await agent1.groupInfoEditPage.save();
 		await agent1.groupInfoPage.ready();
 		expect(await agent1.groupInfoPage.avatar.imageSrc()).toBe(savedPhoto);
+		expect(await agent1.groupInfoPage.avatar.showsFallbackIcon()).toBe(false);
 
 		await agent2.waitUntil(async () =>
 			(await agent2.groupInfoPage.description.getText()).includes(

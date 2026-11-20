@@ -10,6 +10,7 @@ import {
 	slowMailboxLink,
 } from '../../../setup/mailbox-control';
 import {
+	MAILBOX_HEALED_AFTER_BACKOFF_MS,
 	MAILBOX_HEALED_MS,
 	MAILBOX_HUNG_MS,
 	MAILBOX_UNANSWERED_MS,
@@ -31,7 +32,7 @@ async function checkCloudAll(
 	}
 }
 
-/** Slow the link down. The cloud stays usable, so the chip stays hidden. */
+/** Slow the link down. The cloud stays usable, so the chip keeps reading cloud. */
 class CloudSlowMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
 		return m.hasCloud() && m.cloudUsable();
@@ -82,7 +83,7 @@ class CloudDropMove extends Move {
 	}
 }
 
-/** Heal the link. Chips must hide again, and whatever the cloud held
+/** Heal the link. Chips must read cloud again, and whatever the cloud held
  *  reaches everyone. */
 class CloudHealMove extends Move {
 	check(m: Readonly<ExpectedModel>): boolean {
@@ -93,7 +94,12 @@ class CloudHealMove extends Move {
 		log(this.toString());
 		await healMailboxLink();
 		m.setCloudUsable(true);
-		await checkCloudAll(m, real, 'the cloud link healed', MAILBOX_HEALED_MS);
+		await checkCloudAll(
+			m,
+			real,
+			'the cloud link healed',
+			MAILBOX_HEALED_AFTER_BACKOFF_MS,
+		);
 	}
 
 	toString(): string {

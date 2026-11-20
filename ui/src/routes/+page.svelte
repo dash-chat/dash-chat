@@ -1,72 +1,77 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import type { ChatsStore, ContactsStore } from 'dash-chat-stores';
+	import type { ChatsStore } from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiPencil, mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
-	import GetStarted from '$lib/components/GetStarted.svelte';
+	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
 	import FirstChatTooltip from '$lib/components/FirstChatTooltip.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 	import { Fab, Link, Navbar, Page, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+
 	const theme = $derived(useTheme());
 
-	let getStartedVisible = $state(true);
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myProfile = useReactivePromise(contactsStore.myProfile);
+	let scrollEl: HTMLDivElement | null = $state(null);
+	let navbarHeight = $state(0);
+	// Konsta's iOS navbar height, so the list sits clear of it before it is
+	// measured.
+	const navbarFallbackHeight = 'calc(max(16px, var(--k-safe-area-top)) + 44px)';
 
 	const chatsStore: ChatsStore = getContext('chats-store');
 	const chatSummaries = useReactivePromise(chatsStore.allChatsSummaries);
+	const loadedChatSummaries = useReactiveValue(chatsStore.allChatsSummaries);
+	const listNeedsFabClearance = $derived(
+		theme === 'material' &&
+			!isWideScreen.value &&
+			($loadedChatSummaries?.length ?? 0) > 0,
+	);
 </script>
 
-<Page>
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
-		{#snippet left()}
-			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
-						size={42}
-					/>
-				</Link>
-			{/await}
-		{/snippet}
+{#snippet connectionStatus()}
+	<div class="grid size-11 place-items-center">
+		<ConnectionStatusIndicator />
+	</div>
+{/snippet}
 
-		{#snippet right()}
-			{#if theme === 'ios'}
-				<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
-					<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
-				</Link>
-				{#if !isWideScreen.value}
-					{#await $chatSummaries then chats}
-						{#if chats.length === 0}
-							<!-- Absolute so it anchors to the navbar's inner row (already relative)
-								and sits below the new-message icon without affecting layout. -->
-							<div class="absolute end-0 top-full mt-2 z-30">
-								<FirstChatTooltip />
-							</div>
-						{/if}
-					{/await}
-				{/if}
+{#snippet materialActions()}
+	<AddContactNavbarButton />
+{/snippet}
+
+{#snippet composeActions()}
+	<AddContactNavbarButton />
+	<Link iconOnly href="/new-message" data-testid="home-new-message-btn">
+		<wa-icon src={wrapPathInSvg(mdiSquareEditOutline)}> </wa-icon>
+	</Link>
+	{#if !isWideScreen.value}
+		{#await $chatSummaries then chats}
+			{#if chats.length === 0}
+				<!-- Absolute so it anchors to the navbar's inner row (already relative)
+							and sits below the new-message icon without affecting layout. -->
+				<div class="absolute end-0 top-full mt-2 z-30">
+					<FirstChatTooltip />
+				</div>
 			{/if}
-		{/snippet}
-	</Navbar>
+		{/await}
+	{/if}
+{/snippet}
 
+{#snippet chatList()}
 	<UpdaterBanner />
 
-	<div class={theme === 'ios' ? 'mt-4' : ''}></div>
+	<AllChats class="flex flex-1 flex-col {listNeedsFabClearance ? 'pb-22' : ''}"
+	></AllChats>
+{/snippet}
 
-	<AllChats class="flex min-h-[70vh] flex-col"></AllChats>
-
+{#snippet bottomActions()}
 	{#if !isWideScreen.value}
 		<div
-			class="flex flex-col fixed bottom-4 inset-x-0 z-10 pb-safe pointer-events-none"
+			class="flex flex-col fixed bottom-[calc(var(--main-tabbar-height)+1rem)] inset-x-0 z-10 pointer-events-none"
 		>
 			{#if theme == 'material'}
 				{#await $chatSummaries then chats}
@@ -85,7 +90,55 @@
 					<wa-icon src={wrapPathInSvg(mdiPencil)}> </wa-icon>
 				</Fab>
 			{/if}
-			<GetStarted bind:visible={getStartedVisible} />
 		</div>
 	{/if}
-</Page>
+{/snippet}
+
+{#if theme === 'ios'}
+	<Page class="!overflow-hidden">
+		<!-- The list scrolls in its own container under the navbar: inside the
+			scrolling page, iOS's overscroll bounce dragged the navbar along. -->
+		<div
+			bind:this={scrollEl}
+			class="absolute inset-0 flex flex-col overflow-y-auto pb-(--main-tabbar-height)"
+			style:padding-top={navbarHeight > 0
+				? `${navbarHeight}px`
+				: navbarFallbackHeight}
+		>
+			<h1 class="flex h-13 items-center px-safe-4 mt-2 text-[34px] font-bold">
+				{m.chats()}
+			</h1>
+			{@render chatList()}
+		</div>
+
+		<div class="absolute inset-x-0 top-0 z-20" bind:clientHeight={navbarHeight}>
+			<!-- Konsta only attaches its scroll listener on mount. It fades the
+				bar's title in as the large title scrolls under the bar. -->
+			{#if scrollEl}
+				<Navbar
+					{scrollEl}
+					title={m.chats()}
+					left={connectionStatus}
+					right={composeActions}
+					transparent={true}
+				/>
+			{/if}
+		</div>
+
+		{@render bottomActions()}
+	</Page>
+{:else}
+	<Page class="flex flex-col">
+		<Navbar
+			title={m.chats()}
+			titleClass="opacity1"
+			left={connectionStatus}
+			right={materialActions}
+			transparent={true}
+		/>
+
+		{@render chatList()}
+
+		{@render bottomActions()}
+	</Page>
+{/if}

@@ -24,8 +24,9 @@ import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
 import { allocatePreferredPort } from './allocate-port';
+import { exe } from './host-process';
 import { PUSH_PREFERRED_PORT } from './network-id';
-import { isMobile, platformNames } from './test-env';
+import { phonePlatforms } from './test-env';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -48,7 +49,7 @@ function serviceAccountKeyPath(): string {
 /** Whether the real-device push spec + push server should run: a
  * service-account key present AND a mobile agent to receive the pushes. */
 export function pushTestingEnabled(): boolean {
-	return existsSync(serviceAccountKeyPath()) && platformNames().some(isMobile);
+	return existsSync(serviceAccountKeyPath()) && phonePlatforms().length > 0;
 }
 
 /** Absolute path to the Firebase service-account key, or null when none is
@@ -89,7 +90,12 @@ export function spawnPushServer(
 ): ChildProcess {
 	// Prebuilt binary (built by the e2e build step); `cargo run` here would risk
 	// a rebuild that blows the readiness timeout, same as the mailbox server.
-	const bin = path.join(ROOT, 'target', 'debug', 'push-notifications-server');
+	const bin = path.join(
+		ROOT,
+		'target',
+		'debug',
+		exe('push-notifications-server'),
+	);
 	if (!existsSync(bin)) {
 		throw new Error(
 			`${bin} not found — run the suite via 'just e2e' (which builds ` +

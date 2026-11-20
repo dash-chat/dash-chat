@@ -12,46 +12,60 @@ impl Node {
         payload: impl Into<Payload>,
         _alias: Option<&str>,
     ) -> Result<Header, anyhow::Error> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-
-        // Construct a node actor command.
         let payload: Payload = payload.into();
+
+        // A read-only node (the push extension) must never land here: what it
+        // publishes under the shared key the running app never processes.
+        if self.config.read_only {
+            tracing::warn!(topic = ?topic.aliased(), payload = ?payload.aliased(), "read-only node publishing an operation");
+        }
 
         debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
-        let command = Command::Publish {
-            topic: topic.into(),
-            payload,
-            reply_tx,
-        };
-
-        // Send the command to the node actor.
-        if let Err(err) = self.actor_tx.send(command).await {
-            tracing::warn!("failed to publish command to node actor: {}", err);
-            return Err(Error::AuthorOperation(err.to_string()).into());
-        }
-
-        // Await the response, this just means that the command has been handled, it does not mean
-        // the operation has been published or processed yet.
-        let process_fut = warn_if_slow("awaiting reply_rx", reply_rx).await??;
+        // This only means the operation has been handed to the pipeline, not that it has been
+        // published or processed yet.
+        let process_fut = warn_if_slow(
+            "awaiting publish",
+            // Boxed: this future is inlined into every caller of `publish`, and p2panda's
+            // space futures make it large enough to overflow their stacks.
+            Box::pin(self.streams.publish(topic.into(), payload)),
+        )
+        .await?;
 
         // Now we await the operation being published and processed on the system layer.
-        let event = warn_if_slow("awaiting process_fut", process_fut).await?;
+        let header = warn_if_slow("awaiting process_fut", process_fut).await?;
 
         // Re-announce any still-unfetched blobs now that we've published.
-        self.notify_unfetched_blob_followup();
+        self.notify_blobs_changed();
 
-        Ok(event.header().to_owned())
+        Ok(header)
     }
 }
 
-async fn warn_if_slow<F: std::future::Future>(what: &str, fut: F) -> F::Output {
+impl Node {
+    /// Get the application LogId for a topic, i.e. where messages go for this topic.
+    /// For Space-based topics, this will be the application log of the space.
+    /// For other topics, this will be the log id derived from the topic itself.
+    pub async fn app_message_log_id(&self, topic: TopicId) -> LogId {
+        if self.streams.is_space(topic).await {
+            crate::topic::application_log_id(topic)
+        } else {
+            LogId::from_topic(topic)
+        }
+    }
+}
+
+/// Await `fut`, warning every 30s it is still pending.
+pub(super) async fn warn_if_slow<F: std::future::Future>(what: &str, fut: F) -> F::Output {
     tokio::pin!(fut);
-    match tokio::time::timeout(std::time::Duration::from_secs(30), &mut fut).await {
-        Ok(out) => out,
-        Err(_) => {
-            tracing::warn!("{what} is taking longer than 30s");
-            fut.await
+    let started = std::time::Instant::now();
+    loop {
+        match tokio::time::timeout(std::time::Duration::from_secs(30), &mut fut).await {
+            Ok(out) => return out,
+            Err(_) => tracing::warn!(
+                "{what} has been pending for {}s",
+                started.elapsed().as_secs()
+            ),
         }
     }
 }

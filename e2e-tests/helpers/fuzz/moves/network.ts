@@ -4,8 +4,8 @@
  *  show, so a sequence fails at the exact move peer or hub discovery did
  *  not survive. */
 import { type Real, at, byName, log, networkNamed } from '../agents';
-import { chipChat, expectHubs, openChat } from '../checks';
-import type { ExpectedModel } from '../model';
+import { checkChatList, expectHubs } from '../checks';
+import { type ExpectedModel, HOME_NETWORK } from '../model';
 import { Move, type Moves } from './move';
 
 /** Walk a phone into a LAN with the app on screen. The chip is on screen
@@ -30,9 +30,13 @@ class PeerJoinMove extends Move {
 		const actor = byName(real, at(this.movable(m), this.agentIdx));
 		const network = at(m.otherNetworks(actor.name), this.networkIdx);
 		log(`${actor.name}: ${this.toString()} -> joins ${network}`);
-		await openChat(actor, chipChat(m, actor.name), m);
-		const { ssid, passphrase } = networkNamed(real, network);
-		await actor.agent.connectWifi(ssid, passphrase);
+		await checkChatList(m, actor);
+		if (network === HOME_NETWORK) {
+			await actor.agent.leaveWifi();
+		} else {
+			const { ssid, passphrase } = networkNamed(real, network);
+			await actor.agent.joinWifi(ssid, passphrase);
+		}
 		m.agentJoin(actor.name, network);
 		await expectHubs(m, actor, `joining ${network}`);
 	}
@@ -60,7 +64,8 @@ class PeerLeaveMove extends Move {
 		const actor = byName(real, at(this.movable(m), this.agentIdx));
 		const from = m.networkOf(actor.name);
 		log(`${actor.name}: ${this.toString()} -> leaves ${String(from)}`);
-		await openChat(actor, chipChat(m, actor.name), m);
+		await checkChatList(m, actor);
+		await actor.agent.forgetWifi();
 		await actor.agent.disableWifi();
 		m.agentLeave(actor.name);
 		await expectHubs(m, actor, `leaving ${String(from)}`);

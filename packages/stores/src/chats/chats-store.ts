@@ -13,7 +13,6 @@ import { VerifyingKey } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
-import { pollForChanges } from '../utils/polling-required';
 import { type IChatsClient } from './chats-client';
 import { type IMessagesClient, MessagesClient } from './messages-client';
 
@@ -27,25 +26,7 @@ export class ChatsStore {
 		protected messageAckStore: MessageAckStore,
 		public client: IChatsClient,
 	) {
-		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
-			// GroupControl bumps are what reveal a newly joined group: the backend
-			// marks a chat as a group chat while reducing the group's Create op
-			// (before emitting this notification), which happens after the
-			// JoinGroup notification has already triggered a (too early) refetch.
-			if (
-				(op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') ||
-				op.body?.type === 'GroupControl'
-			) {
-				this.groupChatVersion.value++;
-			}
-		});
-
-		// On iOS the notification channel above never fires for ops the push
-		// extension ingests into the shared store, so poll the group list too.
-		pollForChanges(
-			() => this.client.getGroupChats(),
-			() => this.groupChatVersion.value++,
-		);
+		this.client.onGroupChatAdded(() => this.groupChatVersion.value++);
 	}
 
 	protected groupChatClient(): IGroupChatClient {

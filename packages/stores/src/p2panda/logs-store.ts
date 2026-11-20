@@ -1,11 +1,8 @@
 import { type ReactivePromise, reactive, relay } from 'signalium';
 
-import { POLL_INTERVAL_MS, pollingRequired } from '../utils/polling-required';
 import type { LogsClient } from './logs-client';
 import type { SimplifiedOperation } from './simplified-types';
 import type { TopicId, VerifyingKey } from './types';
-
-const POLLING_ENABLED = pollingRequired();
 
 export class LogsStore<PAYLOAD> {
 	constructor(public logsClient: LogsClient<PAYLOAD>) {}
@@ -38,9 +35,6 @@ export class LogsStore<PAYLOAD> {
 					}
 				};
 				fetchAuthors();
-				const interval = POLLING_ENABLED
-					? setInterval(fetchAuthors, POLL_INTERVAL_MS)
-					: undefined;
 
 				const unsubs = this.logsClient.onNewOperation(
 					(operationTopicId, operation) => {
@@ -52,10 +46,7 @@ export class LogsStore<PAYLOAD> {
 					},
 				);
 
-				return () => {
-					if (interval !== undefined) clearInterval(interval);
-					unsubs();
-				};
+				return () => unsubs();
 			}),
 	);
 
@@ -79,9 +70,6 @@ export class LogsStore<PAYLOAD> {
 					}
 				};
 				fetchLog();
-				const interval = POLLING_ENABLED
-					? setInterval(fetchLog, POLL_INTERVAL_MS)
-					: undefined;
 
 				const unsubs = this.logsClient.onNewOperation(
 					(operationTopicId, operation) => {
@@ -99,10 +87,7 @@ export class LogsStore<PAYLOAD> {
 						state.value = [...(state.value || []), operation];
 					},
 				);
-				return () => {
-					if (interval !== undefined) clearInterval(interval);
-					unsubs();
-				};
+				return () => unsubs();
 			}),
 	);
 

@@ -1,5 +1,9 @@
 import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
+import {
+	PRE_ACCEPT_MESSAGING,
+	itPreAccept,
+} from '../../helpers/pre-accept-messaging';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
@@ -62,30 +66,33 @@ describe('pending contact request', () => {
 		await expect(agent1.homePage.unreadBadge).toHaveText('1');
 	});
 
-	it('hides messages received while the request is pending behind a disclosure', async () => {
-		await agent2.directChatPage.composer.sendMessage('hello one');
-		await agent2.directChatPage.composer.sendMessage('hello two');
+	itPreAccept(
+		'hides messages received while the request is pending behind a disclosure',
+		async () => {
+			await agent2.directChatPage.composer.sendMessage('hello one');
+			await agent2.directChatPage.composer.sendMessage('hello two');
 
-		await agent1.waitUntil(
-			async () => (await agent1.homePage.unreadBadge.getText()) === '2',
-			{
-				timeout: SYNC_TIMEOUT,
-				timeoutMsg: 'Unread badge never counted the 2 received messages',
-			},
-		);
+			await agent1.waitUntil(
+				async () => (await agent1.homePage.unreadBadge.getText()) === '2',
+				{
+					timeout: SYNC_TIMEOUT,
+					timeoutMsg: 'Unread badge never counted the 2 received messages',
+				},
+			);
 
-		await agent1.homePage.openChat('Bob');
-		await agent1.directChatPage.ready();
-		await agent1.directChatPage.requestMessagesToggle.waitForExist();
-		await expect(agent1.directChatPage.requestMessagesToggle).toHaveText(
-			'2 messages received',
-		);
-		expect(
-			await agent1.directChatPage.messages.messageAreaContains('hello one'),
-		).toBe(false);
-	});
+			await agent1.homePage.openChat('Bob');
+			await agent1.directChatPage.ready();
+			await agent1.directChatPage.requestMessagesToggle.waitForExist();
+			await expect(agent1.directChatPage.requestMessagesToggle).toHaveText(
+				'2 messages received',
+			);
+			expect(
+				await agent1.directChatPage.messages.messageAreaContains('hello one'),
+			).toBe(false);
+		},
+	);
 
-	it('reveals and re-hides the messages with the toggle', async () => {
+	itPreAccept('reveals and re-hides the messages with the toggle', async () => {
 		await agent1.directChatPage.toggleRequestMessages();
 		await agent1.directChatPage.messages.waitForMessage('hello one');
 		await agent1.directChatPage.messages.waitForMessage('hello two');
@@ -95,25 +102,43 @@ describe('pending contact request', () => {
 		await agent1.directChatPage.messages.waitForMessageGone('hello two');
 	});
 
-	it('keeps the messages unread and collapses again on re-entry', async () => {
-		await agent1.directChatPage.back.click();
-		await agent1.homePage.ready();
+	itPreAccept(
+		'keeps the messages unread and collapses again on re-entry',
+		async () => {
+			await agent1.directChatPage.back.click();
+			await agent1.homePage.ready();
 
-		// Revealing the messages must not mark them read while the request is
-		// still pending.
-		await agent1.homePage.unreadBadge.waitForDisplayed();
-		await expect(agent1.homePage.unreadBadge).toHaveText('2');
+			// Revealing the messages must not mark them read while the request is
+			// still pending.
+			await agent1.homePage.unreadBadge.waitForDisplayed();
+			await expect(agent1.homePage.unreadBadge).toHaveText('2');
 
-		await agent1.homePage.openChat('Bob');
-		await agent1.directChatPage.ready();
-		await agent1.directChatPage.requestMessages.waitForExist();
-		expect(
-			await agent1.directChatPage.messages.messageAreaContains('hello one'),
-		).toBe(false);
-	});
+			await agent1.homePage.openChat('Bob');
+			await agent1.directChatPage.ready();
+			await agent1.directChatPage.requestMessages.waitForExist();
+			expect(
+				await agent1.directChatPage.messages.messageAreaContains('hello one'),
+			).toBe(false);
+		},
+	);
 
 	it('shows the messages normally after accepting the request', async () => {
+		// TODO: pre-accept: the skipped steps above would have left Alice in the
+		// chat already.
+		if (!PRE_ACCEPT_MESSAGING) {
+			await agent1.homePage.openChat('Bob');
+			await agent1.directChatPage.ready();
+		}
 		await agent1.directChatPage.acceptContactRequest();
+		// TODO: pre-accept: Bob can only write once Alice has accepted; the
+		// skipped steps above send these before the accept.
+		if (!PRE_ACCEPT_MESSAGING) {
+			await agent2.directChatPage.composer.messageInput.waitForExist({
+				timeout: SYNC_TIMEOUT,
+			});
+			await agent2.directChatPage.composer.sendMessage('hello one');
+			await agent2.directChatPage.composer.sendMessage('hello two');
+		}
 		await agent1.directChatPage.messages.waitForMessage('hello one');
 		await agent1.directChatPage.messages.waitForMessage('hello two');
 		await agent1.waitUntil(

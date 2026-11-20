@@ -6,6 +6,7 @@
 //
 
 import Intents
+import UIKit
 import UserNotifications
 import os
 
@@ -113,8 +114,14 @@ class NotificationService: UNNotificationServiceExtension {
         let body = notification_body(n).asString()
         let route = notification_route(n).asString()
         let largeIconBytes = notification_large_icon_bytes(n).asString()
+        let letterTileText = notification_large_icon_letter_tile_text(n).asString()
+        let letterTileBackgroundColor = notification_large_icon_letter_tile_background_color(n).asString()
+        let letterTileTextColor = notification_large_icon_letter_tile_text_color(n).asString()
+        let hasConversationStyle = notification_has_conversation_style(n)
         let conversationSenderId = notification_conversation_sender_id(n).asString()
         let conversationTitle = notification_conversation_title(n).asString()
+        let recipientCount = Int(notification_conversation_recipient_count(n))
+        let conversationIconBytes = notification_conversation_icon_bytes(n).asString()
 
         notification_destroy(n)
         log.info("decoded title=\(title ?? "<nil>", privacy: .private) (nil=\(title == nil), empty=\(title?.isEmpty ?? false)) body=\(body ?? "<nil>", privacy: .private) (nil=\(body == nil), empty=\(body?.isEmpty ?? false))")
@@ -141,13 +148,13 @@ class NotificationService: UNNotificationServiceExtension {
         // Try the iOS 15+ Communication Notifications path: this re-renders the
         // notification with the sender's avatar prominently shown (the
         // "avatar replaces app icon" Signal/iMessage look). Requires title +
-        // body + route + avatar bytes; falls through to the legacy attachment
-        // path if any is missing or the system rejects the intent.
+        // body + route, on a chat message; anything else takes the legacy
+        // attachment path, as does an intent the system rejects.
         if #available(iOS 15.0, *),
+           hasConversationStyle,
            let title, !title.isEmpty,
            let body, !body.isEmpty,
-           let route, !route.isEmpty,
-           let avatarData {
+           let route, !route.isEmpty {
             // Prefer the explicit sender id (so group senders don't collapse
             // into one INPerson); fall back to route for direct chats.
             let personHandle: String = (conversationSenderId?.isEmpty == false) ? conversationSenderId! : route
@@ -158,8 +165,19 @@ class NotificationService: UNNotificationServiceExtension {
                 conversationId: route,
                 displayName: title,
                 body: body,
-                avatarData: avatarData,
-                conversationTitle: groupName
+                avatarData: avatarData ?? letterTileText.flatMap { text in
+                    letterTileBackgroundColor.flatMap { backgroundColor in
+                        letterTileTextColor.flatMap { textColor in
+                            drawLetterTile(text: text, backgroundColor: backgroundColor, textColor: textColor)
+                        }
+                    }
+                },
+                conversationTitle: groupName,
+                recipientCount: recipientCount,
+                conversationIconData: (conversationIconBytes?.isEmpty == false)
+                    ? decodeBase64DataURL(conversationIconBytes!)
+                    : nil,
+                donate: conversationSenderId?.isEmpty == false
             ) {
                 log.info("delivering Communication Notification")
                 self.deliver(communicationContent)
@@ -189,10 +207,13 @@ class NotificationService: UNNotificationServiceExtension {
         conversationId: String,
         displayName: String,
         body: String,
-        avatarData: Data,
-        conversationTitle: String?
+        avatarData: Data?,
+        conversationTitle: String?,
+        recipientCount: Int,
+        conversationIconData: Data?,
+        donate: Bool
     ) -> UNNotificationContent? {
-        let avatar = INImage(imageData: avatarData)
+        let avatar = avatarData.map { INImage(imageData: $0) }
         let handle = INPersonHandle(value: senderHandle, type: .unknown)
         let sender = INPerson(
             personHandle: handle,
@@ -216,12 +237,21 @@ class NotificationService: UNNotificationServiceExtension {
             sender: sender,
             attachments: nil
         )
+        // iOS ignores `speakableGroupName` unless told there are recipients.
+        if speakableGroupName != nil {
+            let metadata = INSendMessageIntentDonationMetadata()
+            metadata.recipientCount = max(recipientCount, 1)
+            intent.donationMetadata = metadata
+            if let conversationIconData {
+                intent.setImage(INImage(imageData: conversationIconData), forParameterNamed: \.speakableGroupName)
+            }
+        }
 
         // Donate so the system learns the contact over time — boosts breakthrough
         // behavior in Focus and Communication Limits. Fire-and-forget.
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming
-        interaction.donate(completion: nil)
+        if donate { interaction.donate(completion: nil) }
 
         // Pin sound on the base before `updating(from:)` is called — that API
         // returns a fresh content derived from the intent and doesn't always
@@ -324,4 +354,48 @@ class NotificationService: UNNotificationServiceExtension {
         handler(mutable)
     }
 
+}
+
+// A copy of the notification plugin's `LetterTile.swift`, which this
+// extension cannot link. Keep the two in sync.
+
+private let letterTileSize: CGFloat = 192
+private let textHeight: CGFloat = 0.4
+/// The system crops the avatar to a circle, so wider text shrinks to stay inside it.
+private let maxTextWidth: CGFloat = 0.7
+
+private func drawLetterTile(text: String, backgroundColor: String, textColor: String) -> Data? {
+    guard let background = UIColor(hexRGB: backgroundColor),
+          let foreground = UIColor(hexRGB: textColor) else { return nil }
+    let size = CGSize(width: letterTileSize, height: letterTileSize)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+        background.setFill()
+        context.fill(CGRect(origin: .zero, size: size))
+        var font = UIFont.systemFont(ofSize: letterTileSize * textHeight)
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        if width > letterTileSize * maxTextWidth {
+            font = font.withSize(font.pointSize * letterTileSize * maxTextWidth / width)
+        }
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: foreground]
+        let textSize = (text as NSString).size(withAttributes: attributes)
+        let baseline = (letterTileSize + font.capHeight) / 2
+        let origin = CGPoint(x: (letterTileSize - textSize.width) / 2, y: baseline - font.ascender)
+        (text as NSString).draw(at: origin, withAttributes: attributes)
+    }
+    return image.pngData()
+}
+
+private extension UIColor {
+    convenience init?(hexRGB: String) {
+        let hex = hexRGB.hasPrefix("#") ? String(hexRGB.dropFirst()) : hexRGB
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+        self.init(
+            red: CGFloat((value >> 16) & 0xff) / 255,
+            green: CGFloat((value >> 8) & 0xff) / 255,
+            blue: CGFloat(value & 0xff) / 255,
+            alpha: 1
+        )
+    }
 }

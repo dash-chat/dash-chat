@@ -10,9 +10,7 @@
 
 	let { peaks, player }: Props = $props();
 
-	let scrubbing = $state(false);
-
-	const MIN_HEIGHT_PERCENT = 12;
+	const MIN_HEIGHT_PERCENT = 8;
 	const heights = $derived(
 		peaks.map(p => MIN_HEIGHT_PERCENT + p * (100 - MIN_HEIGHT_PERCENT)),
 	);
@@ -32,7 +30,6 @@
 	function onPointerDown(event: PointerEvent) {
 		const el = event.currentTarget as HTMLElement;
 		el.setPointerCapture(event.pointerId);
-		scrubbing = true;
 		seekFromPointer(event.clientX, el);
 	}
 
@@ -81,17 +78,11 @@
 	aria-valuenow={Math.round(player.currentTime)}
 	onpointerdown={onPointerDown}
 	onpointermove={onPointerMove}
-	onlostpointercapture={() => (scrubbing = false)}
 	onkeydown={onKeyDown}
 >
 	{@render bars(0.35)}
-	<!-- `timeupdate` only fires ~4/sec; the linear transition smooths the bar
-	     between updates. Off while paused or scrubbing so seeks snap. -->
 	<div
-		class="absolute inset-y-0 start-0 overflow-hidden {player.paused ||
-		scrubbing
-			? ''
-			: 'transition-[width] duration-300 ease-linear'}"
+		class="absolute inset-y-0 start-0 overflow-hidden"
 		data-testid="voice-scrubber-played"
 		style="width: {progress * 100}%"
 	>
@@ -99,4 +90,9 @@
 			{@render bars(0.95)}
 		</div>
 	</div>
+	<span
+		class="absolute inset-y-0 w-0.5 rounded-full bg-current"
+		style="inset-inline-start: calc({progress} * (100% - 2px))"
+		aria-hidden="true"
+	></span>
 </div>

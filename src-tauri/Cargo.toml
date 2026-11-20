@@ -1,6 +1,6 @@
 [package]
 name = "dash-chat"
-version = "0.20.2"
+version = "0.22.2"
 description = "Dash Chat"
 authors = ["you"]
 license = ""
@@ -15,51 +15,59 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "2.4.0", default-features = false, features = [] }
+tauri-build = { version = "2.7.3", default-features = false, features = [] }
 vergen-gitcl = "9"
 sentry-types = "0.42"
 
 [dependencies]
-tauri = { version = "2.9", features = ["devtools", "tray-icon", "image-png"] }
+tauri = { version = "2.12.4", features = ["devtools", "tray-icon", "image-png"] }
 
-tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "d8225e5b4694c132eef3c1531246d8ea1715251f" }
-tauri-plugin-mcp-bridge = "0.8"
+tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "347505a15d1607529d1426fe126274a9082e27a9" }
 tauri-plugin-dialog = "2.3"
 tauri-plugin-process = "2.3"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-clipboard-manager = "2"
-tauri-plugin-sharekit = "0.3"
+tauri-plugin-sharekit = "=0.4.0-rc.8"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-log = { version = "2.0.0", features = ["tracing"] }
 tauri-plugin-audio-recorder = "=0.1.2"
 tauri-plugin-sentry-reporting = { workspace = true }
+tauri-plugin-subscriptions = { git = "https://github.com/dash-chat/tauri-plugin-subscriptions", rev = "30d1a889a4d7fca0a28bc9d77a7662b6f95cec29" }
 
-tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "37235f56a9552f390634a892e3f2fe475644d3e8" }
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "29867d696371de6cc315fbb0db9820e288b4124c", features = [
+tauri-plugin-virtual-keyboard = { git = "https://github.com/dash-chat/tauri-plugin-virtual-keyboard", rev = "6163645a2c730338cadc0d9def0ff3091be0515b" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "c31c614fa0dc9cf2f9df205de841ff180fe450c1", features = [
   "push-notifications-fcm",
 ] }
 dashchat-node = { path = "../crates/dashchat-node" }
 mailbox-client = { workspace = true }
+mailboxes-manager = { workspace = true }
 network-watch = { workspace = true }
 # Discovery runs on every platform; only the hub server itself is desktop-only.
 local-hub-discovery = { workspace = true }
 push-notifications-client = { path = "../crates/push-notifications-client" }
 dashchat-utils = { workspace = true }
+sqlite-gate = { workspace = true }
+panic-policy = { workspace = true }
 opus-transcode = { workspace = true }
 
 p2panda = { workspace = true }
 iroh = { workspace = true }
 p2panda-auth = { workspace = true }
 p2panda-core = { workspace = true }
+p2panda-spaces = { workspace = true }
 
 anyhow = "1.0.95"
 async-trait = "0.1.85"
+backon = { version = "1.6", default-features = false, features = ["std", "tokio-sleep"] }
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = { version = "0.1.17", features = ["sync"] }
+async-rx = "0.2"
+async-stream = "0.3"
 thiserror = "2.0"
 regex = "1"
 hex = "0.4.3"
@@ -89,6 +97,9 @@ hyper-tls = "0.6"
 libc = "0.2"
 env_logger = "0.11"
 
+# Open files limit
+rlimit = "0.11"
+
 # Build openssl from source to cross-compile to each platform as needed
 openssl-sys = { version = "0.9", features = ["vendored"] }
 
@@ -100,41 +111,54 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
 tauri-plugin-view = "0.0.5"
-tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "27e2776" }
+tauri-plugin-lifecycle = { git = "https://github.com/dash-chat/tauri-plugin-lifecycle", rev = "daf9678" }
+tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "201d708769ff2d3892eef5de1d0bcb665ff447a1" }
+tauri-plugin-wifi = { git = "https://github.com/dash-chat/tauri-plugin-wifi", rev = "54b4cad0efdb41be5d508413c3fd14fec085dbff" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk-sys = "0.6"
+# Logcat, as `tauri-plugin-log` writes it, for a process a push started.
+android_logger = "0.15"
 # Saves photos to the shared gallery (MediaStore).
 tauri-plugin-android-fs = { version = "=28.4.0" }
 # Enumerates recent gallery images (MediaStore) for the composer's recent-photos
 # strip. JS bindings ship as `@universalappfactory/tauri-plugin-medialibrary`.
 tauri-plugin-medialibrary = "=0.13"
 tauri-plugin-background-service = "1.0"
-# Holds the MulticastLock mDNS discovery needs to hear hub announcements.
-tauri-plugin-network-interfaces = { git = "https://github.com/dash-chat/tauri-plugin-network-interfaces", rev = "90f383f32c74ab28b79be51bf5e6088644b2226c" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2"
 # Fork: adds `limit`/`offset` (newest-first) to requestAlbumMedias and a
 # `requestMediasByIds` fetch-by-id command, so the recent-photos strip and
 # tap-to-send no longer render the entire album.
-tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "ec723636ddf248dd6542e02fb2e83d91d1da36c9" }
+tauri-plugin-ios-photos = { git = "https://github.com/dash-chat/tauri-plugin-ios-photos", rev = "034dafd0a591fce73d4fe865e216cc3e225236c5" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
-tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
+# 0.13 is what compiles against Tauri 2.12 on Windows, and it does not build for
+# Android or iOS, where the bridge has never been used.
+tauri-plugin-mcp-bridge = "0.13"
+tauri-plugin-wdio-webdriver = { version = "1.5", optional = true }
 tauri-plugin-autostart = "2"
 tauri-plugin-keepawake = "0.1.0"
-tauri-plugin-updater = "2.9"
+tauri-plugin-updater = "2.14"
+tauri-plugin-move-to-applications = { git = "https://github.com/dash-chat/tauri-plugin-move-to-applications", rev = "271cb9183098f9e727dd1f0efdedcccd28fd8c92" }
 mailbox-server = { path = "../crates/mailbox-server" }
 mailbox-local-server = { workspace = true }
+lan-multicast-probe = { workspace = true }
 
 [features]
-e2e-tests = ["dashchat-node/testing", "dep:tauri-plugin-wdio-webdriver"]
+e2e-tests = [
+  "dashchat-node/testing",
+  "mailbox-client/e2e-test-ca",
+  "dep:tauri-plugin-wdio-webdriver",
+]
 
 [dev-dependencies]
+dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
+push-notifications-server = { path = "../crates/push-notifications-server", features = ["test-utils"] }

@@ -13,6 +13,7 @@
 	import ExpandedReactionsSheet from './ExpandedReactionsSheet.svelte';
 	import { toggleReaction } from '$lib/utils/reactions';
 	import { writeText } from '$lib/utils/clipboard';
+	import { hasMessageActions } from './message-helpers';
 
 	interface Props {
 		message: Message;
@@ -38,12 +39,15 @@
 
 	let expanded = $state(false);
 
-	// Reset the picker state once the actions UI is closed.
-	$effect(() => {
-		if (!opened) expanded = false;
-	});
-
 	function close() {
+		opened = false;
+		expanded = false;
+	}
+
+	// The spotlighted message is pinned inside the message list, which the
+	// keyboard glide transforms, so it would drift as the search keyboard comes
+	// and goes. Put it back and leave the sheet on its own, as in Signal.
+	function releaseSpotlight() {
 		opened = false;
 	}
 
@@ -77,6 +81,17 @@
 	/>
 {/snippet}
 
+{#snippet actionsMenu()}
+	<MessageActionsMenu
+		{message}
+		{myDeviceId}
+		onEdit={edit}
+		onReply={onReply ? reply : undefined}
+		onCopy={copy}
+		onDelete={close}
+	/>
+{/snippet}
+
 {#await $readOnly then readOnly}
 	<SpotlightOverlay
 		{opened}
@@ -84,20 +99,24 @@
 		onClose={close}
 		contentHidden={expanded}
 		above={readOnly ? undefined : reactionBar}
-	>
-		{#snippet below()}
-			<MessageActionsMenu
-				{message}
-				{myDeviceId}
-				onEdit={edit}
-				onReply={onReply ? reply : undefined}
-				onCopy={copy}
-				onDelete={close}
-			/>
-		{/snippet}
-	</SpotlightOverlay>
+		below={hasMessageActions(
+			message,
+			myDeviceId,
+			readOnly,
+			onReply !== undefined,
+		)
+			? actionsMenu
+			: undefined}
+	/>
 {/await}
 
-{#if opened}
-	<ExpandedReactionsSheet {message} opened={expanded} onReact={react} />
+{#if opened || expanded}
+	<ExpandedReactionsSheet
+		{message}
+		opened={expanded}
+		onReact={react}
+		onClose={close}
+		backdrop={!opened}
+		onSearchFocus={releaseSpotlight}
+	/>
 {/if}

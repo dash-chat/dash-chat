@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 use p2panda::Credentials;
+use p2panda_core::Hash;
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use p2panda_encryption::Rng;
 use p2panda_encryption::crypto::x25519::SecretKey;
@@ -17,15 +18,51 @@ const PRIVATE_KEY_KEY: &str = "private_key";
 const IDENTITY_SECRET_KEY: &str = "identity_secret";
 const AGENT_ID_KEY: &str = "agent_id";
 
-/// Distinguishes the two roles an inbox topic can play for this node.
+/// Distinguishes the roles an inbox topic can play for this node.
+///
+/// Through a normal flow between Alice and Bob, the roles show
+/// up in the following order:
+///
+/// - Alice creates a QR code for inbox X as role `Advertised`
+/// - Bob scans, then:
+///     - Bob creates inbox Y as role `Reply`
+///     - Bob publishes ContactRequest (declaring Y) to X
+///     - Bob registers X as role `Requested`
+/// - Alice receives ContactRequest on X and subscribes to the direct chat topic
+/// - Alice accepts the request (either via UI or mutual request) and:
+///     - Alice publishes ContactRequestAccept to Y
+///     - Alice registers Y as role `Accepted`
+/// - Bob receives ContactRequestAccept on Y, finishing contact request flow
+/// - Bob drops X
+///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
 #[repr(i64)]
 enum InboxRole {
     /// An inbox we advertise in our QR code and receive contact requests on.
+    ///
+    /// The QR creator's own inbox.
     Advertised = 0,
     /// A private inbox we minted while scanning someone's QR, used only to
-    /// receive their `ContactRequestAccept`.
+    /// receive their `ContactRequestAccept`. Never pruned: a late acceptance —
+    /// possibly of an older request, after a re-scan — is matched by topic
+    /// whatever its expiry, so pruning one would strand that request.
+    ///
+    /// The QR scanner's own inbox.
     Reply = 1,
+    /// A requester's private reply inbox that we published our
+    /// `ContactRequestAccept` into. Kept subscribed across restarts until the
+    /// code expires, so a requester that only reaches us directly can still
+    /// sync it from us.
+    ///
+    /// The QR creator's subscription to the scanner's inbox.
+    Accepted = 2,
+    /// The advertised inbox of a device whose QR we scanned, where our
+    /// `ContactRequest` lives. Restored at startup until they become a contact
+    /// or the code expires, so a request that didn't sync before a restart still
+    /// reaches them.
+    ///
+    /// The QR scanner's subscription to the creator's inbox.
+    Requested = 3,
 }
 
 const MIGRATIONS: &[&str] = &[
@@ -33,7 +70,7 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value BLOB NOT NULL
     )",
-    "CREATE TABLE IF NOT EXISTS subscribed_topics (
+    "CREATE TABLE IF NOT EXISTS subscribed_spaces (
         topic_id BLOB PRIMARY KEY
     )",
     "CREATE TABLE IF NOT EXISTS active_inboxes (
@@ -42,12 +79,19 @@ const MIGRATIONS: &[&str] = &[
         role INTEGER NOT NULL DEFAULT 0,
         expected_ack_author BLOB NULL
     )",
-    "CREATE TABLE IF NOT EXISTS unfetched_blob_hashes (
-        blob_hash BLOB NOT NULL,
-        mailbox_id TEXT NOT NULL,
-        PRIMARY KEY (blob_hash, mailbox_id)
+    // unfetched_blob_hashes was superseded by mailboxes-manager's
+    // mailbox_unfetched_blobs; old dev databases may still carry it.
+    "CREATE TABLE IF NOT EXISTS extension_processed_operations (
+        hash BLOB PRIMARY KEY,
+        topic_id BLOB NOT NULL
     )",
 ];
+
+fn bytes32(bytes: Vec<u8>, column: &str) -> anyhow::Result<[u8; 32]> {
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("{column} is not 32 bytes"))
+}
 
 #[derive(Clone, Debug)]
 pub struct NodeKeys {
@@ -132,19 +176,30 @@ impl LocalStore {
         })
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<BTreeSet<TopicId>> {
+    pub async fn subscribed_spaces(&self) -> anyhow::Result<BTreeSet<TopicId>> {
         let rows: Vec<(Topic<kind::Untyped>,)> =
-            sqlx::query_as("SELECT topic_id FROM subscribed_topics")
+            sqlx::query_as("SELECT topic_id FROM subscribed_spaces")
                 .fetch_all(&self.pool)
                 .await?;
         Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
-    pub async fn register_topic_as_subscribed<K: AutoRegisteredTopic>(
+    /// Record that this node participates in a space, so startup rejoins it.
+    ///
+    /// Contract of a row: startup joins the topic (`Node::initialize_space`) and never
+    /// creates it. A row written by a create means p2panda already holds the space; a
+    /// row written by a join may precede the space's control messages, which p2panda
+    /// allows. No further setup is needed for a space with a row.
+    ///
+    /// This store and p2panda's store are separate SQLite databases, so no transaction
+    /// spans both. The two writers (`Node::register_and_join_space`,
+    /// `Node::register_and_create_space`) are therefore ordered so that each is safe
+    /// to repeat after a failure at any step; their comments say why.
+    pub async fn register_space_as_subscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        sqlx::query("INSERT OR IGNORE INTO subscribed_topics (topic_id) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO subscribed_spaces (topic_id) VALUES (?)")
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
@@ -155,7 +210,7 @@ impl LocalStore {
         &self,
         topic: Topic<K>,
     ) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM subscribed_topics WHERE topic_id = ?")
+        sqlx::query("DELETE FROM subscribed_spaces WHERE topic_id = ?")
             .bind(topic.to_vec())
             .execute(&self.pool)
             .await?;
@@ -168,9 +223,7 @@ impl LocalStore {
             .fetch_optional(&self.pool)
             .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Private key field not found"))?;
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("identity.private_key is not 32 bytes"))?;
+        let arr: [u8; 32] = bytes32(bytes, "identity.private_key")?;
         Ok(SigningKey::from_bytes(&arr))
     }
 
@@ -193,15 +246,53 @@ impl LocalStore {
             .fetch_optional(&self.pool)
             .await?;
         let (bytes,) = row.ok_or_else(|| anyhow::anyhow!("Agent ID field not found"))?;
-        let arr: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("identity.agent_id is not 32 bytes"))?;
+        let arr: [u8; 32] = bytes32(bytes, "identity.agent_id")?;
         Ok(AgentId::from(crate::ActorId::from_bytes(&arr)?))
     }
 
     /// Inbox topics this node created and advertises via its QR code.
     pub async fn get_advertised_inbox_topics(&self) -> anyhow::Result<BTreeSet<InboxTopic>> {
         self.get_inbox_topics(InboxRole::Advertised).await
+    }
+
+    /// Record that the push extension processed `hash`, for the app to process
+    /// it too (see [`crate::NodeConfig::record_processed_operations`]).
+    pub async fn record_extension_processed_operation(
+        &self,
+        hash: Hash,
+        topic: TopicId,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO extension_processed_operations (hash, topic_id) VALUES (?, ?)",
+        )
+        .bind(hash.as_bytes().to_vec())
+        .bind(topic.as_bytes().to_vec())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn extension_processed_operations(&self) -> anyhow::Result<Vec<(Hash, TopicId)>> {
+        let rows: Vec<(Vec<u8>, Topic<kind::Untyped>)> =
+            sqlx::query_as("SELECT hash, topic_id FROM extension_processed_operations")
+                .fetch_all(&self.pool)
+                .await?;
+        rows.into_iter()
+            .map(|(hash, topic)| {
+                Ok((
+                    Hash::from_bytes(bytes32(hash, "extension_processed_operations.hash")?),
+                    *topic,
+                ))
+            })
+            .collect()
+    }
+
+    pub async fn forget_extension_processed_operation(&self, hash: &Hash) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM extension_processed_operations WHERE hash = ?")
+            .bind(hash.as_bytes().to_vec())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Reply inbox topics this node created for a specific contact exchange and
@@ -215,10 +306,17 @@ impl LocalStore {
     pub async fn get_reply_inbox_topics_with_author(
         &self,
     ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Reply).await
+    }
+
+    async fn get_inbox_topics_with_author(
+        &self,
+        role: InboxRole,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
         let rows: Vec<(Topic<kind::Untyped>, i64, DeviceId)> = sqlx::query_as(
             "SELECT topic_id, expires_at_nanos, expected_ack_author FROM active_inboxes WHERE role = ?",
         )
-        .bind(InboxRole::Reply)
+        .bind(role)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
@@ -255,10 +353,52 @@ impl LocalStore {
             .await
     }
 
+    pub async fn get_accepted_inbox_topics_with_requester(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Accepted).await
+    }
+
+    pub async fn add_accepted_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        requester: DeviceId,
+    ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Accepted, requester)
+            .await
+    }
+
+    pub async fn is_known_inbox_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+        let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM active_inboxes WHERE topic_id = ?")
+            .bind(topic.as_bytes().to_vec())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
     pub async fn add_reply_inbox_topic(
         &self,
         inbox_topic: InboxTopic,
         expected_ack_author: DeviceId,
+    ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Reply, expected_ack_author)
+            .await
+    }
+
+    pub async fn add_requested_inbox_topic(
+        &self,
+        inbox_topic: InboxTopic,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        self.add_inbox_topic_with_author(inbox_topic, InboxRole::Requested, inbox_owner)
+            .await
+    }
+
+    async fn add_inbox_topic_with_author(
+        &self,
+        inbox_topic: InboxTopic,
+        role: InboxRole,
+        author: DeviceId,
     ) -> anyhow::Result<()> {
         let nanos = inbox_topic
             .expires_at
@@ -270,19 +410,74 @@ impl LocalStore {
         )
         .bind(inbox_topic.topic.to_vec())
         .bind(nanos)
-        .bind(InboxRole::Reply)
-        .bind(expected_ack_author)
+        .bind(role)
+        .bind(author)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
-    pub async fn has_pending_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+    pub async fn get_requested_inbox_topics_with_owner(
+        &self,
+    ) -> anyhow::Result<Vec<(InboxTopic, DeviceId)>> {
+        self.get_inbox_topics_with_author(InboxRole::Requested)
+            .await
+    }
+
+    pub async fn remove_requested_inbox_topics_of(
+        &self,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM active_inboxes WHERE expected_ack_author = ? AND role = ?")
+            .bind(inbox_owner)
+            .bind(InboxRole::Requested)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn prune_expired_requested_inbox_topics(&self) -> anyhow::Result<()> {
+        self.prune_expired_inbox_topics(InboxRole::Requested).await
+    }
+
+    pub async fn prune_expired_accepted_inbox_topics(&self) -> anyhow::Result<()> {
+        self.prune_expired_inbox_topics(InboxRole::Accepted).await
+    }
+
+    async fn prune_expired_inbox_topics(&self, role: InboxRole) -> anyhow::Result<()> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
+        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ? AND role = ?")
+            .bind(nanos)
+            .bind(role)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn has_unexpired_requested_inbox_for(
+        &self,
+        inbox_owner: DeviceId,
+    ) -> anyhow::Result<bool> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
         let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ?",
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ? AND expires_at_nanos >= ?",
+        )
+        .bind(inbox_owner)
+        .bind(InboxRole::Requested)
+        .bind(nanos)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.is_some())
+    }
+
+    pub async fn has_unexpired_reply_inbox_for(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        let nanos = Utc::now().timestamp_nanos_opt().unwrap_or(0).max(0);
+        let row: Option<(i64,)> = sqlx::query_as(
+            "SELECT 1 FROM active_inboxes WHERE expected_ack_author = ? AND role = ? AND expires_at_nanos >= ?",
         )
         .bind(device_id)
         .bind(InboxRole::Reply)
+        .bind(nanos)
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.is_some())
@@ -322,95 +517,6 @@ impl LocalStore {
         .await?;
         Ok(())
     }
-
-    pub async fn prune_expired_active_inbox_topics(
-        &self,
-        expires_at: DateTime<Utc>,
-    ) -> anyhow::Result<()> {
-        let nanos = expires_at.timestamp_nanos_opt().unwrap_or(0).max(0);
-        sqlx::query("DELETE FROM active_inboxes WHERE expires_at_nanos < ?")
-            .bind(nanos)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn add_unfetched_blobs(
-        &self,
-        mailbox_id: &str,
-        hashes: &[iroh_blobs::Hash],
-    ) -> anyhow::Result<()> {
-        for hash in hashes {
-            sqlx::query(
-                "INSERT OR IGNORE INTO unfetched_blob_hashes (blob_hash, mailbox_id) VALUES (?, ?)",
-            )
-            .bind(hash.as_bytes().to_vec())
-            .bind(mailbox_id)
-            .execute(&self.pool)
-            .await?;
-        }
-        Ok(())
-    }
-
-    pub async fn remove_unfetched_blob(
-        &self,
-        mailbox_id: &str,
-        hash: iroh_blobs::Hash,
-    ) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM unfetched_blob_hashes WHERE mailbox_id = ? AND blob_hash = ?")
-            .bind(mailbox_id)
-            .bind(hash.as_bytes().to_vec())
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn remove_unfetched_blobs(
-        &self,
-        mailbox_id: &str,
-        hashes: &[iroh_blobs::Hash],
-    ) -> anyhow::Result<()> {
-        for hash in hashes {
-            self.remove_unfetched_blob(mailbox_id, *hash).await?;
-        }
-        Ok(())
-    }
-
-    /// Remove every `unfetched_blob_hashes` row for these hashes across ALL
-    /// mailboxes. Called when a blob is deleted locally, so the followup task
-    /// stops re-announcing a hash this node can no longer serve.
-    pub async fn remove_unfetched_blobs_all_mailboxes(
-        &self,
-        hashes: &[iroh_blobs::Hash],
-    ) -> anyhow::Result<()> {
-        for hash in hashes {
-            sqlx::query("DELETE FROM unfetched_blob_hashes WHERE blob_hash = ?")
-                .bind(hash.as_bytes().to_vec())
-                .execute(&self.pool)
-                .await?;
-        }
-        Ok(())
-    }
-
-    pub async fn unfetched_blobs_by_mailbox(
-        &self,
-    ) -> anyhow::Result<std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>>> {
-        let rows: Vec<(Vec<u8>, String)> =
-            sqlx::query_as("SELECT blob_hash, mailbox_id FROM unfetched_blob_hashes")
-                .fetch_all(&self.pool)
-                .await?;
-        let mut out: std::collections::BTreeMap<String, Vec<iroh_blobs::Hash>> =
-            std::collections::BTreeMap::new();
-        for (bytes, mailbox_id) in rows {
-            let arr: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("unfetched blob_hash is not 32 bytes"))?;
-            out.entry(mailbox_id)
-                .or_default()
-                .push(iroh_blobs::Hash::from_bytes(arr));
-        }
-        Ok(out)
-    }
 }
 
 #[cfg(test)]
@@ -424,9 +530,14 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_idempotent() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_initialize_random.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool.clone()).await.unwrap();
         let private_key = store.private_key().await.unwrap();
         let agent_id = store.agent_id().await.unwrap();
@@ -440,9 +551,14 @@ mod tests {
         drop(store);
         pool.close().await;
 
-        let pool = create_sqlite_pool(dir.path().join("test_initialize_random.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_initialize_random.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool).await.unwrap();
         assert_eq!(
             store.private_key().await.unwrap().as_bytes(),
@@ -452,122 +568,159 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_unfetched_blob_hashes_crud() {
+    async fn test_requested_inbox_topics_end_on_expiry_or_contact() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
-            .await
-            .unwrap();
-        let store = LocalStore::new(pool.clone()).await.unwrap();
-
-        let mbx_a = "mailbox-a";
-        let mbx_b = "mailbox-b";
-        let h1 = iroh_blobs::Hash::new([1; 32]);
-        let h2 = iroh_blobs::Hash::new([2; 32]);
-
-        store.add_unfetched_blobs(mbx_a, &[h1, h2]).await.unwrap();
-        store.add_unfetched_blobs(mbx_b, &[h1]).await.unwrap();
-        // Idempotent insert.
-        store.add_unfetched_blobs(mbx_a, &[h1]).await.unwrap();
-
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert_eq!(by_mailbox.get(mbx_a).unwrap().len(), 2);
-        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
-
-        // Removing h1 from mailbox-a leaves h2 for a, and does not touch mailbox-b.
-        store.remove_unfetched_blob(mbx_a, h1).await.unwrap();
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert_eq!(by_mailbox.get(mbx_a).unwrap(), &vec![h2]);
-        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
-
-        // Bulk remove.
-        store.remove_unfetched_blobs(mbx_a, &[h2]).await.unwrap();
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert!(by_mailbox.get(mbx_a).is_none());
-
-        // Persists across reopen.
-        drop(store);
-        pool.close().await;
-        let pool = create_sqlite_pool(dir.path().join("test_unfetched.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_requested_inbox_topics.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let store = LocalStore::new(pool).await.unwrap();
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert_eq!(by_mailbox.get(mbx_b).unwrap(), &vec![h1]);
-    }
-
-    #[tokio::test]
-    async fn test_remove_unfetched_blobs_all_mailboxes() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_unfetched_all.db"))
-            .await
-            .unwrap();
-        let store = LocalStore::new(pool.clone()).await.unwrap();
-
-        let h1 = iroh_blobs::Hash::new([1; 32]);
-        let h2 = iroh_blobs::Hash::new([2; 32]);
-        store.add_unfetched_blobs("mbx-a", &[h1, h2]).await.unwrap();
-        store.add_unfetched_blobs("mbx-b", &[h1]).await.unwrap();
-
-        // Removing h1 across all mailboxes clears it from both mbx-a and mbx-b,
-        // but leaves h2 (still needed by mbx-a).
-        store
-            .remove_unfetched_blobs_all_mailboxes(&[h1])
-            .await
-            .unwrap();
-
-        let by_mailbox = store.unfetched_blobs_by_mailbox().await.unwrap();
-        assert_eq!(by_mailbox.get("mbx-a").unwrap(), &vec![h2]);
-        assert!(by_mailbox.get("mbx-b").is_none());
-    }
-
-    #[tokio::test]
-    async fn test_prune_expired_active_inbox_topics() {
-        let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_prune_inbox_topics.db"))
-            .await
-            .unwrap();
-        let store = LocalStore::new(pool.clone()).await.unwrap();
 
         let now = Utc::now();
-        let expired = now - Duration::days(1);
-        let valid = now + Duration::days(1);
-        let more_valid = now + Duration::days(10);
-
-        let mut topics = maplit::btreeset![
-            InboxTopic {
-                expires_at: expired,
-                topic: Topic::new([1; 32]),
-            },
-            InboxTopic {
-                expires_at: valid,
-                topic: Topic::new([2; 32]),
-            },
-            InboxTopic {
-                expires_at: more_valid,
-                topic: Topic::new([3; 32]),
-            },
-        ];
-
-        for t in &topics {
-            store.add_active_inbox_topic(t.clone()).await.unwrap();
-        }
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
-
-        store.prune_expired_active_inbox_topics(now).await.unwrap();
-        topics.pop_first().unwrap();
-
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
-
+        let alice = DeviceId::from(p2panda::SigningKey::from_bytes(&[1; 32]).verifying_key());
+        let carol = DeviceId::from(p2panda::SigningKey::from_bytes(&[2; 32]).verifying_key());
+        let expired = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([1; 32]),
+        };
+        let from_alice = InboxTopic {
+            expires_at: now + Duration::days(1),
+            topic: Topic::new([2; 32]),
+        };
+        let from_carol = InboxTopic {
+            expires_at: now + Duration::days(1),
+            topic: Topic::new([3; 32]),
+        };
         store
-            .prune_expired_active_inbox_topics(more_valid)
+            .add_requested_inbox_topic(expired, alice)
             .await
             .unwrap();
-        topics.pop_first().unwrap();
+        store
+            .add_requested_inbox_topic(from_alice.clone(), alice)
+            .await
+            .unwrap();
+        store
+            .add_requested_inbox_topic(from_carol.clone(), carol)
+            .await
+            .unwrap();
+        // The reply inbox minted for the same exchange shares the author
+        // column, and must outlive both the prune and the removal.
+        let expired_reply_to_alice = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([4; 32]),
+        };
+        store
+            .add_reply_inbox_topic(expired_reply_to_alice, alice)
+            .await
+            .unwrap();
+        let expired_advertised = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([6; 32]),
+        };
+        store
+            .add_active_inbox_topic(expired_advertised.clone())
+            .await
+            .unwrap();
+        let expired_accepted_from_alice = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([7; 32]),
+        };
+        store
+            .add_accepted_inbox_topic(expired_accepted_from_alice.clone(), alice)
+            .await
+            .unwrap();
+        let requested_topics = || async {
+            store
+                .get_requested_inbox_topics_with_owner()
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|(topic, _)| topic)
+                .collect::<BTreeSet<_>>()
+        };
 
-        let loaded_topics = store.get_advertised_inbox_topics().await.unwrap();
-        assert_eq!(loaded_topics, topics);
+        let dave = DeviceId::from(p2panda::SigningKey::from_bytes(&[3; 32]).verifying_key());
+        let expired_to_dave = InboxTopic {
+            expires_at: now - Duration::days(1),
+            topic: Topic::new([5; 32]),
+        };
+        store
+            .add_requested_inbox_topic(expired_to_dave, dave)
+            .await
+            .unwrap();
+        assert!(
+            store
+                .has_unexpired_requested_inbox_for(alice)
+                .await
+                .unwrap()
+        );
+        assert!(!store.has_unexpired_requested_inbox_for(dave).await.unwrap());
+
+        store.prune_expired_requested_inbox_topics().await.unwrap();
+        assert_eq!(
+            requested_topics().await,
+            maplit::btreeset![from_alice, from_carol.clone()]
+        );
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        assert!(!store.has_unexpired_reply_inbox_for(alice).await.unwrap());
+
+        store.remove_requested_inbox_topics_of(alice).await.unwrap();
+        assert_eq!(
+            requested_topics().await,
+            maplit::btreeset![from_carol.clone()]
+        );
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store.get_advertised_inbox_topics().await.unwrap(),
+            maplit::btreeset![expired_advertised.clone()]
+        );
+        assert_eq!(
+            store
+                .get_accepted_inbox_topics_with_requester()
+                .await
+                .unwrap(),
+            vec![(expired_accepted_from_alice, alice)]
+        );
+
+        store.prune_expired_accepted_inbox_topics().await.unwrap();
+        assert!(
+            store
+                .get_accepted_inbox_topics_with_requester()
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(requested_topics().await, maplit::btreeset![from_carol]);
+        assert_eq!(
+            store
+                .get_reply_inbox_topics_with_author()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store.get_advertised_inbox_topics().await.unwrap(),
+            maplit::btreeset![expired_advertised]
+        );
     }
 }

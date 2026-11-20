@@ -19,6 +19,8 @@ import type {
 	PhotoAttachment,
 } from 'dash-chat-stores';
 
+import limits from './media-limits.json';
+
 /**
  * Draft voice note held in the composer before sending.
  */
@@ -29,7 +31,14 @@ export interface DraftVoiceNote {
 	waveform: Uint8Array;
 }
 
-export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
+export const MAX_STAGED_PHOTOS = 32;
+
+// The backend rejects any single blob whose ciphertext (plaintext + AEAD tag)
+// exceeds max_blob_bytes, so the composer cap leaves tag room for every
+// possible attachment. media-limits.json mirrors the Rust constants and a
+// test in dashchat-utils fails if either side drifts.
+export const MAX_MESSAGE_BYTES =
+	limits.max_blob_bytes - MAX_STAGED_PHOTOS * limits.blob_encryption_overhead;
 
 export class AttachmentTooLargeError extends Error {
 	readonly totalBytes: number;
@@ -42,30 +51,39 @@ export class AttachmentTooLargeError extends Error {
 	}
 }
 
+// No file name in the message: it would reach an error report unredacted.
+export class UndecodablePhotoError extends Error {
+	constructor() {
+		super('could not decode photo');
+		this.name = 'UndecodablePhotoError';
+	}
+}
+
 /**
- * Draft media held in the composer before sending — raw `File` refs. Previews
- * derive their object URL via the `objectUrl` action on the `<img>`, so the
- * draft carries no URLs that need revoking.
+ * Draft media held in the composer before sending. Photos are staged already
+ * compressed and measured, so one that can't be decoded is never in a draft.
+ * Previews derive their object URL via the `objectUrl` action on the
+ * `<img>`, so the draft carries no URLs that need revoking.
  */
 export type DraftMedia =
-	| { kind: 'photos'; items: File[] }
+	| { kind: 'photos'; items: OutgoingPhoto[] }
 	| { kind: 'file'; file: File }
 	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
-export const MAX_STAGED_PHOTOS = 32;
+export type StagingError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
 
-export type IngestError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
-
-export interface IngestResult {
-	media: DraftMedia | undefined;
-	error?: IngestError;
+/** What a batch of picked files may add to a draft. */
+export interface StagingPlan {
+	photos: File[];
+	file?: File;
+	error?: StagingError;
 }
 
 // Only raster types that decode in every supported webview may enter the
 // photo path; anything else (videos until <video> rendering exists, and
 // formats with patchy decoder support like HEIC/AVIF/TIFF) stages and
 // sends as a file attachment instead of producing a broken <img> on the
-// recipient.
+// recipient. The contact form reuses the set for what Sentry can preview.
 const PHOTO_TYPES = new Set([
 	'image/jpeg',
 	'image/png',
@@ -82,18 +100,20 @@ export const PHOTO_ACCEPT = [...PHOTO_TYPES].join(',');
  * (PHPickerViewController) or the document browser directly; a web `<input
  * type=file>` would instead show a Photo Library / Take Photo / Choose File
  * action sheet. Everywhere else the web input already opens the right picker, so
- * it keeps using it. Resolves with the chosen files, or `null` if dismissed.
+ * it keeps using it. Resolves with at most `limit` of the chosen files, or
+ * `null` if dismissed.
  */
 export async function pickMedia(
 	mode: 'image' | 'document',
 	multiple: boolean,
+	limit = Infinity,
 ): Promise<File[] | null> {
 	if (isIos && isTauriEnv()) {
-		return pickNativeFiles({ mode, multiple });
+		return pickNativeFiles({ mode, multiple, limit });
 	}
 	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
 	const list = await pickFiles({ accept, multiple });
-	return list ? Array.from(list) : null;
+	return list ? Array.from(list).slice(0, limit) : null;
 }
 
 /**
@@ -105,51 +125,48 @@ export async function capturePhoto(): Promise<File | null> {
 	return list?.[0] ?? null;
 }
 
-function isVisualFile(file: File): boolean {
+export function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
 
 /**
- * Add `files` to the current draft following Signal's mixing rules: photos
- * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
- * non-image file can only be staged alone, and nothing can be added once
- * a file is staged. On a rule violation the current draft is returned
- * unchanged alongside the error.
+ * Decide what `files` may add to the current draft following Signal's mixing
+ * rules: photos append (up to `MAX_STAGED_PHOTOS`, accepting a partial
+ * batch), a non-image file can only be staged alone, and nothing can be added
+ * once a file is staged. On a rule violation nothing is added.
  */
-export function ingestFiles(
+export function planStaging(
 	current: DraftMedia | undefined,
 	files: File[],
-): IngestResult {
-	if (files.length === 0) return { media: current };
+): StagingPlan {
+	if (files.length === 0) return { photos: [] };
 	if (current?.kind === 'file') {
-		return { media: current, error: 'oneFileAtATime' };
+		return { photos: [], error: 'oneFileAtATime' };
 	}
 	const visual = files.filter(isVisualFile);
 	const nonVisual = files.filter(f => !isVisualFile(f));
 	if (nonVisual.length > 0) {
 		if (current || visual.length > 0) {
-			return { media: current, error: 'filesWithPhotos' };
+			return { photos: [], error: 'filesWithPhotos' };
 		}
 		if (nonVisual.length > 1) {
-			return { media: current, error: 'oneFileAtATime' };
+			return { photos: [], error: 'oneFileAtATime' };
 		}
-		return { media: { kind: 'file', file: nonVisual[0] } };
+		return { photos: [], file: nonVisual[0] };
 	}
-	const existing = current?.kind === 'photos' ? current.items : [];
-	const room = MAX_STAGED_PHOTOS - existing.length;
-	if (room <= 0) return { media: current, error: 'tooMany' };
-	const accepted = visual.slice(0, room);
-	const items = [...existing, ...accepted];
+	const staged = current?.kind === 'photos' ? current.items.length : 0;
+	const room = MAX_STAGED_PHOTOS - staged;
+	if (room <= 0) return { photos: [], error: 'tooMany' };
 	return {
-		media: { kind: 'photos', items },
+		photos: visual.slice(0, room),
 		error: visual.length > room ? 'tooMany' : undefined,
 	};
 }
 
 /**
- * Convert composer-side draft to the wire-format `Media` for sending.
- * Compresses images first, then enforces a total-size cap; throws
- * `AttachmentTooLargeError` if the post-compression payload still exceeds it.
+ * Convert composer-side draft to the wire-format `Media` for sending,
+ * enforcing a total-size cap; throws `AttachmentTooLargeError` if the payload
+ * exceeds it.
  */
 export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	const media = await buildMedia(draft);
@@ -160,22 +177,23 @@ export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return media;
 }
 
+/** Compress and measure a picked photo. Rejects with `UndecodablePhotoError`
+ * when it can't be decoded. */
+export async function prepareOutgoingPhoto(file: File): Promise<OutgoingPhoto> {
+	const compressed = await compressImage(file);
+	const { width, height } = await imageDimensions(compressed);
+	return {
+		data: new Uint8Array(await compressed.arrayBuffer()),
+		name: compressed.name,
+		mime_type: compressed.type || 'application/octet-stream',
+		width,
+		height,
+	};
+}
+
 async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	if (draft.kind === 'photos') {
-		const photos: OutgoingPhoto[] = await Promise.all(
-			draft.items.map(async file => {
-				const compressed = await compressImage(file);
-				const { width, height } = await imageDimensions(compressed);
-				return {
-					data: new Uint8Array(await compressed.arrayBuffer()),
-					name: compressed.name,
-					mime_type: compressed.type || 'application/octet-stream',
-					width,
-					height,
-				};
-			}),
-		);
-		return { kind: 'photos', photos };
+		return { kind: 'photos', photos: draft.items };
 	}
 	if (draft.kind === 'voice_note') {
 		return {
@@ -223,7 +241,7 @@ function imgDimensions(file: File): Promise<{ width: number; height: number }> {
 		};
 		img.onerror = () => {
 			URL.revokeObjectURL(url);
-			reject(new Error(`could not decode ${file.name}`));
+			reject(new UndecodablePhotoError());
 		};
 		img.src = url;
 	});

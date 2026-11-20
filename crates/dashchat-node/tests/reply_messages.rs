@@ -4,7 +4,7 @@
 #![cfg(test)]
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use mailbox_client::backends::mem::MemMailbox;
 
 fn setup() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
@@ -135,7 +135,12 @@ async fn receiver_renders_reply_to_unknown_message_as_a_normal_message() {
     alice
         .send_message_raw(
             chat_id,
-            ChatMessageContent::new("nope", None, Some(p2panda_core::Hash::from_bytes([9; 32]))),
+            ChatMessageContent::new(
+                "nope",
+                None,
+                Some(p2panda_core::Hash::from_bytes([9; 32])),
+                0,
+            ),
         )
         .await
         .unwrap();
@@ -195,6 +200,7 @@ async fn reply_must_target_the_latest_known_edit() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn cannot_reply_to_a_deleted_message() {
     setup();
     let mailbox = MemMailbox::new();
@@ -252,7 +258,7 @@ async fn receiver_ignores_reply_to_a_reaction() {
     bobbi
         .send_message_raw(
             chat_id,
-            ChatMessageContent::new("sneaky", None, Some(reaction.hash())),
+            ChatMessageContent::new("sneaky", None, Some(reaction.hash()), 0),
         )
         .await
         .unwrap();
@@ -291,7 +297,7 @@ async fn receiver_accepts_reply_to_an_edit_it_knows_is_superseded() {
     bobbi
         .send_message_raw(
             chat_id,
-            ChatMessageContent::new("crossing reply", None, Some(original.hash())),
+            ChatMessageContent::new("crossing reply", None, Some(original.hash()), 0),
         )
         .await
         .unwrap();
@@ -333,7 +339,7 @@ async fn late_joiner_syncing_crossing_replies_can_hit_target_not_found() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(maplit::btreemap! {
+        .create_chat_group(maplit::btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await

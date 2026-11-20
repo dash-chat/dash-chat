@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{MailboxItem, SeqNum, store::MailboxStore};
@@ -11,14 +13,14 @@ pub struct Msg {
 }
 
 impl MailboxItem for Msg {
-    type Author = char;
+    type Log = char;
     type Hash = (char, SeqNum);
     type Topic = u8;
 
     fn hash(&self) -> Self::Hash {
         (self.author, self.seq)
     }
-    fn author(&self) -> Self::Author {
+    fn log(&self) -> Self::Log {
         self.author
     }
     fn seq_num(&self) -> SeqNum {
@@ -27,6 +29,60 @@ impl MailboxItem for Msg {
     fn topic(&self) -> Self::Topic {
         self.topic
     }
+}
+
+impl crate::MailboxKey for u8 {
+    fn to_mailbox_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        key.parse::<u8>()
+            .map_err(|e| anyhow::anyhow!("invalid u8 mailbox key: {e}"))
+    }
+}
+
+impl crate::MailboxKey for char {
+    fn to_mailbox_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        let mut chars = key.chars();
+        let ch = chars
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("empty char mailbox key"))?;
+        if chars.next().is_some() {
+            return Err(anyhow::anyhow!(
+                "char mailbox key must be exactly one character"
+            ));
+        }
+        Ok(ch)
+    }
+}
+
+/// A lifecycle that allows uncoordinated uploads to proceed. Use only in tests
+/// where the client is not registered with a `Mailboxes` owner.
+pub fn noop_upload_lifecycle() -> Arc<dyn crate::BlobUploadLifecycle> {
+    #[derive(Clone)]
+    struct NoopLifecycle;
+
+    impl crate::BlobUploadLifecycle for NoopLifecycle {
+        fn claim_upload(&self, _base_url: &str, _hash: iroh_blobs::Hash) -> Option<u64> {
+            Some(0)
+        }
+
+        fn finish_upload(
+            &self,
+            _base_url: &str,
+            _hash: iroh_blobs::Hash,
+            _claim: u64,
+            _succeeded: bool,
+        ) {
+        }
+    }
+
+    Arc::new(NoopLifecycle)
 }
 
 #[derive(Clone)]

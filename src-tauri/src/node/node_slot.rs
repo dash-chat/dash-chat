@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use async_rx::StreamExt as _;
 use dashchat_node::Node;
+use futures::{Stream, StreamExt};
 use tokio::sync::{watch, Mutex};
+use tokio_stream::wrappers::WatchStream;
 
 use crate::node::app_node::AppNode;
 use crate::node::node_context::{NodeContext, NodeRole};
@@ -37,6 +40,41 @@ pub(crate) fn subscribe_generation() -> watch::Receiver<u64> {
 
 fn bump_generation() {
     GENERATION.send_modify(|g| *g = g.wrapping_add(1));
+}
+
+/// The stream `make` builds on the app's node, switched to the next node after
+/// every swap. While there is none it yields `None` once, so a torn-down node's
+/// last value doesn't outlive it.
+///
+/// A stream that keeps the node it was built on keeps it until the swap, which
+/// comes after the old node's teardown; that teardown closes the node's
+/// resources itself, so a lingering clone delays nothing.
+pub(crate) fn node_stream<S, F>(make: F) -> impl Stream<Item = Option<S::Item>> + Send + 'static
+where
+    F: Fn(Node) -> S + Send + 'static,
+    S: Stream + Send + 'static,
+    S::Item: Send,
+{
+    WatchStream::new(subscribe_generation())
+        .then(|_| current_node_for_role(NodeRole::App))
+        .map(move |node| match node {
+            Some(node) => make(node).map(Some).left_stream(),
+            None => futures::stream::once(futures::future::ready(None)).right_stream(),
+        })
+        .fuse()
+        .switch()
+}
+
+/// [`node_stream`] without the no-node marker: while there is no node nothing
+/// is emitted, so a subscriber keeps the last node's value through a swap
+/// instead of seeing a gap until the new node catches up.
+pub(crate) fn node_stream_values<S, F>(make: F) -> impl Stream<Item = S::Item> + Send + 'static
+where
+    F: Fn(Node) -> S + Send + 'static,
+    S: Stream + Send + 'static,
+    S::Item: Send,
+{
+    node_stream(make).filter_map(futures::future::ready)
 }
 
 pub(crate) async fn current_node() -> Option<AppNode> {
@@ -88,21 +126,6 @@ pub async fn get_node_for_push_notification(
         }
     }
 
-    // Best-effort: resolve and track the cloud mailbox so the sync below can
-    // fetch. On every push, not once per node: the node is cached across pushes
-    // for the extension process's whole lifetime (hours), and its networking is
-    // often not up yet on the cold-start push — a one-shot attempt that failed
-    // there would leave every later push unable to fetch (each showing the
-    // generic fallback notification). Registering is idempotent, and the
-    // `/health` round trip also refreshes the mailbox's dialing address. Track
-    // it as a fetch source only — do NOT register ourselves back as a blob
-    // source here: `register_cloud_mailbox`'s up-to-10s `wait_endpoint_online`
-    // would eat the extension's ~30s budget before the operation poll can
-    // start, making iOS kill the extension and deliver the raw APNS fallback.
-    if let Err(err) = crate::setup::track_cloud_mailbox(&acquired.node).await {
-        log::warn!("failed to track cloud mailbox in push extension: {err:?}");
-    }
-
     Ok(acquired)
 }
 
@@ -150,16 +173,37 @@ pub async fn get_or_build_node(
     }
 
     log::info!("No compatible node in the cache, building node from scratch.");
+    #[cfg(unix)]
+    crate::utils::raise_open_files_limit();
 
+    #[cfg(mobile)]
+    let (topic_subscribed_tx, topic_subscribed_rx) = tokio::sync::mpsc::channel(100);
+    #[cfg(mobile)]
+    let topic_subscribed_tx = Some(topic_subscribed_tx);
+    #[cfg(not(mobile))]
+    let topic_subscribed_tx = None;
     let node = Node::new(
         data_path.clone(),
         context.node_config(),
         context.notification_tx.clone(),
-        context.topic_subscribed_tx.clone(),
+        topic_subscribed_tx,
     )
     .await?;
 
-    let app_node = AppNode::new(context, node.clone())?;
+    #[cfg(mobile)]
+    let app_node = AppNode::new(context, node.clone(), topic_subscribed_rx);
+    #[cfg(not(mobile))]
+    let app_node = AppNode::new(context, node.clone());
+    let app_node = match app_node {
+        Ok(app_node) => app_node,
+        Err(err) => {
+            // A dropped Node keeps its SQLite pools, and their file locks, open.
+            if let Err(shutdown_err) = node.shutdown().await {
+                log::error!("Failed to shut down node: {shutdown_err:?}");
+            }
+            return Err(err);
+        }
+    };
     *SLOT.lock().await = Some(app_node);
     bump_generation();
 

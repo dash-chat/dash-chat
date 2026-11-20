@@ -16,6 +16,7 @@
 	import { getContext } from 'svelte';
 	import type { SettingsStore } from 'dash-chat-stores';
 	import { showToast } from '$lib/utils/toasts';
+	import { ensureNotificationPermission } from '$lib/utils/notifications';
 
 	const theme = $derived(useTheme());
 	const settingsStore: SettingsStore = getContext('settings-store');
@@ -24,21 +25,17 @@
 	);
 
 	let toggling = $state(false);
+	let refusedEnables = $state(0);
 
 	async function enable() {
 		if (toggling) return;
 		toggling = true;
 		try {
-			const { isPermissionGranted, requestPermission } = await import(
-				'@tauri-apps/plugin-notification'
-			);
-			let granted = await isPermissionGranted();
-			if (!granted) {
-				const result = await requestPermission();
-				granted = result === 'granted';
-			}
-			if (granted) {
+			if (await ensureNotificationPermission()) {
 				await settingsStore.setNotificationsEnabled(true);
+			} else {
+				showToast(m.notificationsPermissionDenied(), 'error');
+				refusedEnables += 1;
 			}
 		} catch (e) {
 			console.error('Failed to enable notifications:', e);
@@ -81,11 +78,15 @@
 				<ListItem title={m.notifications()} data-testid="notifications-toggle">
 					{#snippet after()}
 						{#await $notificationsEnabled then enabled}
-							<Toggle
-								checked={enabled}
-								disabled={toggling}
-								onChange={() => (enabled ? disable() : enable())}
-							/>
+							<!-- Konsta's Toggle keeps the checked state its own click set, so a
+							     refused enable remounts it to show the stored value again. -->
+							{#key refusedEnables}
+								<Toggle
+									checked={enabled}
+									disabled={toggling}
+									onChange={() => (enabled ? disable() : enable())}
+								/>
+							{/key}
 						{/await}
 					{/snippet}
 				</ListItem>

@@ -8,12 +8,38 @@ import {
 const APP_NAME = 'Dash Chat';
 
 const TEXT_EXTRA =
-	/android\.(title|text|bigText)=(?:Spannable)?String \((.*)\)$/gm;
+	/android\.(title|text|bigText|conversationTitle)=(?:Spannable)?String \((.*)\)$/gm;
+
+/** The package a record was posted by, from its header line: the text after
+ *  a dump's last record runs on into sections that name other packages. */
+const RECORD_PACKAGE = /^0x[0-9a-f]+: pkg=(\S+) /;
+
+/** A record's flags: in hex on Android 12 (`0x40`), by name on Android 16
+ *  (`NO_CLEAR|FOREGROUND_SERVICE|SILENT`). */
+const RECORD_FLAGS = /\bflags=(\S+)/;
+
+const FLAG_FOREGROUND_SERVICE = 0x40;
+
+const MESSAGING_STYLE =
+	'android.template=String (android.app.Notification$MessagingStyle)';
+
+/** A chat notification's thread: one indexed Bundle per line, oldest first. */
+const THREAD =
+	/^\s*android\.messages=(?:Bundle|Parcelable)\[\] \(\d+\)\n((?:\s*\[\d+\] .*\n?)*)/m;
+
+/** One message of the thread, with its sender and text as the app posted
+ * them. The platform rewrites the notification's own title from these (to
+ * "group: sender" in a group), so this is where the app's wording survives
+ * intact. Bundle prints its keys in hash order, which for the ones the plugin
+ * sets is this one. */
+const MESSAGE = /^\[\d+\] Bundle\[\{.*\bsender=(.*?), text=(.*), time=\d+\}\]$/;
 
 /** What a just-opened shade gets to put its entries in the view tree. The
  * notification is already confirmed posted when this runs, so this covers
  * UiAutomator's lag behind the open, not the notification's arrival. */
 const SHADE_RENDER_TIMEOUT = 5_000;
+
+const NOTIFICATION_ROW = 'com.android.systemui:id/expandableNotificationRow';
 
 /** The shade's clear-all affordance, by the ids the stock UI and the OEM
  * skins give it. */
@@ -23,23 +49,58 @@ const CLEAR_ALL =
 /** This app's active notifications, parsed from `dumpsys notification
  * --noredact`. A record with no title is a group summary — the plugin posts
  * one per group with nothing but an icon — and is left out, since it shows
- * the user no content of its own. The shade's view tree is NOT a reliable
- * content source: OEM skins (MIUI) render only the title while a notification
- * sits collapsed, so bodies never appear to UiAutomator. dumpsys reads the
- * posted notification itself. */
+ * the user no content of its own. So is a foreground service's, which comes
+ * and goes while a push is handled and announces nothing. The shade's view
+ * tree is NOT a reliable content source: OEM skins (MIUI) render only the title
+ * while a notification sits collapsed, so bodies never appear to UiAutomator.
+ * dumpsys reads the posted notification itself. */
 function dashChatNotifications(dump: string): DeliveredNotification[] {
 	const notifications: DeliveredNotification[] = [];
 	const records = dump
 		.split(/^\s*NotificationRecord\(/m)
 		.slice(1)
-		.filter(record => record.includes(`pkg=${APP_PACKAGE}`));
+		.filter(record => RECORD_PACKAGE.exec(record)?.[1] === APP_PACKAGE)
+		.filter(record => !isForegroundService(record));
 	for (const record of records) {
 		const extras = [...record.matchAll(TEXT_EXTRA)];
-		const title = extras.find(([, key]) => key === 'title')?.[2];
+		const extra = (key: string) => extras.find(([, k]) => k === key)?.[2];
+		const title = extra('title');
 		if (title === undefined) continue;
-		notifications.push({ title, texts: extras.map(([, , value]) => value) });
+		const texts = extras.map(([, , value]) => value);
+		if (!record.includes(MESSAGING_STYLE)) {
+			notifications.push({ title, body: extra('text') ?? '', texts });
+			continue;
+		}
+		const { sender, text } = latestThreadMessage(record);
+		notifications.push({
+			title: sender,
+			body: text,
+			conversation: extra('conversationTitle') ?? null,
+			texts,
+		});
 	}
 	return notifications;
+}
+
+function isForegroundService(record: string): boolean {
+	const flags = RECORD_FLAGS.exec(record)?.[1] ?? '';
+	return flags.startsWith('0x')
+		? (parseInt(flags, 16) & FLAG_FOREGROUND_SERVICE) !== 0
+		: flags.split('|').includes('FOREGROUND_SERVICE');
+}
+
+/** The newest message of a chat notification's thread. Throws rather than
+ *  fall back to the platform's rewritten title, which would fail every check
+ *  against it without saying why. */
+function latestThreadMessage(record: string): { sender: string; text: string } {
+	const latest = THREAD.exec(record)?.[1].trim().split('\n').pop()?.trim();
+	const match = latest === undefined ? null : MESSAGE.exec(latest);
+	if (match === null) {
+		throw new Error(
+			`cannot read the thread of a chat notification:\n${record}`,
+		);
+	}
+	return { sender: match[1], text: match[2] };
 }
 
 /** Android (UiAutomator2) notification observation: content is read from the
@@ -51,6 +112,17 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 		return this.agent.$(`android=new UiSelector().textContains("${escaped}")`);
 	}
 
+	/** The innermost shade row holding a text that contains `textIncludes`.
+	 * Taps go to the row, not the text: HiOS swallows a tap on a chat
+	 * notification's title without firing its content intent. */
+	private rowFor(textIncludes: string) {
+		const holdsText = `.//*[contains(@text, "${textIncludes}")]`;
+		return this.agent.$(
+			`//*[@resource-id="${NOTIFICATION_ROW}"][${holdsText}]` +
+				`[not(.//*[@resource-id="${NOTIFICATION_ROW}"][${holdsText}])]`,
+		);
+	}
+
 	private udid(): string {
 		const udid = this.agent.requestedCapabilities['appium:udid'];
 		if (udid === undefined) {
@@ -59,64 +131,22 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 		return udid as string;
 	}
 
-	private notificationTexts(): string[] {
-		return this.notifications().flatMap(n => n.texts);
-	}
-
 	private notifications(): DeliveredNotification[] {
 		return dashChatNotifications(
 			adbShell(this.udid(), 'dumpsys notification --noredact'),
 		);
 	}
 
-	delivered(): Promise<DeliveredNotification[]> {
-		return Promise.resolve(this.notifications());
+	/** Reads the notification service, which disturbs nothing on screen. */
+	protected withNotificationUi<T>(
+		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
+	): Promise<T> {
+		return fn(() => Promise.resolve(this.notifications()));
 	}
 
 	/** A back-key press closes the shade (and is harmless when it is closed). */
 	protected async dismissNotificationUi(): Promise<void> {
 		await this.agent.back();
-	}
-
-	waitForNotification(textIncludes: string, timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.agent.openNotifications();
-			let texts: string[] = [];
-			await this.agent.waitUntil(
-				() => {
-					texts = this.notificationTexts();
-					return texts.some(t => t.includes(textIncludes));
-				},
-				{
-					timeout,
-					timeoutMsg: `No notification containing "${textIncludes}" arrived within ${timeout}ms`,
-				},
-			);
-			return texts.join('\n');
-		});
-	}
-
-	waitForAppNotification(timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.agent.openNotifications();
-			// Wait on the notification service, not on shade elements: MIUI
-			// renders MessagingStyle notifications without any element matching
-			// the app name, so a shade-based wait never fires for chat messages.
-			let texts: string[] = [];
-			await this.agent.waitUntil(
-				() => {
-					texts = this.notificationTexts();
-					return texts.length > 0;
-				},
-				{
-					timeout,
-					timeoutMsg: `No ${APP_NAME} notification arrived within ${timeout}ms`,
-				},
-			);
-			return texts.join('\n');
-		});
 	}
 
 	/** Bring the entry containing `textIncludes` into the shade's view tree.
@@ -174,11 +204,18 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 				timeoutMsg: `the shade has no clear-all button; it renders: ${await this.shadeTexts()}`,
 			});
 			await clearAll.click();
-			await this.agent.waitUntil(() => this.notifications().length === 0, {
-				timeout: SHADE_RENDER_TIMEOUT,
-				timeoutMsg:
-					'the device still holds notifications of ours after clearing the shade',
-			});
+			await this.agent
+				.waitUntil(() => this.notifications().length === 0, {
+					timeout: SHADE_RENDER_TIMEOUT,
+				})
+				.catch(() => {
+					const left = this.notifications()
+						.map(n => `"${n.title} | ${n.body}"`)
+						.join(', ');
+					throw new Error(
+						`the device still holds notifications of ours after clearing the shade: ${left}`,
+					);
+				});
 			await this.restoreWebview();
 		});
 	}
@@ -219,7 +256,7 @@ export class AndroidNotifications extends AppiumNotificationHelper {
 			// to the foreground, retrying the tap, and fail fast otherwise.
 			for (let attempt = 1; attempt <= 3; attempt++) {
 				await this.revealEntry(textIncludes);
-				await this.elementFor(textIncludes).click();
+				await this.rowFor(textIncludes).click();
 				if (await this.appIsForeground(10_000)) return;
 				await this.agent.openNotifications();
 			}

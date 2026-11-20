@@ -4,7 +4,7 @@
 #![cfg(test)]
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use mailbox_client::backends::mem::MemMailbox;
 
 fn setup() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);

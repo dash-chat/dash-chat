@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     notify_topics_subscribers::notify_topics_subscribers, AppState, Author, Blip, BlipsKey,
-    BlipsKeyPrefix, SequenceNumber, TopicId, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE,
+    BlipsKeyPrefix, SeqNum, TopicId, WatermarksKey, BLIPS_TABLE, WATERMARKS_TABLE,
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct StoreBlipsRequest {
-    pub blips: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SequenceNumber, Blip>>>,
+    pub blips: BTreeMap<TopicId, BTreeMap<Author, BTreeMap<SeqNum, Blip>>>,
     #[serde(default)]
     pub sender_pubkey: Option<iroh::EndpointId>,
     #[serde(default)]
@@ -21,7 +21,7 @@ pub struct StoreBlipsRequest {
 pub struct StoreBlipsResponse {
     /// The resulting contiguity watermark for each log in the request
     /// (`None` when none could be established).
-    pub watermarks: BTreeMap<TopicId, BTreeMap<Author, Option<SequenceNumber>>>,
+    pub watermarks: BTreeMap<TopicId, BTreeMap<Author, Option<SeqNum>>>,
 }
 
 pub async fn store_blips(
@@ -56,7 +56,7 @@ pub async fn store_blips(
 }
 
 type TopicsWithNewBlips = BTreeMap<TopicId, BTreeMap<String, Author>>;
-type ResultingWatermarks = BTreeMap<TopicId, BTreeMap<Author, Option<SequenceNumber>>>;
+type ResultingWatermarks = BTreeMap<TopicId, BTreeMap<Author, Option<SeqNum>>>;
 
 /// Returns a map of topic_id → map of op_id (author:seq) → author for newly inserted blips.
 /// The author is preserved separately so the push-notifications-server can filter the
@@ -94,7 +94,7 @@ fn store_blips_inner(
                     .map(|v| v.value());
 
                 // Collect sequence numbers being stored (BTreeMap is already sorted)
-                let mut stored_seqs: BTreeSet<SequenceNumber> = BTreeSet::new();
+                let mut stored_seqs: BTreeSet<SeqNum> = BTreeSet::new();
 
                 for (seq_num, blip) in sequences {
                     let key = BlipsKey::new_now(topic_id.clone(), author.clone(), *seq_num)
@@ -159,12 +159,12 @@ fn compute_new_watermark(
     blips_table: &redb::Table<BlipsKey, &[u8]>,
     topic_id: &str,
     author: &str,
-    current_watermark: Option<SequenceNumber>,
-    new_sequences: &BTreeSet<SequenceNumber>,
-) -> Result<Option<SequenceNumber>, String> {
+    current_watermark: Option<SeqNum>,
+    new_sequences: &BTreeSet<SeqNum>,
+) -> Result<Option<SeqNum>, String> {
     // watermark = None means we need to check from seq 0
     // watermark = Some(n) means seqs 0..=n are confirmed present
-    let mut watermark: Option<SequenceNumber> = match current_watermark {
+    let mut watermark: Option<SeqNum> = match current_watermark {
         Some(current_wm) => {
             // Check if new sequences or existing blips don't extend current watermark
             if !new_sequences.contains(&(current_wm + 1))
@@ -205,7 +205,7 @@ fn blip_exists(
     table: &redb::Table<BlipsKey, &[u8]>,
     topic_id: &str,
     author: &str,
-    seq_num: SequenceNumber,
+    seq_num: SeqNum,
 ) -> Result<bool, String> {
     let prefix = BlipsKeyPrefix::TopicAuthorSeq(topic_id.to_string(), author.to_string(), seq_num);
 

@@ -37,7 +37,7 @@
 	} from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { page } from '$app/state';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	let chatId = page.params.chatId!;
 
@@ -86,11 +86,7 @@
 					data-testid="chat-settings-peer-header"
 				>
 					{#if profile}
-						<Avatar
-							image={profile.avatar}
-							initials={profile.name.slice(0, 2)}
-							size={80}
-						/>
+						<PeerAvatar {profile} size={80} />
 
 						<div
 							class="flex cursor-pointer items-center gap-1 max-w-full"
@@ -115,7 +111,7 @@
 							>
 						{/if}
 					{:else}
-						<Avatar waitingForProfile size={80} />
+						<PeerAvatar size={80} />
 						{#await $peerName then peerName}
 							<span
 								class="text-xl {peerName ? 'font-semibold' : 'quiet'}"

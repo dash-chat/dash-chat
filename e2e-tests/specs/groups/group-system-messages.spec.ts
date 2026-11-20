@@ -33,10 +33,10 @@ describe('Group chat inline system messages', () => {
 		await agent2.groupChatPage.ready();
 
 		await agent2.groupChatPage.messages
-			.systemMessage('group_created')
+			.systemMessage('group_member_added')
 			.waitForExist();
 		const added = await agent2.groupChatPage.messages
-			.systemMessage('group_created')
+			.systemMessage('group_member_added')
 			.getText();
 		expect(added).toContain(
 			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice' }),

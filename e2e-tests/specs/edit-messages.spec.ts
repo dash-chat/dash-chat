@@ -1,4 +1,5 @@
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Editing messages', () => {
@@ -10,7 +11,8 @@ describe('Editing messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('edits a message in place and shows the "Edited" indicator on both sides', async () => {
@@ -27,10 +29,10 @@ describe('Editing messages', () => {
 		const edited2 =
 			await agent2.directChatPage.messages.waitForMessage('Hello world');
 
-		await browser.waitUntil(() => edited1.hasEditedIndicator(), {
+		await agent1.waitUntil(() => edited1.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the author side',
 		});
-		await browser.waitUntil(() => edited2.hasEditedIndicator(), {
+		await agent2.waitUntil(() => edited2.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the peer side',
 		});
 	});
@@ -76,7 +78,7 @@ describe('Editing messages', () => {
 		await composer.discardDraftConfirm.waitForClickable();
 		await composer.discardDraftConfirm.click();
 		await composer.editingBanner.waitForExist();
-		await browser.waitUntil(
+		await agent1.waitUntil(
 			async () => (await composer.inputText()) === 'Hello world',
 			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
 		);

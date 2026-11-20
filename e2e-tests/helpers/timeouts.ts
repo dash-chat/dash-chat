@@ -23,16 +23,28 @@ export const BACKGROUND_NETWORK_CUTOFF_MS = 15_000;
 /** What the app gets to tell the user the cloud mailbox stopped answering:
  *  the chip flips on the second consecutive failure, and each poll starts
  *  2.5 s after the previous one completed, so two intervals plus the time a
- *  refused request takes to fail (about 1 s on a phone over Wi-Fi). */
-export const MAILBOX_UNANSWERED_MS = 8_000;
+ *  refused request takes to fail (about 1 s on a phone over Wi-Fi, 2 s on
+ *  Windows, which retries a refused connect). */
+export const MAILBOX_UNANSWERED_MS =
+	process.platform === 'win32' ? 11_000 : 8_000;
 
 /** The same, for a mailbox that hangs rather than refuses: a request only
- *  counts as failed once it times out, 10 s, the chip flips on the second
+ *  counts as failed once it times out, 20 s, the chip flips on the second
  *  failure, and a poll interval, 2.5 s, precedes each of the two. */
-export const MAILBOX_HUNG_MS = 30_000;
+export const MAILBOX_HUNG_MS = 50_000;
 
-/** What the app gets to tell the user the mailbox answers again. */
+/** What the app gets to tell the user the mailbox answers again, after an
+ *  outage short enough that it still polls at the unbacked-off interval. */
 export const MAILBOX_HEALED_MS = 4_000;
+
+/** The same after an outage of any length: ten failures in a row back polling
+ *  off to every 10 s (`MailboxesConfig::stopped_interval`), and the poll that
+ *  notices the healed link can be a whole interval away. */
+export const MAILBOX_HEALED_AFTER_BACKOFF_MS = 12_000;
+
+/** The longest an app whose cold start could not reach the cloud waits before
+ *  trying to register it again: its retry backs off to 10 s. */
+export const CLOUD_REGISTRATION_RETRY_MS = 10_000;
 
 /** How long something already on screen must survive to count as untouched by
  *  an arriving message. One arrival re-renders a chat more than once: the
@@ -41,3 +53,12 @@ export const MAILBOX_HEALED_MS = 4_000;
  *  before the whole burst has landed passes on a chat that is about to tear
  *  the element down. */
 export const RENDER_SETTLE_WINDOW = 5_000;
+
+/** What the async-script timeout is raised to before any `executeAsync`.
+ *  XCUITest defaults it to ~0, so a script that does real work — rebuilding
+ *  the node, transcoding audio, reaching the network — times out at once
+ *  unless a caller raises it (desktop's driver tolerates the default). One
+ *  value, since whoever raises it last decides for the callers after it: a
+ *  site that picked a smaller one would silently lower the ceiling under
+ *  them. */
+export const ASYNC_SCRIPT_TIMEOUT = 60_000;

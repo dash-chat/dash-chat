@@ -2,8 +2,9 @@
 	import '@awesome.me/webawesome/dist/components/carousel/carousel.js';
 	import '@awesome.me/webawesome/dist/components/carousel-item/carousel-item.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Dialog, Button } from 'konsta/svelte';
+	import { Dialog, Button } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import SwipeableSheet from './SwipeableSheet.svelte';
 	import SheetHandle from './SheetHandle.svelte';
 
 	interface Props {
@@ -174,10 +175,10 @@
 		</div>
 	</Dialog>
 {:else}
-	<Sheet class="pb-safe" {opened} onBackdropClick={handleClose}>
+	<SwipeableSheet class="pb-safe" {opened} onClose={handleClose}>
 		<div class="flex flex-col items-center px-6 pb-4 gap-4">
 			<SheetHandle />
 			{@render content()}
 		</div>
-	</Sheet>
+	</SwipeableSheet>
 {/if}

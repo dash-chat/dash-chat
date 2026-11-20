@@ -1,14 +1,12 @@
+import type {
+	ConnectionModeStatus,
+	ConnectionStatusTag as ConnectionStatus,
+} from '../../../ui/src/lib/components/connection/connection-status-tags';
+import type { ConnectionStatusSample } from '../../../ui/tests/setup-utils';
 import { TestHelper } from '../pages/test-helper';
 import { tid } from '../selectors';
 
-export type ConnectionStatus = 'connected' | 'local' | 'disconnected';
-
-export interface ConnectionStatusSample {
-	status: string;
-	at: number;
-	visibility: 'visible' | 'hidden';
-	onVisibilityChange: boolean;
-}
+export type { ConnectionModeStatus, ConnectionStatus, ConnectionStatusSample };
 
 /** `status(visibility)@+Nms`, relative to the first sample — the absolute epoch
  *  values are unreadable in a failure message, and what matters is the spacing
@@ -52,22 +50,29 @@ export function samplesOnResume(
 		.filter(sample => sample.at - visibleAt <= RESUME_PAINT_MS);
 }
 
+/** What the connection-mode dialog is expected to show; a row left out is not
+ *  checked. */
+export interface ExpectedConnectionModes {
+	isolated?: boolean;
+	internet?: ConnectionModeStatus;
+	localHub?: ConnectionModeStatus;
+	phoneToPhone?: ConnectionModeStatus;
+}
+
 export class ConnectionStatusIndicator extends TestHelper {
 	chip = this.el(tid('connection-status'));
 	dialog = this.el(tid('connection-status-dialog'));
-	dialogTitle = this.el(tid('connection-status-dialog-title'));
-	dialogDescription = this.el(tid('connection-status-dialog-description'));
-	dialogCloseButton = this.el(tid('connection-status-dialog-close'));
+	isolationMode = this.el(tid('connection-mode-isolation'));
+	internetMode = this.el(tid('connection-mode-internet'));
+	localHubMode = this.el(tid('connection-mode-local-hub'));
+	phoneToPhoneMode = this.el(tid('connection-mode-phone-to-phone'));
+	localHubHelp = this.el(tid('connection-mode-local-hub-help'));
+	phoneToPhoneHelp = this.el(tid('connection-mode-phone-to-phone-help'));
+	helpBack = this.el(tid('connection-mode-help-back'));
 
-	/** Read the chip's data-status. Absence === 'connected'. */
-	async status(): Promise<ConnectionStatus> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			if (!el) return 'connected';
-			const status = el.dataset.status;
-			if (status === 'local' || status === 'disconnected') return status;
-			throw new Error(`connectionStatus: unexpected data-status="${status}"`);
-		}, tid('connection-status'));
+	/** Read the chip's data-status, or null while it is not mounted. */
+	status(): Promise<ConnectionStatus | null> {
+		return this.agent.execute(() => window.__test.connectionStatus());
 	}
 
 	/** Start recording every status the chip renders. Returns the recording's
@@ -101,8 +106,32 @@ export class ConnectionStatusIndicator extends TestHelper {
 		}, tid('connection-status-dialog'));
 	}
 
-	async waitForStatus(
+	waitForStatus(
 		status: ConnectionStatus,
+		timeout: number,
+		timeoutMsg: string,
+	): Promise<void> {
+		return this.waitUntilStatus(seen => seen === status, timeout, timeoutMsg);
+	}
+
+	/** Wait until the chip is not showing a local hub. Which other state it
+	 *  reads instead depends on the cloud connection, so this leaves it open. */
+	waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
+		return this.waitUntilStatus(seen => seen !== 'local', timeout, timeoutMsg);
+	}
+
+	/** Wait until the chip says no mailbox is in reach: p2p while a peer in
+	 *  any chat is online, disconnected otherwise. */
+	waitForNoMailbox(timeout: number, timeoutMsg: string): Promise<void> {
+		return this.waitUntilStatus(
+			seen => seen === 'disconnected' || seen === 'p2p',
+			timeout,
+			timeoutMsg,
+		);
+	}
+
+	private async waitUntilStatus(
+		reached: (seen: ConnectionStatus | null) => boolean,
 		timeout: number,
 		timeoutMsg: string,
 	): Promise<void> {
@@ -111,51 +140,29 @@ export class ConnectionStatusIndicator extends TestHelper {
 			await this.agent.waitUntil(
 				async () => {
 					seen = await this.status();
-					return seen === status;
+					return reached(seen);
 				},
 				{ timeout, interval: 200 },
 			);
 		} catch {
-			throw new Error(
-				`${timeoutMsg} (the chip last read ${seen === 'connected' ? 'nothing: it was hidden' : String(seen)})`,
-			);
+			throw new Error(`${timeoutMsg} (the chip last read ${String(seen)})`);
 		}
 	}
 
-	/** Wait until the chip is not showing a local hub — i.e. any state but
-	 *  'local'. Both 'disconnected' and hidden ('connected') mean no local hub
-	 *  is present, which is the whole of what "no hub reachable" asserts; which
-	 *  of the two shows depends on cloud-connection settling, a separate concern
-	 *  the hub budget does not govern. */
-	async waitForNotLocal(timeout: number, timeoutMsg: string): Promise<void> {
-		let seen: ConnectionStatus | null = null;
-		try {
-			await this.agent.waitUntil(
-				async () => {
-					seen = await this.status();
-					return seen !== 'local';
-				},
-				{ timeout, interval: 200 },
-			);
-		} catch {
-			throw new Error(`${timeoutMsg} (the chip still read local)`);
-		}
-	}
-
-	/** Open the dialog and wait until its text says `count` local hubs are
-	 *  connected, then close it. The chip must be reading local. */
+	/** Open the dialog and wait until its local hub row names `count` hubs,
+	 *  then close it. The chip must be reading local. */
 	async waitForLocalHubCount(
 		count: number,
 		timeout: number,
 		timeoutMsg: string,
 	): Promise<void> {
 		await this.chip.click();
-		await this.dialogDescription.waitForExist();
+		await this.localHubMode.waitForExist();
 		let seen: number | null = null;
 		try {
 			await this.agent.waitUntil(
 				async () => {
-					const text = await this.dialogDescription.getText();
+					const text = await this.localHubMode.getText();
 					seen = Number(text.match(/\d+/)?.[0]);
 					return seen === count;
 				},
@@ -164,8 +171,68 @@ export class ConnectionStatusIndicator extends TestHelper {
 		} catch {
 			throw new Error(`${timeoutMsg} (the dialog last named ${String(seen)})`);
 		} finally {
-			await this.dialogCloseButton.click();
-			await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
+			await this.closeDialog();
 		}
+	}
+
+	/** Open the dialog, check the rows named in `expected`, then close it. */
+	async expectModes(expected: ExpectedConnectionModes): Promise<void> {
+		await this.chip.click();
+		await this.agent.waitUntil(() => this.isDialogOpen());
+		try {
+			if (expected.isolated === true) {
+				await expect(this.isolationMode).toExist();
+			}
+			if (expected.isolated === false) {
+				await expect(this.isolationMode).not.toExist();
+			}
+			if (expected.internet !== undefined) {
+				await expect(this.internetMode).toHaveAttribute(
+					'data-status',
+					expected.internet,
+				);
+			}
+			if (expected.localHub !== undefined) {
+				await expect(this.localHubMode).toHaveAttribute(
+					'data-status',
+					expected.localHub,
+				);
+			}
+			if (expected.phoneToPhone !== undefined) {
+				await expect(this.phoneToPhoneMode).toHaveAttribute(
+					'data-status',
+					expected.phoneToPhone,
+				);
+			}
+		} finally {
+			await this.closeDialog();
+		}
+	}
+
+	/** Open the dialog, walk into the help of each mode that has one and back
+	 *  out to the list, then close it. */
+	async expectModeHelp(): Promise<void> {
+		await this.chip.click();
+		await this.agent.waitUntil(() => this.isDialogOpen());
+		try {
+			await this.localHubMode.click();
+			await this.localHubHelp.waitForDisplayed();
+			await this.helpBack.click();
+			await this.phoneToPhoneMode.click();
+			await this.phoneToPhoneHelp.waitForDisplayed();
+			await this.helpBack.click();
+			await this.localHubMode.waitForDisplayed();
+		} finally {
+			await this.closeDialog();
+		}
+	}
+
+	/** The dialog has no button of its own: it closes on a tap outside it. */
+	private async closeDialog(): Promise<void> {
+		await this.agent.execute((sel: string) => {
+			const backdrop = document.querySelector(sel)?.previousElementSibling;
+			if (backdrop instanceof HTMLElement) backdrop.click();
+		}, tid('connection-status-dialog'));
+		await this.agent.waitUntil(async () => !(await this.isDialogOpen()));
 	}
 }

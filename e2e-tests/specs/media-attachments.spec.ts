@@ -3,7 +3,8 @@
  * message, sent, and rendered on both ends, and that the 16 MiB size cap is
  * enforced.
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
@@ -17,7 +18,8 @@ describe('Media attachments', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('opens the desktop attach dropdown and renders the Photos and File items', async function () {
@@ -174,6 +176,38 @@ describe('Media attachments', () => {
 		await composer.removeDraft();
 	});
 
+	it('drops a damaged photo when staging, keeping the valid ones', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['broken'], ['survivor']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
+		);
+		await composer.expectStagedPhotoCount(1);
+		await composer.send();
+		await agent1.directChatPage.messages.waitForPhotoMessage('survivor');
+	});
+
+	it('counts every damaged photo in the toast', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['broken-1', 'broken-2'], ['kept']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 2 }),
+		);
+		await composer.expectStagedPhotoCount(1);
+		await composer.removeDraft();
+	});
+
+	it('stages nothing when the only photo is damaged', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['alone']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
+		);
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg: 'Staged media UI stayed up after the only photo was dropped',
+		});
+	});
+
 	it('stages dropped images, appending to the draft', async () => {
 		const composer = agent1.directChatPage.composer;
 		await composer.dropPhotos('dropped');
@@ -243,6 +277,6 @@ describe('Media attachments', () => {
 		if (!message) throw new Error('Photo message "copyless" not found');
 		await message.openActions();
 		expect(await message.copyAction.isExisting()).toBe(false);
-		expect(await message.deleteAction.isExisting()).toBe(true);
+		expect(await message.replyAction.isExisting()).toBe(true);
 	});
 });

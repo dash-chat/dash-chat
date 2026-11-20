@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { test } from 'node:test';
 
 import {
+	CLAIMS_DIR,
 	claimAllWhenFreeSync,
 	describeHeld,
 	isFree,
@@ -21,8 +23,8 @@ function fresh(): string {
 /** Hold `id` from another live process, until it is killed. */
 function heldByOther(id: string): ChildProcess {
 	const other = spawn('sleep', ['60'], { stdio: 'ignore' });
-	mkdirSync('/tmp/dash-chat-e2e/claims', { recursive: true });
-	writeFileSync(`/tmp/dash-chat-e2e/claims/${id}`, String(other.pid));
+	mkdirSync(CLAIMS_DIR, { recursive: true });
+	writeFileSync(path.join(CLAIMS_DIR, id), String(other.pid));
 	return other;
 }
 

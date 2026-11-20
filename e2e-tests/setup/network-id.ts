@@ -4,8 +4,7 @@
  * p2p network id, so connections from another run's agents are refused, and a
  * prefix of it suffixes the hubs' mDNS service name, so another run's hubs are
  * never browsed. It is a hash of the checkout's path: runs from different
- * checkouts never share it, and a rebuild in place keeps it, so turbo's caches
- * stay valid.
+ * checkouts never share it, and a rebuild in place keeps it.
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -24,8 +23,7 @@ const SHORT_ID = E2E_NETWORK_ID.slice(0, 8);
 export const CHECKOUT_CLAIM = `checkout-${SHORT_ID}`;
 
 /** The ports this checkout's mailbox and push server prefer: stable across
- *  its runs, so the URLs baked into device builds stay valid and turbo's
- *  build skip fires; its own, so another checkout's run never takes a port
+ *  its runs, so the URLs baked into device builds stay valid; its own, so another checkout's run never takes a port
  *  a spec has released, as a cut cloud link does. */
 const PORT_SLOT = parseInt(SHORT_ID, 16) % 1000;
 export const MAILBOX_PREFERRED_PORT = 3300 + 2 * PORT_SLOT;

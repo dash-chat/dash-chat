@@ -2,57 +2,36 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiClose, mdiPlus } from '@mdi/js';
-	import {
-		type DraftMedia,
-		MAX_STAGED_PHOTOS,
-		pickMedia,
-	} from '$lib/utils/media';
+	import { mdiClose } from '@mdi/js';
+	import { MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import type { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
 	import ExtensionSheet from '$lib/components/ExtensionSheet.svelte';
 	import IconButton from '$lib/components/IconButton.svelte';
-	import StagedThumb from './StagedThumb.svelte';
+	import StagedThumb from '$lib/components/StagedThumb.svelte';
+	import AddThumb from '$lib/components/AddThumb.svelte';
+	import PendingThumb from '$lib/components/PendingThumb.svelte';
 	import { objectUrl } from '$lib/actions/object-url';
 
 	interface Props {
-		media: DraftMedia | undefined;
-		/** Stage files picked from the "add more" tile (handled by the composer,
-		 * which owns the ingest rules and error toasts). */
-		onFiles: (files: File[]) => void;
+		draft: MediaDraft;
+		loadingMedia: boolean;
+		onAddMore: () => void;
 	}
 
-	let { media = $bindable(), onFiles }: Props = $props();
+	let { draft, loadingMedia, onAddMore }: Props = $props();
 
-	const showClearAll = $derived(
-		media?.kind === 'photos' && media.items.length > 1,
-	);
+	const media = $derived(draft.media);
+	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
-	async function addMore() {
-		try {
-			const files = await pickMedia('image', true);
-			if (files && files.length > 0) onFiles(files);
-		} catch (e) {
-			console.error('Failed to pick files', e);
-		}
-	}
-
-	function clear() {
-		media = undefined;
-	}
-
-	function removePhoto(index: number) {
-		if (!media || media.kind !== 'photos') return;
-		const remaining = media.items.filter((_, i) => i !== index);
-		media =
-			remaining.length > 0 ? { kind: 'photos', items: remaining } : undefined;
-	}
+	const showClearAll = $derived(photos.length > 1);
 </script>
 
-{#if media && media.kind !== 'voice_note'}
+{#if (media && media.kind !== 'voice_note') || draft.pendingPhotos > 0}
 	<div class="pt-2" data-testid="message-input-media-preview">
 		{#if showClearAll}
 			<div class="flex justify-end pb-2 pe-2">
 				<IconButton
-					onClick={clear}
+					onClick={() => draft.clear()}
 					label={m.removeAllAttachments()}
 					testid="message-input-clear-attachments"
 					class="!h-7 !w-7"
@@ -62,35 +41,41 @@
 			</div>
 		{/if}
 		<div class="flex max-h-[142px] gap-2 overflow-x-auto px-2">
-			{#if media.kind === 'photos'}
-				{#each media.items as photo, i (photo)}
+			{#if media?.kind !== 'file'}
+				{#each photos as photo, i (photo)}
 					<StagedThumb
-						onRemove={() => removePhoto(i)}
+						removeLabel={m.removeAttachment()}
+						onRemove={() => draft.removePhoto(i)}
 						removeTestId="message-input-remove-attachment-{i}"
+						class="h-[120px] w-[120px]"
 					>
 						<img
-							use:objectUrl={photo}
+							use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 							alt={photo.name}
 							class="block h-full w-full object-cover"
 						/>
 					</StagedThumb>
 				{/each}
-				{#if media.items.length < MAX_STAGED_PHOTOS}
-					<button
-						type="button"
-						class="add-more flex h-[120px] w-[120px] shrink-0 items-center justify-center"
-						data-testid="message-input-add-more"
-						aria-label={m.addMoreAttachments()}
-						onclick={addMore}
-					>
-						<wa-icon src={wrapPathInSvg(mdiPlus)}></wa-icon>
-					</button>
+				{#each { length: draft.pendingPhotos }, i (i)}
+					<PendingThumb
+						class="h-[120px] w-[120px] rounded bg-black/10 dark:bg-white/10"
+					/>
+				{/each}
+				{#if photos.length + draft.pendingPhotos < MAX_STAGED_PHOTOS}
+					<AddThumb
+						onClick={onAddMore}
+						label={m.addMoreAttachments()}
+						testId="message-input-add-more"
+						disabled={loadingMedia}
+						class="h-[120px] w-[120px]"
+					/>
 				{/if}
 			{:else}
 				<StagedThumb
-					onRemove={clear}
+					removeLabel={m.removeAttachment()}
+					onRemove={() => draft.clear()}
 					removeTestId="message-input-remove-attachment-0"
-					class="flex flex-col items-center justify-center gap-2 p-2"
+					class="flex h-[120px] w-[120px] flex-col items-center justify-center gap-2 p-2"
 				>
 					<ExtensionSheet name={media.file.name} />
 					<span class="staged-file-name line-clamp-2 text-center break-all"
@@ -103,23 +88,6 @@
 {/if}
 
 <style>
-	.add-more {
-		border-radius: 4px;
-		border: 2px dashed var(--k-hairline-color, rgba(128, 128, 128, 0.4));
-		background: transparent;
-		cursor: pointer;
-		color: var(--k-text-color);
-		opacity: 0.6;
-		transition: opacity 0.15s ease;
-	}
-	.add-more:hover {
-		opacity: 0.9;
-	}
-	.add-more :global(wa-icon) {
-		width: 28px;
-		height: 28px;
-	}
-
 	.staged-file-name {
 		font-size: 11px;
 		line-height: 1.3;

@@ -2,11 +2,7 @@ import { createProfiles } from '../../helpers/flows/create-profiles';
 import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
 import { tid } from '../../helpers/selectors';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
-import {
-	isRemoteMailbox,
-	resumeMailbox,
-	suspendMailbox,
-} from '../../setup/mailbox-control';
+import { isRemoteMailbox, suspendMailbox } from '../../setup/mailbox-control';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
 async function waitForTextContent(
@@ -27,7 +23,6 @@ describe('Scanner profile on accept', () => {
 	let alice: Agent; // the scanner
 	let bob: Agent; // the scanned contact who accepts
 	let bobCode: string;
-	let mailboxSuspended = false;
 
 	before(async function () {
 		// Suspending the shared mailbox is impossible against a remote environment
@@ -45,19 +40,7 @@ describe('Scanner profile on accept', () => {
 		await navigateToAddContact(bob);
 		bobCode = await bob.addContactPage.getAddContactLink();
 		suspendMailbox();
-		mailboxSuspended = true;
 		await bob.stopApp();
-	});
-
-	after(() => {
-		if (mailboxSuspended) {
-			try {
-				resumeMailbox();
-			} catch {
-				/* ignore */
-			}
-			mailboxSuspended = false;
-		}
 	});
 
 	it('shows the scanned QR name with a placeholder avatar while the contact is offline', async () => {
@@ -95,12 +78,12 @@ describe('Scanner profile on accept', () => {
 		await alice.directChatPage.waitForPeerProfile();
 
 		// Stop Bob now that the cached profile has already resolved. This
-		// prevents Alice from syncing Bob's announcements topic, which was the
-		// only fallback source for his profile before the cached-profile fix.
+		// prevents Alice from syncing their direct chat, which was the only
+		// fallback source for his profile before the cached-profile fix.
 		await bob.stopApp();
 
 		// Verify the avatar stayed resolved after Bob went offline — i.e. it did
-		// not depend on live announcements sync.
+		// not depend on live chat sync.
 		expect(await alice.directChatPage.peerAvatarIsPlaceholder()).toBe(false);
 	});
 });

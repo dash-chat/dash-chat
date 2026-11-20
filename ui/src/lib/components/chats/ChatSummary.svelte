@@ -1,6 +1,5 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/badge/badge.js';
-	import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
 	import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import {
@@ -9,16 +8,18 @@
 		hasBody,
 	} from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
-	import { Badge } from 'konsta/svelte';
+	import { Badge, useTheme } from 'konsta/svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 	import {
-		moreThanAnHourAgo,
-		lessThanAMinuteAgo,
 		inYesterday,
 		beforeYesterday,
+		minutesSince,
+		withinWindow,
 	} from '$lib/utils/time';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupEventText } from '$lib/utils/group-event-text';
-	import Avatar from '../profiles/Avatar.svelte';
+	import { messagePlaceholderText } from '../messages/message-helpers';
+	import AvatarWithP2pBadge from './AvatarWithP2pBadge.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCancel } from '@mdi/js';
 
@@ -30,6 +31,21 @@
 			: `/direct-chats/${s.chatId}`;
 
 	const title = $derived(summary.name || m.waitingForProfile());
+
+	// Konsta's Material row is inset 8px from the list's edges and its iOS
+	// row is not; both end up 16px from the screen edge.
+	const theme = $derived(useTheme());
+	const edgePadding = $derived(
+		theme === 'material'
+			? { content: 'ps-2!', inner: 'pe-2!' }
+			: { content: 'ps-4!', inner: 'pe-4!' },
+	);
+
+	const minutesFormat = new Intl.NumberFormat(getLocale(), {
+		style: 'unit',
+		unit: 'minute',
+		unitDisplay: 'narrow',
+	});
 
 	function summarizeMessage(content: MessageBody): string {
 		if (content.message) return content.message;
@@ -47,19 +63,19 @@
 	{title}
 	link
 	class={active ? 'active' : ''}
+	contentClass={edgePadding.content}
+	mediaClass="py-0! me-3!"
+	innerClass="min-w-0 py-2! {edgePadding.inner}"
+	titleWrapClass="items-baseline! min-h-0! leading-6 [&>div:first-child]:font-semibold"
 	linkProps={{ href: chatHref(summary) }}
 	chevron={false}
 	data-testid="all-chats-row"
 >
 	{#snippet media()}
-		<Avatar
-			image={summary.avatar}
-			initials={summary.name.slice(0, 2)}
-			waitingForProfile={summary.waitingForProfile}
-		/>
+		<AvatarWithP2pBadge {summary} size={56} />
 	{/snippet}
 	{#snippet after()}
-		<span class="text-xs">
+		<span class="text-[14px]/5">
 			{#if beforeYesterday(summary.lastEvent.timestamp)}
 				<wa-format-date
 					weekday="short"
@@ -67,29 +83,25 @@
 				></wa-format-date>
 			{:else if inYesterday(summary.lastEvent.timestamp)}
 				{m.yesterday().toLocaleLowerCase()}
-			{:else if lessThanAMinuteAgo(summary.lastEvent.timestamp)}
-				{m.now()}
-			{:else if moreThanAnHourAgo(summary.lastEvent.timestamp)}
+			{:else if !withinWindow(summary.lastEvent.timestamp, 3_600_000)}
 				<wa-format-date
 					hour="numeric"
 					minute="numeric"
 					hour-format="24"
 					date={new Date(summary.lastEvent.timestamp)}
 				></wa-format-date>
+			{:else if minutesSince(summary.lastEvent.timestamp) < 1}
+				{m.now()}
 			{:else}
-				<wa-relative-time
-					sync
-					style="text-align: end"
-					format="narrow"
-					date={new Date(summary.lastEvent.timestamp)}
-				>
-				</wa-relative-time>
+				{minutesFormat.format(minutesSince(summary.lastEvent.timestamp))}
 			{/if}
 		</span>
 	{/snippet}
 	{#snippet subtitle()}
-		<div class="row items-center">
-			<span class="flex-1 min-w-0 truncate text-black/70 dark:text-white/70">
+		<div class="row h-10 items-start gap-2 text-[14px]/5">
+			<span
+				class="line-clamp-2 min-w-0 flex-1 wrap-anywhere text-black/70 dark:text-white/70"
+			>
 				{#if summary.blocked === true && summary.type === 'DirectChat'}
 					<span class="inline-flex items-center gap-1 italic">
 						<wa-icon
@@ -105,23 +117,29 @@
 					{m.contactAccepted()}
 				{:else if summary.lastEvent.kind === 'message'}
 					{#if summary.type === 'GroupChat'}
-						<strong>{summary.lastEvent.authorName || m.someone()}</strong>:
+						<span class="font-semibold"
+							>{summary.lastEvent.authorName || m.someone()}:</span
+						>
 						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
 						{:else}
-							<span class="italic">{m.messageDeleted()}</span>
+							<span class="italic"
+								>{messagePlaceholderText(summary.lastEvent.content)}</span
+							>
 						{/if}
 					{:else if hasBody(summary.lastEvent.content)}
 						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						<span class="italic">{m.messageDeleted()}</span>
+						<span class="italic"
+							>{messagePlaceholderText(summary.lastEvent.content)}</span
+						>
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}
 				{/if}
 			</span>
 			{#if summary.unreadMessages !== 0}
-				<Badge data-testid="chat-row-unread-badge"
+				<Badge class="self-center" data-testid="chat-row-unread-badge"
 					>{summary.unreadMessages}</Badge
 				>
 			{/if}

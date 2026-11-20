@@ -1,15 +1,18 @@
 /**
  * Offline UX E2E.
  *
- * Drives the per-message status indicator and the chat navbar connection chip
+ * Drives the per-message status indicator and the home page connection chip
  * through every visible state by suspending the global cloud mailbox and
  * toggling the per-agent local mailbox server underneath the running agents.
  *
  * Visible states under test:
  *   - Message status: "unsent" → "sending" → "mailbox" → "delivered"
- *   - Navbar chip:    hidden (connected) → disconnected → local → hidden (connected)
+ *   - Home chip:      cloud → pending → disconnected → local → cloud
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { backToHome } from '../helpers/flows/back-to-home';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { MAILBOX_HUNG_MS } from '../helpers/timeouts';
 import {
 	isRemoteMailbox,
 	killMailbox,
@@ -22,7 +25,7 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 async function openOfflineSettings(agent: Agent): Promise<void> {
 	await agent.directChatPage.back.click();
 	await agent.homePage.ready();
-	await agent.homePage.settingsLink.click();
+	await agent.mainTabbar.settingsTab.click();
 	await agent.settingsPage.ready();
 	await agent.settingsPage.offlineLink.click();
 	await agent.offlinePage.ready();
@@ -33,8 +36,8 @@ async function returnToChat(agent: Agent, chatName: string): Promise<void> {
 		await agent.offlinePage.back.click();
 		await agent.settingsPage.ready();
 	}
-	if (await agent.settingsPage.back.isExisting()) {
-		await agent.settingsPage.back.click();
+	if (await agent.mainTabbar.chatsTab.isExisting()) {
+		await agent.mainTabbar.chatsTab.click();
 	}
 	await agent.homePage.ready();
 	await agent.homePage.openChat(chatName);
@@ -56,23 +59,14 @@ describe('Offline UX', () => {
 			{ platform: 'any' },
 		]);
 		// This leaves agent1 inside its direct chat with Bob — that's where
-		// MessageStatusIndicator and ConnectionStatusIndicator are mounted.
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
-	});
-
-	after(() => {
-		if (mailboxSuspended) {
-			try {
-				resumeMailbox();
-			} catch {
-				/* ignore */
-			}
-			mailboxSuspended = false;
-		}
+		// MessageStatusIndicator is mounted. The connection chip is on the home
+		// page, so each case that reads it walks there and back.
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	describe('cloud mailbox online', () => {
-		it('sends a message, peer receives it, sender shows delivered, and the navbar chip stays hidden', async () => {
+		it('sends a message, peer receives it, sender shows delivered, and the chip reads cloud and explains it', async () => {
 			await agent1.directChatPage.composer.sendMessage('online hello');
 			await agent2.directChatPage.messages.waitForMessage('online hello');
 
@@ -82,9 +76,12 @@ describe('Offline UX', () => {
 				'online hello',
 				['delivered'],
 			);
-			expect(
-				await agent1.directChatPage.connectionStatusIndicator.status(),
-			).toBe('connected');
+			await backToHome([agent1]);
+			const indicator = agent1.homePage.connectionStatusIndicator;
+			expect(await indicator.status()).toBe('cloud');
+
+			await indicator.expectModes({ isolated: false, internet: 'connected' });
+			await agent1.homePage.openChat('Bob');
 		});
 	});
 
@@ -104,6 +101,19 @@ describe('Offline UX', () => {
 			}
 			await agent2.startApp();
 			await returnToChat(agent2, 'Alice');
+		});
+
+		it('chip reads pending after the first failed poll, and clicking it explains the state', async () => {
+			await backToHome([agent1]);
+			const indicator = agent1.homePage.connectionStatusIndicator;
+			await indicator.waitForStatus(
+				'pending',
+				MAILBOX_HUNG_MS,
+				'the chip did not read pending after the first failed poll',
+			);
+
+			await indicator.expectModes({ isolated: false, internet: 'searching' });
+			await agent1.homePage.openChat('Bob');
 		});
 
 		it('new messages start as unsent, then downgrade to sending', async () => {
@@ -130,27 +140,24 @@ describe('Offline UX', () => {
 			expect(await agent1.directChatPage.lastMessageStatus()).toBe('sending');
 		});
 
-		// connect_timeout=5s + timeout=10s × degraded_threshold(5) gives a
-		// worst case around ~60s before the chip flips. Pad on top so a slow
+		// A suspended mailbox fails each request at timeout=20s and the chip
+		// flips on the second failure, around ~45s. Pad on top so a slow
 		// runner doesn't false-fail.
-		it('navbar chip flips to "disconnected", clicking it opens the explainer dialog, and the close button dismisses it', async () => {
-			const indicator = agent1.directChatPage.connectionStatusIndicator;
+		it('chip flips to "disconnected", clicking it opens the explainer dialog, and the close button dismisses it', async () => {
+			await backToHome([agent1]);
+			const indicator = agent1.homePage.connectionStatusIndicator;
 			await agent1.waitUntil(
 				async () => (await indicator.status()) === 'disconnected',
 				{ timeout: 90_000, interval: 1_000 },
 			);
 
-			await indicator.chip.click();
-			await agent1.waitUntil(() => indicator.isDialogOpen());
-			await expect(indicator.dialogTitle).toHaveText(
-				await agent1.tr('connectionStatusDisconnectedTitle'),
-			);
-			await expect(indicator.dialogDescription).toHaveText(
-				await agent1.tr('connectionStatusDisconnectedDescription'),
-			);
-
-			await indicator.dialogCloseButton.click();
-			await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
+			await indicator.expectModes({
+				isolated: true,
+				internet: 'failed',
+				localHub: 'searching',
+				phoneToPhone: 'searching',
+			});
+			await agent1.homePage.openChat('Bob');
 		});
 
 		describe('with local mailbox enabled on the sender', () => {
@@ -167,24 +174,25 @@ describe('Offline UX', () => {
 				await returnToChat(agent1, 'Bob');
 			});
 
-			it('navbar chip switches from "disconnected" to "local" once the local mailbox is discovered, and the dialog reports the local-mailbox state', async () => {
-				const indicator = agent1.directChatPage.connectionStatusIndicator;
+			it('chip switches from "disconnected" to "local" once the local mailbox is discovered, and the dialog reports the local-mailbox state', async () => {
+				await backToHome([agent1]);
+				const indicator = agent1.homePage.connectionStatusIndicator;
 				await agent1.waitUntil(
 					async () => (await indicator.status()) === 'local',
 					{ timeout: 60_000 },
 				);
 
-				await indicator.chip.click();
-				await agent1.waitUntil(() => indicator.isDialogOpen());
-				await expect(indicator.dialogTitle).toHaveText(
-					await agent1.tr('connectionStatusLocalTitle'),
+				await indicator.expectModes({
+					isolated: false,
+					internet: 'failed',
+					localHub: 'connected',
+				});
+				await indicator.waitForLocalHubCount(
+					1,
+					30_000,
+					'the dialog did not name one local hub',
 				);
-				await expect(indicator.dialogDescription).toHaveText(
-					await agent1.tr('connectionStatusLocalDescription', { count: 1 }),
-				);
-
-				await indicator.dialogCloseButton.click();
-				await agent1.waitUntil(async () => !(await indicator.isDialogOpen()));
+				await agent1.homePage.openChat('Bob');
 			});
 
 			it('a new message advances to the "mailbox" icon once the local mailbox holds it', async () => {
@@ -200,13 +208,15 @@ describe('Offline UX', () => {
 	});
 
 	describe('cloud mailbox back online', () => {
-		it('navbar chip hides again and the pending message advances to delivered once the peer receives it', async () => {
+		it('chip reads cloud again and the pending message advances to delivered once the peer receives it', async () => {
+			await backToHome([agent1]);
 			await agent1.waitUntil(
 				async () =>
-					(await agent1.directChatPage.connectionStatusIndicator.status()) ===
-					'connected',
+					(await agent1.homePage.connectionStatusIndicator.status()) ===
+					'cloud',
 				{ timeout: 30_000 },
 			);
+			await agent1.homePage.openChat('Bob');
 			await agent2.directChatPage.messages.waitForMessage('offline hello');
 			await agent1.directChatPage.messages.waitForMessageStatus(
 				'offline hello',

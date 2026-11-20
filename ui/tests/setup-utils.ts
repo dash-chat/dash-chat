@@ -10,8 +10,16 @@
 import { appCacheDir, join } from '@tauri-apps/api/path';
 import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { invokeAfterSetup } from 'dash-chat-stores';
+import * as wifi from 'tauri-plugin-wifi-api';
 
+import {
+	CONNECTION_STATUS_TAGS,
+	type ConnectionStatusTag,
+} from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
+import { discardPendingCrashReport } from '../src/lib/utils/error-report';
+
+const requestJoinOutcomes = new Map<string, string>();
 
 type Messages = typeof m;
 
@@ -29,7 +37,15 @@ type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
 function simulateUpdate(
-	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+	state:
+		| 'available'
+		| 'misplaced'
+		| 'moving'
+		| 'moveError'
+		| 'downloading'
+		| 'ready'
+		| 'error'
+		| 'hidden',
 ) {
 	window.dispatchEvent(
 		new CustomEvent('test-simulate-update', { detail: state }),
@@ -43,13 +59,22 @@ function forceBlobError(alt: string) {
 	);
 }
 
+/** Resolves once the page has painted its current layout and delivered that
+ * paint's IntersectionObserver callbacks. */
+function nextPaint(): Promise<void> {
+	return new Promise(resolve =>
+		requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+	);
+}
+
 /** True if the first element matching `selector` contains `text`. */
 function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
 }
 
 export interface ConnectionStatusSample {
-	status: string;
+	/** Null while the chip is not mounted. */
+	status: ConnectionStatusTag | null;
 	/** Epoch ms on the device, so samples can be ordered against each other
 	 * without comparing against the test runner's clock on another machine. */
 	at: number;
@@ -67,11 +92,24 @@ const connectionStatuses: ConnectionStatusSample[] = [];
 let connectionStatusObserver: MutationObserver | undefined;
 let connectionStatusToken: string | undefined;
 
-function currentConnectionStatus(): string {
+function isConnectionStatusTag(
+	status: string | undefined,
+): status is ConnectionStatusTag {
+	return (CONNECTION_STATUS_TAGS as readonly (string | undefined)[]).includes(
+		status,
+	);
+}
+
+/** The status the connection chip renders, or null while it is not mounted. */
+function connectionStatus(): ConnectionStatusTag | null {
 	const chip = document.querySelector<HTMLElement>(
 		'[data-testid="connection-status"]',
 	);
-	return chip?.dataset.status ?? 'connected';
+	if (!chip) return null;
+	const status = chip.dataset.status;
+	if (!isConnectionStatusTag(status))
+		throw new Error(`connectionStatus: unexpected data-status="${status}"`);
+	return status;
 }
 
 /** Start recording every connection status the indicator renders, returning a
@@ -81,7 +119,7 @@ function currentConnectionStatus(): string {
  * "disconnected" painted on resume and replaced milliseconds later by the
  * backend's re-measurement is invisible to any sampler, but the user sees it. */
 function sampleConnectionStatus(onVisibilityChange: boolean) {
-	const status = currentConnectionStatus();
+	const status = connectionStatus();
 	const previous = connectionStatuses[connectionStatuses.length - 1];
 	// A visibility transition is always recorded: what was on screen the moment
 	// the page came back is the whole question, and it produces no mutation
@@ -131,6 +169,72 @@ function connectionStatusHistory(): {
 	};
 }
 
+export interface PhotoVisibilitySample {
+	shown: boolean;
+	at: number;
+}
+
+let photoVisibilityLabel: string | undefined;
+let photoVisibilityToken: string | undefined;
+const photoVisibility: PhotoVisibilitySample[] = [];
+let photoVisibilityObserver: MutationObserver | undefined;
+
+/** Whether a decoded photo whose alt contains `label` is on screen: an `<img>`
+ * that finished loading, not its spinner or its reload placeholder. */
+function photoShown(label: string): boolean {
+	return Array.from(
+		document.querySelectorAll<HTMLImageElement>('[data-testid="blob-image"]'),
+	).some(
+		img =>
+			img.alt.includes(label) &&
+			img.complete &&
+			img.naturalWidth > 0 &&
+			img.parentElement?.querySelector('[data-testid="blob-image-loading"]') ===
+				null,
+	);
+}
+
+function samplePhotoVisibility() {
+	if (photoVisibilityLabel === undefined) return;
+	const shown = photoShown(photoVisibilityLabel);
+	if (photoVisibility[photoVisibility.length - 1]?.shown === shown) return;
+	photoVisibility.push({ shown, at: Date.now() });
+}
+
+/** Start recording every change in whether the photo whose alt contains
+ * `label` is on screen. Mutations catch a swap that lasts a single frame; the
+ * poll catches an `<img>` finishing its decode, which mutates nothing. */
+function recordPhotoVisibility(label: string): string {
+	photoVisibilityLabel = label;
+	photoVisibility.length = 0;
+	photoVisibilityToken = `${Date.now()}-${Math.random()}`;
+	samplePhotoVisibility();
+	if (photoVisibilityObserver === undefined) {
+		photoVisibilityObserver = new MutationObserver(samplePhotoVisibility);
+		photoVisibilityObserver.observe(document.body, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['src'],
+		});
+		setInterval(samplePhotoVisibility, 25);
+	}
+	return photoVisibilityToken;
+}
+
+/** The shown/hidden transitions of the photo since [`recordPhotoVisibility`],
+ * with the token of the recording they came from, so a caller can tell a
+ * reloaded page from a photo that never changed. */
+function photoVisibilityHistory(): {
+	token: string | null;
+	samples: PhotoVisibilitySample[];
+} {
+	return {
+		token: photoVisibilityToken ?? null,
+		samples: [...photoVisibility],
+	};
+}
+
 const mediaDownloads = new Map<string, number>();
 let mediaObserver: PerformanceObserver | undefined;
 
@@ -150,6 +254,47 @@ function recordMediaDownloads() {
 		}
 	});
 	mediaObserver.observe({ type: 'resource', buffered: true });
+	recordBlobImageLoads();
+}
+
+/** WebKit keeps no resource timing for a custom scheme, so where blobs are served
+ * from `irohblob://` a photo's download is timed from its `<img>` appearing to its
+ * `load` event. */
+function recordBlobImageLoads() {
+	const appearedAt = new Map<string, number>();
+	const noteAppeared = (img: HTMLImageElement) => {
+		if (img.src.startsWith('irohblob:') && !appearedAt.has(img.src)) {
+			appearedAt.set(img.src, performance.now());
+		}
+	};
+	new MutationObserver(records => {
+		for (const record of records) {
+			if (record.target instanceof HTMLImageElement) {
+				noteAppeared(record.target);
+			}
+			for (const node of record.addedNodes) {
+				if (!(node instanceof Element)) continue;
+				if (node instanceof HTMLImageElement) noteAppeared(node);
+				node.querySelectorAll('img').forEach(noteAppeared);
+			}
+		}
+	}).observe(document.documentElement, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeFilter: ['src'],
+	});
+	document.addEventListener(
+		'load',
+		e => {
+			if (!(e.target instanceof HTMLImageElement)) return;
+			const appeared = appearedAt.get(e.target.src);
+			if (appeared !== undefined && !mediaDownloads.has(e.target.src)) {
+				mediaDownloads.set(e.target.src, performance.now() - appeared);
+			}
+		},
+		true,
+	);
 }
 
 /** Milliseconds the photo whose alt contains `label` spent downloading — the
@@ -176,8 +321,10 @@ function clearNotifications(): Promise<void> {
 	return invokeAfterSetup('plugin:notification|remove_active');
 }
 
-/** Reset the app to first-launch state: clear web storage and the app's
- * notifications, which the OS would otherwise keep, then run the real
+/** Reset the app to first-launch state: clear web storage, the app's
+ * notifications, which the OS would otherwise keep, and any held crash report,
+ * which lives outside the data dir and would cover every later spec's first
+ * screen with its sheet, then run the real
  * `delete_account` command — the same code path as Settings → Account →
  * Delete account — which shuts the node down, deletes the data dir, and (on
  * mobile) exits the app. The iOS e2e harness calls this before each spec
@@ -187,7 +334,10 @@ function clearNotifications(): Promise<void> {
 function resetToFirstLaunch(): void {
 	localStorage.clear();
 	sessionStorage.clear();
-	void clearNotifications().finally(() => invokeAfterSetup('delete_account'));
+	void Promise.allSettled([
+		clearNotifications(),
+		discardPendingCrashReport(),
+	]).finally(() => invokeAfterSetup('delete_account'));
 }
 
 /** Summon the Android soft keyboard for the currently focused input. A
@@ -358,7 +508,7 @@ function injectVoiceMessage(durationMs = 3000, audioDurationMs = durationMs) {
 }
 
 /** Result of injecting a voice message through the real transcode command. */
-interface RecordedVoiceMessage {
+export interface RecordedVoiceMessage {
 	isOgg: boolean;
 	opusBytes: number;
 	wavBytes: number;
@@ -543,15 +693,43 @@ export const testUtils = {
 	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
+	connectionStatus,
 	recordConnectionStatus,
 	connectionStatusHistory,
+	recordPhotoVisibility,
+	photoVisibilityHistory,
 	interceptFilePickers,
 	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
+	nextPaint,
 	swipeToReply,
+	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
+	/** Wi-Fi control on phones (tauri-plugin-wifi, e2e builds only): the
+	 * networks the app added, and the interface it is on. */
+	wifi: {
+		current: wifi.current,
+		addedSsids: wifi.addedSsids,
+		add: wifi.add,
+		requestJoin: wifi.requestJoin,
+		forget: wifi.forget,
+		/** Start a join request and report on it through `requestJoinOutcome`:
+		 * on iOS the request sits behind a system "join?" alert that blocks the
+		 * webview, so a driver cannot both await it and answer the alert. */
+		startRequestJoin(ssid: string, passphrase: string): void {
+			requestJoinOutcomes.delete(ssid);
+			wifi.requestJoin(ssid, passphrase).then(
+				() => requestJoinOutcomes.set(ssid, 'ok'),
+				e => requestJoinOutcomes.set(ssid, String(e)),
+			);
+		},
+		/** 'ok' once the `startRequestJoin` for `ssid` is on the network, its
+		 * error once it failed, null while it is still going. */
+		requestJoinOutcome: (ssid: string): string | null =>
+			requestJoinOutcomes.get(ssid) ?? null,
+	},
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

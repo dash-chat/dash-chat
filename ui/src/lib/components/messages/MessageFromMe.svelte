@@ -1,16 +1,14 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
 	import {
-		type ChatId,
 		type DeviceId,
 		type Hash,
-		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
 		hasBody,
 		isDeleted,
 	} from 'dash-chat-stores';
-	import { type MessagePosition } from './message-helpers';
+	import { type MessagePosition, hasMessageActions } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import DeletedMessage from './DeletedMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
@@ -22,8 +20,8 @@
 	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { toggleReaction } from '$lib/utils/reactions';
@@ -33,8 +31,8 @@
 		position,
 		myDeviceId,
 		searchQuery,
-		chatId,
 		showDeliveryStatus = false,
+		readOnly,
 		onEdit,
 		onReply,
 		onNavigateToMessage,
@@ -42,11 +40,11 @@
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
-		chatId: ChatId;
 		searchQuery: string;
 		/** Whether to render the message's delivery status indicator — see
 		 * `endsDeliveryStatusRun`. */
 		showDeliveryStatus?: boolean;
+		readOnly: boolean;
 		onEdit?: () => void;
 		onReply?: () => void;
 		onNavigateToMessage?: (hash: Hash) => void;
@@ -65,39 +63,25 @@
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
+	// Most of each row's DOM, so only mounted once the bubble is pressed; a
+	// finger resting on it mounts it early, so the long-press opens it animated.
+	let actionsMounted = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
+	const hasActions = $derived(
+		hasMessageActions(message, myDeviceId, readOnly, onReply !== undefined),
+	);
+
 	function onLongPress(e: MouseEvent | TouchEvent) {
+		actionsMounted = true;
 		if (isMobile) {
-			reactionsOpened = true;
-		} else if (e instanceof MouseEvent) {
+			// A writable chat's overlay always has the reaction bar to show.
+			reactionsOpened = hasActions || !readOnly;
+		} else if (hasActions && e instanceof MouseEvent) {
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
-
-	const mailboxTrackerStore: MailboxTrackerStore = getContext(
-		'mailbox-tracker-store',
-	);
-
-	const syncStatus = $derived(
-		useReactiveValue(
-			mailboxTrackerStore.syncStatusForOp,
-			chatId,
-			message.author,
-			message.seqNum,
-		),
-	);
-	const connectionStatus = useReactiveValue(
-		mailboxTrackerStore.connectionStatus,
-	);
-
-	const isOfflineMessage = $derived(
-		$syncStatus !== undefined &&
-			$connectionStatus !== undefined &&
-			!$syncStatus.syncedWithCloudMailbox &&
-			!$connectionStatus.connectedToCloudMailboxServer,
-	);
 </script>
 
 {#snippet metadata()}
@@ -118,7 +102,15 @@
 {/snippet}
 
 {#snippet bubble()}
-	<div bind:this={messageEl} class="relative max-w-[85%]">
+	<div
+		bind:this={messageEl}
+		class={[
+			'relative',
+			isMobile && !isWideScreen.value
+				? 'max-w-[calc(100%-2rem)]'
+				: 'max-w-[85%]',
+		]}
+	>
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onReply} reverse />
 		{/if}
@@ -126,28 +118,25 @@
 			<DeletedMessage {message} {position} {myDeviceId} />
 		{:else}
 			<Card
-				raised
-				contentWrapPadding="p-2"
+				contentWrapPadding="px-2 py-(--message-padding-y)"
 				colors={{
 					bgIos: 'bg-brand-primary',
 					bgMaterial: 'bg-brand-primary',
 					textIos: 'text-white',
 					textMaterial: 'text-white',
 				}}
-				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+				class={`message outgoing-message ${position}-message`}
 			>
-				<div class="flex flex-col gap-1">
-					<MessageContent
-						{message}
-						{searchQuery}
-						senderName={m.you()}
-						mine
-						{onNavigateToMessage}
-						metadata={isLast || editHistory.length > 0 || showDeliveryStatus
-							? metadata
-							: undefined}
-					/>
-				</div>
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={m.you()}
+					mine
+					{onNavigateToMessage}
+					metadata={isLast || editHistory.length > 0 || showDeliveryStatus
+						? metadata
+						: undefined}
+				/>
 			</Card>
 		{/if}
 		{#if Object.keys(reactions).length > 0}
@@ -163,7 +152,13 @@
 {/snippet}
 
 {#snippet row()}
-	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+	<div
+		class="group flex justify-end"
+		use:longpress={{
+			onLongPress,
+			onPressStart: () => (actionsMounted = true),
+		}}
+	>
 		{@render bubble()}
 	</div>
 {/snippet}
@@ -171,25 +166,29 @@
 {#if deleted}
 	<div class="group flex justify-end">{@render bubble()}</div>
 {:else if isMobile}
-	<SwipeToReply {onReply} target={messageEl}>{@render row()}</SwipeToReply>
+	<SwipeToReply {readOnly} {onReply} target={messageEl}
+		>{@render row()}</SwipeToReply
+	>
 {:else}
 	{@render row()}
 {/if}
-{#if isMobile}
-	<MessageActionsOverlay
-		{message}
-		{myDeviceId}
-		{onEdit}
-		{onReply}
-		bind:opened={reactionsOpened}
-		target={messageEl}
-	/>
-{:else}
-	<MessageContextMenu
-		{message}
-		{myDeviceId}
-		{onEdit}
-		{onReply}
-		bind:point={contextMenuPoint}
-	/>
+{#if actionsMounted}
+	{#if isMobile}
+		<MessageActionsOverlay
+			{message}
+			{myDeviceId}
+			{onEdit}
+			{onReply}
+			bind:opened={reactionsOpened}
+			target={messageEl}
+		/>
+	{:else}
+		<MessageContextMenu
+			{message}
+			{myDeviceId}
+			{onEdit}
+			{onReply}
+			bind:point={contextMenuPoint}
+		/>
+	{/if}
 {/if}

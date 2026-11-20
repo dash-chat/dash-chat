@@ -1,12 +1,15 @@
-import { reactive, relay } from 'signalium';
+import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import { DevicesStore } from '../devices/devices-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, TopicId } from '../p2panda/types';
-import { personalTopicFor } from '../topics';
-import { AnnouncementPayload, ChatId, Payload } from '../types';
+import { ChatId, Payload } from '../types';
 import { IContactsClient, Profile } from './contacts-client';
+
+// Must match `NodeConfig::contact_code_expiry`: past it the node no longer
+// treats our request as pending, so the peer's request isn't auto-accepted.
+export const CONTACT_CODE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ContactRequest {
 	profile: Profile;
@@ -57,12 +60,25 @@ export class ContactsStore {
 
 	myDeviceId = reactive(async () => await this.client.myDeviceId());
 
+	/** The backend only learns a non-contact's mapping when it reduces an
+	 * `IntroduceAgents` op, which can land after the device's own ops, so an
+	 * unknown device is looked up again once an introduction names it. */
 	agentForDevice = reactive(
-		async (deviceId: DeviceId): Promise<AgentId | undefined> => {
-			const myDeviceId = await this.myDeviceId();
-			if (deviceId === myDeviceId) return await this.myAgentId();
-			return await this.client.agentForDevice(deviceId);
-		},
+		(deviceId: DeviceId): ReactivePromise<AgentId | undefined> =>
+			relay<AgentId | undefined>(state => {
+				const fetchAgent = async () => {
+					const myDeviceId = await this.myDeviceId();
+					if (deviceId === myDeviceId) return await this.myAgentId();
+					return await this.client.agentForDevice(deviceId);
+				};
+				state.setPromise(fetchAgent());
+
+				return this.client.onAgentsIntroduced(agents => {
+					if (state.value !== undefined) return;
+					if (!(deviceId in agents)) return;
+					state.setPromise(fetchAgent());
+				});
+			}),
 	);
 
 	agentsForDevices = reactive(async (deviceIds: Set<DeviceId>) => {
@@ -284,10 +300,14 @@ export class ContactsStore {
 		const contacts = await this.contactsAgentIds();
 		const rejectedMap = await this.rejectedContactRequests();
 		const outgoingDevices = new Set(
-			(await this.outgoingContactRequests()).map(o => o.devicePubkey),
+			(await this.outgoingContactRequests())
+				.filter(o => Date.now() - o.timestamp < CONTACT_CODE_EXPIRY_MS)
+				.map(o => o.devicePubkey),
 		);
 
-		const contactRequests: ContactRequest[] = [];
+		// A requester whose earlier request expired unanswered can send another,
+		// so keep only the latest request per agent.
+		const latestByAgent: Record<AgentId, ContactRequest> = {};
 
 		for (let i = 0; i < allLogs.length; i++) {
 			const topicId = activeInboxTopics[i];
@@ -316,19 +336,26 @@ export class ContactsStore {
 					)
 						continue;
 
-					contactRequests.push({
+					const existing = latestByAgent[agentId];
+					if (
+						existing !== undefined &&
+						existing.timestamp >= operation.header.timestamp
+					)
+						continue;
+
+					latestByAgent[agentId] = {
 						profile,
 						agentId,
 						devicePubkey: operation.header.verifying_key,
 						chatId: await this.directChatId(operation.header.verifying_key),
 						topicId,
 						timestamp: operation.header.timestamp,
-					});
+					};
 				}
 			}
 		}
 
-		return contactRequests;
+		return Object.values(latestByAgent);
 	});
 
 	/** Get a profile from inbox contact requests for a given agent, regardless of acceptance status. */
@@ -361,43 +388,32 @@ export class ContactsStore {
 		return latest?.profile;
 	});
 
-	profiles = reactive(async (agentId: AgentId) => {
-		const topicId = personalTopicFor(agentId);
+	/** The newest profile the backend holds for the agent, refreshed as
+	 * profiles arrive and as devices are introduced as the agent's. Falls back
+	 * to the profile a pending contact request carried. */
+	profiles = reactive(
+		(agentId: AgentId): ReactivePromise<Profile | undefined> =>
+			relay<Profile | undefined>(state => {
+				const fetchProfile = async () => {
+					const profile = await this.client.getProfile(agentId);
+					if (profile) return profile;
+					return await this.inboxProfile(agentId);
+				};
+				state.setPromise(fetchProfile());
 
-		const operations = await this.logsStore.logsForAllAuthors(topicId);
-
-		const log: SimplifiedOperation<Payload>[] =
-			Object.values(operations)[0] || [];
-
-		const setProfiles: Array<[number, Profile]> = log
-			.filter(
-				l =>
-					l.body?.type === 'Announcements' &&
-					l.body.payload.type === 'SetProfile',
-			)
-			.map(l => [
-				l.header.timestamp,
-				(l.body!.payload as AnnouncementPayload).payload as Profile,
-			]);
-
-		const descendantSortedOperations = setProfiles.sort(
-			(o1, o2) => o2[0] - o1[0],
-		);
-		const lastOperation = descendantSortedOperations[0];
-
-		if (!lastOperation) {
-			// Prefer a profile cached locally from a ContactRequestAccept; if none
-			// is available yet, re-fetch the profile from the server
-			// in case it has change by other means.
-			const serverProfile = await this.client.getProfile(agentId);
-			if (serverProfile) return serverProfile;
-
-			return await this.inboxProfile(agentId);
-		}
-
-		const profile: Profile = lastOperation[1];
-		return profile;
-	});
+				const unsubscribeProfiles = this.client.onProfileChanged(changed => {
+					if (changed !== undefined && changed !== agentId) return;
+					state.setPromise(fetchProfile());
+				});
+				const unsubscribeAgents = this.client.onAgentsIntroduced(() => {
+					state.setPromise(fetchProfile());
+				});
+				return () => {
+					unsubscribeProfiles();
+					unsubscribeAgents();
+				};
+			}),
+	);
 
 	profilesForAgents = reactive(async (agentIds: Set<AgentId>) => {
 		const entries = await Promise.all(

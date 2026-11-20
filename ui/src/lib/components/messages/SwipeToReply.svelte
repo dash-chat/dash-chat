@@ -1,16 +1,16 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { getContext, type Snippet } from 'svelte';
+	import type { Snippet } from 'svelte';
 	import { mdiReplyOutline } from '@mdi/js';
-	import type { MessagesStore } from 'dash-chat-stores';
-	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 
 	let {
+		readOnly,
 		onReply,
 		target,
 		children,
 	}: {
+		readOnly: boolean;
 		onReply?: () => void;
 		/** The element that slides during the gesture — the bubble plus its
 		 * reactions, excluding static row chrome like the sender avatar. The
@@ -18,14 +18,6 @@
 		target?: HTMLElement;
 		children: Snippet;
 	} = $props();
-
-	const store: MessagesStore = getContext('messages-store');
-	// Read synchronously rather than via {#await}: the gate sits in a touch
-	// handler, out of reach of markup awaits. Default to read-only while the
-	// value is pending so the gesture fails closed, like the {#await}-gated
-	// surfaces.
-	const readOnlyChat = useReactiveValue(store.readOnly);
-	const readOnly = $derived($readOnlyChat ?? true);
 
 	// Distances mirror Signal Android's ConversationSwipeAnimationHelper
 	// (TRIGGER_DX = 64dp, icon slide = 10dp).
@@ -194,13 +186,16 @@
 </div>
 
 <style>
-	/* Clipped only while dragging, so the hover toolbar and reaction overlay are
-	   not cut off at rest. `clip` keeps the vertical axis visible; `hidden`
-	   would force it to scroll. */
 	.swipe-to-reply.moving {
 		position: relative;
+	}
+
+	/* Clipped only while dragging, so the hover toolbar and reaction overlay are
+	   not cut off at rest. A full-width ancestor clips rather than the row, so
+	   the bubble can slide past the row's edge. `clip` keeps the vertical axis
+	   visible; `hidden` would force it to scroll. */
+	:global(.swipe-clip-boundary:has(.swipe-to-reply.moving)) {
 		overflow-x: clip;
-		overflow-y: visible;
 	}
 
 	/* Signal's reply affordance: a 38px circular area, glyph centered,

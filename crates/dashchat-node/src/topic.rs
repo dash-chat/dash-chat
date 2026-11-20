@@ -2,12 +2,6 @@
 //!
 //! # List of topics
 //!
-//! ## `Announcements` (ActorId)
-//!
-//! Each node has their own announcements topic.
-//! It is backed by a space with the node as sole Manager, with everyone else having Read access.
-//! The node uses this to publish profile updates
-//!
 //! ## `Auth` (ActorId)
 //!
 //! KeyBundle and Auth control messages are published to this topic.
@@ -104,7 +98,6 @@ pub mod kind {
         };
     }
 
-    topic_kind!(Announcements);
     topic_kind!(DeviceGroup);
 
     // Either direct or group chat
@@ -120,10 +113,11 @@ pub type TopicId = p2panda::Topic;
 
 /// The single topic an application log belongs to, or `None` if the log has no association yet.
 ///
-/// Application logs are keyed per space (`log_id = digest(space_id ++ "space_application/v1")`),
-/// so an `(author, log_id)` pair resolves to exactly one topic. Control logs are not: the member
-/// control log id is a constant shared by every space, so this is only valid for application
-/// operations.
+/// "Application log" here refers to p2panda's split of spaces into application and control logs.
+/// The application log is specified as `log_id = digest(space_id ++ "space_application/v1")`.
+/// Under proper use, there will only ever be one topic per application log.
+///
+/// This function must NOT be used for other types of logs, where the 1:1 mapping is not guaranteed.
 pub async fn resolve_application_topic(
     store: &SqliteStore,
     author: &VerifyingKey,
@@ -167,8 +161,27 @@ impl sqlx::Decode<'_, Sqlite> for Topic<kind::Untyped> {
 
 // conversion traits for p2panda core types.
 
-impl<K: TopicKind> From<Topic<K>> for LogId {
-    fn from(value: Topic<K>) -> Self {
+/// The log an author's application operations on a space-backed topic live
+/// in. Chats and the device group are spaces; p2panda keeps what is published
+/// into a space apart from the space's control logs.
+pub fn application_log_id(topic: TopicId) -> LogId {
+    p2panda::spaces::application_log_id(topic.into())
+}
+
+impl From<Topic<kind::Chat>> for LogId {
+    fn from(value: Topic<kind::Chat>) -> Self {
+        application_log_id(value.into())
+    }
+}
+
+impl From<Topic<kind::DeviceGroup>> for LogId {
+    fn from(value: Topic<kind::DeviceGroup>) -> Self {
+        application_log_id(value.into())
+    }
+}
+
+impl From<Topic<kind::Inbox>> for LogId {
+    fn from(value: Topic<kind::Inbox>) -> Self {
         LogId::from_topic(value.into())
     }
 }
@@ -213,6 +226,7 @@ impl<K: TopicKind> Topic<K> {
     pub fn alias_named(self, name: &str) -> Self {
         self.id.alias_named(name);
         LogId::from_topic(self.id).alias_named(name);
+        application_log_id(self.id).alias_named(name);
         self
     }
 }
@@ -221,14 +235,6 @@ impl std::str::FromStr for Topic<kind::Untyped> {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(TopicId::from_str(s)?.into())
-    }
-}
-
-impl Topic<kind::Announcements> {
-    pub fn announcements(agent_id: AgentId) -> Self {
-        let t = Self::new(*agent_id.as_bytes());
-        t.alias_named(&format!("announcements({:?})", agent_id.aliased()));
-        t
     }
 }
 
@@ -365,8 +371,6 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
 mod tests {
     use super::*;
 
-    use mailbox_client::toy;
-
     const TOPIC_BYTES: [u8; 32] = [0xab; 32];
     const TOPIC_HEX: &str = "abababababababababababababababababababababababababababababababab";
 
@@ -383,34 +387,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&topic).unwrap(),
             format!("\"{}\"", TOPIC_HEX)
-        );
-    }
-
-    /// The toy mailbox client uses topic/author ids as HTTP map keys by JSON-
-    /// serializing them and stripping the surrounding quotes (`stringify`),
-    /// reversing that to decode (`unstringify`). That only works if the type's
-    /// `Serialize` impl emits a single JSON string. These tests pin that wire
-    /// format for the real `TopicId` and `DeviceId` so a future `Serialize`
-    /// change (e.g. emitting a byte array) can't silently corrupt mailbox keys.
-    /// See `ToyItemTraits` in `mailbox-client`.
-    #[test]
-    fn topic_id_stringifies_to_bare_hex_for_mailbox_key() {
-        let topic: TopicId = Topic::<kind::Untyped>::new(TOPIC_BYTES).into();
-        let key = toy::stringify(topic);
-        assert_eq!(key, TOPIC_HEX);
-        assert!(!key.contains('"'));
-        assert_eq!(toy::unstringify::<TopicId>(&key).unwrap(), topic);
-    }
-
-    #[test]
-    fn device_id_stringifies_to_bare_hex_for_mailbox_key() {
-        let device_id = crate::DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());
-        let key = toy::stringify(device_id);
-        assert_eq!(key, hex::encode(device_id.as_bytes()));
-        assert!(!key.contains('"'));
-        assert_eq!(
-            toy::unstringify::<crate::DeviceId>(&key).unwrap(),
-            device_id
         );
     }
 }

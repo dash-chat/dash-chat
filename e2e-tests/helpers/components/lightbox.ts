@@ -24,10 +24,9 @@ export class Lightbox extends TestHelper {
 	}
 
 	/** The reload/retry affordance on the main stage (not a filmstrip thumb),
-	 * shown when the displayed photo failed to load. Stage images carry the
-	 * `lightbox-image` class; thumbnails do not. */
+	 * shown when the displayed photo failed to load. */
 	stageRetry() {
-		return this.agent.$(`.lightbox-image${tid('blob-image-retry')}`);
+		return this.agent.$(tid('lightbox-stage-retry'));
 	}
 
 	/** Simulate a failed load for the thumbnail at `index` (and any image that

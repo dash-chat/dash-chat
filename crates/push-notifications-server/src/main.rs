@@ -33,6 +33,8 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    panic_policy::install_panic_hook();
+
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .with(tracing_subscriber::fmt::layer())

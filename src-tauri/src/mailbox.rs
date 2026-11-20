@@ -58,7 +58,7 @@ pub(crate) async fn cloud_mailbox_id(
         }
     }
     node.mailboxes
-        .sync_tracker()
+        .operation_tracker()
         .mailbox_id_for_url(&cloud_url)
         .await
         .unwrap_or(None)
@@ -67,6 +67,7 @@ pub(crate) async fn cloud_mailbox_id(
 /// Poll the cloud mailbox now without presuming the result: one success
 /// restores Active, one failure only confirms an existing backoff. Falls back
 /// to nudging the poll loop when the cloud mailbox has never been reached.
+#[cfg(mobile)]
 pub(crate) async fn probe_cloud_mailbox(node: &dashchat_node::Node) {
     match cloud_mailbox_id(node).await {
         Some(cloud_id) => node.mailboxes.probe(cloud_id).await,
@@ -162,13 +163,15 @@ async fn register_local_hub(node: &dashchat_node::Node, hub: &DiscoveredHub, add
     let url = hub_url(addr);
     node.mailboxes
         .register(
-            mailbox_client::toy::ToyMailboxClient::new(
+            mailbox_client::backends::toy::ToyMailboxClient::new(
                 id.clone(),
                 url.clone(),
                 node.endpoint_id(),
                 node.unfetched_blob_tracker(),
+                node.mailboxes.upload_tracker(),
             )
-            .with_blob_reader(node.blob_reader()),
+            .with_blob_reader(node.blob_reader())
+            .with_blob_pusher(node.blob_pusher().await),
         )
         .await;
     log::info!("*** Registered local mailbox client via mdns: {id} ({url}) ***");
@@ -192,7 +195,7 @@ async fn hand_over_our_addr(
         // comes back at the address it left from.
         handed_over.retain(|id, _| current.contains_key(id));
         // Together, not in turn: a hub that answers a probe but stalls on HTTP
-        // would otherwise hold up every hub behind it for two 10s timeouts.
+        // would otherwise hold up every hub behind it for two request timeouts.
         let done = futures::future::join_all(
             hubs_missing_our_addr(&current, &handed_over)
                 .into_iter()

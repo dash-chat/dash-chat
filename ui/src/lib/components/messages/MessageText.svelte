@@ -3,8 +3,12 @@
 </script>
 
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { ContactsStore } from 'dash-chat-stores';
 	import { m } from '$lib/paraglide/messages.js';
+	import { handleDeepLink } from '$lib/utils/deep-links';
 	import { openExternalUrl } from '$lib/utils/links';
+	import { showToast } from '$lib/utils/toasts';
 	import { messageTextHtml } from './message-helpers';
 
 	interface Props {
@@ -13,6 +17,8 @@
 	}
 
 	let { text, searchQuery = '' }: Props = $props();
+
+	const contactsStore: ContactsStore = getContext('contacts-store');
 
 	// Signal-Desktop "read more" truncation constants.
 	const INITIAL_LENGTH = 800;
@@ -55,9 +61,19 @@
 		const link = e.target.closest('a');
 		if (!link) return;
 		e.preventDefault();
-		openExternalUrl(link.href).catch(err =>
-			console.error('[links] failed to open link', err),
-		);
+		void openTappedLink(link.href);
+	}
+
+	// Our own links stay in-app, even when handling them fails: the OS won't
+	// hand a universal link back to the app that opened it.
+	async function openTappedLink(href: string) {
+		try {
+			if (await handleDeepLink(href, contactsStore)) return;
+			await openExternalUrl(href);
+		} catch (err) {
+			console.error('[links] failed to open link', err);
+			showToast(m.errorUnexpected(), 'unexpected', err);
+		}
 	}
 </script>
 

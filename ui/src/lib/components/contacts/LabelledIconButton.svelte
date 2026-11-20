@@ -10,16 +10,18 @@
 		icon,
 		onClick,
 		testId,
+		disabled = false,
 	}: {
 		label: string;
 		icon: string;
 		onClick: ActionHandler;
 		testId: string;
+		disabled?: boolean;
 	} = $props();
 </script>
 
 <div class="column" style="align-items: center; gap: 8px;">
-	<Button tonal {onClick} class="icon-only" data-testid={testId}>
+	<Button tonal {onClick} {disabled} class="icon-only" data-testid={testId}>
 		<wa-icon src={wrapPathInSvg(icon)} style="font-size: 28px"></wa-icon>
 	</Button>
 	<span class="text-sm" style="color: var(--k-text-color)">{label}</span>

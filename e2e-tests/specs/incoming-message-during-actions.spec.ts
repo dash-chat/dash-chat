@@ -1,4 +1,5 @@
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Receiving a message while the actions menu is open', () => {
@@ -10,7 +11,8 @@ describe('Receiving a message while the actions menu is open', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('leaves the menu open and still acting on its own message', async () => {
@@ -25,17 +27,11 @@ describe('Receiving a message while the actions menu is open', () => {
 
 		await anchor.expectActionsMenuToStayOpen();
 
-		// Deleting through the still-open menu must hit the anchor message, not
+		// Replying through the still-open menu must hit the anchor message, not
 		// the one that arrived under it.
-		await anchor.deleteAction.click();
-		await anchor.deleteDialog.waitForDisplayed();
-		await anchor.deleteForMeDialogConfirm.click();
-
-		await agent2.directChatPage.messages.waitForMessageGone('Anchor');
-		expect(
-			await agent2.directChatPage.messages.messageAreaContains(
-				'Arrived meanwhile',
-			),
-		).toBe(true);
+		await anchor.replyAction.click();
+		const { replyPreview } = agent2.directChatPage.composer;
+		await replyPreview.waitForDisplayed();
+		expect(await replyPreview.getText()).toBe('Anchor');
 	});
 });

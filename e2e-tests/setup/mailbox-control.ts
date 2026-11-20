@@ -5,20 +5,21 @@
  * wdio.conf.ts spawns the mailbox server in its own process group (`detached:
  * true`) during `onPrepare` and writes its pid + port to a JSON file. These
  * helpers use that pid to signal the whole group.
- *
- * Unix-only — relies on POSIX signal semantics.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { signalGroup } from './host-process';
 import {
 	MAILBOX_LINK,
+	type MailboxFlags,
 	spawnMailboxServer,
 	waitForMailboxReady,
 } from './mailbox-server';
+import { mailboxAnswers } from './mailbox-tls';
 import { remoteMailboxUrl } from './test-env';
-import { Link } from './toxiproxy';
+import { Link, type LinkConditions } from './toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAILBOX_INFO_PATH = path.join(
@@ -42,6 +43,8 @@ interface MailboxInfo {
 	bindPort: number;
 	dbPath: string;
 	pushNotificationsUrl?: string;
+	disableBlobHttpUpload?: boolean;
+	disableBlobFetch?: boolean;
 }
 
 function readInfo(): MailboxInfo {
@@ -82,14 +85,7 @@ export async function mailboxWakesPhones(): Promise<boolean> {
  *  does, which is how a spec that took it down is known without being asked. */
 export async function mailboxServing(): Promise<boolean> {
 	if (isRemoteMailbox()) return false;
-	try {
-		const res = await fetch(`${readInfo().url}/health`, {
-			signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
-		});
-		return res.ok;
-	} catch {
-		return false;
-	}
+	return await mailboxAnswers(readInfo().url, HEALTH_TIMEOUT_MS);
 }
 
 /** Whether the link agents reach the mailbox through can be degraded: the
@@ -106,6 +102,11 @@ function link(): Link {
 /** Every request still answers, about a second late. */
 export function slowMailboxLink(): Promise<void> {
 	return link().slow();
+}
+
+/** Every connection from now on crosses a network with these conditions. */
+export function shapeMailboxLink(conditions: LinkConditions): Promise<void> {
+	return link().shape(conditions);
 }
 
 /** Requests are accepted and then never answered. */
@@ -139,10 +140,6 @@ export function mailboxBlobs(): string[] {
 	return readdirSync(dir)
 		.filter(f => f.endsWith('.data'))
 		.map(f => path.join(dir, f));
-}
-
-function signalGroup(pid: number, sig: NodeJS.Signals): void {
-	process.kill(-pid, sig);
 }
 
 /** Suspend the mailbox server so all HTTP traffic to it hangs/times out. */
@@ -183,22 +180,74 @@ function isAlive(pid: number): boolean {
 	}
 }
 
+/** The local mailbox's plaintext bind port (bypassing the TLS proxy and the
+ *  degradable link), for specs that poke its HTTP API directly. */
+export function mailboxBindPort(): number {
+	return localInfo().bindPort;
+}
+
 /**
  * Respawn the mailbox server on the same port + db, so a spec that killed it
- * leaves a live server behind for the rest of the run. Updates mailbox-info.json
- * with the new pid.
+ * leaves a live server behind for the rest of the run. `flags` override the
+ * persisted dev flags; without them the current ones carry over. Updates
+ * mailbox-info.json with the new pid.
  */
-export async function restartMailbox(): Promise<void> {
+export async function restartMailbox(flags?: MailboxFlags): Promise<void> {
 	const info = localInfo();
+	const effective: MailboxFlags = {
+		disableBlobHttpUpload:
+			flags?.disableBlobHttpUpload ?? info.disableBlobHttpUpload,
+		disableBlobFetch: flags?.disableBlobFetch ?? info.disableBlobFetch,
+	};
 	const server = spawnMailboxServer(
 		info.bindPort,
 		info.dbPath,
 		info.pushNotificationsUrl,
+		effective,
 	);
 	server.unref();
 	writeFileSync(
 		MAILBOX_INFO_PATH,
-		JSON.stringify({ ...info, pid: server.pid }),
+		JSON.stringify({ ...info, ...effective, pid: server.pid }),
 	);
 	await waitForMailboxReady(info.url);
+}
+
+/**
+ * Respawn the mailbox with dev flags in force (e.g. `disableBlobHttpUpload`
+ * to confine blob delivery to iroh push), killing the running one first. The
+ * flags persist into mailbox-info.json, so a mid-spec kill + restartMailbox
+ * keeps them; ensureHealthyMailbox between spec files restores the default
+ * server.
+ */
+export async function restartMailboxWithFlags(
+	flags: MailboxFlags,
+): Promise<void> {
+	if (isAlive(localInfo().pid)) await killMailbox();
+	await restartMailbox(flags);
+}
+
+/** Back to a healthy mailbox, whatever a spec left it in: running, not
+ *  suspended, behind a link with nothing degrading it. Every spec file
+ *  starts and ends here (wdio.conf.ts), so none has to put back what it
+ *  broke, and a run that died mid-spec cannot hand the next one a dead
+ *  mailbox. A no-op against a remote mailbox, which is never broken. */
+export async function ensureHealthyMailbox(): Promise<void> {
+	if (isRemoteMailbox()) return;
+	const { pid, url, disableBlobHttpUpload, disableBlobFetch } = readInfo();
+	// Dev flags a spec put in force end with its file: the next one gets the
+	// default server back.
+	const flagged = disableBlobHttpUpload === true || disableBlobFetch === true;
+	if (isAlive(pid) && !flagged) {
+		resumeMailbox();
+	} else {
+		if (isAlive(pid)) await killMailbox();
+		await restartMailbox(
+			flagged
+				? { disableBlobHttpUpload: false, disableBlobFetch: false }
+				: undefined,
+		);
+	}
+	await healMailboxLink();
+	await waitForMailboxReady(url);
 }

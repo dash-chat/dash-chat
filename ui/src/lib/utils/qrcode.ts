@@ -5,7 +5,6 @@ import {
 	requestPermissions,
 	scan,
 } from '@tauri-apps/plugin-barcode-scanner';
-import jsQR from 'jsqr';
 
 import { cssColor } from './colors';
 
@@ -86,7 +85,8 @@ async function pollUntilGranted(): Promise<boolean> {
 	return false;
 }
 
-export function scanQrFromImage(file: File): Promise<string> {
+export async function scanQrFromImage(file: File): Promise<string> {
+	const { default: jsQR } = await import('jsqr');
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
 		reader.onload = e => {

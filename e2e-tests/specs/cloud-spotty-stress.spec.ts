@@ -10,14 +10,13 @@
  *
  * Both agents run without p2p, so the cloud link is the only way an op can
  * travel. Skips itself unless E2E_STRESS=1. Run it with:
- *   PLATFORMS=desktop,desktop just e2e run cloud-spotty-stress
+ *   just e2e run cloud-spotty-stress
  *
  * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
  * E2E_STRESS_COMMANDS (moves per sequence, default 40), E2E_STRESS_SEED
  * (default random; the run logs it — re-run with the same seed to reproduce
  * a failure).
  */
-import { createProfiles } from '../helpers/flows/create-profiles';
 import { Fuzzer } from '../helpers/fuzz/fuzzer';
 import { blockMoves } from '../helpers/fuzz/moves/block';
 import { cloudMoves } from '../helpers/fuzz/moves/cloud';
@@ -49,7 +48,6 @@ describe('Spotty cloud stress', () => {
 		// its link is the only thing the checks measure.
 		await Promise.all([agent1.disableP2p(), agent2.disableP2p()]);
 		const agents = { Alice: agent1, Bob: agent2 };
-		await createProfiles(agents);
 		fuzzer = await Fuzzer.prepare(this, { agents });
 	});
 

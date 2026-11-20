@@ -1,4 +1,5 @@
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Replying to messages', () => {
@@ -10,7 +11,25 @@ describe('Replying to messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
+	});
+
+	// Must stay the first case: replying through the actions menu loads the
+	// chat's read-only state, which would hide a swipe that needs it loaded.
+	it('replies on the first swipe after opening a chat', async function () {
+		const [swiper, sender] =
+			agent2.platform === 'desktop' ? [agent1, agent2] : [agent2, agent1];
+		if (swiper.platform === 'desktop') this.skip();
+		await sender.directChatPage.composer.sendMessage('Are you up?');
+		const target =
+			await swiper.directChatPage.messages.waitForMessage('Are you up?');
+
+		await target.replyBySwipe('Just about');
+
+		const reply =
+			await sender.directChatPage.messages.waitForMessage('Just about');
+		await reply.waitForReplyQuote('Are you up?');
 	});
 
 	it('replies to a peer message and renders the quote on both sides', async () => {
@@ -114,7 +133,9 @@ describe('Replying to messages', () => {
 		});
 	});
 
-	it('replaces the quoted content with a tombstone when the target is deleted for everyone', async () => {
+	// Message deletion is disabled until p2panda moves encrypted payloads into the
+	// operation body: a delete drops only the body.
+	it.skip('replaces the quoted content with a tombstone when the target is deleted for everyone', async () => {
 		await agent1.directChatPage.composer.sendMessage('Secret plans');
 		const target =
 			await agent2.directChatPage.messages.waitForMessage('Secret plans');
@@ -161,7 +182,9 @@ describe('Replying to messages', () => {
 		});
 	});
 
-	it('shows the tombstone when the target was deleted for me, without scrolling', async () => {
+	// Message deletion is disabled until p2panda moves encrypted payloads into the
+	// operation body: a delete drops only the body.
+	it.skip('shows the tombstone when the target was deleted for me, without scrolling', async () => {
 		await agent1.directChatPage.composer.sendMessage('Ephemeral note');
 		const target =
 			await agent2.directChatPage.messages.waitForMessage('Ephemeral note');

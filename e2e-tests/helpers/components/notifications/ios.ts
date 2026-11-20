@@ -1,3 +1,4 @@
+import { returnToWebviewOnNextUse } from '../../../setup/webview';
 import {
 	AppiumNotificationHelper,
 	type DeliveredNotification,
@@ -12,6 +13,9 @@ const SPRINGBOARD = 'com.apple.springboard';
  * `NotificationShortLookView` twin, and the app's own switcher card carries
  * the app name too, so matching on the name alone finds those as well. */
 const OUR_CELLS = 'name == "ListCell" AND label BEGINSWITH[c] "Dash Chat,"';
+
+/** The message of any notification showing: a cell's label runs a subtitle into it. */
+const PRIMARY_TEXT = 'name == "TextContent.Primary"';
 
 /** A collapsed stack of several of our notifications, which says so after the
  * app name and exposes only the newest. */
@@ -31,21 +35,34 @@ const OPEN_TIMEOUT = 10_000;
  * the top of the screen, which takes a pull from the top edge for itself. */
 const BANNER = 'name == "NotificationShortLookView"';
 
-/** What a banner gets to leave on its own: about 8s, measured. */
-const BANNER_TIMEOUT = 15_000;
+/** What the banners get to stop in: a backlog of pushes keeps them coming for
+ * as long as it takes to arrive, and another can land just as one left. */
+const BANNERS_TIMEOUT = 5 * 60_000;
 
-/** Pulls to try before giving up: another banner can land just as one left. */
-const PULL_ATTEMPTS = 3;
-
-/** Parse a cell's label. Only the first separators are structural: a body of
- * its own may contain commas, so it is whatever follows them. */
-function parseCell(label: string): DeliveredNotification | null {
+/** Parse a cell's label: "<title>, <subtitle>, <body>", where `primaryTexts`
+ * tell where the body starts, a body of its own possibly containing commas.
+ * Without one that fits there is no telling a subtitle from the body, so the
+ * conversation stays undefined rather than claiming there is none. */
+function parseCell(
+	label: string,
+	primaryTexts: string[],
+): DeliveredNotification | null {
 	const parts = label.split(', ');
 	if (parts[1] === 'Grouped') parts.splice(1, 1);
 	if (parts.length < 3) return null;
 	const title = parts[2];
-	const body = parts.slice(3).join(', ');
-	return { title, texts: body === '' ? [title] : [title, body] };
+	const rest = parts.slice(3).join(', ');
+	if (rest === '')
+		return { title, body: '', conversation: null, texts: [title] };
+	if (primaryTexts.includes(rest)) {
+		return { title, body: rest, conversation: null, texts: [title, rest] };
+	}
+	const body = primaryTexts
+		.filter(text => text !== '' && rest.endsWith(`, ${text}`))
+		.sort((a, b) => b.length - a.length)[0];
+	if (body === undefined) return { title, body: rest, texts: [title, rest] };
+	const conversation = rest.slice(0, -`, ${body}`.length);
+	return { title, body, conversation, texts: [title, conversation, body] };
 }
 
 /** Appium's app state for an app that owns the screen. */
@@ -67,6 +84,16 @@ export class IosNotifications extends AppiumNotificationHelper {
 
 	protected async switchToWebview(): Promise<void> {
 		await this.agent.updateSettings({ defaultActiveApplication: 'auto' });
+		// A suspended app publishes no webview context until it is back on
+		// screen: the session goes back to it on its next webview command.
+		const appId = this.appId();
+		if (
+			appId !== undefined &&
+			Number(await this.agent.queryAppState(appId)) !== FOREGROUND
+		) {
+			returnToWebviewOnNextUse(this.agent);
+			return;
+		}
 		await super.switchToWebview();
 	}
 
@@ -75,13 +102,14 @@ export class IosNotifications extends AppiumNotificationHelper {
 	private async openNotificationCenter(): Promise<void> {
 		const { width, height } = await this.agent.getWindowSize();
 		const x = Math.round(width / 2);
-		for (let attempt = 0; attempt < PULL_ATTEMPTS; attempt++) {
+		const deadline = Date.now() + BANNERS_TIMEOUT;
+		while (Date.now() < deadline) {
 			if (await this.agent.isLocked()) return;
 			// Outside Notification Center, every short-look view is a banner.
 			await this.agent.$(`-ios predicate string:${BANNER}`).waitForExist({
 				reverse: true,
-				timeout: BANNER_TIMEOUT,
-				timeoutMsg: 'A notification banner never left the top of the screen',
+				timeout: Math.max(deadline - Date.now(), 1),
+				timeoutMsg: 'Notification banners never stopped showing',
 			});
 			await this.swipe(x, 2, x, Math.round(height * 0.7));
 			const opened = await this.agent
@@ -160,19 +188,18 @@ export class IosNotifications extends AppiumNotificationHelper {
 	}
 
 	/** The cells Notification Center is showing. Expects it open and the
-	 * driver in the native context, which [`readingDelivered`] arranges. */
+	 * driver in the native context, which [`withNotificationUi`] arranges. */
 	private async readCells(): Promise<DeliveredNotification[]> {
-		const labels = await this.cellLabels();
-		return labels
-			.map(parseCell)
-			.filter((n): n is DeliveredNotification => n !== null);
-	}
-
-	private async cellLabels(): Promise<string[]> {
 		await this.expandStacks();
-		return this.agent
+		const primaryTexts = await this.agent
+			.$$(`-ios predicate string:${PRIMARY_TEXT}`)
+			.map(async text => (await text.getAttribute('value')) ?? '');
+		const labels = await this.agent
 			.$$(`-ios predicate string:${OUR_CELLS}`)
 			.map(async cell => (await cell.getAttribute('label')) ?? '');
+		return labels
+			.map(label => parseCell(label, primaryTexts))
+			.filter((n): n is DeliveredNotification => n !== null);
 	}
 
 	/** Wait for our cell containing `textIncludes`, expanding whatever stack it
@@ -208,7 +235,7 @@ export class IosNotifications extends AppiumNotificationHelper {
 	 * with it one clearing of the route the app resumes onto, rather than one
 	 * per read. An app that was not on screen is left off it: resuming it
 	 * would undo the very state the read is there to check. */
-	readingDelivered<T>(
+	protected withNotificationUi<T>(
 		fn: (read: () => Promise<DeliveredNotification[]>) => Promise<T>,
 	): Promise<T> {
 		return this.restoringWebviewOnFailure(async () => {
@@ -216,14 +243,15 @@ export class IosNotifications extends AppiumNotificationHelper {
 			await this.switchToNative();
 			await this.openNotificationCenter();
 			const result = await fn(() => this.readCells());
-			if (frontmost) await this.restoreWebview();
-			else await this.dismissNotificationUi();
+			if (frontmost) {
+				await this.restoreWebview();
+			} else {
+				await this.dismissNotificationUi();
+				// Left on SpringBoard, WDA finds nothing in whichever app comes next.
+				await this.agent.updateSettings({ defaultActiveApplication: 'auto' });
+			}
 			return result;
 		});
-	}
-
-	delivered(): Promise<DeliveredNotification[]> {
-		return this.readingDelivered(read => read());
 	}
 
 	/** Through the app itself: Notification Center on the lock screen has no
@@ -231,33 +259,6 @@ export class IosNotifications extends AppiumNotificationHelper {
 	async clear(): Promise<void> {
 		await this.restoreWebview();
 		await this.agent.execute(() => window.__test.clearNotifications());
-	}
-
-	waitForNotification(textIncludes: string, timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.openNotificationCenter();
-			const cell = await this.waitForCell(
-				textIncludes,
-				timeout,
-				`No notification containing "${textIncludes}" arrived within ${timeout}ms`,
-			);
-			return (await cell.getAttribute('label')) ?? '';
-		});
-	}
-
-	waitForAppNotification(timeout = 60_000): Promise<string> {
-		return this.restoringWebviewOnFailure(async () => {
-			await this.switchToNative();
-			await this.openNotificationCenter();
-			await this.agent.$(`-ios predicate string:${OUR_CELLS}`).waitForExist({
-				timeout,
-				timeoutMsg: `No notification of ours arrived within ${timeout}ms`,
-			});
-			// Every one, not just the newest: a caller asserting on content sees
-			// what else was there when its assertion fails.
-			return (await this.cellLabels()).join('\n');
-		});
 	}
 
 	tapNotification(textIncludes: string): Promise<void> {

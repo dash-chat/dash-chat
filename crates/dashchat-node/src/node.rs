@@ -1,55 +1,65 @@
-pub(crate) mod actor;
 mod app_processing;
-mod backlog_monitor;
+mod device_group;
 mod message_acks;
+mod profile;
 pub(crate) mod publish;
 mod report;
+pub(crate) mod streams;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::blob_crypto::{BLOB_AUX_INFO, BlobDecryptIndex};
 use crate::blob_sync::{BlobFetchConfig, BlobFetchPool, BlobSync, SENTINEL_OP_HASH};
 use crate::compat::Capabilities;
 use crate::error::{
     AddContactError, AddContactResult, Error, RemoveGroupMemberError, ShutdownError,
 };
 use crate::filesystem::Filesystem;
-use crate::node::actor::{Actor, Command};
+use crate::membership::{action_adds_member, membership_action};
+use crate::node::streams::{Space, TopicStreams};
 #[cfg(feature = "testing")]
 use crate::testing::TestNode;
 use aliased::Aliasing;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
-use dashchat_utils::blob_sync::MAX_BLOB_BYTES;
+use dashchat_utils::blob_sync::{BLOB_ENCRYPTION_OVERHEAD, MAX_BLOB_BYTES};
 use p2panda::network::MdnsDiscoveryMode;
 use p2panda::operation::{Header, LogId, Operation};
-use p2panda::{Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
+use p2panda::{AccessLevel, Hash, NetworkId, Node as P2PandaNode, NodeId, RelayUrl, VerifyingKey};
 use p2panda_auth::Access;
 use p2panda_auth::group::resolver::StrongRemove;
 use p2panda_auth::group::{GroupAction, GroupMember};
+use p2panda_encryption::crypto::xchacha20::XAeadNonce;
+use p2panda_encryption::data_scheme::GroupSecretId;
 use p2panda_net::discovery::DiscoveryConfig;
 use p2panda_spaces::ActorId;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use p2panda_spaces::SecretsError;
+use tokio::sync::{Mutex, mpsc};
 
-use mailbox_client::manager::{Mailboxes, MailboxesConfig};
+use mailbox_client::MailboxesConfig;
+use mailboxes_manager::Mailboxes;
 use tokio::task::JoinHandle;
 
+use crate::NodeBlobSource;
+use crate::OnlinePeers;
 use crate::chat::{
     ChatMessageContent, ChatOp, ChatOpKind, EditCandidate, ReplyCandidate, ValidChatOps,
     collect_deletable_edit_chain, resolve_message_root,
 };
 use crate::contact::{AddContactQrCode, InboxTopic};
 use crate::mailbox::MailboxOperation;
-use crate::payload::{AnnouncementsPayload, ChatPayload, InboxPayload, Payload, Profile};
-use crate::stores::{GroupStore, LocalStore, NodeKeys, OpProjection, OpStore};
+use crate::payload::{ChatPayload, InboxPayload, Payload};
+use crate::stores::{LocalStore, NodeKeys, OpProjection, OpStore, ReadOperation};
 use crate::topic::{Topic, TopicId, kind};
 use crate::{
     AgentId, AsBody, ChatId, ChatReaction, DeleteCandidate, DeleteMessageError, DeviceGroupId,
     DeviceGroupPayload, DeviceId, DirectChatId, EditMessageError, FakeAgentId, MediaBundle,
-    MediaMetadata, OutgoingFile, OutgoingMedia, SendMessageError,
+    MediaMetadata, OutgoingFile, OutgoingMedia, PendingContactRequest, SendMessageError,
 };
-use dashchat_utils::{NETWORK_ID, RELAY_URL};
+use dashchat_utils::{NETWORK_ID, RELAY_URL, retry_with_backoff};
+use tracing::error;
 
 pub use app_processing::{Notification, OpNotification, SystemNotification};
 
@@ -102,9 +112,9 @@ pub struct NodeConfig {
     /// server — is unavailable.
     pub enable_blob_sync: bool,
     pub blob_fetch: BlobFetchConfig,
-    /// How often the followup task re-announces still-unfetched blob hashes to
-    /// their mailboxes.
-    pub unfetched_blob_followup_interval: std::time::Duration,
+    /// How often the manager's blob sync loop wakes up on its own between
+    /// event-driven triggers (publish, connect, network change).
+    pub blob_sync_interval: std::time::Duration,
     /// How long the delivery-ack writer waits after new operations arrive
     /// before publishing a [`ChatPayload::MessageAck`], so a burst of incoming
     /// operations is covered by a single ack.
@@ -113,6 +123,14 @@ pub struct NodeConfig {
     /// disables this — its short-lived background node must not author
     /// operations.
     pub enable_message_acks: bool,
+    /// Whether this node must not author any operations at all. On for the
+    /// iOS push extension: it shares the app's store and signs with the app's
+    /// key, but an operation it publishes into a topic the app already
+    /// follows never passes through the running app's processor — the store
+    /// is shared, the streams are not. Side effects that publish are left to
+    /// the app, which re-processes the operations this node recorded (see
+    /// [`Self::record_processed_operations`]) and performs them itself.
+    pub read_only: bool,
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
@@ -135,6 +153,26 @@ pub struct NodeConfig {
     /// Hard cap after the oldest still-pending authored op, so a steady
     /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
     pub lan_router_push_max_latency: std::time::Duration,
+    /// Whether to defer subscribing to all stored topics and replaying their
+    /// backlogs until after `Node::new` returns.
+    pub defer_stored_topics_initialization: bool,
+    /// Whether to record every operation this node processes that the app has
+    /// not acknowledged, for the app to process too. On for the iOS push
+    /// extension: whichever process fetches an operation first stores it, and
+    /// mailbox fetches and sync only ever ask for what comes after the store's
+    /// log heights, so the app is never handed it again. An operation the
+    /// extension stored but was killed before recording is handed to it again
+    /// by its own replay on its next launch, and recorded then.
+    pub record_processed_operations: bool,
+    /// Whether to import, on a resync, the operations another node over the
+    /// same store recorded as processed. On for the iOS app.
+    pub import_recorded_operations: bool,
+    /// Every pool the node opens must connect through it, or iOS can suspend
+    /// the app in the middle of that pool's writes.
+    pub sqlite_gate: sqlite_gate::SqliteGate,
+    /// Consulted by the blob push-authorization loop. Created above the node
+    /// (and shared with hub spawns) because a hub outlives node rebuilds.
+    pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 }
 
 impl NodeConfig {
@@ -181,13 +219,19 @@ impl NodeConfig {
                 attempt_timeout: std::time::Duration::from_secs(3),
                 retry_cooldown: std::time::Duration::from_secs(1),
             },
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(1),
+            blob_sync_interval: std::time::Duration::from_secs(1),
             message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            read_only: false,
             stream_cursor_prefix: None,
             enable_lan_router: false,
             lan_router_push_debounce: std::time::Duration::from_millis(50),
             lan_router_push_max_latency: std::time::Duration::from_millis(200),
+            defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -210,13 +254,19 @@ impl Default for NodeConfig {
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
-            unfetched_blob_followup_interval: std::time::Duration::from_secs(60),
-            message_ack_debounce: std::time::Duration::from_secs(3),
+            blob_sync_interval: std::time::Duration::from_secs(4),
+            message_ack_debounce: std::time::Duration::from_millis(300),
             enable_message_acks: true,
+            read_only: false,
             stream_cursor_prefix: None,
             enable_lan_router: true,
             lan_router_push_debounce: std::time::Duration::from_millis(50),
             lan_router_push_max_latency: std::time::Duration::from_millis(200),
+            defer_stored_topics_initialization: false,
+            record_processed_operations: false,
+            import_recorded_operations: false,
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 }
@@ -229,14 +279,17 @@ pub struct Node {
 
     pub mailboxes: Mailboxes<MailboxOperation, OpStore>,
 
+    pub online_peers: OnlinePeers,
+
     pub config: NodeConfig,
 
     notification_tx: Option<mpsc::Sender<Notification>>,
     topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
 
-    actor_tx: mpsc::Sender<Command>,
+    streams: Arc<TopicStreams>,
     processor_cancel_tx: mpsc::Sender<()>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
+    stored_topics_init_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// All bootstrap nodes we have registered on our node.
     ///
@@ -245,7 +298,9 @@ pub struct Node {
 
     pub local_store: LocalStore,
     pub projection: OpProjection,
-    group_store: GroupStore,
+    /// Held only so the gate keeps watching these pools for as long as the node lives.
+    _local_pool: sqlite_gate::GatedPool,
+    _op_store_pool: sqlite_gate::GatedPool,
     node_keys: NodeKeys,
 
     filesystem: Filesystem,
@@ -255,13 +310,12 @@ pub struct Node {
     /// `redb` metadata store — whose exclusive single-process lock the always-on
     /// main app holds, which would otherwise deadlock the extension's node build.
     blob_sync: Option<BlobSync>,
+    blob_decrypt_index: BlobDecryptIndex,
     blob_fetch_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     /// `None` when p2panda was spawned with no networking layer, which happens
     /// once nothing needs the endpoint (see [`Self::init`]).
     endpoint: Option<p2panda::Endpoint>,
     network_change_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
-    unfetched_blob_trigger: Arc<tokio::sync::Notify>,
-    unfetched_blob_followup_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
@@ -270,10 +324,18 @@ pub struct Node {
     lan_router: Option<Arc<crate::lan_router::LanRouter>>,
 }
 
-/// Refuse to publish a media item larger than [`MAX_BLOB_BYTES`] so an honest
+/// How long a send waits for the chat space's encryption secrets to become established
+/// before failing.
+const BLOB_ENCRYPT_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Off while p2panda keeps encrypted payloads in the operation header, which a
+/// tombstone (dropping only the body) cannot remove.
+const MESSAGE_DELETION_ENABLED: bool = false;
+
+/// Refuse to publish an encrypted media item larger than [`MAX_BLOB_BYTES`] so an honest
 /// node never references a blob that the fetcher's own cap would reject.
 fn ensure_blob_size(size: u64, _name: &str) -> anyhow::Result<()> {
-    if size as u64 > MAX_BLOB_BYTES {
+    if size + BLOB_ENCRYPTION_OVERHEAD > MAX_BLOB_BYTES {
         anyhow::bail!("a media item is {size} bytes, exceeds {MAX_BLOB_BYTES} byte limit");
     }
     Ok(())
@@ -287,13 +349,16 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let pool = crate::stores::create_sqlite_pool(filesystem.local_store_path()).await?;
-        let local_store = LocalStore::new(pool.clone()).await?;
-        let projection = OpProjection::new(pool.clone()).await?;
+        let local_pool =
+            crate::stores::create_sqlite_pool(filesystem.local_store_path(), &config.sqlite_gate)
+                .await?;
+        let local_store = LocalStore::new(local_pool.pool().clone()).await?;
+        let projection = OpProjection::new(local_pool.pool().clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
         Self::init(
             filesystem,
+            local_pool,
             local_store,
             projection,
             node_keys,
@@ -307,6 +372,7 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().aliased())))]
     pub async fn init(
         filesystem: Filesystem,
+        local_pool: sqlite_gate::GatedPool,
         local_store: LocalStore,
         projection: OpProjection,
         node_keys: NodeKeys,
@@ -336,10 +402,11 @@ impl Node {
         // enough: mailbox media exchange dials the mailbox over iroh.
         let no_networking = !config.enable_p2p && !config.enable_blob_sync;
 
+        let op_store_pool = crate::stores::create_op_store_pool(&url, &config.sqlite_gate).await?;
         let mut builder = P2PandaNode::builder()
             .network_id(config.network_id)
             .credentials(node_keys.credentials())
-            .database_url(&url)
+            .database_pool(op_store_pool.pool().clone())
             // Acknowledge operations explicitly, only once application-layer
             // processing has finished (see `spawn_application_processor_task`).
             .ack_policy(p2panda::node::AckPolicy::Explicit);
@@ -379,30 +446,22 @@ impl Node {
             false => Some(p2panda_node.endpoint()?),
         };
 
-        // Spawn node actor.
-        let (node_actor, events_rx) = Actor::new(p2panda_node, config.stream_cursor_prefix.clone());
-        let actor_tx = node_actor.spawn().await?;
+        let (streams, drain) = TopicStreams::new(p2panda_node, config.stream_cursor_prefix.clone());
+        let streams = Arc::new(streams);
 
         // === stores === //
 
         // @TODO: I didn't look too closely into if these stores are needed yet. It's possible we
         // can reduce the need for these wrappers by either moving generally useful methods into
         // p2panda or finding alternative routes to achieve the same queries.
-        let group_store = GroupStore::new(store.clone());
-        let op_store = OpStore::from_sqlite(store.clone());
+        let op_store = OpStore::from_sqlite(store.clone(), streams.clone());
 
         // === mailboxes === //
 
-        let sync_tracker = std::sync::Arc::new(
-            mailbox_client::sync_tracker::MailboxSyncTracker::open(
-                filesystem.mailbox_sync_tracker_path(),
-            )
-            .await?,
-        );
-
-        let mailboxes = Mailboxes::spawn(
+        let mailboxes = Mailboxes::spawn_with_db(
+            filesystem.mailbox_sync_tracker_path(),
+            &config.sqlite_gate,
             op_store.clone(),
-            sync_tracker,
             config.mailboxes_config.clone(),
         )
         .await?;
@@ -418,7 +477,7 @@ impl Node {
             data_path: filesystem.data_path().clone(),
             device_id: *node_keys.device_id(),
             op_store: op_store.clone(),
-            actor_tx: actor_tx.clone(),
+            streams: streams.clone(),
         })
         .await
         .unwrap_or_else(|e| {
@@ -433,6 +492,7 @@ impl Node {
         // single-process lock the always-on main app already holds, which would
         // deadlock this build. It reads the operation and builds a notification
         // from its payload only, so blob sync is skipped entirely.
+        let blob_decrypt_index = BlobDecryptIndex::default();
         let blob_sync = if config.enable_blob_sync {
             let endpoint = endpoint
                 .clone()
@@ -453,6 +513,7 @@ impl Node {
             let blob_fetch = BlobFetchPool::from_ops(
                 op_store.get_all_operations_not_fully_sorted(),
                 op_store.store.clone(),
+                &blob_decrypt_index,
             )
             .await?;
             Some(
@@ -461,7 +522,8 @@ impl Node {
                     filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
-                    local_store.clone(),
+                    mailboxes.blob_tracker().clone(),
+                    config.local_hub_registry.clone(),
                 )
                 .await?,
             )
@@ -472,27 +534,30 @@ impl Node {
         // === node === //
 
         let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
+        let online_peers = OnlinePeers::new(node_keys.device_id(), projection.clone());
         let node = Self {
+            online_peers,
             op_store,
             mailboxes,
             config,
             filesystem,
             local_store,
             projection,
-            group_store,
+            _local_pool: local_pool,
+            _op_store_pool: op_store_pool,
             node_keys,
             notification_tx,
             topic_subscribed_tx,
-            actor_tx,
+            streams,
             processor_cancel_tx,
             processor_handle: Default::default(),
+            stored_topics_init_handle: Default::default(),
             registered_bootstraps: Default::default(),
             blob_sync,
+            blob_decrypt_index,
             blob_fetch_handle: Default::default(),
             endpoint,
             network_change_handle: Default::default(),
-            unfetched_blob_trigger: Default::default(),
-            unfetched_blob_followup_handle: Default::default(),
             message_ack_trigger: Default::default(),
             message_ack_handle: Default::default(),
             dirty_ack_topics: Default::default(),
@@ -501,8 +566,7 @@ impl Node {
 
         // === application processor task === //
 
-        let processor_handle =
-            node.spawn_application_processor_task(events_rx, processor_cancel_rx);
+        let processor_handle = node.spawn_application_processor_task(drain, processor_cancel_rx);
         node.processor_handle.lock().await.replace(processor_handle);
 
         // === blob fetch loop === //
@@ -524,34 +588,68 @@ impl Node {
             .await
             .replace(network_change_handle);
 
-        // === unfetched blob followup loop === //
+        // === blob sync loop === //
 
-        let followup_handle = crate::spawn_unfetched_blob_followup_task(
-            node.clone(),
-            node.config.unfetched_blob_followup_interval,
-            node.unfetched_blob_trigger.clone(),
-        );
-        node.unfetched_blob_followup_handle
-            .lock()
-            .await
-            .replace(followup_handle);
-
-        // === message ack writer === //
-
-        if node.config.enable_message_acks {
-            let ack_handle = message_acks::spawn_message_ack_task(
-                node.clone(),
-                node.config.message_ack_debounce,
-                node.message_ack_trigger.clone(),
+        // The push extension has no blob store (`enable_blob_sync = false`).
+        // Starting the sync there would poison the mailboxes'
+        // `mailbox_blob_sync_state` table — shared with the main app over the
+        // same filesystem path — by advancing every log's blob height past
+        // its op watermark without ever announcing a blob.
+        if node.blob_sync.is_some() {
+            node.mailboxes.start_blob_sync(
+                NodeBlobSource::new(node.clone()),
+                node.blob_reader(),
+                node.config.blob_sync_interval,
             );
-            node.message_ack_handle.lock().await.replace(ack_handle);
         }
 
-        // === topics === //
+        // === topics, then message ack writer === //
 
-        node.initialize_stored_topics().await?;
+        // The ack writer's startup reconciliation publishes into stored chat
+        // spaces, so it must start only after those spaces are rejoined.
+        if node.config.defer_stored_topics_initialization {
+            // Initialize stored topics on a background task so the node is
+            // returned immediately. This keeps app launch responsive while still ensuring all
+            // topics are eventually subscribed. Retry with backoff so transient
+            // SQLite or mailbox failures do not leave topics unsubscribed.
+            // The handle is aborted during shutdown so teardown does not race
+            // the replay.
+            let init_handle = tokio::spawn({
+                let node = node.clone();
+                async move {
+                    let _ = retry_with_backoff(
+                        None,
+                        std::time::Duration::from_secs(1),
+                        std::time::Duration::from_secs(60),
+                        "initialize_stored_topics",
+                        || async { node.initialize_stored_topics().await },
+                    )
+                    .await;
+                    node.spawn_message_ack_writer().await;
+                }
+            });
+            node.stored_topics_init_handle
+                .lock()
+                .await
+                .replace(init_handle);
+        } else {
+            node.initialize_stored_topics().await?;
+            node.spawn_message_ack_writer().await;
+        }
 
         Ok(node)
+    }
+
+    async fn spawn_message_ack_writer(&self) {
+        if !self.config.enable_message_acks {
+            return;
+        }
+        let ack_handle = message_acks::spawn_message_ack_task(
+            self.clone(),
+            self.config.message_ack_debounce,
+            self.message_ack_trigger.clone(),
+        );
+        self.message_ack_handle.lock().await.replace(ack_handle);
     }
 
     pub fn data_path(&self) -> &PathBuf {
@@ -590,7 +688,7 @@ impl Node {
             &self.device_id(),
             Utc::now() + self.config.contact_code_expiry,
         );
-        self.initialize_topic(*inbox_topic.topic)
+        self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|err| crate::Error::InitializeTopic(format!("{err}")))?;
         self.local_store
@@ -632,10 +730,12 @@ impl Node {
             .expect("blob sync is enabled for p2p (testing) nodes")
     }
 
+    /// The blob delivery tracker, owned by the mailboxes manager: what each
+    /// mailbox still lacks, persisted in the manager's database.
     pub fn unfetched_blob_tracker(
         &self,
     ) -> std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker> {
-        crate::LocalStoreBlobTracker::new(self.local_store.clone())
+        self.mailboxes.blob_tracker().clone()
     }
 
     /// A blob-bytes source backed by this node's blob store, for the toy mailbox
@@ -648,10 +748,48 @@ impl Node {
         })
     }
 
-    /// Wake the unfetched-blob followup task to run a reconciliation pass now
-    /// (e.g. on unpause / network change).
-    pub fn notify_unfetched_blob_followup(&self) {
-        self.unfetched_blob_trigger.notify_one();
+    /// A pusher backed by this node's iroh endpoint and blob store, for the toy
+    /// mailbox client to push blobs to a mailbox over iroh. `None` when the node
+    /// has no networking layer or blob sync is disabled.
+    pub async fn blob_pusher(&self) -> Option<mailbox_client::IrohPusher> {
+        if self.endpoint.is_none() {
+            return None;
+        }
+        let blob_sync = self.blob_sync.clone()?;
+        let endpoint = match self.iroh_endpoint().await {
+            Ok(endpoint) => endpoint,
+            Err(err) => {
+                // A networked node whose endpoint can't be read is a real
+                // degradation: without a pusher the client silently runs on
+                // the HTTP fallback alone.
+                tracing::warn!(?err, "blob pusher unavailable");
+                return None;
+            }
+        };
+        let alpn =
+            p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, self.config.network_id);
+        Some(mailbox_client::IrohPusher::new(
+            endpoint,
+            blob_sync.blobs.store().clone(),
+            alpn,
+        ))
+    }
+
+    /// Tell the manager the set of things-that-might-be-owed-to-mailboxes has
+    /// changed (e.g. a publish just landed a new blob), so it should run a
+    /// sync pass now rather than wait out the next interval. Pure wake-up.
+    pub fn notify_blobs_changed(&self) {
+        self.mailboxes.notify_blobs_changed();
+    }
+
+    /// Catch up after the process was suspended as after a network change: a
+    /// suspended process misses network changes, and iOS may close its sockets.
+    pub async fn resume(&self) {
+        crate::network_change_notifier::handle_network_change(
+            self.endpoint.as_ref(),
+            &self.mailboxes,
+        )
+        .await;
     }
 
     /// Use the node's device ID as an iroh endpoint id.
@@ -694,12 +832,7 @@ impl Node {
             return Ok(());
         }
 
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::RegisterPeerAddr { addr, reply_tx })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-        reply_rx.await??;
+        self.streams.register_peer_addr(addr).await?;
         Ok(())
     }
 
@@ -712,12 +845,7 @@ impl Node {
         if self.endpoint.is_none() {
             return Ok(());
         }
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::BlockPeer { node_id, reply_tx })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-        reply_rx.await?;
+        self.streams.block_peer(node_id).await?;
         Ok(())
     }
 
@@ -730,12 +858,7 @@ impl Node {
         if self.endpoint.is_none() {
             return Ok(());
         }
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::BlockNativeSync { node_id, reply_tx })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-        reply_rx.await?;
+        self.streams.block_native_sync_with(node_id).await?;
         Ok(())
     }
 
@@ -810,27 +933,24 @@ impl Node {
 
     /// Create a new direct chat Space.
     /// Note that only one node should create the space!
+    ///
+    /// TODO: use a tie breaker in case both nodes created a space, so that one
+    ///       gets deterministically abandoned and both nodes choose the same space.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
     pub async fn create_direct_chat_space(&self, other: FakeAgentId) -> anyhow::Result<()> {
         let topic = self.direct_chat_topic(other);
 
         let my_actor = self.agent_id();
-        self.register_topic(topic).await?;
 
         let other_device_id = DeviceId::from(other);
 
         // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*topic).await?;
         let initial_members = vec![
             (GroupMember::Individual(*self.device_id()), Access::write()),
             (GroupMember::Individual(*other_device_id), Access::write()),
         ];
-        self.publish(
-            topic,
-            Payload::group_control(topic, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_direct_chat_space({:?})", topic.aliased())),
-        )
-        .await?;
+        self.create_space(topic, initial_members).await?;
+        self.publish_my_profile_to(topic).await?;
 
         tracing::info!(
             my_actor = ?my_actor.aliased(),
@@ -844,7 +964,19 @@ impl Node {
         Ok(())
     }
 
-    pub async fn create_group(
+    #[cfg(feature = "testing")]
+    /// Publish a Create for a space at a chosen id, bypassing the usual checks, to
+    /// probe what p2panda does when a space id already has a Create root elsewhere.
+    pub async fn create_space_at(
+        &self,
+        chat_id: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<()> {
+        self.create_space(chat_id, initial_members).await?;
+        Ok(())
+    }
+
+    pub async fn create_chat_group(
         &self,
         mut initial_members: BTreeMap<VerifyingKey, p2panda_auth::Access>,
     ) -> anyhow::Result<ChatId> {
@@ -875,8 +1007,6 @@ impl Node {
                 }
             })
             .collect();
-        let agents: Vec<AgentId> = device_to_agent.values().copied().collect();
-
         // The creator must always have Manage access
         initial_members.insert(*self.device_id(), p2panda_auth::Access::manage());
 
@@ -885,16 +1015,8 @@ impl Node {
             .map(|(verifying_key, access)| (GroupMember::Individual(verifying_key), access))
             .collect();
 
-        self.register_topic(chat_id).await?;
-
-        // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(chat_id, GroupAction::Create { initial_members }, deps)?,
-            Some(&format!("create_group({:?})", chat_id.aliased())),
-        )
-        .await?;
+        let added = self.create_space(chat_id, initial_members).await?;
+        self.publish_my_profile_to(chat_id).await?;
 
         // Ensure that future non-contact members can see every initial member's
         // profile, including the creator's. The creator is the only node that
@@ -905,10 +1027,73 @@ impl Node {
         self.introduce_agents_to_group(chat_id, introduced_agents)
             .await?;
 
-        for agent in agents {
-            self.invite_to_group(chat_id, agent).await?;
+        for (device_id, agent) in &device_to_agent {
+            let add = added.get(device_id).copied().ok_or_else(|| {
+                anyhow::anyhow!("no operation added {:?} to the group", device_id.aliased())
+            })?;
+            self.invite_to_group(chat_id, *agent, add).await?;
         }
         Ok(chat_id)
+    }
+
+    /// Create a space with the given members, returning for each member other than us the
+    /// hash of the operation that admits it.
+    async fn create_space(
+        &self,
+        topic: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
+        // Boxed: p2panda's space futures are large enough to overflow the stack when
+        // inlined into every caller up the chain.
+        Box::pin(self.create_space_unboxed(topic, initial_members)).await
+    }
+
+    async fn create_space_unboxed(
+        &self,
+        topic: ChatId,
+        initial_members: Vec<(GroupMember<VerifyingKey>, Access)>,
+    ) -> anyhow::Result<BTreeMap<DeviceId, Hash>> {
+        let space = self.register_and_create_space(topic).await?;
+        let mut added = BTreeMap::new();
+        for (member, access) in initial_members {
+            if member.id() == *self.device_id() {
+                continue;
+            }
+            // TODO: this erases info about Individual vs Group member.
+            // Do we need a proper Group in the Space to account for this?
+            let add = self
+                .add_member_to_space(&space, member.id(), access.level)
+                .await?;
+            added.insert(DeviceId::from(member.id()), add);
+        }
+        self.join_presence(topic).await?;
+        Ok(added)
+    }
+
+    /// Add a member to a space, returning the hash of the group-auth operation that admits it.
+    async fn add_member_to_space(
+        &self,
+        space: &Space,
+        member: VerifyingKey,
+        access: AccessLevel,
+    ) -> anyhow::Result<Hash> {
+        let hashes = space
+            .run(async move |space| space.add(member, access).await)
+            .await??;
+        for hash in hashes {
+            let Some(operation) = self.op_store.get_operation(&hash).await? else {
+                continue;
+            };
+            let adds_member = membership_action(&operation.header)
+                .is_some_and(|action| action_adds_member(&action, DeviceId::from(member)));
+            if adds_member {
+                return Ok(hash);
+            }
+        }
+        Err(anyhow::anyhow!(
+            "adding {:?} to the space published no operation admitting it",
+            DeviceId::from(member).aliased()
+        ))
     }
 
     /// This is a temporary hack until we have device groups, see docs for [`ChatPayload::IntroduceAgents`].
@@ -926,8 +1111,16 @@ impl Node {
         Ok(())
     }
 
-    async fn invite_to_group(&self, chat_id: ChatId, person: AgentId) -> anyhow::Result<()> {
-        let payload = Payload::Chat(ChatPayload::JoinGroup { chat_id });
+    async fn invite_to_group(
+        &self,
+        chat_id: ChatId,
+        person: AgentId,
+        add_member_operation_hash: Hash,
+    ) -> anyhow::Result<()> {
+        let payload = Payload::Chat(ChatPayload::JoinGroup {
+            chat_id,
+            add_member_operation_hash,
+        });
         tracing::info!(
             "{:?} is inviting {:?} to group {:?}",
             self.device_id().aliased(),
@@ -953,34 +1146,45 @@ impl Node {
         Ok(())
     }
 
+    async fn add_group_member_to_space(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+        access: p2panda_auth::Access,
+    ) -> anyhow::Result<Hash> {
+        let space = self.streams.space(chat_id.into()).await?;
+        self.add_member_to_space(&space, member, access.level).await
+    }
+
+    async fn remove_group_member_from_space(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+    ) -> anyhow::Result<()> {
+        let member = GroupMember::Individual(member);
+        self.streams
+            .space(chat_id.into())
+            .await?
+            .run(async move |space| space.remove(member.id()).await)
+            .await??;
+        Ok(())
+    }
+
     pub async fn add_group_member(
         &self,
         chat_id: ChatId,
         member: VerifyingKey,
         access: p2panda_auth::Access,
     ) -> anyhow::Result<()> {
-        // TODO: this should use a transaction, but the race is not a big deal here
-        let deps = self.group_store.heads(*chat_id).await?;
-
-        if deps.is_empty() {
+        if self.get_group_members(chat_id).await?.is_empty() {
             return Err(anyhow::anyhow!(
                 "group must be known locally before adding member: {chat_id:?}"
             ));
         }
 
-        self.publish(
-            chat_id,
-            Payload::group_control(
-                chat_id,
-                GroupAction::Add {
-                    member: GroupMember::Individual(member),
-                    access,
-                },
-                deps,
-            )?,
-            Some(&format!("add_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+        let add = self
+            .add_group_member_to_space(chat_id, member, access)
+            .await?;
 
         let agent_id = self
             .projection
@@ -988,14 +1192,13 @@ impl Node {
             .await?;
         if let Some(agent_id) = agent_id {
             // Tell existing group members about the new member's agent_id so
-            // they can subscribe to its announcements topic and see its profile,
-            // even before the new member has come online to announce itself.
+            // they can attribute its profile and messages to it.
             self.introduce_agents_to_group(
                 chat_id,
                 BTreeMap::from([(DeviceId::from(member), agent_id)]),
             )
             .await?;
-            self.invite_to_group(chat_id, agent_id).await?;
+            self.invite_to_group(chat_id, agent_id, add).await?;
         } else {
             tracing::warn!(
                 "Contact not found (when adding group member): {:?}",
@@ -1011,7 +1214,6 @@ impl Node {
         chat_id: ChatId,
         member: VerifyingKey,
     ) -> Result<(), RemoveGroupMemberError> {
-        // TODO: this should use a transaction, but the race is not a big deal here
         let member_id = DeviceId::from(member);
         if !self.has_other_admins(chat_id, member_id).await?
             && !self.is_only_member(chat_id, member_id).await?
@@ -1019,19 +1221,8 @@ impl Node {
             return Err(RemoveGroupMemberError::LastAdmin);
         }
 
-        let deps = self.group_store.heads(*chat_id).await?;
-        self.publish(
-            chat_id,
-            Payload::group_control(
-                chat_id,
-                GroupAction::Remove {
-                    member: GroupMember::Individual(member),
-                },
-                deps,
-            )?,
-            Some(&format!("remove_group_member({:?})", chat_id.aliased())),
-        )
-        .await?;
+        self.remove_group_member_from_space(chat_id, member).await?;
+
         Ok(())
     }
 
@@ -1039,14 +1230,52 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        self.space_members(chat_id.into()).await
+    }
+
+    /// Every author's group-control operations for `chat_id`'s space
+    pub async fn get_group_control_ops(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Vec<ReadOperation>> {
+        let log_id = p2panda::spaces::group_log_id(space_group_id(chat_id.into()));
+        let mut ops = Vec::new();
+        for author in self.op_store.get_authors(log_id).await? {
+            ops.extend(self.op_store.get_log(&author, &log_id, None).await?);
+        }
+        Ok(ops)
+    }
+
+    /// The space's current members, read from its group's state.
+    pub async fn space_members(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<BTreeSet<(DeviceId, Access)>> {
+        let group_id = space_group_id(topic);
+        #[allow(deprecated)]
         let members = self
-            .group_store
-            .members(chat_id)
-            .await?
+            .streams
+            .with_node(async |node| {
+                let manager = node.spaces_manager();
+                if !manager.has_group(group_id).await? {
+                    return anyhow::Ok(vec![]);
+                }
+                let group = manager.group(group_id).created().await?;
+                Ok(group.members().await?)
+            })
+            .await??;
+        Ok(members
             .into_iter()
-            .map(|(m, a)| (DeviceId::from(m), a))
-            .collect();
-        Ok(members)
+            .map(|(member, access)| {
+                (
+                    DeviceId::from(member),
+                    Access {
+                        conditions: None,
+                        level: access.level,
+                    },
+                )
+            })
+            .collect())
     }
 
     async fn is_only_member(&self, chat_id: ChatId, member: DeviceId) -> anyhow::Result<bool> {
@@ -1075,9 +1304,16 @@ impl Node {
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, parent = None, fields(me = ?self.device_id().aliased())))]
-    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
+    pub async fn join_chat_group(&self, chat_id: ChatId) -> anyhow::Result<()> {
         tracing::info!(?chat_id, "joined group");
-        self.register_topic(chat_id).await?;
+        self.join_space(chat_id).await?;
+        Ok(())
+    }
+
+    pub async fn join_space(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        tracing::info!(?chat_id, "joined space");
+        self.register_and_join_space(chat_id).await?;
+        self.join_presence(chat_id).await?;
         Ok(())
     }
 
@@ -1085,29 +1321,29 @@ impl Node {
         self.projection.get_group_chat_ids().await
     }
 
-    pub async fn set_profile(&self, profile: Profile) -> Result<Header, crate::Error> {
-        let header = self
-            .publish(
-                Topic::announcements(self.agent_id()),
-                Payload::Announcements(AnnouncementsPayload::SetProfile(profile)),
-                Some(&format!("set_profile({:?})", self.device_id().aliased())),
-            )
-            .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
-
-        Ok(header)
+    pub async fn keybundle(&self) -> anyhow::Result<p2panda::spaces::Member> {
+        Ok(self
+            .streams
+            .with_node(async |node| node.me().await)
+            .await??)
     }
 
-    pub async fn my_profile(&self) -> anyhow::Result<Option<Profile>> {
-        self.projection.get_profile(self.agent_id()).await
-    }
-
-    pub async fn get_profile(&self, agent_id: AgentId) -> anyhow::Result<Option<Profile>> {
-        self.projection.get_profile(agent_id).await
+    pub async fn save_keybundle(&self, keybundle: p2panda::spaces::Member) -> anyhow::Result<()> {
+        self.streams
+            .with_node(async |node| node.register_member(keybundle).await)
+            .await??;
+        Ok(())
     }
 
     pub async fn lookup_contact(&self, device_id: DeviceId) -> anyhow::Result<Option<AgentId>> {
         self.projection.lookup_contact_by_device_id(device_id).await
+    }
+
+    pub async fn is_accepted_contact(&self, device_id: DeviceId) -> anyhow::Result<bool> {
+        Ok(match self.lookup_contact(device_id).await? {
+            Some(agent_id) => self.accepted_contact_agent_ids().await?.contains(&agent_id),
+            None => false,
+        })
     }
 
     pub async fn all_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
@@ -1130,26 +1366,43 @@ impl Node {
     /// contacts, unlike the projection's `devices` table which also records
     /// pre-accept contact requests).
     pub async fn accepted_contact_agent_ids(&self) -> anyhow::Result<BTreeSet<AgentId>> {
-        // FIXME: use all local device IDs
-        let log_id = self.device_group_topic().into();
-        let mut agents = BTreeSet::new();
-        for op in self
-            .op_store
-            .get_log(&self.device_id(), &log_id, None)
-            .await?
-        {
-            let Some(body) = op.body else { continue };
-            if let Ok(Payload::DeviceGroup(DeviceGroupPayload::AddContact { agent_id, .. })) =
-                Payload::try_from_body(&body)
-            {
-                agents.insert(agent_id);
-            }
-        }
-        Ok(agents)
+        Ok(self.accepted_contacts().await?.into_keys().collect())
     }
 
-    pub async fn subscribed_topics(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
-        self.local_store.subscribed_topics().await
+    /// The contact request we sent from any of our devices by scanning
+    /// `device_id`'s code, whether or not their acceptance has reached us
+    /// since. The newest one: a request that expired unanswered is sent again,
+    /// and the code may carry a newer name by then.
+    pub async fn outgoing_contact_request(
+        &self,
+        device_id: DeviceId,
+    ) -> anyhow::Result<Option<PendingContactRequest>> {
+        let log_id: LogId = self.device_group_topic().into();
+        let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
+        for author in self.op_store.get_authors(log_id).await? {
+            for op in self.op_store.get_log(&author, &log_id, None).await? {
+                let Some(body) = op.body? else { continue };
+                let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
+                    Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if request.device_pubkey != device_id {
+                    continue;
+                }
+                if newest
+                    .as_ref()
+                    .is_none_or(|(at, _)| op.header.extensions.timestamp() > *at)
+                {
+                    newest = Some((op.header.extensions.timestamp(), request));
+                }
+            }
+        }
+        Ok(newest.map(|(_, request)| request))
+    }
+
+    pub async fn subscribed_spaces(&self) -> anyhow::Result<std::collections::BTreeSet<TopicId>> {
+        self.local_store.subscribed_spaces().await
     }
 
     /// Get all messages for a chat from the logs.
@@ -1192,10 +1445,8 @@ impl Node {
 
         if let Some(target) = reply {
             let valid_ops = self.valid_chat_ops(chat_id).await?;
-            let now = u64::from(p2panda_core::Timestamp::now());
             ReplyCandidate {
                 target,
-                timestamp: now,
                 self_hash: None,
             }
             .validate(&valid_ops)?;
@@ -1209,7 +1460,8 @@ impl Node {
         } else {
             None
         };
-        let message = ChatMessageContent::new(message, meta.clone(), reply);
+        let lamport = self.next_lamport(chat_id).await?;
+        let message = ChatMessageContent::new(message, meta.clone(), reply, lamport);
         let header = self.send_message_raw(chat_id, message).await?;
         if let Some(bundle) = meta {
             let topic_id: TopicId = chat_id.into();
@@ -1239,6 +1491,20 @@ impl Node {
             .await?;
 
         Ok(header)
+    }
+
+    /// One greater than the highest message `lamport` processed in this topic
+    /// (see `ChatMessageContent::lamport`), read from the projection's
+    /// `chat_lamports` table, which `OpProjection::reduce` keeps as a
+    /// monotonic per-topic maximum over every processed message — own and
+    /// received alike — so the counter survives restarts and absorbs peers'
+    /// counters without a log scan.
+    async fn next_lamport(&self, topic: ChatId) -> anyhow::Result<u64> {
+        Ok(self
+            .projection
+            .max_chat_lamport(topic.into())
+            .await?
+            .saturating_add(1))
     }
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?self.device_id().aliased())))]
@@ -1329,6 +1595,10 @@ impl Node {
         topic: impl Into<ChatId>,
         target: Hash,
     ) -> Result<Header, DeleteMessageError> {
+        if !MESSAGE_DELETION_ENABLED {
+            unimplemented!("Deletion is temporarily disabled");
+        }
+
         let topic = topic.into();
         let ops = self.valid_chat_ops(topic).await?;
         let hashes = collect_deletable_edit_chain(&ops, &target)?;
@@ -1364,6 +1634,10 @@ impl Node {
         topic: impl Into<ChatId>,
         target: Hash,
     ) -> Result<Header, DeleteMessageError> {
+        if !MESSAGE_DELETION_ENABLED {
+            unimplemented!("Deletion is temporarily disabled");
+        }
+
         let chat_id = topic.into();
         let ops = self.valid_chat_ops(chat_id).await?;
         // Resolve to the original message when we can, but fall back to the raw
@@ -1435,7 +1709,7 @@ impl Node {
         let mut ops = std::collections::HashMap::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(chat)) = Payload::try_from_body(body) else {
@@ -1480,7 +1754,7 @@ impl Node {
         let mut edits = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(ChatPayload::EditMessage { message, edit_hash })) =
@@ -1519,7 +1793,7 @@ impl Node {
         let mut replies = Vec::new();
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body.as_ref() else {
+                let Ok(Some(body)) = &op.body else {
                     continue;
                 };
                 let Ok(Payload::Chat(ChatPayload::Message(message))) = Payload::try_from_body(body)
@@ -1569,12 +1843,12 @@ impl Node {
         &self,
         topic_id: TopicId,
     ) -> anyhow::Result<Option<crate::GroupInfo>> {
-        let log_id = LogId::from_topic(topic_id);
+        let log_id = crate::topic::application_log_id(topic_id);
         let authors = self.op_store.get_authors(log_id).await?;
         let mut latest: Option<(Header, crate::GroupInfo)> = None;
         for author in authors {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::Chat(ChatPayload::GroupInfo(info))) = Payload::try_from_body(&body)
                 else {
                     continue;
@@ -1601,23 +1875,30 @@ impl Node {
             router.shutdown().await;
         }
 
+        // Stop any deferred stored-topic initialization before we tear down
+        // the p2panda node or clear mailboxes, so it cannot race SQLite pool closure
+        // or re-insert topics into mailboxes after clear().
+        if let Some(handle) = self.stored_topics_init_handle.lock().await.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+
+        // While the network is still up, so peers see us leave instead of timing us out.
+        self.online_peers.leave_all().await;
+
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
 
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if let Err(err) = self.actor_tx.send(Command::Shutdown { reply_tx }).await {
-            tracing::warn!("failed to send shutdown command to node actor: {}", err);
-            return Err(ShutdownError::ActorShutdown(Box::new(err)));
-        }
-
-        reply_rx.await?;
+        // Drops the p2panda node, stopping its network actors before the pool
+        // they share with the op store closes below.
+        self.streams.shutdown().await;
 
         if let Err(err) = self.processor_cancel_tx.send(()).await {
             tracing::warn!(
                 "failed to send cancel signal to application processor: {}",
                 err
             );
-            return Err(ShutdownError::ActorShutdown(Box::new(err)));
+            return Err(ShutdownError::ProcessorCancel(Box::new(err)));
         }
 
         if let Some(handle) = self.processor_handle.lock().await.take() {
@@ -1625,10 +1906,6 @@ impl Node {
         }
 
         if let Some(handle) = self.blob_fetch_handle.lock().await.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.unfetched_blob_followup_handle.lock().await.take() {
             handle.abort();
         }
 
@@ -1640,13 +1917,14 @@ impl Node {
             handle.abort();
         }
 
-        // Release every held file lock before returning, or iOS SIGKILLs the
-        // suspended app (0xdead10cc). File locks first, slow best-effort endpoint
-        // close last, each time-bounded so none outlasts the suspension window.
+        self.mailboxes.close().await;
 
-        // iroh-blobs redb store: a file lock like the SQLite pools; fetch loop
-        // aborted above so nothing else is using it now. Absent when blob sync
-        // is disabled (the push extension), which never opens it.
+        // File locks first, slow best-effort endpoint close last, each
+        // time-bounded so a rebuild isn't held up by either.
+
+        // iroh-blobs redb store; all blob-touching loops are aborted above
+        // so nothing else is using it now. Absent when blob sync is disabled
+        // (the push extension), which never opens it.
         if let Some(blob_sync) = &self.blob_sync {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
@@ -1660,16 +1938,16 @@ impl Node {
             }
         }
 
-        // Close pools last.
-        // SqlitePool clones share state, so this drains every connection; the
-        // sync tracker owns a separate pool (mailbox_sync_tracker.db).
-        self.mailboxes.sync_tracker().close().await;
+        // Close pools last. SqlitePool clones share state, so one `close()` on
+        // each store drains every connection that store ever handed out; the
+        // manager owns its own mailbox-pool close and already did it above.
         self.local_store.close().await;
         self.op_store.close().await;
 
-        // Holds only sockets (no file lock), so it goes last. The node keeps its
-        // own endpoint clone, so the actor drop above doesn't release it. A node
-        // with no networking layer never opened one.
+        // Holds only sockets (no file lock), so it goes last. Dropping the
+        // p2panda node in `streams.shutdown()` does not close its endpoint, so
+        // this is the only close. A node with no networking layer never opened
+        // one.
         if let Some(endpoint) = &self.endpoint {
             match endpoint.endpoint().await {
                 Ok(endpoint) => {
@@ -1688,33 +1966,23 @@ impl Node {
     }
 
     /// Register the shared, idempotent state for a contact identified by their
-    /// device pubkey and agent id:
-    /// - register the contact as a bootstrap peer,
-    /// - subscribe to their announcements, and
-    /// - subscribe to our direct-chat topic.
+    /// device pubkey:
+    /// - register the contact as a bootstrap peer, and
+    /// - stop restoring their inbox our own request was sent to.
     ///
     /// Safe to call repeatedly, so both the initiating `add_contact` path and the
     /// inbox request/ack handlers can call it.
-    pub(crate) async fn establish_contact(
-        &self,
-        device_id: DeviceId,
-        agent_id: AgentId,
-    ) -> Result<(), Error> {
+    pub(crate) async fn establish_contact(&self, device_id: DeviceId) -> Result<(), Error> {
         // Register the contact as a bootstrap so p2panda discovery can reach it
         // directly over the internet (relay + pkarr), rather than depending on a
         // mutually-reachable mailbox to introduce the two nodes.
         self.register_bootstrap_node(*device_id)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-        // Subscribe to the contact's announcements to receive their group
-        // control messages, and to our shared direct-chat topic.
-        self.register_topic(Topic::announcements(agent_id))
+        self.local_store
+            .remove_requested_inbox_topics_of(device_id)
             .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
-        let fake_agent_id = FakeAgentId::from(device_id);
-        self.register_topic(self.direct_chat_topic(fake_agent_id))
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            .map_err(|e| Error::RemoveActiveInbox(format!("{e}")))?;
         Ok(())
     }
 
@@ -1739,13 +2007,21 @@ impl Node {
 
         let direct_chat_topic_id = self.direct_chat_topic(FakeAgentId::from(contact.device_pubkey));
 
-        // If we already sent this device a contact request, don't publish a
-        // duplicate request or pending marker. Return the existing direct-chat
-        // topic id so the caller can navigate there.
+        // If they're already a contact, or we're still serving a contact request
+        // to this device, don't publish a duplicate request or pending marker.
+        // Return the existing direct-chat topic id so the caller can navigate
+        // there. Once a request expired unanswered, a new scan starts a fresh
+        // exchange; the old reply inbox stays, so a late acceptance of the old
+        // request still lands.
         if self
-            .has_outgoing_pending_request(contact.device_pubkey)
+            .is_accepted_contact(contact.device_pubkey)
             .await
-            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
+            || self
+                .local_store
+                .has_unexpired_requested_inbox_for(contact.device_pubkey)
+                .await
+                .map_err(|e| Error::GetActiveInboxes(e.to_string()))?
         {
             return Ok(AddContactResult::AlreadyRequested(direct_chat_topic_id));
         }
@@ -1756,12 +2032,6 @@ impl Node {
         self.register_bootstrap_node(*contact.device_pubkey)
             .await
             .map_err(|e| Error::RegisterBootstrap(e.to_string()))?;
-
-        // Subscribe to the shared direct-chat topic right away so messages sent
-        // before the owner accepts already sync in both directions.
-        self.register_topic(direct_chat_topic_id)
-            .await
-            .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // SPACES: Register the member in the spaces manager
 
@@ -1812,14 +2082,13 @@ impl Node {
         // // XXX: need sleep a little more for all the messages to be processed
         // tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
 
-        self.initialize_topic(*inbox_topic.topic)
+        self.initialize_stream(*inbox_topic.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
         // Mint a private reply inbox for this exchange and listen on it for
-        // the owner's ack. We do NOT persist the (possibly shared) advertised
-        // inbox we scanned — only the owner keeps camping on that — so other
-        // scanners of the same QR never share a return channel with us.
+        // the owner's ack, so other scanners of the same QR never share a
+        // return channel with us.
         let reply_inbox = InboxTopic {
             topic: Topic::inbox().alias_named(&format!(
                 "reply_inbox({:?},peer={})",
@@ -1829,7 +2098,7 @@ impl Node {
             expires_at: Utc::now() + self.config.contact_code_expiry,
         };
 
-        self.initialize_topic(*reply_inbox.topic)
+        self.initialize_stream(*reply_inbox.topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
 
@@ -1845,10 +2114,16 @@ impl Node {
             return Err(AddContactError::ProfileNotCreated);
         };
 
+        let keybundle = self
+            .keybundle()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
         self.publish(
             inbox_topic.topic,
             Payload::Inbox(InboxPayload::ContactRequest {
                 profile,
+                keybundle,
                 agent_id: self.agent_id(),
                 reply_topic: reply_inbox.topic.clone(),
             }),
@@ -1860,16 +2135,30 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        // Our request lives only on this (possibly shared) inbox, so we keep
+        // serving it across restarts — but only until the owner accepts or the
+        // first restart after the code expires, not for good like the owner does.
+        // TODO: make this more private. Rejoining the inbox's gossip overlay
+        // shows us to (and syncs us the requests of) everyone else who scanned
+        // the same QR; sync the topic only with its owner's node instead, and
+        // drop the other scanners' requests we synced meanwhile.
+        self.local_store
+            .add_requested_inbox_topic(inbox_topic.clone(), contact.device_pubkey)
+            .await
+            .map_err(|e| Error::AddActiveInbox(format!("{e}")))?;
+
         // Record a pending request in our own device group so the UI can show a
         // placeholder chat until the owner's ack arrives. Keyed on the owner's
         // device pubkey, since we don't know their agent id yet.
         self.publish(
             self.device_group_topic(),
-            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest {
-                device_pubkey: contact.device_pubkey,
-                profile_name: contact.profile_name,
-                direct_chat_topic_id,
-            }),
+            Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(
+                PendingContactRequest {
+                    device_pubkey: contact.device_pubkey,
+                    profile_name: contact.profile_name,
+                    direct_chat_topic_id,
+                },
+            )),
             Some(&format!(
                 "add_contact/pending({:?})",
                 contact.device_pubkey.aliased()
@@ -1924,17 +2213,18 @@ impl Node {
                     agent_id.aliased()
                 ))
             })?;
-        self.establish_contact(device_pubkey, agent_id).await?;
+        self.establish_contact(device_pubkey).await?;
 
         // Reply to the requester with our profile over their private reply
         // topic. This is the point at which we first disclose our profile and
         // signals that we accepted, letting them complete the exchange.
         if let Some(reply_topic) = self
-            .find_contact_request_reply_topic(agent_id)
+            .find_contact_request_reply_topic(agent_id, device_pubkey)
             .await
             .map_err(|e| Error::AuthorOperation(e.to_string()))?
         {
-            self.reply_to_contact_request(reply_topic).await?;
+            self.reply_to_contact_request(reply_topic, device_pubkey)
+                .await?;
         } else {
             tracing::warn!(
                 agent_id = ?agent_id.aliased(),
@@ -1957,50 +2247,62 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if we have an outgoing contact request recorded for
+    /// Returns true if we have an unexpired outgoing contact request to
     /// `device_pubkey` (i.e. we scanned their code and are awaiting their ack).
     pub async fn has_outgoing_pending_request(&self, device_id: DeviceId) -> anyhow::Result<bool> {
         self.local_store
-            .has_pending_reply_inbox_for(device_id)
+            .has_unexpired_reply_inbox_for(device_id)
             .await
     }
 
     /// Scan our advertised inbox logs for a pending [`InboxPayload::ContactRequest`]
-    /// from `agent_id` and return its private reply topic, so [`Self::accept_contact`]
+    /// from `agent_id`'s `device_id` and return its private reply topic, so [`Self::accept_contact`]
     /// can send our acceptance there. Returns `None` if no matching request is stored.
     async fn find_contact_request_reply_topic(
         &self,
         agent_id: AgentId,
+        device_id: DeviceId,
     ) -> anyhow::Result<Option<Topic<kind::Inbox>>> {
+        // Only the requester's own log: anyone holding a shared code can publish
+        // a request claiming their agent id. A requester whose request expired
+        // unanswered can send another, with a new reply topic: answer the latest.
+        // The requester picks the reply topic, so one naming an inbox we already
+        // have would take it over: such a request is not answered.
+        let mut latest = None;
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
-            for author in self.op_store.get_authors(log_id).await? {
-                for op in self.op_store.get_log(&author, &log_id, None).await? {
-                    let Some(body) = op.body else { continue };
-                    let Ok(Payload::Inbox(InboxPayload::ContactRequest {
-                        agent_id: req_agent,
-                        reply_topic,
-                        ..
-                    })) = Payload::try_from_body(&body)
-                    else {
-                        continue;
-                    };
-                    if req_agent == agent_id {
-                        return Ok(Some(reply_topic));
-                    }
+            for op in self.op_store.get_log(&device_id, &log_id, None).await? {
+                let Some(body) = op.body? else { continue };
+                let Ok(Payload::Inbox(InboxPayload::ContactRequest {
+                    agent_id: req_agent,
+                    reply_topic,
+                    ..
+                })) = Payload::try_from_body(&body)
+                else {
+                    continue;
+                };
+                if req_agent == agent_id
+                    && latest
+                        .as_ref()
+                        .is_none_or(|(ts, _)| op.header.extensions.timestamp() > *ts)
+                    && !self.local_store.is_known_inbox_topic(*reply_topic).await?
+                {
+                    latest = Some((op.header.extensions.timestamp(), reply_topic));
                 }
             }
         }
-        Ok(None)
+        Ok(latest.map(|(_, reply_topic)| reply_topic))
     }
 
     /// Reply to an incoming contact request by sending our profile to the
     /// scanner's private reply topic, so the scanner learns it immediately over
-    /// the inbox rather than waiting for announcements sync. We subscribe to the
-    /// reply topic just long enough to publish to it.
+    /// the inbox rather than waiting for chat sync. We stay subscribed
+    /// to the reply topic across restarts, since without a mailbox the scanner
+    /// can only sync it from us.
     pub(crate) async fn reply_to_contact_request(
         &self,
         reply_topic: Topic<kind::Inbox>,
+        requester: DeviceId,
     ) -> Result<(), Error> {
         let Some(profile) = self
             .my_profile()
@@ -2009,19 +2311,43 @@ impl Node {
         else {
             return Ok(());
         };
-        self.initialize_topic(*reply_topic)
+        self.initialize_stream(*reply_topic)
             .await
             .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+        let keybundle = self
+            .keybundle()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?;
         self.publish(
             reply_topic,
             Payload::Inbox(InboxPayload::ContactRequestAccept {
                 profile,
+                keybundle,
                 agent_id: self.agent_id(),
             }),
             Some("reply_to_contact_request"),
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+        // Only once published: a saved reply topic is no longer answered, so
+        // saving it first would leave a retry after a failed publish silent.
+        if let Err(err) = self
+            .local_store
+            .add_accepted_inbox_topic(
+                InboxTopic {
+                    topic: reply_topic,
+                    expires_at: Utc::now() + self.config.contact_code_expiry,
+                },
+                requester,
+            )
+            .await
+        {
+            tracing::warn!(
+                requester = ?requester.aliased(),
+                ?err,
+                "failed to save the accepted inbox; it won't be served after a restart"
+            );
+        }
         Ok(())
     }
 
@@ -2058,6 +2384,18 @@ impl Node {
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
 
+        for device_id in self
+            .projection
+            .lookup_devices_by_agent_id(agent_id)
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+        {
+            self.online_peers
+                .leave(*self.direct_chat_topic(FakeAgentId::from(device_id)))
+                .await;
+            self.online_peers.forget(device_id);
+        }
+
         Ok(())
     }
 
@@ -2074,6 +2412,36 @@ impl Node {
         )
         .await
         .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+
+        let is_contact = self
+            .accepted_contact_agent_ids()
+            .await
+            .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            .contains(&agent_id);
+        if is_contact {
+            for device_id in self
+                .projection
+                .lookup_devices_by_agent_id(agent_id)
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+            {
+                self.join_presence(self.direct_chat_topic(FakeAgentId::from(device_id)))
+                    .await
+                    .map_err(|e| Error::InitializeTopic(e.to_string()))?;
+            }
+            // Profile updates skipped them while they were blocked.
+            let direct_chat = self
+                .accepted_contacts()
+                .await
+                .map_err(|e| Error::AuthorOperation(e.to_string()))?
+                .get(&agent_id)
+                .copied();
+            if let Some(chat_id) = direct_chat {
+                self.publish_my_profile_to(chat_id)
+                    .await
+                    .map_err(|e| Error::AuthorOperation(e.to_string()))?;
+            }
+        }
 
         Ok(())
     }
@@ -2110,51 +2478,202 @@ impl Node {
     /// Re-run stored-topic initialization so the app catches up on operations
     /// another process (the iOS push extension) wrote into the shared store
     /// while the app was running: it subscribes to any newly-stored topics,
-    /// replaying their operations from the app's own un-advanced cursor.
+    /// replaying their operations from the app's own un-advanced cursor, and
+    /// imports the operations the extension recorded as processed.
     pub async fn resync(&self) -> anyhow::Result<()> {
         self.initialize_stored_topics().await
     }
 
-    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
-        self.initialize_topic(
-            *Topic::announcements(self.agent_id())
-                .alias_named(&format!("announce({:?})", self.agent_id().aliased())),
-        )
-        .await?;
+    /// Import the operations the push extension processed and recorded, so
+    /// this node processes them too. They are in the shared store already, so
+    /// nothing else delivers them to it; importing processes them regardless,
+    /// and acknowledging one below this node's cursor is a no-op. A freshly
+    /// opened stream replays the ones above the cursor as well, which is
+    /// harmless: processing an operation twice is idempotent.
+    async fn import_extension_processed_operations(&self) -> anyhow::Result<()> {
+        if !self.config.import_recorded_operations {
+            return Ok(());
+        }
+        let mut by_topic: HashMap<TopicId, Vec<Operation>> = HashMap::new();
+        for (hash, topic) in self.local_store.extension_processed_operations().await? {
+            // Without a body there is nothing left for the app layer to see.
+            let readable = self
+                .op_store
+                .get_operation(&hash)
+                .await?
+                .is_some_and(|operation| matches!(operation.body, Ok(Some(_))));
+            match self.op_store.get_stored_operation(&hash).await? {
+                Some(operation) if readable => by_topic.entry(topic).or_default().push(operation),
+                _ => {
+                    if let Err(err) = self
+                        .local_store
+                        .forget_extension_processed_operation(&hash)
+                        .await
+                    {
+                        tracing::warn!(
+                            ?err,
+                            "failed to forget an operation the push extension recorded"
+                        );
+                    }
+                }
+            }
+        }
+        let mut failures = 0usize;
+        for (topic, mut operations) in by_topic {
+            operations
+                .sort_by_key(|op| (DeviceId::from(op.header.verifying_key), op.header.seq_num));
+            // The race e2e spec matches on this line.
+            tracing::info!(topic = ?topic.aliased(), count = operations.len(), "importing operations the push extension processed");
+            if let Err(err) = self
+                .import_stream(topic, Box::pin(futures::stream::iter(operations)))
+                .await
+            {
+                error!(topic = ?topic.aliased(), ?err, "failed to import the operations the push extension processed");
+                failures += 1;
+            }
+        }
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to import");
+        }
+        Ok(())
+    }
 
-        for topic in self.local_store.get_advertised_inbox_topics().await?.iter() {
-            self.initialize_topic(
-                *topic
-                    .topic
-                    .clone()
-                    .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
-            )
-            .await?;
+    async fn chat_topics(&self) -> anyhow::Result<Vec<ChatId>> {
+        let mut chat_ids = self.projection.get_group_chat_ids().await?;
+        for agent_id in self.accepted_contact_agent_ids().await? {
+            for device_id in self.projection.lookup_devices_by_agent_id(agent_id).await? {
+                if !self.projection.is_author_blocked(&device_id).await? {
+                    chat_ids.push(self.direct_chat_topic(FakeAgentId::from(device_id)));
+                }
+            }
+        }
+        Ok(chat_ids)
+    }
+
+    /// Initialize all stored topics.
+    ///
+    /// Failures loading the topic lists from `local_store` are propagated,
+    /// causing the caller to retry the whole call. Once the lists are loaded,
+    /// per-topic failures in the loops are logged and skipped so one bad topic
+    /// does not starve the rest; the function returns an error at the end if
+    /// any of those loops failed, so the deferred init retry path will re-run
+    /// it.
+    async fn initialize_stored_topics(&self) -> anyhow::Result<()> {
+        let mut failures = 0usize;
+
+        let subscribed_spaces = self.local_store.subscribed_spaces().await?;
+        let advertised_inbox_topics = self.local_store.get_advertised_inbox_topics().await?;
+        for topic in advertised_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_stream(
+                    *topic
+                        .topic
+                        .clone()
+                        .alias_named(&format!("inbox({:?})", self.device_id().aliased())),
+                )
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize advertised inbox topic");
+                failures += 1;
+            }
         }
 
-        for (topic, peer_device) in self
+        let reply_inbox_topics = self
             .local_store
             .get_reply_inbox_topics_with_author()
+            .await?;
+        for (topic, peer_device) in reply_inbox_topics.iter() {
+            if let Err(err) = self
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
+                    "reply_inbox({:?},peer={})",
+                    self.device_id().aliased(),
+                    &hex::encode(&peer_device.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize reply inbox topic");
+                failures += 1;
+            }
+        }
+
+        self.local_store
+            .prune_expired_requested_inbox_topics()
+            .await?;
+        for (topic, owner) in self
+            .local_store
+            .get_requested_inbox_topics_with_owner()
             .await?
-            .iter()
         {
-            self.initialize_topic(*topic.topic.clone().alias_named(&format!(
-                "reply_inbox({:?},peer={})",
-                self.device_id().aliased(),
-                &hex::encode(&peer_device.as_bytes()[..4])
-            )))
-            .await?;
+            if let Err(err) = self
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
+                    "requested_inbox(peer={})",
+                    &hex::encode(&owner.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize requested inbox topic");
+                failures += 1;
+            }
         }
 
-        for topic in self.local_store.subscribed_topics().await?.iter() {
-            self.initialize_topic(*topic).await?;
+        self.local_store
+            .prune_expired_accepted_inbox_topics()
+            .await?;
+        for (topic, requester) in self
+            .local_store
+            .get_accepted_inbox_topics_with_requester()
+            .await?
+        {
+            if let Err(err) = self
+                .initialize_stream(*topic.topic.clone().alias_named(&format!(
+                    "accepted_inbox(peer={})",
+                    &hex::encode(&requester.as_bytes()[..4])
+                )))
+                .await
+            {
+                error!(topic = ?topic.topic.aliased(), ?err, "failed to initialize accepted inbox topic");
+                failures += 1;
+            }
         }
 
-        // @TODO: I had to add this so that the device group topic is subscribed to when we later
-        // attempt to publish operations to it.
-        self.initialize_topic(self.device_group_topic().into())
-            .await?;
+        for topic in subscribed_spaces.iter() {
+            if let Err(err) = self.initialize_space(*topic).await {
+                error!(topic = ?topic.aliased(), ?err, "failed to initialize subscribed space");
+                failures += 1;
+            }
+        }
 
+        match self.chat_topics().await {
+            Ok(chat_ids) => {
+                for chat_id in chat_ids {
+                    if let Err(err) = self.join_presence(chat_id).await {
+                        error!(chat_id = ?chat_id.aliased(), ?err, "failed to join presence");
+                        failures += 1;
+                    }
+                }
+            }
+            Err(err) => {
+                error!(?err, "failed to look up the chat topics");
+                failures += 1;
+            }
+        }
+
+        // The device group is a space we own: created on this node's first
+        // startup (with this device as its only member, for now) and rejoined
+        // on every later one, so publishes into it always find it subscribed.
+        if let Err(err) = self
+            .register_and_create_space(self.device_group_topic())
+            .await
+        {
+            error!(?err, "failed to initialize the device group space");
+            failures += 1;
+        }
+
+        self.import_extension_processed_operations().await?;
+
+        if failures > 0 {
+            anyhow::bail!("{failures} topic(s) failed to initialize");
+        }
         Ok(())
     }
 
@@ -2167,12 +2686,16 @@ impl Node {
         let mut items = vec![];
         match media {
             OutgoingMedia::Photos { photos } => {
+                for photo in &photos {
+                    ensure_blob_size(photo.data.len() as u64, &photo.name)?;
+                }
                 for photo in photos {
                     let size = photo.data.len() as u64;
-                    ensure_blob_size(size, &photo.name)?;
+                    let (group_secret_id, nonce, ciphertext) =
+                        self.encrypt_blob(topic, photo.data).await?;
                     let hash = self
                         .require_blob_sync()?
-                        .store_blob(topic, self.device_id(), operation_hash, photo.data)
+                        .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                         .await?;
                     items.push(MediaMetadata::Photo {
                         name: photo.name,
@@ -2181,30 +2704,38 @@ impl Node {
                         width: photo.width,
                         height: photo.height,
                         hash,
+                        group_secret_id,
+                        nonce,
                     });
                 }
             }
             OutgoingMedia::File { file } => {
                 let size = file.data.len() as u64;
                 ensure_blob_size(size, &file.name)?;
+                let (group_secret_id, nonce, ciphertext) =
+                    self.encrypt_blob(topic, file.data).await?;
                 let hash = self
                     .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, file.data)
+                    .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                     .await?;
                 items.push(MediaMetadata::File {
                     name: file.name,
                     mime_type: file.mime_type,
                     size,
                     hash,
+                    group_secret_id,
+                    nonce,
                 });
             }
             OutgoingMedia::VoiceNote { voice_note } => {
                 let size = voice_note.data.len() as u64;
                 ensure_blob_size(size, "voice note")?;
 
+                let (group_secret_id, nonce, ciphertext) =
+                    self.encrypt_blob(topic, voice_note.data).await?;
                 let hash = self
                     .require_blob_sync()?
-                    .store_blob(topic, self.device_id(), operation_hash, voice_note.data)
+                    .store_blob(topic, self.device_id(), operation_hash, ciphertext)
                     .await?;
                 items.push(MediaMetadata::VoiceNote {
                     mime_type: voice_note.mime_type,
@@ -2212,10 +2743,53 @@ impl Node {
                     duration_ms: voice_note.duration_ms,
                     waveform: voice_note.waveform,
                     hash,
+                    group_secret_id,
+                    nonce,
                 });
             }
         }
+        self.blob_decrypt_index.insert_blobs(topic, &items);
+        // The store batches writes for up to 500 ms: without this commit, a kill right
+        // after sending keeps the message but loses its media.
+        self.require_blob_sync()?.blobs.store().sync_db().await?;
         Ok(MediaBundle::from(items))
+    }
+
+    /// Encrypt a media blob towards the chat space on `topic`, under the space's current
+    /// group secret.
+    ///
+    /// Waits up to [`BLOB_ENCRYPT_WAIT`] for the space's encryption state to become
+    /// established (a freshly accepted contact or joined group may not have been welcomed
+    /// yet), then fails the send.
+    async fn encrypt_blob(
+        &self,
+        topic: TopicId,
+        data: Vec<u8>,
+    ) -> anyhow::Result<(GroupSecretId, XAeadNonce, Vec<u8>)> {
+        let space = self.streams.space(topic).await?;
+        let data = Arc::new(data);
+        let deadline = std::time::Instant::now() + BLOB_ENCRYPT_WAIT;
+        loop {
+            let data = data.clone();
+            let result = space
+                .run(move |space| async move {
+                    space
+                        .with_secrets(|secrets| secrets.encrypt_aux(BLOB_AUX_INFO, &data))
+                        .await
+                        .map_err(anyhow::Error::from)
+                })
+                .await??;
+            match result {
+                Ok(encrypted) => return Ok(encrypted),
+                Err(SecretsError::NotEstablished) if std::time::Instant::now() < deadline => {
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                Err(err) => {
+                    return Err(anyhow::Error::from(err)
+                        .context("failed to encrypt media towards the chat space"));
+                }
+            }
+        }
     }
 
     /// Load the raw bytes of a single blob by its hash from the local blob store.
@@ -2236,7 +2810,8 @@ impl Node {
         let hash: iroh_blobs::Hash = hash.parse()?;
         let blob_sync = self.require_blob_sync()?;
         let Some(timeout) = timeout else {
-            return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
+            let ciphertext = blob_sync.blobs.get_bytes(hash).await?;
+            return self.decrypt_blob(hash, ciphertext, None).await;
         };
 
         if !blob_sync.blobs.has(hash).await.unwrap_or(false) {
@@ -2252,7 +2827,8 @@ impl Node {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if blob_sync.blobs.has(hash).await.unwrap_or(false) {
-                return Ok(blob_sync.blobs.get_bytes(hash).await?.to_vec());
+                let ciphertext = blob_sync.blobs.get_bytes(hash).await?;
+                return self.decrypt_blob(hash, ciphertext, Some(deadline)).await;
             }
             if std::time::Instant::now() >= deadline {
                 anyhow::bail!("blob {hash} not available after {timeout:?}");
@@ -2261,15 +2837,67 @@ impl Node {
         }
     }
 
+    /// Decrypt a media blob with the space secret pinned in its message metadata.
+    ///
+    /// Fails for a blob no readable message names: nothing says how to decrypt it. An unknown
+    /// secret id means the space's key agreement hasn't caught up with the message yet, so
+    /// with a `deadline` the decrypt is retried until then; failure to decrypt with a known
+    /// secret is permanent.
+    async fn decrypt_blob(
+        &self,
+        hash: iroh_blobs::Hash,
+        ciphertext: bytes::Bytes,
+        deadline: Option<std::time::Instant>,
+    ) -> anyhow::Result<Vec<u8>> {
+        let info = self
+            .blob_decrypt_index
+            .get(&hash)
+            .with_context(|| format!("no readable message names blob {hash}"))?;
+        let space = self.streams.space(info.topic).await?;
+        loop {
+            let ciphertext = ciphertext.clone();
+            let result = space
+                .run(move |space| async move {
+                    space
+                        .with_secrets(|secrets| {
+                            secrets.decrypt_aux(
+                                info.group_secret_id,
+                                BLOB_AUX_INFO,
+                                info.nonce,
+                                &ciphertext,
+                            )
+                        })
+                        .await
+                        .map_err(anyhow::Error::from)
+                })
+                .await??;
+            match result {
+                Ok(plaintext) => return Ok(plaintext),
+                Err(err @ SecretsError::UnknownSecret(_))
+                    if deadline.is_some_and(|d| std::time::Instant::now() < d) =>
+                {
+                    tracing::debug!(%hash, %err, "waiting for space secret to decrypt blob");
+                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                }
+                Err(err) => {
+                    return Err(
+                        anyhow::Error::from(err).context(format!("failed to decrypt blob {hash}"))
+                    );
+                }
+            }
+        }
+    }
+
     pub async fn load_media(&self, meta: Vec<MediaMetadata>) -> anyhow::Result<OutgoingMedia> {
         let mut items = vec![];
         for item in meta {
-            let data = self
+            let ciphertext = self
                 .require_blob_sync()?
                 .blobs
                 .get_bytes(item.hash())
                 .await
                 .context(format!("failed to load blob: {item:?}"))?;
+            let data = self.decrypt_blob(item.hash(), ciphertext, None).await?;
             items.push((item, data));
         }
 
@@ -2348,6 +2976,13 @@ impl mailbox_client::BlobReader for NodeBlobReader {
             .ok_or_else(|| anyhow::anyhow!("blob sync disabled"))?;
         Ok(blob_sync.blobs.get_bytes(hash).await?)
     }
+
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> bool {
+        match &self.blob_sync {
+            Some(blob_sync) => blob_sync.blobs.has(hash).await.unwrap_or(false),
+            None => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2399,7 +3034,7 @@ mod lan_router_tests {
         let router = node.lan_router.clone().expect("router on");
         router.shutdown().await;
         assert!(router.subscribe_topic(TopicId::random()).await.is_err());
-        node.initialize_topic(TopicId::random()).await.unwrap();
+        node.initialize_stream(TopicId::random()).await.unwrap();
         node.shutdown().await;
     }
 
@@ -2423,18 +3058,74 @@ mod lan_router_tests {
 
 #[cfg(test)]
 mod blob_load_tests {
-    use crate::NodeConfig;
-    use crate::testing::TestNode;
+    use crate::testing::*;
+    use crate::*;
     use std::time::Duration;
+
+    /// Alice sends bobbi a photo. Gives both, the photo's bytes and its blob hash.
+    async fn sent_photo() -> (TestNode, TestNode, Vec<u8>, iroh_blobs::Hash) {
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat = alice.direct_chat_with(&bobbi);
+
+        let bytes = rand::random::<[u8; 1024]>().to_vec();
+        let photo = OutgoingMedia::Photos {
+            photos: vec![OutgoingPhoto {
+                data: bytes.clone(),
+                name: "pic.png".into(),
+                mime_type: "image/png".into(),
+                width: 640,
+                height: 480,
+            }],
+        };
+        alice
+            .send_message(chat, "look at this", Some(photo), None)
+            .await
+            .unwrap();
+        let hash = alice
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .find_map(|m| m.content.media().cloned())
+            .expect("the sent message has media")
+            .first()
+            .expect("one media item")
+            .hash();
+
+        PollConfig::default()
+            .wait_for(|| async {
+                let received = bobbi
+                    .get_messages(chat)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .any(|m| m.content.media().is_some());
+                received.then_some(()).ok_or("photo message not received")
+            })
+            .await
+            .unwrap();
+        (alice, bobbi, bytes, hash)
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn load_blob_present_returns_bytes_without_timeout() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let tag = node.blobs().add_bytes(b"hello".to_vec()).await.unwrap();
-        let hash = tag.hash.to_string();
+        let (alice, _bobbi, bytes, hash) = sent_photo().await;
 
-        let got = node.load_blob(&hash, None).await.unwrap();
-        assert_eq!(got, b"hello");
+        let got = alice.load_blob(&hash.to_string(), None).await.unwrap();
+        assert_eq!(got, bytes);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -2460,22 +3151,144 @@ mod blob_load_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn load_blob_with_timeout_returns_blob_that_lands_mid_wait() {
-        let node = TestNode::new(NodeConfig::testing(), "alice").await;
-        let content = b"arrives-late".to_vec();
-        let hash = iroh_blobs::Hash::new(&content);
+    async fn load_blob_with_timeout_fetches_a_received_photo() {
+        let (_alice, bobbi, bytes, hash) = sent_photo().await;
 
-        let blobs = node.blobs();
-        let content2 = content.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-            blobs.add_bytes(content2).await.unwrap();
-        });
-
-        let got = node
-            .load_blob(&hash.to_string(), Some(Duration::from_secs(3)))
+        let got = bobbi
+            .load_blob(&hash.to_string(), Some(Duration::from_secs(30)))
             .await
             .unwrap();
-        assert_eq!(got, content);
+        assert_eq!(got, bytes);
     }
+}
+
+#[cfg(test)]
+mod forged_contact_request_tests {
+    use crate::contact::InboxTopic;
+    use crate::testing::*;
+    use crate::*;
+
+    /// Mallory, another scanner of Alice's shared code, publishes a later
+    /// request claiming Bobbi's agent id. Accepting Bobbi must still answer
+    /// Bobbi's own request, not the forged one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_answers_the_requesting_device_not_a_forger() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let bobbi_device_id = bobbi.device_id();
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &bobbi, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        bobbi.add_contact(qr.clone()).await.unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(bobbi_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received bobbi's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        mallory.add_contact(qr.clone()).await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    keybundle: mallory.keybundle().await.unwrap(),
+                    agent_id: bobbi.agent_id(),
+                    reply_topic: Topic::inbox(),
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::default()
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's forged request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(bobbi.agent_id()).await.unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match bobbi
+                    .get_contacts()
+                    .await
+                    .unwrap()
+                    .contains(&alice.agent_id())
+                {
+                    true => Ok(()),
+                    false => Err("alice's acceptance never reached bobbi"),
+                }
+            })
+            .await
+            .unwrap();
+    }
+
+    /// Mallory, a scanner of Alice's shared code, names Alice's own advertised
+    /// inbox as the reply topic. Accepting Mallory must leave that inbox
+    /// advertised, or every other scanner's request on it is dropped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepting_keeps_our_inbox_named_as_reply_topic() {
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let mallory = TestNode::new(config, "mallory").await;
+        let mallory_device_id = mallory.device_id();
+        introduce_peers([&alice, &mallory]).await.unwrap();
+
+        let qr = alice.create_add_contact_qr_code().await.unwrap();
+        let alice_inbox =
+            InboxTopic::from_nonce(&qr.device_pubkey, &qr.inbox_nonce, chrono::Utc::now());
+        mallory.initialize_stream(*alice_inbox.topic).await.unwrap();
+        mallory
+            .publish(
+                alice_inbox.topic,
+                Payload::Inbox(InboxPayload::ContactRequest {
+                    profile: mallory.my_profile().await.unwrap().unwrap(),
+                    keybundle: mallory.keybundle().await.unwrap(),
+                    agent_id: mallory.agent_id(),
+                    reply_topic: alice_inbox.topic,
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        PollConfig::seconds(20)
+            .wait_for(|| async {
+                match alice.lookup_contact(mallory_device_id).await.unwrap() {
+                    Some(_) => Ok(()),
+                    None => Err("alice hasn't received mallory's request yet"),
+                }
+            })
+            .await
+            .unwrap();
+
+        alice.accept_contact(mallory.agent_id()).await.unwrap();
+
+        let advertised = alice
+            .local_store
+            .get_advertised_inbox_topics()
+            .await
+            .unwrap();
+        assert!(
+            advertised
+                .iter()
+                .any(|inbox| inbox.topic == alice_inbox.topic)
+        );
+    }
+}
+
+fn space_group_id(topic: TopicId) -> p2panda::spaces::GroupId {
+    p2panda::spaces::space_group_id(p2panda::spaces::SpaceId::from(*topic.as_bytes()))
 }

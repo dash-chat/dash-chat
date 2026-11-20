@@ -9,11 +9,13 @@ mod device_info;
 mod error;
 mod filesystem;
 mod i18n;
+mod logger;
 mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
 mod node;
 mod notifications;
+mod pending_navigations;
 mod redaction;
 mod sentry;
 mod settings;
@@ -36,6 +38,7 @@ pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    panic_policy::install_panic_hook();
     crate::utils::install_crypto_provider();
 
     filesystem::init_data_dir();
@@ -48,14 +51,17 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_barcode_scanner::init())
-            .plugin(tauri_plugin_view::init());
+            .plugin(tauri_plugin_view::init())
+            .plugin(tauri_plugin_network_interfaces::init());
+    }
+    #[cfg(all(mobile, feature = "e2e-tests"))]
+    {
+        builder = builder.plugin(tauri_plugin_wifi::init());
     }
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
-        // Holds a MulticastLock so inbound mDNS reaches us (the wifi driver otherwise filters it).
-        builder = builder.plugin(tauri_plugin_network_interfaces::init());
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
@@ -72,28 +78,20 @@ pub fn run() {
     #[cfg(target_os = "ios")]
     {
         builder = builder.plugin(tauri_plugin_ios_photos::init());
-        // Quiesce the node (release SQLite locks) on background and rebuild it on
-        // foreground so iOS can suspend the app without a 0xdead10cc kill.
+        // Stop database writes on background so iOS can suspend the app with its
+        // node alive and without a 0xdead10cc kill.
         builder = builder.plugin(
             tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
                         app_node_manager.pause().await;
                     }
                 })
                 .on_resume(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
-                        if let Err(err) = app_node_manager.resume(&app).await {
-                            log::error!("Failed to rebuild node on foreground: {err:?}");
-                        }
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
+                        app_node_manager.resume(&app).await;
                     }
                 })
                 .build(),
@@ -124,6 +122,16 @@ pub fn run() {
                         }
                     },
                 ))
+                // After single-instance, so launching a second copy from the
+                // disk image focuses the running app instead of replacing it.
+                .plugin(tauri_plugin_move_to_applications::init(
+                    tauri_plugin_move_to_applications::Prompt {
+                        title: sonix_i18n::t!("moveToApplicationsTitle"),
+                        message: sonix_i18n::t!("moveToApplicationsMessage"),
+                        move_button: sonix_i18n::t!("moveToApplicationsMove"),
+                        cancel_button: sonix_i18n::t!("moveToApplicationsNotNow"),
+                    },
+                ))
                 .plugin(tauri_plugin_autostart::init(
                     tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                     Some(vec!["--minimized"]),
@@ -133,14 +141,16 @@ pub fn run() {
         }
     }
 
-    // MCP bridge for Claude Code to drive the running app, on every platform.
-    // Dev-only: the WebSocket server never starts in production builds. E2E runs
-    // its own multi-instance harness, so skip it there.
+    // MCP bridge for Claude Code to drive the running desktop app. Dev-only:
+    // the WebSocket server never starts in production builds. E2E runs its own
+    // multi-instance harness, so skip it there.
+    #[cfg(desktop)]
     if tauri::is_dev() && !cfg!(feature = "e2e-tests") {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
     builder = builder
+        .plugin(tauri_plugin_subscriptions::init())
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
@@ -176,6 +186,7 @@ pub fn run() {
             commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
+            commands::chats::get_group_control_log,
             commands::settings::get_settings,
             commands::settings::set_setting,
             #[cfg(not(mobile))]
@@ -186,8 +197,12 @@ pub fn run() {
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::online_peers::subscribe_to_online_peers,
+            #[cfg(not(mobile))]
+            commands::lan_multicast::subscribe_to_lan_multicast_blocked,
             commands::media::save_blob_to_cache,
             commands::voice::transcode_voice_message,
+            pending_navigations::take_pending_navigations,
         ])
         .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -235,6 +250,8 @@ pub fn run() {
                     log::error!("Failed to register deep links: {err:?}");
                 }
             }
+
+            pending_navigations::setup(app.handle());
 
             let handle = app.handle().clone();
 

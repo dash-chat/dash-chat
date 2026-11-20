@@ -22,16 +22,16 @@
 		cachedRecentPhotos,
 		getRecentPhotosPermission,
 		listRecentPhotos,
-		loadRecentPhotoFile,
 		recentPhotosSupported,
 		requestRecentPhotosPermission,
 	} from '$lib/utils/recent-photos';
 
 	interface Props {
-		onFiles: (files: File[]) => void;
+		loadingMedia: boolean;
+		onAdd: (photo: RecentPhoto) => Promise<void>;
 	}
 
-	let { onFiles }: Props = $props();
+	let { loadingMedia, onAdd }: Props = $props();
 
 	let permission = $state<RecentPhotosPermission | undefined>(undefined);
 	let photos = $state<RecentPhoto[]>([]);
@@ -114,11 +114,7 @@
 	async function add(photo: RecentPhoto) {
 		loadingId = photo.id;
 		try {
-			const file = await loadRecentPhotoFile(photo);
-			onFiles([file]);
-		} catch (e) {
-			console.error('Failed to load photo', e);
-			showToast(m.errorAddingPhoto(), 'error');
+			await onAdd(photo);
 		} finally {
 			loadingId = undefined;
 		}
@@ -135,6 +131,7 @@
 				type="button"
 				class="recent-tile relative aspect-square h-full shrink-0 overflow-hidden"
 				data-testid="message-input-recent-photo-{i}"
+				disabled={loadingMedia}
 				onclick={() => add(photo)}
 			>
 				<img

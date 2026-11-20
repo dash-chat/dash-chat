@@ -18,16 +18,55 @@ pub(crate) async fn track_cloud_mailbox(node: &Node) -> anyhow::Result<String> {
     // known only by id and is not dialable.
     node.insert_peer_addr(health.endpoint_addr).await?;
     if !node.mailboxes.is_tracked(&health.mailbox_id).await {
-        let mailbox_client = mailbox_client::toy::ToyMailboxClient::new(
+        let mailbox_client = mailbox_client::backends::toy::ToyMailboxClient::new(
             health.mailbox_id,
             mailbox_url.clone(),
             node.endpoint_id(),
             node.unfetched_blob_tracker(),
+            node.mailboxes.upload_tracker(),
         )
-        .with_blob_reader(node.blob_reader());
+        .with_blob_reader(node.blob_reader())
+        .with_blob_pusher(node.blob_pusher().await);
         node.mailboxes.register(mailbox_client).await;
     }
     Ok(mailbox_url)
+}
+
+/// A [`track_cloud_mailbox`] attempt running in its own task, so that giving up
+/// on waiting for it never cancels it halfway through `Mailboxes::register`.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) type CloudMailboxAttempt = tokio::task::JoinHandle<anyhow::Result<String>>;
+
+/// [`track_cloud_mailbox`] that holds its caller up for at most `wait`, returning
+/// whether the cloud mailbox is now tracked. An attempt still running when the
+/// wait runs out stays in `attempt` and is awaited again by the next call rather
+/// than started twice; it keeps going only as long as the process does.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) async fn track_cloud_mailbox_with_timeout(
+    node: &Node,
+    wait: std::time::Duration,
+    attempt: &mut Option<CloudMailboxAttempt>,
+) -> bool {
+    let running = attempt.get_or_insert_with(|| {
+        let node = node.clone();
+        tokio::spawn(async move { track_cloud_mailbox(&node).await })
+    });
+    let Ok(finished) = tokio::time::timeout(wait, running).await else {
+        log::debug!("cloud mailbox registration still pending after {wait:?}");
+        return false;
+    };
+    *attempt = None;
+    match finished {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => {
+            log::warn!("failed to track cloud mailbox: {err:?}");
+            false
+        }
+        Err(err) => {
+            log::warn!("cloud mailbox registration task failed: {err}");
+            false
+        }
+    }
 }
 
 /// Track the cloud mailbox (so we can fetch from it) and additionally register
@@ -54,7 +93,7 @@ pub(crate) async fn register_cloud_mailbox(node: &Node) -> anyhow::Result<()> {
 }
 
 pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
-    install_logger(&app_handle)?;
+    crate::logger::install_app_logger(&app_handle)?;
     crate::device_info::log_device_info(&app_handle);
 
     let _ = crate::APP_HANDLE.set(app_handle.clone());
@@ -72,7 +111,9 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         app_handle.on_menu_event(crate::menu::handle_menu_event);
         crate::menu::install_menu(&app_handle)?;
         app_handle.manage(crate::mailbox::server::LocalMailboxMutex::default());
-        crate::tray::setup_tray(&app_handle)?;
+        let lan_multicast_probe = lan_multicast_probe::LanMulticastProbe::spawn();
+        crate::tray::setup_tray(&app_handle, lan_multicast_probe.blocked())?;
+        app_handle.manage(lan_multicast_probe);
 
         #[cfg(target_os = "macos")]
         crate::macos::install_termination_guard();
@@ -85,8 +126,8 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
         }
     }
 
-    // Keep the node behind a swappable container so it can be torn down when the
-    // iOS app is backgrounded (releasing SQLite locks) and rebuilt on foreground.
+    // Keep the node behind a swappable container so it can be torn down and
+    // rebuilt when p2p is switched on or off.
     // AppNodeManager::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
     let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;
@@ -100,114 +141,4 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// os_log is the only log channel that leaves an iOS device, so it is what any
-/// on-device debugging reads. Redacted, unlike the other targets: the unified
-/// log is swept into sysdiagnose archives, which users hand to Apple and attach
-/// to bug reports, and nothing sensitive may leave that way.
-#[cfg(target_os = "ios")]
-fn device_console_target() -> tauri_plugin_log::Target {
-    let logger =
-        oslog::OsLogger::new("studio.darksoil.dashchat").level_filter(log::LevelFilter::Debug);
-    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
-        tauri_plugin_log::fern::Dispatch::new().chain(Box::new(logger) as Box<dyn log::Log>),
-    ))
-    .format(format_redacted_record)
-}
-
-#[cfg(target_os = "ios")]
-fn format_redacted_record(
-    out: tauri_plugin_log::fern::FormatCallback,
-    message: &std::fmt::Arguments,
-    record: &log::Record,
-) {
-    let redacted = tauri_plugin_sentry_reporting::redact(
-        &crate::redaction::REDACTION_REGEXES,
-        &message.to_string(),
-    );
-    format_record(out, &format_args!("{redacted}"), record);
-}
-
-fn install_logger(handle: &AppHandle) -> anyhow::Result<()> {
-    let fs = FileSystem::new(handle)?;
-
-    // Only iOS pushes to it, below.
-    #[cfg_attr(not(target_os = "ios"), allow(unused_mut))]
-    let mut targets = vec![
-        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout).format(format_record),
-        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-            path: fs.logs_dir(),
-            file_name: None,
-        })
-        .format(format_record),
-        tauri_plugin_sentry_reporting::log_target(handle),
-    ];
-    #[cfg(target_os = "ios")]
-    targets.push(device_console_target());
-
-    let log_plugin = tauri_plugin_log::Builder::default()
-        .level(log::LevelFilter::Warn)
-        .level_for("dashchat_node", log::LevelFilter::Debug)
-        .level_for("dashchat_utils", log::LevelFilter::Debug)
-        .level_for("dash_router", log::LevelFilter::Debug)
-        .level_for("mailbox_client", log::LevelFilter::Debug)
-        .level_for("mailbox_server", log::LevelFilter::Debug)
-        .level_for("mailbox_local_server", log::LevelFilter::Debug)
-        .level_for("local_hub_discovery", log::LevelFilter::Debug)
-        .level_for("network_watch", log::LevelFilter::Debug)
-        .level_for("tauri_app_lib", log::LevelFilter::Debug) // dash-chat crate
-        .level_for("webview", log::LevelFilter::Debug) // JS console.* forwarded via @tauri-apps/plugin-log
-        .format(|out, message, _record| out.finish(format_args!("{message}")))
-        .clear_targets()
-        .max_file_size(5 * 1024 * 1024)
-        .targets(targets)
-        .build();
-
-    crate::utils::install_panic_hook();
-
-    let error_reporting_dir = fs.error_reporting_dir();
-    if let Some(config) = crate::sentry::config(fs.logs_dir(), error_reporting_dir.clone()) {
-        std::fs::create_dir_all(&error_reporting_dir)?;
-        handle.plugin(tauri_plugin_sentry_reporting::init(config))?;
-    }
-
-    handle.plugin(log_plugin)?;
-
-    Ok(())
-}
-
-pub(crate) fn format_record(
-    out: tauri_plugin_log::fern::FormatCallback,
-    message: &std::fmt::Arguments,
-    record: &log::Record,
-) {
-    let format =
-        time::macros::format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
-    let args = if let (Some(file), Some(line)) = (record.file(), record.line()) {
-        format_args!(
-            "{}[{} {}:{}][{}] {}",
-            tauri_plugin_log::TimezoneStrategy::UseUtc
-                .get_now()
-                .format(&format)
-                .unwrap(),
-            record.target(),
-            file.to_string(),
-            line.to_string(),
-            record.level(),
-            message
-        )
-    } else {
-        format_args!(
-            "{}[{}][{}] {}",
-            tauri_plugin_log::TimezoneStrategy::UseUtc
-                .get_now()
-                .format(&format)
-                .unwrap(),
-            record.target(),
-            record.level(),
-            message
-        )
-    };
-    out.finish(args)
 }

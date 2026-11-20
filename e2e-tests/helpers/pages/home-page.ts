@@ -1,14 +1,10 @@
+import { ConnectionStatusIndicator } from '../components/connection-status-indicator';
+import { checkOverflow } from '../review/checks';
 import { tid } from '../selectors';
 import { TestHelper } from './test-helper';
 
-const GET_STARTED_CARD_IDS = [
-	'add-contact',
-	'add-photo',
-	'chat-color',
-	'new-group',
-] as const;
-
-type GetStartedCardId = (typeof GET_STARTED_CARD_IDS)[number];
+/** Spelt once: `tid()` yields CSS, and the row lookup below needs XPath. */
+const CHAT_LIST_ID = 'all-chats-list';
 
 /** One row of the chat list: what it is titled and what its unread badge
  *  reads. */
@@ -21,15 +17,25 @@ export interface ChatRow {
  *  attempt costs a full `waitforTimeout`, so this stays small. */
 const OPEN_CHAT_ATTEMPTS = 2;
 
+/** `text` as an XPath string literal. XPath 1.0 has no escape, so a value
+ *  containing a quote has to be assembled with `concat`. */
+function xpathLiteral(text: string): string {
+	if (!text.includes('"')) return `"${text}"`;
+	const parts = text.split('"').map(part => `"${part}"`);
+	return `concat(${parts.join(", '\"', ")})`;
+}
+
 export class HomePage extends TestHelper {
-	settingsLink = this.el(tid('home-settings-link'));
 	newMessageButton = this.el(tid('home-new-message-btn'));
+	addContactButton = this.el(tid('home-add-contact-btn'));
 	firstChatTooltip = this.el(tid('first-chat-tooltip'));
-	chatList = this.el(tid('all-chats-list'));
+	chatList = this.el(tid(CHAT_LIST_ID));
 	chatRow = this.el(tid('all-chats-row'));
 	emptyState = this.el(tid('all-chats-empty'));
 	blockedRowIcon = this.el(tid('blocked-row-icon'));
 	unreadBadge = this.el(tid('chat-row-unread-badge'));
+	p2pBadge = this.el(tid('chat-row-p2p-badge'));
+	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
 
 	async ready() {
 		await this.agent.waitUntil(() => this.isLoaded(), {
@@ -44,9 +50,18 @@ export class HomePage extends TestHelper {
 		);
 	}
 
-	/** Chat-list entry whose link text contains `contactName`. */
+	/** Chat-list entry whose link text contains `contactName`. Queried from the
+	 * document rather than off the list element: the list is absent until the
+	 * store hydrates, and a child query on a missing parent throws where every
+	 * caller here is waiting for the row to turn up. */
 	chatListItem(contactName: string) {
-		return this.chatList.$(`a*=${contactName}`);
+		return this.agent.$(
+			`//*[@data-testid="${CHAT_LIST_ID}"]//a[contains(., ${xpathLiteral(contactName)})]`,
+		);
+	}
+
+	chatRowP2pBadge(contactName: string) {
+		return this.chatListItem(contactName).$(tid('chat-row-p2p-badge'));
 	}
 
 	hasChatListItem(contactName: string) {
@@ -120,7 +135,7 @@ export class HomePage extends TestHelper {
 			if (await messages.isExisting()) return;
 			const href = await this.directChatHref(contactName);
 			if (href !== null) {
-				const row = this.agent.$(`${tid('all-chats-list')} a[href="${href}"]`);
+				const row = this.agent.$(`${tid(CHAT_LIST_ID)} a[href="${href}"]`);
 				if (await row.isExisting()) await row.click();
 			}
 			try {
@@ -147,54 +162,13 @@ export class HomePage extends TestHelper {
 				);
 				return row?.getAttribute('href') ?? null;
 			},
-			tid('all-chats-list'),
+			tid(CHAT_LIST_ID),
 			contactName,
 		);
 	}
 
-	getStartedCard(id: GetStartedCardId) {
-		return this.agent.$(tid(`get-started-${id}`));
-	}
-
-	dismissGetStartedCardButton(id: GetStartedCardId) {
-		return this.agent.$(tid(`get-started-dismiss-${id}`));
-	}
-
-	async visibleGetStartedCards(): Promise<GetStartedCardId[]> {
-		const checks = await Promise.all(
-			GET_STARTED_CARD_IDS.map(id => this.getStartedCard(id).isExisting()),
-		);
-		return GET_STARTED_CARD_IDS.filter((_, i) => checks[i]);
-	}
-
 	/** Returns descriptions of any chat-list items overflowing their container. */
 	checkChatListOverflow(): Promise<string[]> {
-		return this.agent.execute((selector: string) => {
-			const issues: string[] = [];
-			const list = document.querySelector(selector);
-			if (!list) {
-				issues.push('Chat list not found');
-				return issues;
-			}
-			if (list.scrollWidth > list.clientWidth + 2) {
-				issues.push('Chat list container has horizontal overflow');
-			}
-			list.querySelectorAll<HTMLElement>('*').forEach(el => {
-				const style = window.getComputedStyle(el);
-				const clipped =
-					style.overflowX === 'hidden' ||
-					style.overflowX === 'clip' ||
-					style.overflow === 'hidden' ||
-					style.overflow === 'clip' ||
-					style.textOverflow === 'ellipsis';
-				if (clipped) return;
-				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
-					const text = el.textContent?.substring(0, 60).trim();
-					if (text)
-						issues.push(`Overflow in <${el.tagName.toLowerCase()}>: "${text}"`);
-				}
-			});
-			return issues.slice(0, 10);
-		}, tid('all-chats-list'));
+		return checkOverflow(this.agent, tid(CHAT_LIST_ID));
 	}
 }

@@ -10,4 +10,4 @@ path = "src/lib.rs"
 ed25519-dalek = { workspace = true }
 hex = "0.4"
 serde = { workspace = true }
-thiserror = "2.0"
+thiserror = { workspace = true }

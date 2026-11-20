@@ -15,7 +15,7 @@ import { navigateToAddContact } from '../flows/exchange-contacts';
 import type { DirectChatPage } from '../pages/direct-chats/direct-chat-page';
 import type { GroupChatPage } from '../pages/group-chat/group-chat-page';
 import { tid } from '../selectors';
-import { SYNC_TIMEOUT } from '../timeouts';
+import { RENDER_SETTLE_WINDOW, SYNC_TIMEOUT } from '../timeouts';
 import { stampedLog } from '../utils';
 import {
 	type ExpectedChat,
@@ -23,6 +23,7 @@ import {
 	type NotificationTexts,
 	PHOTO_COUNTS,
 } from './model';
+import { expectCaughtUp } from './view';
 
 // Mirrors QUICK_EMOJIS in ui/src/lib/utils/emojis.ts.
 export const QUICK_EMOJIS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
@@ -50,10 +51,22 @@ export async function readNotificationTexts(
 	sa: StressAgent,
 ): Promise<NotificationTexts | null> {
 	if (sa.notifications === null) return null;
-	const [generic, unnamedSender, voice] = await Promise.all([
+	const [
+		generic,
+		unnamedSender,
+		voice,
+		newContactRequest,
+		newGroup,
+		addedYouTemplate,
+		addedToAGroup,
+	] = await Promise.all([
 		sa.agent.tr('youHaveANewMessage'),
 		sa.agent.tr('newMessage'),
 		sa.agent.tr('voiceMessage'),
+		sa.agent.tr('newContactRequest'),
+		sa.agent.tr('newGroup'),
+		sa.agent.tr('someoneAddedYouToTheGroup', { name: NAME_SLOT }),
+		sa.agent.tr('someoneAddedYouToTheGroupNoName'),
 	]);
 	const photos: Record<number, string> = {};
 	for (const count of PHOTO_COUNTS) {
@@ -62,8 +75,21 @@ export async function readNotificationTexts(
 				? await sa.agent.tr('photo')
 				: await sa.agent.tr('photosCount', { count });
 	}
-	return { generic, unnamedSender, photos, voice };
+	return {
+		generic,
+		unnamedSender,
+		photos,
+		voice,
+		newContactRequest,
+		newGroup,
+		addedYouToTheGroup: name => addedYouTemplate.replace(NAME_SLOT, () => name),
+		addedToAGroup,
+	};
 }
+
+/** Stands in for a name while a message is read once, to be filled in with
+ *  each real one later. */
+const NAME_SLOT = '\u0000name\u0000';
 
 /** A hub identity: its db, key and port survive its process, so bringing it
  * up on another network is the same hub moving, as a deployed one would. */
@@ -78,13 +104,13 @@ export interface HubReal {
  * tear down whatever a run leaves behind. */
 export interface Real {
 	agents: StressAgent[];
-	/** The configured networks, in the order moves index them, the host's
-	 * own one marked as home. */
+	/** The test networks, in the order moves index them. The network every
+	 * device falls back to with none of them saved is never among them. */
 	networks: WifiNetwork[];
 	/** The host's Wi-Fi card, null when it has none or no network is
 	 * configured. */
 	hubsDevice: string | null;
-	/** The lab SSID the card is on, null while it is on its usual network.
+	/** The test network the card is on, null while it is on its usual network.
 	 * Where every hub is today: a later slice with a card (or a machine) per
 	 * hub replaces this with a location on `HubReal`. */
 	hubsNetwork: string | null;
@@ -158,11 +184,6 @@ export function notificationsOf(sa: StressAgent): NotificationHelper {
 		throw new Error(`${sa.name}'s notifications are not read by this run`);
 	}
 	return sa.notifications;
-}
-
-/** The lab networks: the ones a run joins, leaves and forgets. */
-export function labNetworks(real: Real): WifiNetwork[] {
-	return real.networks.filter(n => !n.home);
 }
 
 export function networkNamed(real: Real, name: string): WifiNetwork {
@@ -267,6 +288,10 @@ async function waitForChatRow(sa: StressAgent, title: string): Promise<void> {
 	);
 }
 
+/** Back presses to try before letting the chat list's own wait report it.
+ *  Each costs a settle window, so this stays small. */
+const BACK_ATTEMPTS = 3;
+
 /** Get to the chat list, from a chat the agent still has open or from the
  * list it is already on. Moves leave the app wherever they finish, the way a
  * user does, so anything that needs the list starts by asking for it. */
@@ -274,10 +299,32 @@ export async function backToChatList(
 	sa: StressAgent,
 	model: ExpectedModel,
 ): Promise<void> {
-	for (const page of [sa.agent.groupChatPage, sa.agent.directChatPage]) {
-		if (!(await page.page.isExisting())) continue;
-		await page.back.click();
-		break;
+	// Nothing may still be on the wire for the chat being left: an op that
+	// lands after the app has gone counts unread on a row, while the model
+	// credited it to the screen it was on. Draining here is what keeps the
+	// two readings of "read" the same one.
+	await expectCaughtUp(sa, model);
+	// A tap that lands while the chat is re-rendering — a message arriving, a
+	// block's system message — does nothing, and one missed back would leave
+	// the whole check waiting on a list the app was never asked for.
+	for (let i = 0; i < BACK_ATTEMPTS; i++) {
+		let pressed = false;
+		for (const page of [sa.agent.groupChatPage, sa.agent.directChatPage]) {
+			if (!(await page.page.isExisting())) continue;
+			await page.back.click();
+			pressed = true;
+			break;
+		}
+		if (!pressed) break;
+		const home = await sa.agent
+			.waitUntil(() => sa.agent.homePage.isLoaded(), {
+				timeout: RENDER_SETTLE_WINDOW,
+			})
+			.then(
+				() => true,
+				() => false,
+			);
+		if (home) break;
 	}
 	await sa.agent.homePage.ready();
 	model.wentHome(sa.name);
@@ -320,7 +367,7 @@ export async function waitForApp(sa: StressAgent): Promise<void> {
 	const { homePage, directChatPage, groupChatPage } = sa.agent;
 	await sa.agent.waitUntil(
 		async () =>
-			(await homePage.settingsLink.isExisting()) ||
+			(await homePage.newMessageButton.isExisting()) ||
 			(await directChatPage.page.isExisting()) ||
 			(await groupChatPage.page.isExisting()),
 		{ timeoutMsg: `${sa.name}'s app never came back` },
@@ -341,7 +388,7 @@ export async function ensureHome(
 			return;
 		}
 	}
-	if (await sa.agent.homePage.settingsLink.isExisting()) {
+	if (await sa.agent.homePage.newMessageButton.isExisting()) {
 		await sa.agent.homePage.ready();
 		return;
 	}

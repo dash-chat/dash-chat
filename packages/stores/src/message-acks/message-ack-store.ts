@@ -1,13 +1,9 @@
 import { type ReactivePromise, reactive, relay } from 'signalium';
 
 import type { IMailboxTrackerStore } from '../mailbox-tracker/mailbox-tracker-store';
-import type { DeviceId, TopicId } from '../p2panda/types';
+import type { DeviceId, LogId, TopicId } from '../p2panda/types';
 import { MessageAcks, MessageDeliveryStatus } from '../types';
-import { pollingRequired } from '../utils/polling-required';
 import type { IMessageAckClient } from './message-ack-client';
-
-const POLL_INTERVAL_MS = 1_000;
-const POLLING_ENABLED = pollingRequired();
 
 export class MessageAckStore {
 	constructor(
@@ -30,28 +26,23 @@ export class MessageAckStore {
 				};
 
 				fetchAcks();
-				const interval = POLLING_ENABLED
-					? setInterval(fetchAcks, POLL_INTERVAL_MS)
-					: undefined;
 
 				const unsub = this.client.onNewMessageAcks(topic, acks => {
 					state.value = mergeAcks(state.value, acks);
 				});
 
-				return () => {
-					clearInterval(interval);
-					unsub();
-				};
+				return () => unsub();
 			}),
 	);
 
-	/** The delivery status of the operation at `seq` in the (topic, author)
-	 * log: "delivered" once acked by a device of another agent, otherwise
+	/** The delivery status of the operation at `seq` of the author's chat log
+	 * in `topic`: "delivered" once acked by a device of another agent, otherwise
 	 * "mailbox" once any mailbox holds it, otherwise "sending". */
 	deliveryStatus = reactive(
 		async (
 			topic: TopicId,
 			author: DeviceId,
+			logId: LogId,
 			seq: number,
 		): Promise<MessageDeliveryStatus> => {
 			const acks = await this.acks(topic);
@@ -60,6 +51,7 @@ export class MessageAckStore {
 			const sync = await this.mailboxTracker.syncStatusForOp(
 				topic,
 				author,
+				logId,
 				seq,
 			);
 			return sync.syncedWithCloudMailbox || sync.syncedWithAnyLocalMailbox

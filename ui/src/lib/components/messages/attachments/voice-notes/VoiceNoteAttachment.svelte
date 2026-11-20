@@ -30,12 +30,12 @@
 </script>
 
 <div
-	class="flex w-60 max-w-full flex-col gap-1 px-1 py-0.5"
+	class="flex w-55 max-w-full flex-col gap-2 px-1 pb-px"
 	data-testid="message-attachment-voice"
 >
 	<audio {@attach (el: HTMLAudioElement) => player.attach(el)}></audio>
 
-	<div class="flex items-center gap-3">
+	<div class="flex items-center gap-3 ps-0.5 pe-2">
 		<VoicePlayButton
 			paused={player.paused}
 			loading={player.loading}
@@ -45,10 +45,9 @@
 		<Waveform {peaks} {player} />
 	</div>
 
-	<div class="flex items-center justify-between text-xs">
-		<span
-			class="w-9 shrink-0 text-center opacity-70"
-			data-testid="voice-duration">{formatDuration(labelMs)}</span
+	<div class="flex items-center justify-between ps-0.5 text-xs">
+		<span class="shrink-0 opacity-70" data-testid="voice-duration"
+			>{formatDuration(labelMs)}</span
 		>
 		{#if metadata}
 			<span class="flex items-center gap-1 whitespace-nowrap select-none">

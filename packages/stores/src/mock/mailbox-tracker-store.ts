@@ -1,24 +1,30 @@
 import { ReactivePromise, reactive, relay } from 'signalium';
 
-import type { IMailboxTrackerStore } from '../mailbox-tracker/mailbox-tracker-store';
+import type {
+	AllMailboxesConnectionState,
+	IMailboxTrackerStore,
+} from '../mailbox-tracker/mailbox-tracker-store';
 import {
-	type MailboxConnectionState,
+	type MailboxConnectionHealth,
 	type MailboxId,
-	type MailboxSyncState,
+	type OperationSyncState,
 } from '../mailbox-tracker/types';
-import type { DeviceId, TopicId } from '../p2panda/types';
+import type { DeviceId, LogId, TopicId } from '../p2panda/types';
 
 const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
-const syncedToInfinity: MailboxSyncState = new Proxy({} as MailboxSyncState, {
-	get: () =>
-		new Proxy(
-			{},
-			{
-				get: () => Number.MAX_SAFE_INTEGER,
-			},
-		),
-});
+const syncedToInfinity: OperationSyncState = new Proxy(
+	{} as OperationSyncState,
+	{
+		get: () =>
+			new Proxy(
+				{},
+				{
+					get: () => Number.MAX_SAFE_INTEGER,
+				},
+			),
+	},
+);
 
 const constant = <T>(value: T): ReactivePromise<T> =>
 	relay<T>(state => {
@@ -32,7 +38,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 	allMailboxIds = reactive(() => constant<MailboxId[]>([MOCK_MAILBOX_ID]));
 
 	connectionState = reactive((_mailboxId: MailboxId) =>
-		constant<MailboxConnectionState>({
+		constant<MailboxConnectionHealth>({
 			status: 'Active',
 			consecutive_errors: 0,
 			next_poll_in_ms: 5000,
@@ -47,6 +53,7 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 		async (
 			_topicId: TopicId,
 			_author: DeviceId,
+			_logId: LogId,
 		): Promise<Record<MailboxId, number>> => ({
 			[MOCK_MAILBOX_ID]: Number.MAX_SAFE_INTEGER,
 		}),
@@ -56,18 +63,33 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 		async (
 			_topicId: TopicId,
 			_author: DeviceId,
+			_logId: LogId,
 			_seq: number,
 		): Promise<MailboxId[]> => [MOCK_MAILBOX_ID],
 	);
 
-	connectionStatus = reactive(async () => ({
-		connectedToCloudMailboxServer: true,
-		cloudLastFailureAtMs: null,
-		connectedLocalMailboxCount: 0,
-	}));
+	connectionStatusForAllMailboxes = reactive(
+		async (): Promise<AllMailboxesConnectionState> => ({
+			cloudMailbox: {
+				status: 'Active',
+				consecutive_errors: 0,
+				next_poll_in_ms: 5000,
+				// Far future: this value is computed once, and a success before the
+				// page's last resume would read as unproven rather than connected.
+				last_success_at: '9999-01-01T00:00:00Z',
+				last_error: null,
+			},
+			localMailboxes: [],
+		}),
+	);
 
 	syncStatusForOp = reactive(
-		async (_topicId: TopicId, _author: DeviceId, _seq: number) => ({
+		async (
+			_topicId: TopicId,
+			_author: DeviceId,
+			_logId: LogId,
+			_seq: number,
+		) => ({
 			syncedWithCloudMailbox: true,
 			syncedWithAnyLocalMailbox: false,
 		}),

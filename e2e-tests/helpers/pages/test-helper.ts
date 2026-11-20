@@ -31,6 +31,16 @@ export abstract class TestHelper {
 		);
 	}
 
+	async closeKeyboard(): Promise<void> {
+		if (!(await this.isMobileBuild())) return;
+		await this.agent.execute(() =>
+			(document.activeElement as HTMLElement | null)?.blur(),
+		);
+		await this.agent.waitUntil(
+			async () => !(await this.agent.isKeyboardShown()),
+		);
+	}
+
 	/**
 	 * Click `trigger` and answer the file input it opens with `files`, or back
 	 * out of that input when there are none, reporting what it asked the OS for.

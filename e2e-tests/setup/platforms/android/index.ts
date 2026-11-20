@@ -1,0 +1,930 @@
+import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { envInt } from '../../../helpers/utils';
+import { echoLinesWithPrefix } from '../../agent-logger';
+import { allocatePinnedPort } from '../../allocate-port';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../../app-build';
+import {
+	type Want,
+	claimAllWhenFreeSync,
+	describeHeld,
+	release,
+} from '../../claims';
+import { hashFile } from '../../device-installs';
+import { envWithoutWdioLoader } from '../../harness-env';
+import { E2E_NETWORK_ID } from '../../network-id';
+import { E2E_RELAY_URL } from '../../relay';
+import {
+	type AgentPlatform,
+	type PrepareContext,
+	remoteBakedEnv,
+} from '../platform';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const E2E_DIR = path.resolve(__dirname, '..', '..', '..');
+
+const APK_DIR = path.join(ROOT, 'src-tauri/gen/android/app/build/outputs/apk');
+const GRADLE_INTERMEDIATES = path.join(
+	ROOT,
+	'src-tauri/gen/android/app/build/intermediates',
+);
+// Where gradle keeps the native libs it packages, each a copy of what the
+// jniLibs symlinks point at when the task last ran.
+const NATIVE_LIB_INTERMEDIATES = [
+	'merged_jni_libs',
+	'merged_native_libs',
+	'stripped_native_libs',
+].map(name => path.join(GRADLE_INTERMEDIATES, name));
+export const APP_PACKAGE = 'studio.darksoil.dashchat';
+
+// ABIs the e2e APK build covers (--split-per-abi): the gradle flavor that
+// names each APK and the rust target passed to tauri.
+const ABIS: Record<string, { flavor: string; target: string }> = {
+	'arm64-v8a': { flavor: 'arm64', target: 'aarch64' },
+	'armeabi-v7a': { flavor: 'arm', target: 'armv7' },
+	x86_64: { flavor: 'x86_64', target: 'x86_64' },
+};
+
+// The device's own loopback port baked into the APK as MAILBOX_URL; onPrepare
+// bridges it to the host's mailbox via adb reverse.
+const DEVICE_MAILBOX_PORT = 3200;
+
+// The device's loopback port baked as PUSH_NOTIFICATIONS_SERVER_URL for the
+// real-device push spec; bridged to the host's push server via adb reverse.
+const DEVICE_PUSH_PORT = 3201;
+
+/** `android` = physical device, `android-emulator` = running emulator. */
+export type AndroidKind = 'android' | 'android-emulator';
+
+/** Flake-pinned chromedrivers (one per device WebView major), provided at
+ *  this path by the androidDev shellHook; Appium picks the matching one per
+ *  device. */
+const CHROMEDRIVERS_DIR = path.join(E2E_DIR, '.cache', 'chromedrivers');
+
+// Lives in .cache, not .dbs/e2e: onPrepare wipes .dbs/e2e after the launcher
+// (config load) has already written the capture.
+const ANDROID_ENV_FILE = path.join(E2E_DIR, '.cache', 'android-env.json');
+
+/** Env the android commands (adb, boot-emulator, the APK build) run with:
+ *  process.env when the harness already has the androidDev shell's tools,
+ *  otherwise the shell env captured by ensureAndroidEnv. */
+let androidEnv: NodeJS.ProcessEnv = process.env;
+
+/** Run an adb shell command on `udid` with the captured android env and
+ * return its stdout. */
+export function adbShell(udid: string, command: string): string {
+	return execSync(`adb -s ${udid} shell ${command}`, {
+		encoding: 'utf8',
+		env: androidEnv,
+	});
+}
+
+function androidToolsAvailable(env: NodeJS.ProcessEnv): boolean {
+	try {
+		execSync('command -v adb', { stdio: 'ignore', env });
+	} catch {
+		return false;
+	}
+	return existsSync(CHROMEDRIVERS_DIR);
+}
+
+/** One `nix develop` call captures the androidDev shell's full env; its
+ *  shellHook also materializes CHROMEDRIVERS_DIR as a side effect. */
+function captureAndroidDevShellEnv(): NodeJS.ProcessEnv {
+	console.log('Capturing the androidDev shell env (nix develop)...');
+	const out = execSync(
+		`nix develop "git+file:${ROOT}#androidDev" --command env -0`,
+		{ encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+	);
+	const env: NodeJS.ProcessEnv = {};
+	for (const entry of out.split('\0')) {
+		const i = entry.indexOf('=');
+		if (i > 0) env[entry.slice(0, i)] = entry.slice(i + 1);
+	}
+	return env;
+}
+
+// The appium server is spawned by startAppium (setup/appium-server.ts) with
+// this process's env, and its uiautomator2 driver locates adb through PATH/ANDROID_HOME —
+// the one part of the captured shell env that must land in process.env.
+function applyAppiumServerEnv() {
+	for (const key of ['PATH', 'ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
+		const value = androidEnv[key];
+		if (value !== undefined) process.env[key] = value;
+	}
+}
+
+// The nix host-build/runtime vars the flake's hostBuildEnvHook exports (see
+// flake.nix): the linux RUSTFLAGS bake the tauri libraries' rpath into the
+// desktop binary, and the mesa LD_LIBRARY_PATH / LIBGL / EGL vars point its
+// WebKitGTK web process at software rendering off NixOS. In a mixed
+// android+desktop run the user drives the harness from a plain shell (the
+// android capture provides the android tools via PATH), so without
+// these the desktop build links against the nix libraries but bakes no rpath —
+// the binary then fails at launch with "libpango-1.0.so.0: cannot open shared
+// object file". Only fill in vars the outer shell didn't already set, so a run
+// started inside the nix dev shell keeps its own values.
+function applyHostBuildEnv() {
+	const keys = [
+		'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS',
+		'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS',
+		'LD_LIBRARY_PATH',
+		'LIBGL_ALWAYS_SOFTWARE',
+		'LIBGL_DRIVERS_PATH',
+		'__EGL_VENDOR_LIBRARY_DIRS',
+	];
+	for (const key of keys) {
+		const value = androidEnv[key];
+		if (value !== undefined && process.env[key] === undefined) {
+			process.env[key] = value;
+		}
+	}
+}
+
+/** Make the androidDev shell's tools reachable without wrapping the whole
+ *  harness in `nix develop`: capture the shell env once in the launcher and
+ *  pass it explicitly to every android command. The capture is pinned to a
+ *  file so wdio workers reuse it instead of re-evaluating the flake. */
+function ensureAndroidEnv() {
+	const pinned = process.env._WDIO_ANDROID_ENV_FILE;
+	if (pinned !== undefined) {
+		androidEnv = JSON.parse(readFileSync(pinned, 'utf8')) as NodeJS.ProcessEnv;
+		applyHostBuildEnv();
+		return;
+	}
+	androidEnv = captureAndroidDevShellEnv();
+	mkdirSync(path.dirname(ANDROID_ENV_FILE), { recursive: true });
+	writeFileSync(ANDROID_ENV_FILE, JSON.stringify(androidEnv));
+	process.env._WDIO_ANDROID_ENV_FILE = ANDROID_ENV_FILE;
+	applyAppiumServerEnv();
+	applyHostBuildEnv();
+	if (!androidToolsAvailable(androidEnv)) {
+		throw new Error(
+			'adb or the chromedrivers dir still missing after capturing the androidDev shell env',
+		);
+	}
+}
+
+function deviceAbi(udid: string): string {
+	const abilist = execSync(
+		`adb -s ${udid} shell getprop ro.product.cpu.abilist`,
+		{ encoding: 'utf8', env: androidEnv },
+	).trim();
+	const abi = abilist.split(',').find(a => a in ABIS);
+	if (abi === undefined) {
+		throw new Error(`No e2e APK flavor for device ${udid} (abis: ${abilist})`);
+	}
+	return abi;
+}
+
+function apkForDevice(udid: string): string {
+	const flavor = ABIS[deviceAbi(udid)].flavor;
+	return path.join(APK_DIR, flavor, 'debug', `app-${flavor}-debug.apk`);
+}
+
+function warnAboutUnauthorizedDevices() {
+	const out = execSync('adb devices', { encoding: 'utf8', env: androidEnv });
+	if (/unauthorized$/m.test(out)) {
+		console.warn(
+			'Note: an unauthorized device is connected — accept its USB ' +
+				'debugging prompt to use it.',
+		);
+	}
+}
+
+/** Boot a headless emulator for each android-emulator agent that doesn't
+ *  have a running emulator yet. Emulators stay running across runs (kill
+ *  with `just android kill-emulator`). */
+function bootMissingEmulators(needed: number) {
+	const running = connectedDevices().filter(d =>
+		d.startsWith('emulator-'),
+	).length;
+	if (running >= needed) return;
+	const toBoot = needed - running;
+
+	const logFile = path.join(ROOT, '.dbs', 'e2e', 'emulator.log');
+	mkdirSync(path.dirname(logFile), { recursive: true });
+	console.log(`Booting ${toBoot} headless emulator(s) (log: ${logFile})...`);
+	// Boots run in parallel, but each launch waits for the previous emulator
+	// to register with adb: run-test-emulator picks its port by scanning
+	// `adb devices`, so unstaggered launches would race for the same port.
+	// The boot-wait loops have no timeout — bound them here. Emulator stdio
+	// must go to the file: the emulators outlive this call and would hold a
+	// pipe open forever.
+	const script = `
+		set -euo pipefail
+		registered() { adb devices | grep -c '^emulator-' || true; }
+		base=$(registered)
+		pids=()
+		for i in $(seq ${toBoot}); do
+			boot-emulator < /dev/null >> '${logFile}' 2>&1 &
+			pids+=($!)
+			until [ "$(registered)" -ge $((base + i)) ]; do sleep 1; done
+		done
+		for pid in "\${pids[@]}"; do wait "$pid"; done
+	`;
+	try {
+		execSync(script, {
+			shell: 'bash',
+			timeout: 600_000 * toBoot,
+			env: androidEnv,
+		});
+	} catch (err) {
+		const lines = readFileSync(logFile, 'utf8').split('\n');
+		console.error(lines.slice(-100).join('\n'));
+		throw err;
+	}
+	console.log('Emulators ready.');
+}
+
+function connectedDevices(): string[] {
+	const out = execSync('adb devices', { encoding: 'utf8', env: androidEnv });
+	return out
+		.split('\n')
+		.slice(1)
+		.filter(line => line.trim().endsWith('device'))
+		.map(line => line.split('\t')[0]);
+}
+
+/**
+ * Claim one connected device per slot, matching each slot's kind: physical
+ * devices for `android`, `emulator-*` serials for `android-emulator` (the run
+ * script boots emulators before wdio starts). `ANDROID_UDID{slot}` overrides
+ * the claim for that slot.
+ *
+ * Like allocatePinnedPort, the claim is pinned via `_WDIO_ANDROID_UDID{slot}`
+ * env vars so the launcher and worker config loads agree on the udid->slot
+ * mapping even if `adb devices` ordering changes between them.
+ */
+function claimDevices(
+	kindBySlot: Map<number, AndroidKind>,
+): Map<number, string> {
+	const pinnedOf = (slot: number) =>
+		process.env[`_WDIO_ANDROID_UDID${slot}`] ??
+		process.env[`ANDROID_UDID${slot}`];
+	const pinned = new Set(
+		[...kindBySlot.keys()].map(pinnedOf).filter(u => u !== undefined),
+	);
+	const connected = connectedDevices();
+	const pools: Record<AndroidKind, string[]> = {
+		android: connected.filter(d => !d.startsWith('emulator-')),
+		'android-emulator': connected.filter(d => d.startsWith('emulator-')),
+	};
+	// Slots wanting the same thing — a pinned device, or any device of a
+	// kind — claim it as one group, so a run holds all it needs or nothing.
+	const groups = new Map<string, { slots: number[]; want: Want }>();
+	for (const [slot, kind] of kindBySlot) {
+		const key = pinnedOf(slot) ?? kind;
+		const group = groups.get(key) ?? {
+			slots: [],
+			want: {
+				candidates:
+					pinnedOf(slot) !== undefined
+						? [key]
+						: pools[kind].filter(d => !pinned.has(d)),
+				needed: 0,
+			},
+		};
+		group.slots.push(slot);
+		group.want.needed += 1;
+		groups.set(key, group);
+	}
+	for (const [key, { slots, want }] of groups) {
+		if (want.candidates.length >= want.needed) continue;
+		const slot = slots[want.candidates.length];
+		throw new Error(
+			key === 'android-emulator'
+				? `No running emulator left for agent${slot} ` +
+					`(${describeHeld(connected)}). Boot one with ` +
+					`'just android boot-emulator'.`
+				: `Not enough physical Android devices for agent${slot} ` +
+					`(${describeHeld(connected)}). Connect a device ` +
+					`with USB debugging enabled, or set ANDROID_UDID${slot}.`,
+		);
+	}
+	const wants = [...groups.values()].map(g => g.want);
+	// The launcher claims, waiting for devices another run is driving; the
+	// workers inherit its claims through the pinned env.
+	const taken =
+		process.env.WDIO_WORKER_ID === undefined
+			? claimAllWhenFreeSync(wants)
+			: wants.map(w => w.candidates.slice(0, w.needed));
+	const udids = new Map<number, string>();
+	[...groups.values()].forEach(({ slots }, i) => {
+		slots.forEach((slot, j) => {
+			process.env[`_WDIO_ANDROID_UDID${slot}`] = taken[i][j];
+			udids.set(slot, taken[i][j]);
+		});
+	});
+	return udids;
+}
+
+/** Tail the app's logcat output on a device and echo it with an agent prefix.
+ *  Filters by uid, not pid, so logs survive the app being killed. */
+function startLogcatLogger(agent: string, udid: string): ChildProcess {
+	const proc = spawn(
+		'adb',
+		[
+			'-s',
+			udid,
+			'shell',
+			`until uid=$(pm list packages -U ${APP_PACKAGE} | sed -n 's/.*uid://p') && ` +
+				'[ -n "$uid" ]; do sleep 1; done; logcat -T 1 --uid=$uid',
+		],
+		{ stdio: ['ignore', 'pipe', 'ignore'], env: androidEnv },
+	);
+	echoLinesWithPrefix(agent, proc.stdout!);
+	return proc;
+}
+
+/** Wait until the OS has verified the app's App Links domains. Verification
+ *  runs asynchronously after install (the debug key is listed in the hosted
+ *  assetlinks.json), and an unforced VIEW intent sent before it completes
+ *  would resolve to the browser instead of the app. */
+export async function waitForAppLinksVerified(udid: string): Promise<void> {
+	const deadline = Date.now() + 30_000;
+	let reverifying = false;
+	for (;;) {
+		const out = execSync(
+			`adb -s ${udid} shell pm get-app-links ${APP_PACKAGE}`,
+			{ encoding: 'utf8', timeout: 10_000, env: androidEnv },
+		);
+		if (/:\s*verified/.test(out)) return;
+		// The check Android runs at install can fail and is not retried for a
+		// long while, leaving the domain stuck in a verifier-defined state (1024).
+		if (!reverifying) {
+			execSync(
+				`adb -s ${udid} shell pm verify-app-links --re-verify ${APP_PACKAGE}`,
+				{ timeout: 10_000, env: androidEnv },
+			);
+			reverifying = true;
+		}
+		if (Date.now() > deadline) {
+			throw new Error(
+				`App Links for ${APP_PACKAGE} never became verified:\n${out}`,
+			);
+		}
+		await new Promise(resolve => setTimeout(resolve, 500));
+	}
+}
+
+/** The md5 of the APK installed on `udid`, or null when not installed. */
+function installedApkMd5(udid: string): string | null {
+	try {
+		const paths = execSync(`adb -s ${udid} shell pm path ${APP_PACKAGE}`, {
+			encoding: 'utf8',
+			env: androidEnv,
+		});
+		const base = paths
+			.split('\n')
+			.map(line => line.trim())
+			.find(line => line.startsWith('package:') && line.endsWith('base.apk'));
+		if (base === undefined) return null;
+		const sum = execSync(
+			`adb -s ${udid} shell md5sum "${base.slice('package:'.length)}"`,
+			{ encoding: 'utf8', env: androidEnv },
+		);
+		return sum.trim().split(/\s+/)[0];
+	} catch {
+		return null;
+	}
+}
+
+/** Bridge the device's baked loopback ports to the host's servers. A device
+ * that re-enumerates on the USB bus (a marginal cable renegotiates the link
+ * and adb sees a brand new transport) loses every reverse it had, and the app
+ * then fails every mailbox poll for the rest of the run while the host servers
+ * look perfectly healthy. Re-asserted per session rather than once per run so
+ * a blip costs at most the spec it happens in. */
+function bridgeHostPorts(udid: string): void {
+	const mailboxPort = process.env._WDIO_MAILBOX_PORT;
+	if (mailboxPort === undefined) return;
+	execSync(
+		`adb -s ${udid} reverse tcp:${DEVICE_MAILBOX_PORT} tcp:${mailboxPort}`,
+		{
+			env: androidEnv,
+		},
+	);
+	const pushPort = process.env._WDIO_PUSH_PORT;
+	if (pushPort === undefined) return;
+	execSync(`adb -s ${udid} reverse tcp:${DEVICE_PUSH_PORT} tcp:${pushPort}`, {
+		env: androidEnv,
+	});
+}
+
+/** Comfortably longer than the slowest spec, so no wait can outlive the screen. */
+const SCREEN_OFF_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Stop the display sleeping for the length of the run.
+ *
+ * WebDriver drives the app through `execute` and injected events, none of which
+ * count as user activity, so a spec that waits longer than the device's
+ * `screen_off_timeout` puts the screen out — which stops the activity and
+ * freezes the webview mid-test. The failure looks like the app misbehaving
+ * rather than the screen going off, so it reads as a real bug in whatever was
+ * being asserted. `stayon true` covers every plug type rather than just `usb`:
+ * a device on the cable can report itself AC-powered, and then a USB-only hold
+ * silently never engages. */
+function keepScreenAwake(udid: string): void {
+	try {
+		// Sessions skip Appium's unlock, so a simple lock screen is cleared
+		// once here; with the screen held on it does not come back.
+		execSync(`adb -s ${udid} shell wm dismiss-keyguard`, { env: androidEnv });
+		execSync(`adb -s ${udid} shell svc power stayon true`, { env: androidEnv });
+		// `stayon` alone has been observed not to engage even once set, so raise
+		// the timeout too rather than trust one of them. Both are persistent
+		// device settings, which is the norm for a dedicated test device.
+		execSync(
+			`adb -s ${udid} shell settings put system screen_off_timeout ${SCREEN_OFF_TIMEOUT_MS}`,
+			{ env: androidEnv },
+		);
+	} catch (err) {
+		// Not fatal: it only costs us the flake it prevents.
+		console.warn(`[android] could not keep ${udid} awake: ${String(err)}`);
+	}
+}
+
+/** The root-layout chunk of the frontend in `ui/build`, whose name SvelteKit
+ *  hashes from its content — the identity of the frontend this run built. */
+function builtLayoutChunk(): string {
+	const dir = path.join(ROOT, 'ui', 'build', '_app', 'immutable', 'nodes');
+	const chunk = readdirSync(dir).find(name => /^0\.[\w-]+\.js$/.test(name));
+	if (chunk === undefined) {
+		throw new Error(`no root-layout chunk under ${dir}`);
+	}
+	return chunk;
+}
+
+/** Fail when `apk` carries a frontend other than the one just built, which a
+ *  stale native lib packaged into it is. Tauri embeds the frontend in the rust
+ *  lib under its own asset paths and the APK stores the lib uncompressed, so
+ *  the chunk name reads straight out of the file. */
+function assertApkFrontendIsCurrent(apk: string, udid: string): void {
+	const expected = `nodes/${builtLayoutChunk()}`;
+	const found = execSync(
+		`grep -ao 'nodes/0\\.[A-Za-z0-9_-]*\\.js' "${apk}" | sort -u || true`,
+		{ encoding: 'utf8' },
+	)
+		.trim()
+		.split('\n')
+		.filter(line => line.length > 0);
+	if (found.length === 1 && found[0] === expected) return;
+	throw new Error(
+		`${apk} (for device ${udid}) carries ${found.join(', ') || 'no frontend'}, ` +
+			`not the ${expected} this run built — gradle packaged a stale native lib`,
+	);
+}
+
+/** Install the e2e APK on `udid` unless it already has this exact build.
+ *  Sessions carry no `appium:app`, so this per-run install is the only one —
+ *  each session then just fast-resets (`pm clear`) instead of reinstalling. */
+function ensureApkInstalled(udid: string): void {
+	const apk = apkForDevice(udid);
+	if (!existsSync(apk)) {
+		throw new Error(
+			`e2e APK not found at ${apk} (for device ${udid}) after the tauri android build`,
+		);
+	}
+	assertApkFrontendIsCurrent(apk, udid);
+	if (installedApkMd5(udid) === hashFile(apk, 'md5')) {
+		console.log(
+			`[android] ${udid} already has the current e2e APK — skipping install`,
+		);
+		return;
+	}
+	// Uninstall first: a previous dash-chat (dev build, older e2e APK) fails
+	// the install on a signature or version mismatch.
+	try {
+		execSync(`adb -s ${udid} uninstall ${APP_PACKAGE}`, {
+			stdio: 'ignore',
+			env: androidEnv,
+		});
+	} catch {
+		/* not installed */
+	}
+	console.log(`[android] installing the e2e APK on ${udid}...`);
+	try {
+		adbInstall(udid, apk);
+	} catch (err) {
+		console.warn(
+			`[android] install on ${udid} failed (${String(err)}); retrying with --no-streaming`,
+		);
+		// The USB link reset that ends a stalled transfer drops the device briefly.
+		execSync(`adb -s ${udid} wait-for-device`, {
+			timeout: 60_000,
+			env: androidEnv,
+		});
+		adbInstall(udid, apk, '--no-streaming');
+	}
+}
+
+/** A healthy install takes seconds, while a streamed transfer over a flaky USB
+ *  link can stall for minutes, so the timeout is short and the caller retries. */
+function adbInstall(udid: string, apk: string, flags = ''): void {
+	execSync(`adb -s ${udid} install ${flags} "${apk}"`, {
+		stdio: 'inherit',
+		timeout: envInt('E2E_ANDROID_INSTALL_TIMEOUT_MS', 90_000),
+		env: androidEnv,
+	});
+}
+
+/** How long the app gets to die after being told to exit. */
+const APP_EXIT_MS = 10_000;
+
+/** How long a JDWP handshake gets before the VM is taken to be frozen. */
+const JDWP_HANDSHAKE_MS = 3_000;
+
+/** Kill the app on `udid` and wait for its process to die. It is told to exit
+ *  over JDWP, which the debuggable e2e APK answers on every Android version:
+ *  unlike `force-stop` that leaves the package eligible for FCM delivery, and
+ *  unlike `am crash` it is no crash, two of which in quick succession, or a
+ *  dozen in half a day, make Android refuse every background start — a push
+ *  included. The cached-apps freezer stops a backgrounded app's JDWP thread
+ *  with the rest of it, so an app that does not answer is brought to the
+ *  front, which thaws it, and told again. One that outlives the exit is
+ *  force-stopped, and says so. */
+export async function stopAndroidApp(udid: string): Promise<void> {
+	const pid = androidAppPid(udid);
+	if (pid === '') return;
+	if (!(await exitOverJdwp(udid, pid)) && androidAppPid(udid) === pid) {
+		adbShell(udid, `am start -n ${APP_PACKAGE}/.MainActivity`);
+		await exitOverJdwp(udid, pid);
+	}
+	if (await androidAppGone(udid, APP_EXIT_MS)) return;
+	console.warn(
+		`[android] ${udid}: the app outlived its JDWP exit; force-stopping it, ` +
+			'which leaves it stopped: no push wakes it before its next launch',
+	);
+	adbShell(udid, `am force-stop ${APP_PACKAGE}`);
+	if (!(await androidAppGone(udid, APP_EXIT_MS))) {
+		throw new Error(`device ${udid}: the app survived a force-stop`);
+	}
+}
+
+/** The pid of the app's main process on `udid`, '' when it is not running. */
+function androidAppPid(udid: string): string {
+	return adbShell(udid, `"pidof ${APP_PACKAGE} || true"`).trim();
+}
+
+async function androidAppGone(
+	udid: string,
+	withinMs: number,
+): Promise<boolean> {
+	const deadline = Date.now() + withinMs;
+	while (androidAppPid(udid) !== '') {
+		if (Date.now() > deadline) return false;
+		await new Promise(resolve => setTimeout(resolve, 200));
+	}
+	return true;
+}
+
+/** Send JDWP's VirtualMachine.Exit (command set 1, command 10, exit code 0)
+ *  to the VM of process `pid`, once its handshake has echoed back; whether
+ *  it did. Whether the VM obeyed is left to the process outliving it. A
+ *  process gone before the forward is one that did not answer. */
+async function exitOverJdwp(udid: string, pid: string): Promise<boolean> {
+	let port: string;
+	try {
+		port = execSync(`adb -s ${udid} forward tcp:0 jdwp:${pid}`, {
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+			env: androidEnv,
+		}).trim();
+	} catch {
+		return false;
+	}
+	const exitCommand = Buffer.from([
+		0, 0, 0, 15, 0, 0, 0, 1, 0, 1, 10, 0, 0, 0, 0,
+	]);
+	try {
+		return await new Promise<boolean>(resolve => {
+			const socket = net.connect(Number(port), '127.0.0.1', () =>
+				socket.write('JDWP-Handshake'),
+			);
+			let handshaken = false;
+			socket.on('data', () => {
+				if (handshaken) return;
+				handshaken = true;
+				socket.write(exitCommand);
+			});
+			const timer = setTimeout(() => done(), JDWP_HANDSHAKE_MS);
+			const done = () => {
+				clearTimeout(timer);
+				socket.destroy();
+				resolve(handshaken);
+			};
+			socket.on('close', done);
+			socket.on('error', done);
+		});
+	} finally {
+		execSync(`adb -s ${udid} forward --remove tcp:${port}`, {
+			stdio: 'ignore',
+			env: androidEnv,
+		});
+	}
+}
+
+/** POST_NOTIFICATIONS only exists from API 33: below it there is no permission
+ *  to revoke and no system dialog, as notifications are on until turned off in
+ *  the system settings. */
+export function androidAsksNotificationPermission(udid: string): boolean {
+	return Number(adbShell(udid, 'getprop ro.build.version.sdk').trim()) >= 33;
+}
+
+/** Flip the app's master switch on the system's notification settings screen,
+ *  the only way to change what areNotificationsEnabled() reports below API 33.
+ *  It survives clearing the app's data, so whoever turns it off has to turn it
+ *  back on. */
+async function setAndroidNotificationsSwitch(
+	browser: WebdriverIO.Browser,
+	udid: string,
+	on: boolean,
+): Promise<void> {
+	adbShell(
+		udid,
+		`am start -a android.settings.APP_NOTIFICATION_SETTINGS --es android.provider.extra.APP_PACKAGE ${APP_PACKAGE}`,
+	);
+	const masterSwitch = browser.$(
+		'android=new UiSelector().resourceId("com.android.settings:id/switch_widget")',
+	);
+	await masterSwitch.waitForExist();
+	const wanted = String(on);
+	if ((await masterSwitch.getAttribute('checked')) !== wanted) {
+		await masterSwitch.click();
+	}
+	await browser.waitUntil(
+		async () => (await masterSwitch.getAttribute('checked')) === wanted,
+	);
+	adbShell(udid, 'am force-stop com.android.settings');
+}
+
+/** Put the notification permission the session's autoGrantPermissions
+ *  granted back to never asked, so the app's next request shows the system
+ *  dialog. Android kills the app when it loses a permission. */
+export async function resetAndroidNotificationPermission(
+	browser: WebdriverIO.Browser,
+	udid: string,
+): Promise<void> {
+	if (!androidAsksNotificationPermission(udid)) {
+		await setAndroidNotificationsSwitch(browser, udid, true);
+		return;
+	}
+	const permission = 'android.permission.POST_NOTIFICATIONS';
+	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
+	adbShell(
+		udid,
+		`pm clear-permission-flags ${APP_PACKAGE} ${permission} user-set user-fixed`,
+	);
+}
+
+/** Deny the notification permission for good, as two refusals in the system
+ *  dialog do: the app's next request is refused without showing a dialog. */
+export async function denyAndroidNotificationPermission(
+	browser: WebdriverIO.Browser,
+	udid: string,
+): Promise<void> {
+	if (!androidAsksNotificationPermission(udid)) {
+		await setAndroidNotificationsSwitch(browser, udid, false);
+		return;
+	}
+	const permission = 'android.permission.POST_NOTIFICATIONS';
+	adbShell(udid, `pm revoke ${APP_PACKAGE} ${permission}`);
+	adbShell(
+		udid,
+		`pm set-permission-flags ${APP_PACKAGE} ${permission} user-set user-fixed`,
+	);
+}
+
+/** Whether the app's main process is running. Appium's queryAppState
+ *  pgrep-matches any process whose name contains the package, and webview
+ *  renderer processes can linger for minutes after the main process exits, so
+ *  ask for the main process directly. */
+export function isAndroidAppRunning(udid: string): boolean {
+	try {
+		execSync(`adb -s ${udid} shell pidof ${APP_PACKAGE}`, {
+			stdio: 'ignore',
+			env: androidEnv,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Press the home button: the app is backgrounded but its process stays
+ *  alive, so the background service can keep syncing — unlike stopAndroidApp,
+ *  which tears the app down. */
+export function pressAndroidHome(udid: string): void {
+	adbShell(udid, 'input keyevent KEYCODE_HOME');
+}
+
+export function pressAndroidBack(udid: string): void {
+	adbShell(udid, 'input keyevent KEYCODE_BACK');
+}
+
+/** Whether the device reaches the internet over its current network: a TCP
+ *  connection to a public address opens. */
+export function androidHasInternet(udid: string): boolean {
+	try {
+		// No `-z`: older toybox nc (Android 12) rejects it. An empty stdin
+		// closes the connection as soon as it opens.
+		adbShell(udid, "'nc -w 3 1.1.1.1 443 </dev/null'");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Agents running the e2e APK on Android devices (physical or emulator)
+ * through Appium (UiAutomator2) sessions that land directly in the app's
+ * webview context, so specs and page objects work exactly as on desktop.
+ *
+ * The e2e APK is built with MAILBOX_URL=https://127.0.0.1:3200 baked in;
+ * onPrepare bridges each device's loopback port 3200 to the host's mailbox
+ * server via `adb reverse`.
+ */
+export class AndroidPlatform implements AgentPlatform {
+	readonly slots: number[];
+	readonly appiumPort: number;
+	private udids: Map<number, string>;
+	private loggers = new Map<number, ChildProcess>();
+
+	constructor(kindBySlot: Map<number, AndroidKind>) {
+		ensureAndroidEnv();
+		this.slots = [...kindBySlot.keys()];
+		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
+		// Workers reload this module; device provisioning belongs to the
+		// launcher, which claims before any worker starts.
+		if (process.env.WDIO_WORKER_ID === undefined) {
+			warnAboutUnauthorizedDevices();
+			bootMissingEmulators(
+				[...kindBySlot.values()].filter(k => k === 'android-emulator').length,
+			);
+		}
+		this.udids = claimDevices(kindBySlot);
+	}
+
+	remoteOptions(slot: number) {
+		const udid = this.udids.get(slot)!;
+		return {
+			port: this.appiumPort,
+			capabilities: {
+				platformName: 'Android',
+				'appium:automationName': 'UiAutomator2',
+				'appium:udid': udid,
+				// No `appium:app`: onPrepare installs the APK once per run, so a
+				// session doesn't push and install it all over again per spec. With
+				// only appPackage set, the driver's default fast reset puts each spec
+				// back to first-launch state with a ~1s `pm clear` (re-granting
+				// permissions per autoGrantPermissions) instead of a reinstall.
+				'appium:appPackage': APP_PACKAGE,
+				'appium:appActivity': '.MainActivity',
+				'appium:autoGrantPermissions': true,
+				// onPrepare clears the keyguard and keeps the screen on, the harness
+				// tails logcat itself, and a dedicated test device needs none of the
+				// per-session readiness checks.
+				'appium:skipUnlock': true,
+				'appium:skipDeviceInitialization': true,
+				'appium:skipLogcatCapture': true,
+				'appium:disableWindowAnimation': true,
+				'appium:autoWebview': true,
+				'appium:autoWebviewTimeout': 30_000,
+				'appium:systemPort': allocatePinnedPort(`_WDIO_SYSTEM_PORT${slot}`),
+				'appium:chromedriverPort': allocatePinnedPort(
+					`_WDIO_CHROMEDRIVER_PORT${slot}`,
+				),
+				'appium:chromedriverExecutableDir': CHROMEDRIVERS_DIR,
+				// Costs a devtools round trip per getContexts call, which `startApp`
+				// polls after every relaunch. It also refines the chromedriver pick out
+				// of CHROMEDRIVERS_DIR, so if a device's WebView major stops matching,
+				// restore it first.
+				'appium:enableWebviewDetailsCollection': false,
+				// terminateApp destroys the webview, so a merely suspended chromedriver
+				// session gets handed back stale on the next context switch.
+				'appium:recreateChromeDriverSessions': true,
+				'appium:adbExecTimeout': 60_000,
+				// 0 disables idle expiry: specs like review-checks park one agent
+				// for the whole spec after setup, far beyond any sane timeout.
+				'appium:newCommandTimeout': 0,
+			} as WebdriverIO.Capabilities,
+		};
+	}
+
+	async onPrepare(ctx: PrepareContext) {
+		// Build the e2e APKs only for the claimed devices' architectures.
+		// Debuginfo is dropped and symbols stripped (debug_assertions stays
+		// on, which is what makes the webview inspectable) — with them the
+		// APK is over 3GB.
+		const targets = new Set(
+			[...this.udids.values()].map(udid => ABIS[deviceAbi(udid)].target),
+		);
+		// Against a local mailbox the APK bakes the device's own loopback ports,
+		// bridged to the host below; against a remote deployment it bakes that
+		// deployment's urls directly and there is nothing to bridge.
+		const mailboxEnv: Record<string, string> =
+			ctx.mailboxPort === null
+				? remoteBakedEnv()
+				: {
+						MAILBOX_URL: `https://127.0.0.1:${DEVICE_MAILBOX_PORT}`,
+						...(ctx.pushPort !== null
+							? {
+									PUSH_NOTIFICATIONS_SERVER_URL: `http://127.0.0.1:${DEVICE_PUSH_PORT}`,
+								}
+							: {}),
+					};
+		const bakedEnv: Record<string, string> = {
+			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
+			...mailboxEnv,
+			CARGO_PROFILE_DEV_DEBUG: '0',
+			CARGO_PROFILE_DEV_STRIP: 'symbols',
+		};
+		// Gradle packages incrementally, patching the previous APK in place and
+		// leaving holes where replaced entries were: an e2e APK built over a dev
+		// build measured 853MB for 129MB of content. With no APK to patch it
+		// packages from scratch (a cache hit restores the clean one).
+		rmSync(APK_DIR, { recursive: true, force: true });
+		// Gradle decides its native-lib tasks are up to date from the jniLibs
+		// symlinks, whose paths do not change when cargo rebuilds what they
+		// point at — so it packages the copy it took on some earlier run, and
+		// the phone gets an app older than the one this run built. Dropping
+		// those copies is what makes it package the libs it was just given.
+		for (const dir of NATIVE_LIB_INTERMEDIATES) {
+			rmSync(dir, { recursive: true, force: true });
+		}
+		runBuild(
+			`pnpm tauri android build --debug --apk --split-per-abi --features e2e-tests -t ${[...targets].join(' ')} ${SKIP_FRONTEND_BUILD}`,
+			envWithoutWdioLoader(bakedEnv, androidEnv),
+		);
+
+		// A remote mailbox is reached directly; only a local one is bridged.
+		// Pinned in the env so the workers' beforeSession can re-assert the
+		// bridge, the same way ports are pinned for capabilities.
+		if (ctx.mailboxPort !== null) {
+			process.env._WDIO_MAILBOX_PORT = String(ctx.mailboxPort);
+			if (ctx.pushPort !== null) {
+				process.env._WDIO_PUSH_PORT = String(ctx.pushPort);
+			}
+		}
+
+		for (const udid of this.udids.values()) {
+			ensureApkInstalled(udid);
+			keepScreenAwake(udid);
+			bridgeHostPorts(udid);
+		}
+	}
+
+	async beforeSession() {
+		for (const [slot, udid] of this.udids) {
+			try {
+				bridgeHostPorts(udid);
+			} catch (err) {
+				// The spec is going to fail on its own if the device is really
+				// gone; a warning here is what names the reason.
+				console.warn(
+					`[android] could not bridge ports to ${udid}: ${String(err)}`,
+				);
+			}
+			this.loggers.get(slot)?.kill();
+			this.loggers.set(slot, startLogcatLogger(`agent-${slot}`, udid));
+		}
+	}
+
+	async afterSession() {
+		for (const logger of this.loggers.values()) {
+			logger.kill();
+		}
+		this.loggers.clear();
+	}
+
+	async onComplete() {
+		for (const udid of this.udids.values()) {
+			for (const port of [DEVICE_MAILBOX_PORT, DEVICE_PUSH_PORT]) {
+				try {
+					execSync(`adb -s ${udid} reverse --remove tcp:${port}`, {
+						env: androidEnv,
+					});
+				} catch {
+					/* device gone or reverse already removed */
+				}
+			}
+			release(udid);
+		}
+		for (const logger of this.loggers.values()) {
+			logger.kill();
+		}
+	}
+}

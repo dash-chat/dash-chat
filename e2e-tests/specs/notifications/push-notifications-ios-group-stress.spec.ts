@@ -21,7 +21,7 @@ const ROUNDS = 10;
  *
  * Skips itself unless E2E_STRESS=1, and unless push testing is available (a
  * Firebase service-account key plus a mobile agent). Run it with:
- *   PLATFORMS=ios,desktop just e2e run notifications/push-notifications-ios-group-stress
+ *   PHONES=ios just e2e run notifications/push-notifications-ios-group-stress
  */
 // wdio arms its per-test abort timer from the mocha timeout at invocation
 // time, so it must be set suite-wide: ROUNDS groups take well past the 300s

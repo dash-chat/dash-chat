@@ -1,13 +1,15 @@
+mod notification_avatar;
 mod notified_operations_store;
 
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 pub mod push_notifications;
 
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
 use dashchat_node::{
-    ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
+    AgentId, ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic,
+    TopicId,
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
@@ -15,15 +17,30 @@ use tauri_plugin_notification::{NotificationData, NotificationExt, PermissionSta
 
 use crate::node::AppNodeManager;
 
+/// Run a notification plugin call on the blocking pool. On mobile each call
+/// parks its thread until the native side answers, which can take seconds
+/// (FCM's getToken, or `show()` asking the webview for its route); on a
+/// runtime worker that stalls unrelated commands, e.g. creating a contact code.
+pub(crate) async fn run_plugin_call<T: Send + 'static>(
+    call: impl FnOnce() -> T + Send + 'static,
+) -> anyhow::Result<T> {
+    tokio::task::spawn_blocking(call)
+        .await
+        .context("notification plugin call panicked")
+}
+
 /// Returns `true` iff the user has both enabled notifications in app settings
 /// and granted OS-level permission. On desktop the permission state is always
 /// `Granted` so this collapses to the settings check.
-pub(crate) fn are_notifications_enabled(handle: &AppHandle) -> bool {
-    crate::settings::load_settings(handle).notifications_enabled
-        && matches!(
-            handle.notification().permission_state(),
-            Ok(PermissionState::Granted)
-        )
+pub(crate) async fn are_notifications_enabled(handle: &AppHandle) -> bool {
+    if !crate::settings::load_settings(handle).notifications_enabled {
+        return false;
+    }
+    let h = handle.clone();
+    matches!(
+        run_plugin_call(move || h.notification().permission_state()).await,
+        Ok(Ok(PermissionState::Granted))
+    )
 }
 
 /// Show a system notification for an operation that arrived through the
@@ -34,7 +51,7 @@ pub(crate) async fn show_sync_notification(
     app_handle: &AppHandle,
     notification: &dashchat_node::OpNotification,
 ) {
-    if !are_notifications_enabled(app_handle) {
+    if !are_notifications_enabled(app_handle).await {
         return;
     }
 
@@ -70,8 +87,14 @@ pub(crate) async fn show_sync_notification(
         }
     }
 
-    if let Err(err) = show_notification_from_data(app_handle, data) {
-        log::error!("Failed to show sync-path notification: {err:?}");
+    log::info!(
+        "Notifying about a synced operation {}",
+        notification.header.hash()
+    );
+    let h = app_handle.clone();
+    match run_plugin_call(move || show_notification_from_data(&h, data)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) | Err(err) => log::error!("Failed to show sync-path notification: {err:?}"),
     }
 }
 
@@ -88,6 +111,9 @@ fn show_notification_from_data(handle: &AppHandle, data: NotificationData) -> an
     }
     if let Some(bytes) = data.large_icon_bytes {
         builder = builder.large_icon_bytes(bytes);
+    }
+    if let Some(letter_tile) = data.large_icon_letter_tile {
+        builder = builder.large_icon_letter_tile(letter_tile);
     }
     if let Some(group) = data.group {
         builder = builder.group(group);
@@ -121,9 +147,6 @@ pub async fn build_notification_data(
     }
 
     // A blocked contact's operations are thrown away as they arrive
-    // (`enforce_blocklist`), so nothing they write may reach the shade
-    // either — a notification for a message the chat will never show is the
-    // one way a block leaks.
     match node.projection.is_author_blocked(&sender_device_id).await {
         Ok(false) => {}
         Ok(true) => return None,
@@ -142,11 +165,11 @@ pub async fn build_notification_data(
     };
 
     let Some(payload) = payload else {
-        #[cfg(mobile)]
+        #[cfg(any(mobile, test))]
         {
             return auth_control_op_notification(node, header, topic, sender_device_id, id).await;
         }
-        #[cfg(not(mobile))]
+        #[cfg(not(any(mobile, test)))]
         {
             let _ = (header, sender_device_id, id);
             return None;
@@ -195,13 +218,6 @@ pub async fn build_notification_data(
                 ..Default::default()
             })
         }
-        // An auth/control op keeps its data in the header rather than a body:
-        // the push path decodes nothing and takes the branch above, while the
-        // sync path is handed what the node decoded. Same op, same answer.
-        #[cfg(mobile)]
-        Payload::GroupControl(_) => {
-            auth_control_op_notification(node, header, topic, sender_device_id, id).await
-        }
         _ => None,
     }
 }
@@ -223,16 +239,25 @@ async fn chat_message_notification(
 
     let is_direct_chat =
         *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic;
+    let mut qr_code_name = None;
     if is_direct_chat {
-        let accepted = match node.accepted_contact_agent_ids().await {
-            Ok(accepted) => accepted,
-            Err(err) => {
-                log::error!("Failed to load accepted contacts: {err:?}");
-                return None;
-            }
+        let accepted = match sender_agent_id {
+            Some(agent_id) => is_accepted_agent(node, agent_id).await,
+            None => false,
         };
-        if !sender_agent_id.is_some_and(|agent_id| accepted.contains(&agent_id)) {
-            return None;
+        if !accepted {
+            // Someone whose code we scanned writes to a chat that already shows
+            // their messages, while their acceptance may still be on its way:
+            // without a mailbox it only arrives once both devices meet again.
+            let request = match node.outgoing_contact_request(sender_device_id).await {
+                Ok(Some(request)) => request,
+                Ok(None) => return None,
+                Err(err) => {
+                    log::error!("Failed to load our outgoing contact request: {err:?}");
+                    return None;
+                }
+            };
+            qr_code_name = Some(request.profile_name).filter(|name| !name.is_empty());
         }
     } else if !is_member_of(node, topic).await {
         return None;
@@ -244,10 +269,13 @@ async fn chat_message_notification(
         None
     };
 
-    let sender_name = sender_profile.as_ref().map(|p| p.name.clone());
-    let sender_avatar = sender_profile
-        .and_then(|p| p.avatar)
-        .filter(|s| s.starts_with("data:image/"));
+    let sender_name = sender_profile
+        .as_ref()
+        .map(|p| p.name.clone())
+        .filter(|name| !name.is_empty())
+        .or(qr_code_name);
+    let (sender_avatar, sender_letter_tile) =
+        notification_avatar::notification_avatar(sender_profile);
 
     let chat_route = if is_direct_chat {
         format!("/direct-chats/{}", topic)
@@ -268,58 +296,103 @@ async fn chat_message_notification(
         }
     };
 
-    #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
-    let mut data = NotificationData {
+    #[cfg(mobile)]
+    let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
+
+    let data = NotificationData {
         id,
         title: Some(sender_name.unwrap_or_else(|| sonix_i18n::t!("newMessage"))),
         body: Some(body_text),
         icon: Some("ic_stat_icon".to_string()),
         large_icon_bytes: sender_avatar,
+        large_icon_letter_tile: sender_letter_tile,
         group: Some(topic.to_hex()),
         route: Some(chat_route),
         ..Default::default()
     };
 
-    // Mobile-only: render as a chat thread (Android MessagingStyle /
-    // iOS Communication Notifications). `sender_id` keeps each `Person`
-    // distinct within group threads so different senders don't collapse;
-    // `conversation_title` (groups only) is the group name — Android
-    // surfaces it via `setConversationTitle(...) + setGroupConversation(true)`
-    // and iOS via `INSendMessageIntent.speakableGroupName`.
     #[cfg(mobile)]
-    {
-        let conversation_title = if is_direct_chat {
-            None
-        } else {
-            Some(group_title(node, topic).await)
-        };
-        data.conversation_style = Some(tauri_plugin_notification::ConversationStyle {
-            sender_id: sender_agent_id.map(|agent_id| agent_id.to_hex()),
-            conversation_title,
-        });
-    }
+    let data = in_conversation_thread(node, topic, is_direct_chat, sender_id, data).await;
 
-    // Android-only: reuse a stable per-conversation id (so successive
-    // messages update the same notification instead of stacking) and put
-    // every chat thread under the "dashchat.chats" OS-level group.
+    Some(data)
+}
+
+/// The key that keeps each sender of a conversation thread one person, so
+/// different senders in a group don't collapse into one.
+#[cfg(mobile)]
+fn conversation_sender_id(
+    sender_agent_id: Option<AgentId>,
+    sender_has_name: bool,
+) -> Option<String> {
+    // iOS would learn a sender with no name as a contact called "New message".
+    sender_agent_id
+        .filter(|_| sender_has_name || cfg!(target_os = "android"))
+        .map(|agent_id| agent_id.to_hex())
+}
+
+/// `data` as an entry of `topic`'s conversation thread: an Android
+/// MessagingStyle thread, an iOS Communication Notification. A group's thread
+/// carries its name, size and avatar.
+#[cfg(mobile)]
+async fn in_conversation_thread(
+    node: &Node,
+    topic: TopicId,
+    is_direct_chat: bool,
+    sender_id: Option<String>,
+    data: NotificationData,
+) -> NotificationData {
+    let (conversation_title, recipient_count, conversation_icon_bytes) = if is_direct_chat {
+        (None, None, None)
+    } else {
+        (
+            Some(group_title(node, topic).await),
+            group_recipient_count(node, topic).await,
+            Some(group_avatar(node, topic).await),
+        )
+    };
+    let data = NotificationData {
+        conversation_style: Some(tauri_plugin_notification::ConversationStyle {
+            sender_id,
+            conversation_title,
+            recipient_count,
+            conversation_icon_bytes,
+        }),
+        ..data
+    };
+
+    // Android appends to the thread already showing at the same id, so a
+    // conversation needs one id for all its notifications.
     //
     // TODO: XOR the truncated topic id with a node-specific secret before
     // using it as the notification id. The first 4 bytes are
     // public-derivable, so an adversary could mine a contact whose topic
     // id shares a 4-byte LE prefix with an existing conversation and get
     // their messages collapsed into the wrong MessagingStyle thread.
-    #[cfg(target_os = "android")]
-    {
-        match stable_notification_id(topic.as_bytes()) {
-            Ok(id) => data.id = id,
-            Err(err) => log::error!(
-                "Failed to derive Android MessagingStyle id from topic, falling back to random: {err:?}"
-            ),
-        }
-        data.group = Some("dashchat.chats".to_string());
+    if !cfg!(target_os = "android") {
+        return data;
     }
+    NotificationData {
+        id: stable_notification_id(topic.as_bytes()).unwrap_or_else(|err| {
+            log::error!("Failed to derive Android MessagingStyle id from topic: {err:?}");
+            data.id
+        }),
+        group: Some("dashchat.chats".to_string()),
+        ..data
+    }
+}
 
-    Some(data)
+/// Whether `agent_id` is a contact we accepted. Unlike `Node::is_accepted_contact`
+/// this takes the agent id the caller already resolved for the sender's device.
+async fn is_accepted_agent(node: &Node, agent_id: AgentId) -> bool {
+    match node.accepted_contact_agent_ids().await {
+        Ok(accepted) => accepted.contains(&agent_id),
+        // Fails open: the chat shows the message whatever this lookup says, so
+        // the caller goes on to check whether we scanned the sender's code.
+        Err(err) => {
+            log::error!("Failed to load accepted contacts: {err:?}");
+            false
+        }
+    }
 }
 
 /// Whether we are still in the group `topic` names. Leaving one does not stop
@@ -371,13 +444,42 @@ fn media_placeholder(media: &MediaBundle) -> String {
     }
 }
 
+/// The group's photo, or a generic group icon for a group without one.
+#[cfg(mobile)]
+async fn group_avatar(node: &Node, topic_id: TopicId) -> String {
+    const GENERIC_GROUP_AVATAR: &str = concat!(
+        "data:image/png;base64,",
+        include_str!("group-avatar.png.base64")
+    );
+    node.get_group_info(topic_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|info| info.image)
+        .filter(|image| image.starts_with("data:image/"))
+        .unwrap_or_else(|| GENERIC_GROUP_AVATAR.to_string())
+}
+
+/// How many people besides us are in the group, if that can be told.
+#[cfg(mobile)]
+async fn group_recipient_count(node: &Node, topic: TopicId) -> Option<u32> {
+    let chat_id = ChatId::from_topic_id(topic).ok()?;
+    match node.get_group_members(chat_id).await {
+        Ok(members) => Some(members.len().saturating_sub(1) as u32),
+        Err(err) => {
+            log::error!("Failed to load the members of {topic}: {err:?}");
+            None
+        }
+    }
+}
+
 /// Resolves the latest group name for `topic_id`, falling back to a localized
 /// "New group" placeholder when there's no `GroupInfo` op yet or the name is
 /// empty. Used in chat-message notifications (as the MessagingStyle conversation
 /// title) and in auth-control notifications (as the title for group
 /// invites/adds). Mobile-only: desktop notifications use neither MessagingStyle
 /// nor the auth-control variant.
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 async fn group_title(node: &Node, topic_id: TopicId) -> String {
     match node.get_group_info(topic_id).await {
         Ok(Some(info)) if !info.name.is_empty() => info.name,
@@ -401,7 +503,7 @@ async fn group_title(node: &Node, topic_id: TopicId) -> String {
 ///
 /// Mobile-only: on desktop we don't surface these as system notifications —
 /// the chat-list row already reflects the auth event reactively.
-#[cfg(mobile)]
+#[cfg(any(mobile, test))]
 async fn auth_control_op_notification(
     node: &Node,
     header: &Header,
@@ -411,8 +513,7 @@ async fn auth_control_op_notification(
 ) -> Option<NotificationData> {
     type GroupAction = p2panda_auth::group::GroupAction<p2panda_core::VerifyingKey>;
 
-    let args = header.extensions.group_args()?;
-    let action = &args.action;
+    let action = &dashchat_node::membership::membership_action(header)?;
 
     let target_is_me = |member: &p2panda_auth::group::GroupMember<p2panda_core::VerifyingKey>| {
         matches!(
@@ -421,16 +522,18 @@ async fn auth_control_op_notification(
         )
     };
 
+    // The acceptor authors the direct-chat space and admits the requester to
+    // it; neither is a group invite. The deterministic direct-chat topic with
+    // the sender tells a chat from a group.
+    if *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)]) == topic {
+        return None;
+    }
+
     let added_me = match action {
-        // A Create is either the acceptor authoring a new direct-chat space,
-        // which is not a group at all, or someone creating a group with us in
-        // it. The deterministic direct-chat topic with the sender tells which.
         GroupAction::Create { initial_members } => {
-            *Topic::direct_chat([node.fake_agent_id(), FakeAgentId::from(sender_device_id)])
-                != topic
-                && initial_members.iter().any(|(m, _)| target_is_me(m))
+            initial_members.iter().any(|(m, _)| target_is_me(m))
         }
-        GroupAction::Add { member, .. } => target_is_me(&member),
+        GroupAction::Add { member, .. } => target_is_me(member),
         GroupAction::Remove { .. } | GroupAction::Promote { .. } | GroupAction::Demote { .. } => {
             false
         }
@@ -439,28 +542,44 @@ async fn auth_control_op_notification(
         return None;
     }
 
-    let sender_name = match node.lookup_contact(sender_device_id).await.ok().flatten() {
-        Some(agent_id) => node
-            .projection
-            .get_profile(agent_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|profile| profile.name),
+    let sender_agent_id = node.lookup_contact(sender_device_id).await.ok().flatten();
+    let sender_profile = match sender_agent_id {
+        Some(agent_id) => node.projection.get_profile(agent_id).await.ok().flatten(),
         None => None,
     };
+    let sender_name = sender_profile
+        .as_ref()
+        .map(|profile| profile.name.clone())
+        .filter(|name| !name.is_empty());
+    let (sender_avatar, sender_letter_tile) =
+        notification_avatar::notification_avatar(sender_profile);
+    #[cfg(mobile)]
+    let sender_id = conversation_sender_id(sender_agent_id, sender_name.is_some());
 
-    Some(NotificationData {
+    // Signal writes the add into the group's thread, as a line from whoever
+    // added us.
+    let data = NotificationData {
         id,
-        title: Some(group_title(node, topic).await),
+        title: Some(
+            sender_name
+                .clone()
+                .unwrap_or_else(|| sonix_i18n::t!("newMessage")),
+        ),
         body: Some(match &sender_name {
             Some(name) => sonix_i18n::t!("someoneAddedYouToTheGroup", { "name": name }),
             None => sonix_i18n::t!("someoneAddedYouToTheGroupNoName"),
         }),
         icon: Some("ic_stat_icon".to_string()),
+        large_icon_bytes: sender_avatar,
+        large_icon_letter_tile: sender_letter_tile,
+        group: Some(topic.to_hex()),
         route: Some(format!("/group-chat/{}", topic.to_hex())),
         ..Default::default()
-    })
+    };
+    #[cfg(mobile)]
+    let data = in_conversation_thread(node, topic, false, sender_id, data).await;
+
+    Some(data)
 }
 
 #[cfg(mobile)]
@@ -488,7 +607,198 @@ fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    use dashchat_node::testing::{TestMailbox, TestNode};
+    use dashchat_node::{AddContactResult, AsBody, NodeConfig, Profile};
+    use p2panda::operation::LogId;
+
     use super::*;
+
+    /// Publish `text` in `chat` on `node` and return the operation the way
+    /// the sync loop hands it to the builder.
+    async fn message_op(node: &TestNode, chat: ChatId, text: &str) -> (Header, Payload) {
+        let header = node.send_message(chat, text, None, None).await.unwrap();
+        let op = node
+            .op_store
+            .get_log(&node.device_id(), &LogId::from(chat), None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|op| op.hash == header.hash())
+            .unwrap();
+        let payload = Payload::try_from_body(&op.body.unwrap().unwrap()).unwrap();
+        (header, payload)
+    }
+
+    /// Someone whose code we scanned writes to us before their acceptance
+    /// has reached us. The chat already shows their message, so it must be
+    /// announced, titled with the name their code carried (DASH-CHAT-4W).
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
+    async fn announces_a_message_from_someone_we_scanned() {
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob").await;
+        bob.set_profile(Profile {
+            name: "Bob".to_string(),
+            surname: None,
+            avatar: None,
+            about: None,
+        })
+        .await
+        .unwrap();
+
+        // Each scans the other's code. Nothing travels between the two nodes,
+        // so neither acceptance ever arrives.
+        let alice_code = alice.create_add_contact_qr_code().await.unwrap();
+        let bob_code = bob.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(chat) = alice.add_contact(bob_code).await.unwrap() else {
+            panic!("alice had already asked bob");
+        };
+        let AddContactResult::NewRequest(bobs_chat) = bob.add_contact(alice_code).await.unwrap()
+        else {
+            panic!("bob had already asked alice");
+        };
+        assert_eq!(chat, bobs_chat);
+
+        let (header, payload) = message_op(&bob, chat, "are you there?").await;
+        let data = build_notification_data(&alice, chat.into(), &header, Some(&payload))
+            .await
+            .expect("bob's message is announced");
+        assert_eq!(data.title.as_deref(), Some("Bob"));
+        assert_eq!(data.body.as_deref(), Some("are you there?"));
+    }
+
+    /// Alice creates a group with us in it. The sync loop hands us her
+    /// membership operation bare, and that alone is announced.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn announces_being_added_to_a_group() {
+        crate::i18n::init_i18n();
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .set_profile(Profile {
+                name: "Alice".to_string(),
+                surname: None,
+                avatar: None,
+                about: None,
+            })
+            .await
+            .unwrap();
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bob)
+            .await
+            .unwrap();
+
+        let group = alice
+            .create_chat_group(std::collections::BTreeMap::from([(
+                *bob.device_id(),
+                p2panda_auth::Access::write(),
+            )]))
+            .await
+            .unwrap();
+        let header = alice
+            .get_group_control_ops(group)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|op| op.header)
+            .find(|header| {
+                dashchat_node::membership::membership_action(header).is_some_and(|action| {
+                    dashchat_node::membership::action_adds_member(&action, bob.device_id())
+                })
+            })
+            .expect("alice published an operation admitting bob");
+
+        let data = build_notification_data(&bob, group.into(), &header, None)
+            .await
+            .expect("being added is announced");
+        assert_eq!(data.title.as_deref(), Some("Alice"));
+        assert_eq!(data.body.as_deref(), Some("Alice added you to the group."));
+        assert_eq!(
+            data.route.as_deref(),
+            Some(format!("/group-chat/{}", group.to_hex()).as_str())
+        );
+    }
+
+    /// Alice accepts Bob's contact request, which admits his device to their
+    /// direct chat's space. That is a chat, not a group, so the membership
+    /// operation the sync loop hands Bob must announce nothing.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stays_silent_for_a_contact_accepting_us() {
+        crate::i18n::init_i18n();
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bob = TestNode::new(NodeConfig::testing(), "bob")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .set_profile(Profile {
+                name: "Alice".to_string(),
+                surname: None,
+                avatar: None,
+                about: None,
+            })
+            .await
+            .unwrap();
+
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bob)
+            .await
+            .unwrap();
+
+        let direct_chat = alice.direct_chat_with(&bob);
+        let header = alice
+            .get_group_control_ops(direct_chat)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|op| op.header)
+            .find(|header| {
+                dashchat_node::membership::membership_action(header).is_some_and(|action| {
+                    dashchat_node::membership::action_adds_member(&action, bob.device_id())
+                })
+            })
+            .expect("alice published an operation admitting bob to their direct chat");
+
+        if let Some(data) = build_notification_data(&bob, direct_chat.into(), &header, None).await {
+            panic!(
+                "being admitted to a direct chat is not a group invite, yet it announced {:?}",
+                data.body
+            );
+        }
+    }
+
+    /// Someone who scanned our code, and whom we have not accepted, writes to
+    /// us. Their request is theirs to make, so nothing is announced.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "TODO: pre-accept: the requester cannot publish into the direct chat space before the acceptor creates it"]
+    async fn stays_silent_for_someone_who_scanned_us() {
+        let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+        let carol = TestNode::new(NodeConfig::testing(), "carol").await;
+
+        let alice_code = alice.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(chat) = carol.add_contact(alice_code).await.unwrap()
+        else {
+            panic!("carol had already asked alice");
+        };
+
+        let (header, payload) = message_op(&carol, chat, "hello?").await;
+        let data = build_notification_data(&alice, chat.into(), &header, Some(&payload)).await;
+        assert!(data.is_none(), "announced: {data:?}");
+    }
 
     #[test]
     fn stable_notification_id_uses_first_four_bytes_little_endian() {

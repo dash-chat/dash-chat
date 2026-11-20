@@ -14,7 +14,7 @@
  *
  * Needs a physical Android receiver (its notifications are read through
  * dumpsys) and a Firebase service-account key:
- *   PLATFORMS=android,desktop,desktop just e2e run notifications/contact-request-recipient
+ *   PHONES=android just e2e run notifications/contact-request-recipient
  */
 import {
 	type NotificationHelper,
@@ -63,10 +63,6 @@ describe('Contact requests reach only the device they were sent to', () => {
 		await bob.homePage.chatListItem('Grace').waitForExist();
 	});
 
-	afterEach(async function () {
-		if (this.currentTest?.state === 'failed') await notifications.recover();
-	});
-
 	it('announces only the request addressed to Rex', async () => {
 		await backToHome([grace]);
 		await navigateToAddContact(grace);
@@ -76,11 +72,9 @@ describe('Contact requests reach only the device they were sent to', () => {
 		// Grace wrote to Bob's inbox before Rex's, and Rex syncs both, so once
 		// the request addressed to Rex is on the shade the other one has had
 		// its chance.
-		await notifications.waitForNotification('Grace');
-
-		const delivered = await notifications.delivered();
-		expect(delivered.map(n => n.texts.join(' | '))).toEqual([
-			expect.stringContaining('Grace'),
-		]);
+		const shown = await notifications.waitForDelivered(all =>
+			all.some(n => n.body === 'Grace'),
+		);
+		expect(shown.map(n => n.body)).toEqual(['Grace']);
 	});
 });

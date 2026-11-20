@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
-use dashchat_node::{AsBody, Payload, SeqNum, TopicId};
+use dashchat_node::topic::application_log_id;
+use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
-use p2panda::operation::LogId;
+use p2panda::operation::Header;
+use p2panda_core::Hash;
 use tauri_plugin_notification::*;
 
 use crate::filesystem::FileSystem;
@@ -23,8 +25,19 @@ static ANDROID_LOGS_ONCE: std::sync::Once = std::sync::Once::new();
 #[cfg(target_os = "ios")]
 static IOS_LOGGER_ONCE: std::sync::Once = std::sync::Once::new();
 
+/// Just over the 10 MB tail a report attaches, so this file and the previous
+/// one together always cover it.
 #[cfg(target_os = "ios")]
-const MAX_NSE_LOG_SIZE: u64 = 5 * 1024 * 1024;
+const MAX_NSE_LOG_SIZE: u64 = 12 * 1024 * 1024;
+
+/// What the handler may spend in all, from its entry: the iOS extension is
+/// killed at ~30 s whatever the handler spends on the network.
+const HANDLER_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
+pub(super) const OP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+pub(super) const RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long a cloud mailbox registration may hold up the handler at a time. A
+/// hanging connect otherwise takes up to the HTTP client's 10 s timeout.
+const REGISTER_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Entry point called by the FirebaseMessagingService when a push notification arrives.
 /// Fetches the operation referenced by the push and builds a user-facing notification, dedup'd
@@ -34,6 +47,9 @@ pub fn receive_push_notification(
     notification: NotificationData,
     context: ReceivePushNotificationContext,
 ) -> Option<NotificationData> {
+    let handler_deadline = tokio::time::Instant::now() + HANDLER_BUDGET;
+    panic_policy::install_panic_hook();
+
     // iOS never sets `APP_HANDLE` because the NSE runs in a separate process.
     #[cfg(target_os = "android")]
     let main_app_alive = crate::APP_HANDLE.get().is_some();
@@ -46,8 +62,11 @@ pub fn receive_push_notification(
         crate::utils::install_crypto_provider();
 
         #[cfg(target_os = "android")]
-        ANDROID_LOGS_ONCE.call_once(|| unsafe {
-            setup_android_logs();
+        ANDROID_LOGS_ONCE.call_once(|| {
+            unsafe { setup_android_logs() };
+            if let Err(err) = crate::logger::android::install_push_logger(&context.data_dir) {
+                eprintln!("Failed to install the push process's logger: {err:?}");
+            }
         });
         #[cfg(target_os = "ios")]
         IOS_LOGGER_ONCE.call_once(|| {
@@ -59,92 +78,65 @@ pub fn receive_push_notification(
                     .level_filter(log::LevelFilter::Debug)
                     .init();
             }
-            // Now that the logger is initialized, route panics through it.
-            crate::utils::install_panic_hook();
         });
         crate::i18n::init_i18n();
     }
 
     log::info!("Received push notification: {notification:?}");
 
-    // The iOS Notification Service Extension's main thread has a ~1 MB stack —
-    // too small for the deeply-nested node-init future (iroh + sqlx + encryption
-    // polled inline by `block_on`), which overruns the stack guard page and
-    // crashes with EXC_BAD_ACCESS/SIGBUS. Run the work on a thread with a large
-    // stack. Android's handler thread has ample stack, so it runs inline.
-    #[cfg(target_os = "ios")]
-    {
-        let data_dir = context.data_dir;
-        std::thread::Builder::new()
-            .stack_size(16 * 1024 * 1024)
-            .spawn(move || {
-                tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
-                    notification,
-                    data_dir,
-                ))
-            })
-            .expect("failed to spawn push-notification worker thread")
+    // The thread a push arrives on has a small, platform-chosen stack (~1 MB on
+    // the iOS Notification Service Extension) — too small for the deeply-nested
+    // node-init future (iroh + sqlx + encryption polled inline by `block_on`),
+    // which overruns the stack guard page and crashes the process.
+    let data_dir = context.data_dir;
+    let worker = std::thread::Builder::new()
+        .name("push-notification-worker".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
+                notification,
+                data_dir,
+                handler_deadline,
+            ))
+        });
+    match worker {
+        Ok(worker) => worker
             .join()
-            .expect("push-notification worker thread panicked")
-    }
-    #[cfg(not(target_os = "ios"))]
-    {
-        tauri::async_runtime::block_on(handle_push_notifications_with_fallback_messages(
-            notification,
-            context.data_dir,
-        ))
+            .expect("push-notification worker thread panicked"),
+        Err(err) => {
+            log::error!("Failed to spawn the push-notification worker thread: {err:?}");
+            Some(notifications::new_message_generic_notification())
+        }
     }
 }
 
 #[cfg(target_os = "ios")]
 fn setup_ios_file_logger(data_dir: &std::path::Path) -> anyhow::Result<()> {
-    use log::Log;
-    use tauri_plugin_log::fern;
-
     let fs = FileSystem::from_app_root_dir(data_dir.to_path_buf())?;
     let logs_dir = fs.app_root_dir().join("logs-nse");
     std::fs::create_dir_all(&logs_dir)?;
     let log_path = logs_dir.join("notification-service.log");
 
-    // Simple size-based rotation: clear the file if it has grown too large.
+    // Rotate rather than clear: a report attaches every `*.log` here, and a
+    // cleared file would leave it with only the pushes since the rotation.
     if let Ok(metadata) = std::fs::metadata(&log_path) {
         if metadata.len() > MAX_NSE_LOG_SIZE {
-            let _ = std::fs::remove_file(&log_path);
+            let _ = std::fs::rename(
+                &log_path,
+                logs_dir.join("notification-service.previous.log"),
+            );
         }
     }
 
-    let os_logger = oslog::OsLogger::new("studio.darksoil.dashchat.PushNotificationsExtension")
-        .level_filter(log::LevelFilter::Debug);
-
-    fern::Dispatch::new()
-        .format(crate::setup::format_record)
-        .level(log::LevelFilter::Warn)
-        .level_for("dashchat_node", log::LevelFilter::Debug)
-        .level_for("dashchat_utils", log::LevelFilter::Debug)
-        .level_for("mailbox_client", log::LevelFilter::Debug)
-        .level_for("mailbox_server", log::LevelFilter::Debug)
-        .level_for("mailbox_local_server", log::LevelFilter::Debug)
-        .level_for("local_hub_discovery", log::LevelFilter::Debug)
-        .level_for("tauri_app_lib", log::LevelFilter::Debug)
-        .chain(fern::log_file(&log_path)?)
-        .chain(fern::Output::call(move |record| {
-            os_logger.log(record);
-        }))
-        .apply()?;
-
-    // `apply()` sets the global max level to the dispatch's base level (Warn),
-    // which would silence Debug/Info on the os_log target. Keep the unified
-    // log channel verbose for on-device debugging.
-    log::set_max_level(log::LevelFilter::Debug);
-
-    Ok(())
+    crate::logger::ios::install_push_extension_logger(&log_path)
 }
 
 async fn handle_push_notifications_with_fallback_messages(
     notification: NotificationData,
     data_dir: PathBuf,
+    handler_deadline: tokio::time::Instant,
 ) -> Option<NotificationData> {
-    match handle_push_notification(notification, data_dir).await {
+    match handle_push_notification(notification, data_dir, handler_deadline).await {
         Ok(result) => {
             if let Some(data) = &result {
                 log::info!(
@@ -156,10 +148,6 @@ async fn handle_push_notifications_with_fallback_messages(
                     "Successfully processed push notification, no actual notification needs to be shown.",
                 );
             }
-            // Nudge the main app to resync over the shared database (it may never
-            // see the operation this process just ingested).
-            #[cfg(target_os = "ios")]
-            super::nse_signal::post_nse_did_process();
             result
         }
         Err(err) => {
@@ -169,11 +157,44 @@ async fn handle_push_notifications_with_fallback_messages(
     }
 }
 
+/// Retries reaching the cloud mailbox while a push waits for its operation.
+///
+/// A mailbox that is not tracked yet is registered again, since a node built for
+/// a push has no registration retry of its own. A mailbox already polling on the
+/// Active cadence is left alone, since extra probes there only pile up errors
+/// fast enough to flip the connection status on a brief hiccup.
+async fn reconnect_cloud_mailbox(
+    node: &dashchat_node::Node,
+    cloud_id: &mut Option<mailbox_client::MailboxId>,
+    attempt: &mut Option<crate::setup::CloudMailboxAttempt>,
+) {
+    if cloud_id.is_none() {
+        *cloud_id = crate::mailbox::cloud_mailbox_id(node).await;
+    }
+    let tracked = match cloud_id.as_ref() {
+        Some(id) => node.mailboxes.tracked_mailbox(id).await,
+        None => None,
+    };
+    let (Some(id), Some(mailbox)) = (cloud_id.clone(), tracked) else {
+        if crate::setup::track_cloud_mailbox_with_timeout(node, REGISTER_WAIT, attempt).await {
+            // Re-resolve next time: the id the server reported can differ from a
+            // stale persisted one, which would otherwise never become tracked.
+            *cloud_id = None;
+        }
+        return;
+    };
+    let status = mailbox.health().borrow().status;
+    if status != mailbox_client::SyncStatus::Active {
+        node.mailboxes.probe(id).await;
+    }
+}
+
 async fn handle_push_notification(
     notification: NotificationData,
     app_data_root: PathBuf,
+    handler_deadline: tokio::time::Instant,
 ) -> anyhow::Result<Option<NotificationData>> {
-    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
+    // Title = topic ID (hex), Body = operation ID ("author_hex.log_hex:seq_num")
     let topic_hex = notification
         .title
         .as_deref()
@@ -183,10 +204,11 @@ async fn handle_push_notification(
         .as_deref()
         .context("notification has no body")?;
 
-    let (author_hex, seq_str) = op_id
+    let (log_key, seq_str) = op_id
         .split_once(':')
         .context("op_id missing ':' separator")?;
     let seq_num: SeqNum = seq_str.parse().context("failed to parse seq_num")?;
+    let (author_hex, log_hex) = log_key.split_once('.').unwrap_or((log_key, ""));
 
     let author_bytes: [u8; 32] = hex::decode(author_hex)
         .context("failed to hex-decode author")?
@@ -201,7 +223,22 @@ async fn handle_push_notification(
         .map_err(|_| anyhow!("topic_id bytes are not 32 bytes long"))?;
     let topic_id = TopicId::try_from(topic_bytes)?;
 
+    // Space, group and key bundle logs reach the mailbox too, but only the
+    // chat log holds anything worth a notification.
+    let chat_log = dashchat_node::LogId::from(application_log_id(topic_id));
+    if !log_hex.is_empty() && log_hex != chat_log.to_hex() {
+        log::debug!("Ignoring a push for a control log of {topic_hex}.");
+        return Ok(None);
+    }
+
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
+    // The setting alone, unlike `are_notifications_enabled`: there is no app
+    // here to ask the OS through, and with the permission denied the OS drops
+    // whatever this returns anyway.
+    if !crate::settings::load_settings_from_filesystem(&filesystem).notifications_enabled {
+        log::info!("Notifications are disabled: ignoring the push notification.");
+        return Ok(None);
+    }
     let app_data_dir = filesystem.app_data_dir();
 
     log::info!(
@@ -209,9 +246,13 @@ async fn handle_push_notification(
         app_data_dir
     );
 
+    #[cfg(target_os = "ios")]
+    let notification_tx = Some(super::nse_signal::nudge_on_processed_operations());
+    #[cfg(not(target_os = "ios"))]
+    let notification_tx = None;
     let acquired = node_slot::get_node_for_push_notification(
         app_data_dir,
-        NodeContext::for_push_notifications(),
+        NodeContext::for_push_notifications(notification_tx),
     )
     .await
     .context("failed to get node")?;
@@ -219,18 +260,48 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
-    // Fetch the new operation. The push itself is evidence the cloud mailbox is
-    // reachable — it only exists because the mailbox server took the blob and
-    // asked for it — so wake the mailbox rather than probing it, clearing any
-    // backoff a network-less background stretch left behind. Fall back to a
-    // general trigger if it isn't registered yet.
-    if let Some(cloud_id) = crate::mailbox::cloud_mailbox_id(&node).await {
-        node.mailboxes.wakeup(cloud_id).await;
-    } else {
-        node.mailboxes.nudge_poll_loop();
-    }
+    wait_for_pushed_operation_notification(
+        node,
+        &filesystem,
+        topic_id,
+        verifying_key,
+        seq_num,
+        handler_deadline,
+    )
+    .await
+}
 
-    // Poll for the operation to arrive (up to 15 seconds)
+async fn wait_for_pushed_operation_notification(
+    node: dashchat_node::Node,
+    filesystem: &FileSystem,
+    topic_id: TopicId,
+    verifying_key: p2panda_core::VerifyingKey,
+    seq_num: SeqNum,
+    handler_deadline: tokio::time::Instant,
+) -> anyhow::Result<Option<NotificationData>> {
+    let op_id = format!("{}:{seq_num}", dashchat_node::DeviceId::from(verifying_key));
+    let topic_hex = topic_id.to_hex();
+
+    // On every push, not once per node: the extension caches its node for hours
+    // and its networking is often not up on the cold-start push. The `/health`
+    // round trip also refreshes the mailbox's dialing address. Track it as a
+    // fetch source only: `register_cloud_mailbox`'s up-to-10s endpoint wait
+    // would eat the extension's ~30 s budget. Bounded, since the wait below
+    // keeps retrying.
+    let mut cloud_mailbox_attempt = None;
+    crate::setup::track_cloud_mailbox_with_timeout(
+        &node,
+        REGISTER_WAIT,
+        &mut cloud_mailbox_attempt,
+    )
+    .await;
+
+    // Probe rather than wake: the push proves the cloud mailbox is up, not that
+    // this device can reach it, and a wakeup would reset the connection status
+    // on every push.
+    crate::mailbox::probe_cloud_mailbox(&node).await;
+
+    // Poll for the operation to arrive
     // PERF: consider adding the ability for the op store to notify when an op is stored,
     //     instead of polling
     let device_id = dashchat_node::DeviceId::from(verifying_key);
@@ -238,17 +309,24 @@ async fn handle_push_notification(
     // to include seq_num itself. seq_num == 0 → None means "from the start".
     let from = seq_num.checked_sub(1);
     let mut entry = None;
-    for _ in 0..75 {
+    let mut cloud_id = None;
+    let mut next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
+    while tokio::time::Instant::now() < handler_deadline {
+        if tokio::time::Instant::now() >= next_reconnect {
+            reconnect_cloud_mailbox(&node, &mut cloud_id, &mut cloud_mailbox_attempt).await;
+            next_reconnect = tokio::time::Instant::now() + RECONNECT_INTERVAL;
+        }
         let log = node
             .op_store
-            .get_log(&device_id, &LogId::from_topic(topic_id), from)
+            .get_log(&device_id, &application_log_id(topic_id), from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
-        if let Some(first) = log.into_iter().next() {
-            entry = Some(first);
+        // An encrypted operation is not read until its secret arrives, and a later one may be.
+        entry = log.into_iter().find(|op| op.header.seq_num == seq_num);
+        if entry.is_some() {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(OP_POLL_INTERVAL).await;
     }
 
     let Some(operation) = entry else {
@@ -258,32 +336,39 @@ async fn handle_push_notification(
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
-    let payload = match operation.body.as_ref() {
-        Some(body) => Some(
+    let payload = match &operation.body {
+        Ok(Some(body)) => Some(
             Payload::try_from_body(body)
                 .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
         ),
-        None => None,
+        Ok(None) => None,
+        Err(err) => {
+            log::warn!("Operation {op_id} is unreadable, showing generic notification: {err}");
+            None
+        }
     };
 
-    let Some(data) = notifications::build_notification_data(
+    let Some((data, notified)) = notification_for_pushed_operation(
         &node,
         topic_id,
         &operation.header,
         payload.as_ref(),
+        handler_deadline,
     )
     .await
     else {
         return Ok(None);
     };
+    log::info!("Notifying about a pushed operation {notified}");
 
     let notified_operations_store = crate::notifications::NotifiedOperationsStore::open(
         &filesystem.notified_operations_db_path(),
+        &sqlite_gate::SqliteGate::default(),
     )
     .await
     .context("failed to open notified operations store")?;
     match notified_operations_store
-        .record_notified_operation(operation.header.hash())
+        .record_notified_operation(notified)
         .await
     {
         Ok(false) => {
@@ -297,4 +382,49 @@ async fn handle_push_notification(
     }
 
     Ok(Some(data))
+}
+
+async fn notification_for_pushed_operation(
+    node: &dashchat_node::Node,
+    topic_id: TopicId,
+    header: &Header,
+    payload: Option<&Payload>,
+    handler_deadline: tokio::time::Instant,
+) -> Option<(NotificationData, Hash)> {
+    let author = dashchat_node::DeviceId::from(header.verifying_key);
+    match node.projection.is_author_blocked(&author).await {
+        Ok(false) => {}
+        Ok(true) => return None,
+        Err(err) => {
+            log::error!("Failed to check whether {author:?} is blocked: {err:?}");
+            return None;
+        }
+    }
+    if let Some(data) =
+        notifications::build_notification_data(node, topic_id, header, payload).await
+    {
+        return Some((data, header.hash()));
+    }
+    match payload {
+        Some(Payload::Chat(ChatPayload::JoinGroup {
+            chat_id,
+            add_member_operation_hash,
+        })) => {
+            let notification = super::group_invitation::wait_for_added_us_notification(
+                node,
+                header,
+                *chat_id,
+                *add_member_operation_hash,
+                handler_deadline,
+            )
+            .await;
+            super::group_invitation::wait_until_group_is_subscribed_on_push_server(
+                *chat_id,
+                handler_deadline,
+            )
+            .await;
+            notification
+        }
+        _ => None,
+    }
 }

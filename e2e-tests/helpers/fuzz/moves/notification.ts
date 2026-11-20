@@ -41,9 +41,9 @@ class TapNotificationMove extends Move {
 		const notification = at(tappable(m, actor.name), this.chatIdx);
 		const chat = notification.opens;
 		if (chat === null) throw new Error('drew a notification with no chat');
-		log(`${actor.name}: ${this.toString()} -> ${notification.shows[0]}'s`);
+		log(`${actor.name}: ${this.toString()} -> ${notification.tapText}'s`);
 		const notifications = notificationsOf(actor);
-		await notifications.tapNotification(notification.shows[0]);
+		await notifications.tapNotification(notification.tapText);
 		await notifications.returnToApp();
 		// The tap resumes or cold-starts the app onto the chat, which is also
 		// where the app clears what it had posted for it.
@@ -60,12 +60,9 @@ class TapNotificationMove extends Move {
 
 /** The notifications a tap can be aimed at and checked: one whose chat the
  *  model can name — a request from someone the agent has not added back opens
- *  one it cannot — and which says something a tap can find it by, which one
- *  built before the sender's profile arrived does not. */
+ *  one it cannot. */
 function tappable(m: Readonly<ExpectedModel>, name: string) {
-	return m
-		.expectedNotifications(name)
-		.filter(n => n.opens !== null && n.shows.length > 0);
+	return m.expectedNotifications(name).filter(n => n.opens !== null);
 }
 
 /** Wait until `chat` is on screen, naming whatever else the tap opened when

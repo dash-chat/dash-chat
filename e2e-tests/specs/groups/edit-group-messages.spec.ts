@@ -31,10 +31,10 @@ describe('Editing group messages', () => {
 		const edited2 =
 			await agent2.groupChatPage.messages.waitForMessage('Hello group');
 
-		await browser.waitUntil(() => edited1.hasEditedIndicator(), {
+		await agent1.waitUntil(() => edited1.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the author side',
 		});
-		await browser.waitUntil(() => edited2.hasEditedIndicator(), {
+		await agent2.waitUntil(() => edited2.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the peer side',
 		});
 	});

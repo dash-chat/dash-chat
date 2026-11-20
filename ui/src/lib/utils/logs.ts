@@ -100,6 +100,12 @@ const isCallFromTornDownPage = (message: string) =>
 	message.includes('not allowed on window') &&
 	message.includes('URL: about:blank');
 
+// The same about:blank refusal for the notification plugin's document-start
+// permission probe, which release builds report without naming the URL.
+const isRefusedStartupPermissionProbe = (message: string) =>
+	message ===
+	'Command plugin:notification|is_permission_granted not allowed by ACL';
+
 const isIgnoredError = (message: string) =>
 	ignoredErrors.some(ignored => message.includes(ignored));
 
@@ -124,7 +130,11 @@ export function reportUncaughtErrors(): void {
 	window.addEventListener('unhandledrejection', event => {
 		if (isAppShuttingDown()) return;
 		const reason = describe(event.reason);
-		if (isCallFromTornDownPage(reason)) return;
+		if (
+			isCallFromTornDownPage(reason) ||
+			isRefusedStartupPermissionProbe(reason)
+		)
+			return;
 		console.error(`[unhandledrejection] ${reason}`);
 		showToast(m.errorUnexpected(), 'unexpected', event.reason);
 	});

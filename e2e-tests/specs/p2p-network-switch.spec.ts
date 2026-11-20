@@ -1,26 +1,31 @@
 /**
  * The smallest on-device reproduction of p2p sync not resuming after a
- * network change: two phones on the same LAN, no cloud mailbox and no hub, so
- * a message can only cross over a direct iroh connection. One phone drops off
+ * network change: two phones on the same LAN, no cloud mailbox, relay or hub,
+ * so a message can only cross over a direct iroh connection. One phone drops off
  * Wi-Fi for a while — on screen, in the background or killed — while either
  * side composes a message; once it holds its address again the message has to
- * cross within seconds, and so has one sent once it is back. The last case
- * walks both phones onto another Wi-Fi network with the app on screen, so it
- * needs a second network in E2E_WIFI_NETWORKS (see e2e-tests/.env.example)
- * and skips without one.
+ * cross within seconds, and so has one sent once it is back. The chat navbar
+ * chip reads "p2p" while both phones are online and "disconnected" while one
+ * is off Wi-Fi. The last two cases walk both phones onto another Wi-Fi
+ * network, the first with the app on screen and the second once one phone
+ * has been put away, which is when iOS tears down every socket of a
+ * suspended app; they need one and two networks in E2E_WIFI_NETWORKS (see
+ * e2e-tests/.env.example) and skip without them.
  *
- * Skips itself unless E2E_STRESS=1:
- *   PLATFORMS=android,android E2E_STRESS=1 just e2e run p2p-network-switch
+ * Skips itself unless E2E_STRESS=1. Either phone platform will do — both
+ * drive their Wi-Fi through the harness:
+ *   PHONES=android,android E2E_STRESS=1 just e2e run p2p-network-switch
+ *   PHONES=ios,ios E2E_STRESS=1 just e2e run p2p-network-switch
  */
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { backToHome } from '../helpers/flows/back-to-home';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
 import { stampedLog } from '../helpers/utils';
-import {
-	isRemoteMailbox,
-	killMailbox,
-	restartMailbox,
-} from '../setup/mailbox-control';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
+import { suspendRelay } from '../setup/relay-server';
 import { type Agent, setupAgents } from '../setup/setup-agents';
-import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
+import { wifiNetworks } from '../setup/test-env';
 
 const AWAY_MS = 60_000;
 /** Past the peer's QUIC idle timeout on every old session, so the return
@@ -28,20 +33,25 @@ const AWAY_MS = 60_000;
 const LONG_AWAY_MS = 300_000;
 /** Peer discovery and sync, once the phone holds its address again. */
 const DISCOVERY_AND_SYNC_MS = 4_000;
+/** The same, for an app iOS suspended: it resumes with every connection from
+ *  before already dead, and those only drop once the phone's own QUIC idle
+ *  timeout (3 s on mobile) runs out. */
+const DISCOVERY_AND_SYNC_AFTER_SUSPENSION_MS = 8_000;
 
-/** `text` must reach `receiver` within [`DISCOVERY_AND_SYNC_MS`] of `since`. */
+/** `text` must reach `receiver` within `budget` of `since`. */
 async function expectArrival(
 	receiver: Agent,
 	text: string,
 	since: number,
+	budget = DISCOVERY_AND_SYNC_MS,
 ): Promise<void> {
 	await receiver.waitUntil(
 		async () =>
 			(await receiver.directChatPage.messages.messageWithText(text)) !== null,
 		{
 			interval: 50,
-			timeout: DISCOVERY_AND_SYNC_MS,
-			timeoutMsg: `"${text}" did not arrive within ${DISCOVERY_AND_SYNC_MS / 1_000}s`,
+			timeout: budget,
+			timeoutMsg: `"${text}" did not arrive within ${budget / 1_000}s`,
 		},
 	);
 	stampedLog(`"${text}" arrived ${Date.now() - since}ms into the budget`);
@@ -52,35 +62,35 @@ describe('Pure p2p sync across a network switch', function () {
 
 	let alice: Agent;
 	let bob: Agent;
-	let mailboxKilled = false;
-	let otherNetwork: WifiNetwork | undefined;
 
 	before(async function () {
 		if (process.env.E2E_STRESS !== '1') this.skip();
 		if (isRemoteMailbox()) this.skip();
 		await killMailbox();
-		mailboxKilled = true;
+		suspendRelay();
 		[alice, bob] = await setupAgents(this, [
-			{ platform: 'android' },
-			{ platform: 'android' },
+			{ platform: 'phone' },
+			{ platform: 'phone' },
 		]);
-		if (alice.platform === 'android-emulator') this.skip();
-		// An earlier run that died mid-case leaves a phone off the air.
-		await alice.enableWifi();
-		await bob.enableWifi();
-		await createProfilesAndExchangeContacts({ Alice: alice, Bob: bob });
+		await createProfiles({ Alice: alice, Bob: bob });
+		await exchangeContacts([alice, bob]);
 		// A round trip on the LAN before the move, so a later failure is about
 		// the return and not about p2p never having worked between these two.
 		await bob.directChatPage.composer.sendMessage('hello before leaving');
 		await expectArrival(alice, 'hello before leaving', Date.now());
 	});
 
-	after(async () => {
-		if (otherNetwork !== undefined) {
-			await alice.forgetWifi(otherNetwork.ssid);
-			await bob.forgetWifi(otherNetwork.ssid);
+	it('both chips read p2p on the LAN', async () => {
+		await backToHome([alice, bob]);
+		for (const agent of [alice, bob]) {
+			await agent.homePage.connectionStatusIndicator.waitForStatus(
+				'p2p',
+				UI_TIMEOUT,
+				'the chip did not read p2p with the peer on the LAN',
+			);
 		}
-		if (mailboxKilled) await restartMailbox();
+		await alice.homePage.openChat('Bob');
+		await bob.homePage.openChat('Alice');
 	});
 
 	it('receives a message the peer sent while it was off Wi-Fi, once back on the LAN', async () => {
@@ -88,6 +98,13 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.disableWifi();
 		stampedLog('Alice off Wi-Fi');
 		await bob.directChatPage.composer.sendMessage(text);
+		await backToHome([bob]);
+		await bob.homePage.connectionStatusIndicator.waitForStatus(
+			'disconnected',
+			UI_TIMEOUT,
+			'the chip did not read disconnected with the peer off Wi-Fi',
+		);
+		await bob.homePage.openChat('Alice');
 		await alice.pause(AWAY_MS);
 		expect(await bob.directChatPage.messageStatusFor(text)).not.toBe(
 			'delivered',
@@ -95,6 +112,13 @@ describe('Pure p2p sync across a network switch', function () {
 		await alice.enableWifi();
 		stampedLog('Alice holds her address again');
 		await expectArrival(alice, text, Date.now());
+		await backToHome([bob]);
+		await bob.homePage.connectionStatusIndicator.waitForStatus(
+			'p2p',
+			UI_TIMEOUT,
+			'the chip did not read p2p once the peer was back on the LAN',
+		);
+		await bob.homePage.openChat('Alice');
 	});
 
 	it('receives a message the peer sent during a long absence, once back on the LAN', async () => {
@@ -156,7 +180,12 @@ describe('Pure p2p sync across a network switch', function () {
 		stampedLog('Alice holds her address again and is on screen');
 		const since = Date.now();
 		await alice.directChatPage.ready();
-		await expectArrival(alice, text, since);
+		await expectArrival(
+			alice,
+			text,
+			since,
+			DISCOVERY_AND_SYNC_AFTER_SUSPENSION_MS,
+		);
 	});
 
 	it('receives a message the peer sent while it was killed off Wi-Fi, once relaunched on the LAN', async () => {
@@ -177,14 +206,41 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	it('receives a message the peer sent once both phones had moved to another Wi-Fi network', async function () {
-		const home = (await alice.wifiInfo()).ssid;
-		otherNetwork = wifiNetworks().find(n => n.ssid !== home);
-		if (otherNetwork === undefined) this.skip();
+		const [network] = wifiNetworks();
+		if (network === undefined) this.skip();
 		const text = 'sent once we had both moved network';
-		await alice.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
-		await bob.connectWifi(otherNetwork.ssid, otherNetwork.passphrase);
-		stampedLog(`both phones on ${otherNetwork.ssid}`);
+		// Bob dials Alice, so Alice moves last: the message then needs an
+		// address she took just before it was sent.
+		await bob.joinWifi(network.ssid, network.passphrase);
+		await alice.joinWifi(network.ssid, network.passphrase);
+		stampedLog(`both phones on ${network.ssid}`);
 		await bob.directChatPage.composer.sendMessage(text);
+		await expectArrival(alice, text, Date.now());
+	});
+
+	it('receives a message the peer sent once both phones had moved to another Wi-Fi network after one was put away', async function () {
+		// Room for every reclaim attempt of the backgrounding and four network
+		// moves, so a slow one fails with its own error, not a mocha timeout.
+		this.timeout(LONG_AWAY_MS + 300_000);
+		const [, network] = wifiNetworks();
+		if (network === undefined) this.skip();
+		const text = 'sent once we had moved network after a while away';
+		// Backgrounding restarts the test runner, which needs internet.
+		await bob.leaveWifi();
+		await alice.leaveWifi();
+		await alice.backgroundApp();
+		await alice.pause(AWAY_MS);
+		await alice.startApp();
+		stampedLog('Alice back on screen after a while away');
+		// A network neither phone has been on yet, so no address either one
+		// kept from before can reach the other: they have to find each other
+		// over mDNS again.
+		await bob.joinWifi(network.ssid, network.passphrase);
+		await alice.joinWifi(network.ssid, network.passphrase);
+		stampedLog(`both phones on ${network.ssid}`);
+		await bob.directChatPage.composer.sendMessage(text);
+		// The plain budget: Alice's connections from before she was put away
+		// have timed out during the two network moves.
 		await expectArrival(alice, text, Date.now());
 	});
 });

@@ -129,9 +129,8 @@
 		};
 
 		const updateNavbar = () => {
-			// iOS theme: leave the navbar untouched. The gradient + blur fade
-			// content into the background visually as it scrolls under them —
-			// writing opacity here would defeat that.
+			// iOS theme: the chat pages give the navbar an always-opaque bar, so
+			// it must not fade out at the top of the scroll range.
 			if (node.closest('.k-ios')) return;
 			// Re-query if the cached element was removed (e.g. the Navbar got
 			// swapped via {#if}{:else}, like toggling search mode in/out).

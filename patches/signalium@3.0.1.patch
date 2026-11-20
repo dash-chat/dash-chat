@@ -1,5 +1,5 @@
 diff --git a/dist/cjs/development/debug-C46WDxhL.js b/dist/cjs/development/debug-C46WDxhL.js
-index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..5ecda2f8f98df0dc83282dbb92c1d5701989871b 100644
+index 59b724f..c4e4daa 100644
 --- a/dist/cjs/development/debug-C46WDxhL.js
 +++ b/dist/cjs/development/debug-C46WDxhL.js
 @@ -769,24 +769,13 @@ function createCallback(fn, scope, deps) {
@@ -15,19 +15,19 @@ index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..5ecda2f8f98df0dc83282dbb92c1d570
 -      throw new Error("callback must be used within a reactive function, component, or nested callback");
 -    }
 -    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
--  }
--  let callback2 = callbacks[idx];
--  if (callback2 === void 0) {
--    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
--  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
--    callback2.setFn(fn);
--    callback2.deps = deps;
 +  // PATCH (dash-chat): bypass per-consumer callbacks[idx] caching to avoid
 +  // cross-reactive slot collisions observed in 3.0.1. See the development
 +  // ESM bundle for the full explanation.
 +  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
 +    throw new Error("callback must be used within a reactive function, component, or nested callback");
    }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
+-  }
 -  return callback2.fn;
 +  return createCallback(fn, getCurrentScope(), deps).fn;
  }
@@ -45,21 +45,84 @@ index 59b724fc95d38bae5ee00cddcbd19bbd706dc409..5ecda2f8f98df0dc83282dbb92c1d570
      this._setValue(this._value);
    }
    async _setPromise(promise) {
-@@ -1158,7 +1152,11 @@ class ReactivePromiseImpl {
+@@ -1092,6 +1086,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setValue(nextValue, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let flags = this._flags;
+     let value = this._value;
+     let notifyFlags = 0;
+@@ -1108,7 +1107,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(4 | 8, 1 | 2, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -1126,6 +1131,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setError(nextError, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let error = this._error;
+     let notifyFlags = 0;
+     if (error !== nextError) {
+@@ -1137,7 +1147,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(2, 1 | 4, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -1156,11 +1172,20 @@ class ReactivePromiseImpl {
+   }
+   _scheduleSubs(awaitSubs, dirty) {
      const newState = dirty ? 2 : 4;
-     for (const ref of awaitSubs.keys()) {
+-    for (const ref of awaitSubs.keys()) {
++    for (const [ref, edge] of awaitSubs) {
        const signal2 = ref.deref();
--      if (signal2 === void 0) {
-+      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
-+      // is Clean with no dirtyHead; marking it PendingDirty makes the next
-+      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
-+      // us again it resumes through `_pending`, so leave it alone.
-+      if (signal2 === void 0 || signal2._state === 0) {
+       if (signal2 === void 0) {
          continue;
        }
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. An equal value
++      // is nothing to it, but it must stay subscribed for the next one, unless
++      // it already awaits us again with a fresher edge.
++      if (!dirty && signal2._state === 0) {
++        if (!this._pending.some((p) => p.ref === ref)) this._pending.push({ ref, edge });
++        continue;
++      }
        signal2._state = newState;
+       scheduleAsyncPull(signal2);
+     }
 diff --git a/dist/cjs/production/contexts-CM3QLfV8.js b/dist/cjs/production/contexts-CM3QLfV8.js
-index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..1d803ae77a58c6c3f32d90ac9993d54e007d9a9a 100644
+index fc90dde..66fddf5 100644
 --- a/dist/cjs/production/contexts-CM3QLfV8.js
 +++ b/dist/cjs/production/contexts-CM3QLfV8.js
 @@ -427,24 +427,13 @@ function createCallback(fn, scope, deps) {
@@ -75,19 +138,19 @@ index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..1d803ae77a58c6c3f32d90ac9993d54e
 -      throw new Error("callback must be used within a reactive function, component, or nested callback");
 -    }
 -    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
--  }
--  let callback2 = callbacks[idx];
--  if (callback2 === void 0) {
--    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
--  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
--    callback2.setFn(fn);
--    callback2.deps = deps;
 +  // PATCH (dash-chat): bypass per-consumer callbacks[idx] caching to avoid
 +  // cross-reactive slot collisions observed in 3.0.1. See the development
 +  // ESM bundle for the full explanation.
 +  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
 +    throw new Error("callback must be used within a reactive function, component, or nested callback");
    }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
+-  }
 -  return callback2.fn;
 +  return createCallback(fn, getCurrentScope(), deps).fn;
  }
@@ -105,21 +168,84 @@ index fc90dde43b4d9bdf76d497238448a5cbb0d80a69..1d803ae77a58c6c3f32d90ac9993d54e
      this._setValue(this._value);
    }
    async _setPromise(promise) {
-@@ -790,7 +784,11 @@ class ReactivePromiseImpl {
+@@ -724,6 +718,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setValue(nextValue, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let flags = this._flags;
+     let value = this._value;
+     let notifyFlags = 0;
+@@ -740,7 +739,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(4 | 8, 1 | 2, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -758,6 +763,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setError(nextError, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let error = this._error;
+     let notifyFlags = 0;
+     if (error !== nextError) {
+@@ -769,7 +779,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(2, 1 | 4, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -788,11 +804,20 @@ class ReactivePromiseImpl {
+   }
+   _scheduleSubs(awaitSubs, dirty) {
      const newState = dirty ? 2 : 4;
-     for (const ref of awaitSubs.keys()) {
+-    for (const ref of awaitSubs.keys()) {
++    for (const [ref, edge] of awaitSubs) {
        const signal2 = ref.deref();
--      if (signal2 === void 0) {
-+      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
-+      // is Clean with no dirtyHead; marking it PendingDirty makes the next
-+      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
-+      // us again it resumes through `_pending`, so leave it alone.
-+      if (signal2 === void 0 || signal2._state === 0) {
+       if (signal2 === void 0) {
          continue;
        }
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. An equal value
++      // is nothing to it, but it must stay subscribed for the next one, unless
++      // it already awaits us again with a fresher edge.
++      if (!dirty && signal2._state === 0) {
++        if (!this._pending.some((p) => p.ref === ref)) this._pending.push({ ref, edge });
++        continue;
++      }
        signal2._state = newState;
+       scheduleAsyncPull(signal2);
+     }
 diff --git a/dist/esm/development/debug-BTLbgTPK.js b/dist/esm/development/debug-BTLbgTPK.js
-index 59cf1668a2213dae6a6a90a635238d67a33fc96b..e3c4d8772bbd5973d0209c99ffe533b1eec63098 100644
+index 59cf166..c427005 100644
 --- a/dist/esm/development/debug-BTLbgTPK.js
 +++ b/dist/esm/development/debug-BTLbgTPK.js
 @@ -768,24 +768,21 @@ function createCallback(fn, scope, deps) {
@@ -174,21 +300,84 @@ index 59cf1668a2213dae6a6a90a635238d67a33fc96b..e3c4d8772bbd5973d0209c99ffe533b1
      this._setValue(this._value);
    }
    async _setPromise(promise) {
-@@ -1157,7 +1159,11 @@ class ReactivePromiseImpl {
+@@ -1091,6 +1093,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setValue(nextValue, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let flags = this._flags;
+     let value = this._value;
+     let notifyFlags = 0;
+@@ -1107,7 +1114,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(4 | 8, 1 | 2, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -1125,6 +1138,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setError(nextError, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let error = this._error;
+     let notifyFlags = 0;
+     if (error !== nextError) {
+@@ -1136,7 +1154,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(2, 1 | 4, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -1155,11 +1179,20 @@ class ReactivePromiseImpl {
+   }
+   _scheduleSubs(awaitSubs, dirty) {
      const newState = dirty ? 2 : 4;
-     for (const ref of awaitSubs.keys()) {
+-    for (const ref of awaitSubs.keys()) {
++    for (const [ref, edge] of awaitSubs) {
        const signal2 = ref.deref();
--      if (signal2 === void 0) {
-+      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
-+      // is Clean with no dirtyHead; marking it PendingDirty makes the next
-+      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
-+      // us again it resumes through `_pending`, so leave it alone.
-+      if (signal2 === void 0 || signal2._state === 0) {
+       if (signal2 === void 0) {
          continue;
        }
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. An equal value
++      // is nothing to it, but it must stay subscribed for the next one, unless
++      // it already awaits us again with a fresher edge.
++      if (!dirty && signal2._state === 0) {
++        if (!this._pending.some((p) => p.ref === ref)) this._pending.push({ ref, edge });
++        continue;
++      }
        signal2._state = newState;
+       scheduleAsyncPull(signal2);
+     }
 diff --git a/dist/esm/production/contexts-FxCndlvf.js b/dist/esm/production/contexts-FxCndlvf.js
-index d578ce64f32f9970e55d028e4d727d9c76a62697..160fb9a9db7bb35da7c6589eff15eabcb0c64b20 100644
+index d578ce6..5436358 100644
 --- a/dist/esm/production/contexts-FxCndlvf.js
 +++ b/dist/esm/production/contexts-FxCndlvf.js
 @@ -426,24 +426,13 @@ function createCallback(fn, scope, deps) {
@@ -204,19 +393,19 @@ index d578ce64f32f9970e55d028e4d727d9c76a62697..160fb9a9db7bb35da7c6589eff15eabc
 -      throw new Error("callback must be used within a reactive function, component, or nested callback");
 -    }
 -    callbacks = currentConsumer.callbacks ?? (currentConsumer.callbacks = []);
--  }
--  let callback2 = callbacks[idx];
--  if (callback2 === void 0) {
--    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
--  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
--    callback2.setFn(fn);
--    callback2.deps = deps;
 +  // PATCH (dash-chat): bypass per-consumer callbacks[idx] caching to avoid
 +  // cross-reactive slot collisions observed in 3.0.1. See the development
 +  // bundle for the full explanation.
 +  if (CURRENT_CALLBACK === void 0 && getCurrentConsumer() === void 0) {
 +    throw new Error("callback must be used within a reactive function, component, or nested callback");
    }
+-  let callback2 = callbacks[idx];
+-  if (callback2 === void 0) {
+-    callback2 = callbacks[idx] = createCallback(fn, getCurrentScope(), deps);
+-  } else if (deps && callback2.deps?.findIndex((dep, i) => dep !== deps[i]) !== -1) {
+-    callback2.setFn(fn);
+-    callback2.deps = deps;
+-  }
 -  return callback2.fn;
 +  return createCallback(fn, getCurrentScope(), deps).fn;
  }
@@ -234,16 +423,79 @@ index d578ce64f32f9970e55d028e4d727d9c76a62697..160fb9a9db7bb35da7c6589eff15eabc
      this._setValue(this._value);
    }
    async _setPromise(promise) {
-@@ -789,7 +783,11 @@ class ReactivePromiseImpl {
+@@ -723,6 +717,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setValue(nextValue, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let flags = this._flags;
+     let value = this._value;
+     let notifyFlags = 0;
+@@ -739,7 +738,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(4 | 8, 1 | 2, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -757,6 +762,11 @@ class ReactivePromiseImpl {
+     }
+   }
+   _setError(nextError, awaitSubs = this._awaitSubs) {
++    // PATCH (dash-chat): `_setPromise` passes the map it captured when the run
++    // began; awaiters added to a newer one since must hear about this too.
++    if (awaitSubs !== this._awaitSubs) {
++      for (const [ref, edge] of this._awaitSubs) awaitSubs.set(ref, edge);
++    }
+     let error = this._error;
+     let notifyFlags = 0;
+     if (error !== nextError) {
+@@ -768,7 +778,13 @@ class ReactivePromiseImpl {
+     } else if (notifyFlags !== 0) {
+       dirtySignalConsumers(awaitSubs);
+     }
+-    this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    // PATCH (dash-chat): a settled promise that notified no one keeps its
++    // awaiters; dropping them would leave them deaf to the next change.
++    if ((this._flags & 1) === 0 && notifyFlags === 0) {
++      awaitSubs = this._awaitSubs;
++    } else {
++      this._awaitSubs = awaitSubs = /* @__PURE__ */ new Map();
++    }
+     this._setFlags(2, 1 | 4, notifyFlags);
+     const pending = this._pending;
+     this._pending = [];
+@@ -787,11 +803,20 @@ class ReactivePromiseImpl {
+   }
+   _scheduleSubs(awaitSubs, dirty) {
      const newState = dirty ? 2 : 4;
-     for (const ref of awaitSubs.keys()) {
+-    for (const ref of awaitSubs.keys()) {
++    for (const [ref, edge] of awaitSubs) {
        const signal2 = ref.deref();
--      if (signal2 === void 0) {
-+      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
-+      // is Clean with no dirtyHead; marking it PendingDirty makes the next
-+      // dirtySignalConsumers read `dirtyHead.ord` off undefined. If it awaits
-+      // us again it resumes through `_pending`, so leave it alone.
-+      if (signal2 === void 0 || signal2._state === 0) {
+       if (signal2 === void 0) {
          continue;
        }
++      // PATCH (dash-chat): a subscriber that re-ran since checkSignal halted it
++      // is Clean with no dirtyHead; marking it PendingDirty makes the next
++      // dirtySignalConsumers read `dirtyHead.ord` off undefined. An equal value
++      // is nothing to it, but it must stay subscribed for the next one, unless
++      // it already awaits us again with a fresher edge.
++      if (!dirty && signal2._state === 0) {
++        if (!this._pending.some((p) => p.ref === ref)) this._pending.push({ ref, edge });
++        continue;
++      }
        signal2._state = newState;
+       scheduleAsyncPull(signal2);
+     }

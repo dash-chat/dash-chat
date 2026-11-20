@@ -1,0 +1,203 @@
+use std::collections::BTreeSet;
+use std::time::Duration;
+use tokio::time::Instant;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum RequestOutcome<Topic> {
+    /// Poll only the specified topics.
+    Topics(BTreeSet<Topic>),
+    /// Poll all subscribed topics.
+    All,
+    /// No specific request; perform a regular poll of all subscribed topics.
+    Regular,
+}
+
+/// The poll/wakeup action requested of a mailbox since its last poll. It is
+/// what carries a request past a poll already in flight: that poll's fetch was
+/// built before the request, so the request is only fulfilled by the next one.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum PendingRequest<Topic> {
+    /// No action was requested since last poll: wait for regularly scheduled poll.
+    None,
+
+    /// A specific topic set was requested: poll them once the debounce that
+    /// started with the first request has elapsed.
+    PollTopics {
+        topics: BTreeSet<Topic>,
+        since: Instant,
+    },
+
+    /// Every subscribed topic was requested: poll them once the debounce that
+    /// started with the first request has elapsed.
+    PollAll { since: Instant },
+
+    /// The mailbox was probed: poll every subscribed topic now (no debounce),
+    /// and let the result decide status and backoff.
+    Probe,
+
+    /// The mailbox was woken: set as Active and poll every subscribed topic now (no debounce).
+    Wakeup,
+}
+
+impl<Topic: Ord> PendingRequest<Topic> {
+    /// Convert the current pending request into an outcome for the upcoming poll.
+    pub fn consume(&mut self) -> (RequestOutcome<Topic>, bool) {
+        let is_probe = matches!(self, PendingRequest::Probe);
+        let outcome = match std::mem::take(self) {
+            PendingRequest::PollTopics { topics, .. } => RequestOutcome::Topics(topics),
+            PendingRequest::PollAll { .. } | PendingRequest::Wakeup | PendingRequest::Probe => {
+                RequestOutcome::All
+            }
+            PendingRequest::None => RequestOutcome::Regular,
+        };
+        (outcome, is_probe)
+    }
+
+    /// Accumulate a request for `topic`, or for every subscribed topic when `None`.
+    pub fn merge_poll(&mut self, topic: Option<Topic>) {
+        match (&mut *self, topic) {
+            (
+                PendingRequest::PollAll { .. } | PendingRequest::Wakeup | PendingRequest::Probe,
+                _,
+            ) => {}
+            (PendingRequest::PollTopics { since, .. }, None) => {
+                *self = PendingRequest::PollAll { since: *since }
+            }
+            (PendingRequest::None, None) => {
+                *self = PendingRequest::PollAll {
+                    since: Instant::now(),
+                }
+            }
+            (PendingRequest::PollTopics { topics, .. }, Some(topic)) => {
+                topics.insert(topic);
+            }
+            (PendingRequest::None, Some(topic)) => {
+                *self = PendingRequest::PollTopics {
+                    topics: BTreeSet::from([topic]),
+                    since: Instant::now(),
+                }
+            }
+        }
+    }
+
+    /// When this request wants the mailbox polled, given the regularly
+    /// scheduled poll at `next_poll`.
+    pub fn due_at(&self, now: Instant, next_poll: Instant, debounce: Duration) -> Instant {
+        match self {
+            PendingRequest::None => next_poll,
+            PendingRequest::PollTopics { since, .. } | PendingRequest::PollAll { since } => {
+                next_poll.min(*since + debounce)
+            }
+            PendingRequest::Wakeup | PendingRequest::Probe => now,
+        }
+    }
+
+    pub fn merge_wakeup(&mut self) {
+        *self = PendingRequest::Wakeup;
+    }
+
+    /// A wakeup already promises everything a probe asks for, so it stands.
+    pub fn merge_probe(&mut self) {
+        if *self != PendingRequest::Wakeup {
+            *self = PendingRequest::Probe;
+        }
+    }
+}
+
+impl<Topic: Ord> Default for PendingRequest<Topic> {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A topic request made now (paused time keeps `since` stable).
+    fn poll_topics(topics: impl IntoIterator<Item = u8>) -> PendingRequest<u8> {
+        PendingRequest::PollTopics {
+            topics: topics.into_iter().collect(),
+            since: Instant::now(),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_accumulates_topics() {
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(Some(1u8));
+        assert_eq!(pending, poll_topics([1, 2]));
+    }
+
+    /// A request for every topic can't be narrowed by a later single-topic one.
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_all_absorbs_topics() {
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        pending.merge_poll(None);
+        pending.merge_poll(Some(2u8));
+        assert_eq!(
+            pending,
+            PendingRequest::PollAll {
+                since: Instant::now()
+            }
+        );
+    }
+
+    /// A burst of requests is polled on the first one's debounce, not the last's.
+    #[tokio::test(start_paused = true)]
+    async fn pending_request_keeps_the_first_debounce() {
+        let debounce = Duration::from_millis(100);
+        let far = Instant::now() + Duration::from_secs(60);
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        let deadline = Instant::now() + debounce;
+        tokio::time::advance(Duration::from_millis(20)).await;
+        pending.merge_poll(Some(2u8));
+        tokio::time::advance(Duration::from_millis(20)).await;
+        pending.merge_poll(None);
+        assert_eq!(pending.due_at(Instant::now(), far, debounce), deadline);
+    }
+
+    #[test]
+    fn pending_probe_yields_to_wakeup_and_absorbs_syncs() {
+        let mut pending = PendingRequest::None;
+        pending.merge_poll(Some(1u8));
+        pending.merge_probe();
+        assert_eq!(pending, PendingRequest::Probe);
+        pending.merge_poll(Some(2u8));
+        pending.merge_poll(None);
+        assert_eq!(pending, PendingRequest::Probe);
+        pending.merge_wakeup();
+        pending.merge_probe();
+        assert_eq!(pending, PendingRequest::Wakeup);
+    }
+
+    #[test]
+    fn consume_returns_outcome_and_resets() {
+        let mut pending = PendingRequest::<u8>::None;
+        assert_eq!(pending.consume(), (RequestOutcome::Regular, false));
+        assert_eq!(pending, PendingRequest::None);
+
+        let mut pending = poll_topics([1u8, 2u8]);
+        assert_eq!(
+            pending.consume(),
+            (RequestOutcome::Topics(BTreeSet::from([1u8, 2u8])), false)
+        );
+        assert_eq!(pending, PendingRequest::None);
+
+        let mut pending = PendingRequest::<u8>::PollAll {
+            since: Instant::now(),
+        };
+        assert_eq!(pending.consume(), (RequestOutcome::All, false));
+        assert_eq!(pending, PendingRequest::None);
+
+        let mut pending = PendingRequest::<u8>::Wakeup;
+        assert_eq!(pending.consume(), (RequestOutcome::All, false));
+
+        let mut pending = PendingRequest::<u8>::Probe;
+        assert_eq!(pending.consume(), (RequestOutcome::All, true));
+    }
+}

@@ -1,5 +1,5 @@
-/** Changing the name you go by. It reaches everyone that syncs your
- *  announcements, so every device that hears it starts calling you that —
+/** Changing the name you go by. It reaches everyone that you share a chat with,
+ *  so every device that hears it starts calling you that —
  *  in its chat list, in its pickers and on its notifications — while one that
  *  has not still uses the name it was given before. */
 import { type Real, backToChatList, log } from '../agents';
@@ -16,8 +16,9 @@ class UpdateProfileMove extends ActorMove {
 		const name = m.nextProfileName();
 		log(`${actor.name}: ${this.toString()} -> calls itself ${name}`);
 		await backToChatList(actor, m);
-		const { homePage, settingsPage, profilePage, editNamePage } = actor.agent;
-		await homePage.settingsLink.click();
+		const { homePage, mainTabbar, settingsPage, profilePage, editNamePage } =
+			actor.agent;
+		await mainTabbar.settingsTab.click();
 		await settingsPage.ready();
 		await settingsPage.profileLink.click();
 		await profilePage.ready();
@@ -28,7 +29,7 @@ class UpdateProfileMove extends ActorMove {
 		await profilePage.ready();
 		await profilePage.back.click();
 		await settingsPage.ready();
-		await settingsPage.back.click();
+		await mainTabbar.chatsTab.click();
 		await homePage.ready();
 		m.updateProfile(actor.name, name);
 	}

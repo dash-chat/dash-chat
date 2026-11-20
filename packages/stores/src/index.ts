@@ -4,8 +4,6 @@ export * from './p2panda/simplified-types.js';
 export * from './p2panda/tauri-logs-client.js';
 export * from './p2panda/types.js';
 
-export * from './topics.js';
-
 export * from './mock/index.js';
 export * from './types.js';
 
@@ -38,6 +36,8 @@ export * from './message-acks/message-ack-client.js';
 
 export * from './mailbox-tracker/mailbox-tracker-store.js';
 export * from './mailbox-tracker/types.js';
+
+export * from './online-peers/online-peers-store.js';
 
 export * from './utils/memo.js';
 export * from './utils/invoke-after-setup.js';

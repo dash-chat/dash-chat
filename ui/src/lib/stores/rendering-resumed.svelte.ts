@@ -1,4 +1,6 @@
-let resumedAt = $state(Date.now());
+// The page's start rather than this module's, which may load lazily, long
+// after the page began rendering.
+let resumedAt = $state(performance.timeOrigin);
 
 if (typeof window !== 'undefined') {
 	document.addEventListener('visibilitychange', () => {

@@ -74,25 +74,30 @@ pub struct NodeContext {
     /// Channel for forwarding node notifications to the app (webview + system
     /// notifications). None when running outside the main app process.
     pub notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
-    /// Channel for tracking topic subscriptions for push notifications. None when
-    /// push setup is not available in this context.
-    pub topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
-    /// The Tauri app handle, available only when the Node is built for the main
-    /// app process (used to spawn app-lifetime tasks like local-mailbox mDNS
-    /// discovery).
+    /// The Tauri app handle; `None` in a push process, which runs without the
+    /// app. Used to spawn app-lifetime tasks like local-mailbox mDNS discovery
+    /// and to read the app's settings.
     pub app_handle: Option<AppHandle>,
+    /// Only the app ever suspends it.
+    pub sqlite_gate: sqlite_gate::SqliteGate,
+    /// Carried into the node config so the push-authorization loop sees the
+    /// same local-hub registry the app's mailbox server registers into.
+    pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 }
 
 impl NodeContext {
     /// Context used when handling push-notifications in a limited time window with the app closed:
     /// no P2P, no blob sync, and no app-lifetime channels.
     #[cfg_attr(not(mobile), allow(dead_code))]
-    pub fn for_push_notifications() -> Self {
+    pub fn for_push_notifications(
+        notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
+    ) -> Self {
         Self {
             role: NodeRole::PushNotification,
-            notification_tx: None,
-            topic_subscribed_tx: None,
+            notification_tx,
             app_handle: None,
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -100,12 +105,13 @@ impl NodeContext {
     /// without the main app running: no P2P, no blob sync, and no app-lifetime
     /// channels.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-    pub fn for_background_task() -> Self {
+    pub fn for_background_task(app: &AppHandle) -> Self {
         Self {
             role: NodeRole::BackgroundTask,
             notification_tx: None,
-            topic_subscribed_tx: None,
-            app_handle: None,
+            app_handle: Some(app.clone()),
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -114,13 +120,15 @@ impl NodeContext {
     pub fn for_app(
         app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
-        topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+        sqlite_gate: sqlite_gate::SqliteGate,
+        local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     ) -> Self {
         Self {
             role: NodeRole::App,
             notification_tx: Some(notification_tx),
-            topic_subscribed_tx,
             app_handle: Some(app.clone()),
+            sqlite_gate,
+            local_hub_registry,
         }
     }
 
@@ -163,15 +171,22 @@ impl NodeContext {
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
             config.network_id = e2e_network_id();
-            config.message_ack_debounce = std::time::Duration::from_millis(300);
             config
         } else {
             dashchat_node::NodeConfig::default()
         };
 
         // The push extension's short-lived background node only reads
-        // operations to build notifications; it must not author any.
+        // operations to build notifications; it must not author any. Both
+        // processes sign with the app's key, but an operation the extension
+        // publishes into a topic the app already follows never passes through
+        // the running app's processor — the store is shared, the streams are
+        // not — so authoring is left to the app, which re-processes the
+        // operations the extension recorded and performs the publishes itself.
         config.enable_message_acks = self.role == NodeRole::App;
+        config.read_only = self.role == NodeRole::PushNotification;
+        config.sqlite_gate = self.sqlite_gate.clone();
+        config.local_hub_registry = self.local_hub_registry.clone();
 
         // The push extension shares the app's database. On p2panda's default
         // per-topic cursor, whichever process fetches an operation first stops
@@ -183,6 +198,15 @@ impl NodeContext {
         if self.role == NodeRole::PushNotification {
             config.stream_cursor_prefix = Some("nse".to_string());
         }
+        // Only on iOS do the extension and the app run at the same time over
+        // one store, so only there can the extension store an operation the
+        // running app then never gets; elsewhere a background node runs only
+        // while the app does not, and the app's replay at startup covers it.
+        let shares_store_with_running_app = cfg!(target_os = "ios");
+        config.record_processed_operations =
+            self.role == NodeRole::PushNotification && shares_store_with_running_app;
+        config.import_recorded_operations =
+            self.role == NodeRole::App && shares_store_with_running_app;
 
         if !self.p2p_enabled() {
             config = config.no_p2p();
@@ -191,6 +215,9 @@ impl NodeContext {
         if !self.role.blob_sync_enabled() {
             config = config.no_blob_sync();
         }
+
+        // The main app builds the node in Tauri setup; defer backlog replay to keep launch responsive.
+        config.defer_stored_topics_initialization = self.role == NodeRole::App;
 
         config
     }
@@ -204,8 +231,9 @@ mod tests {
         NodeContext {
             role: NodeRole::App,
             notification_tx: None,
-            topic_subscribed_tx: None,
             app_handle: None,
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -215,7 +243,7 @@ mod tests {
     // session and kills the running app's networking actors.
     #[test]
     fn the_push_extension_needs_no_iroh_endpoint() {
-        let config = NodeContext::for_push_notifications().node_config();
+        let config = NodeContext::for_push_notifications(None).node_config();
         assert!(!config.enable_p2p);
         assert!(!config.enable_blob_sync);
         assert!(app_context().node_config().enable_blob_sync);
@@ -225,7 +253,7 @@ mod tests {
     fn p2p_follows_the_role() {
         assert!(app_context().node_config().enable_p2p);
         assert!(
-            !NodeContext::for_push_notifications()
+            !NodeContext::for_push_notifications(None)
                 .node_config()
                 .enable_p2p
         );

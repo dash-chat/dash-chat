@@ -4,6 +4,7 @@ import {
 	reactive,
 	relay,
 } from 'signalium';
+import { subscribe } from 'tauri-plugin-subscriptions';
 
 import type {
 	ColorScheme,
@@ -45,6 +46,13 @@ export class SettingsStore {
 		const settings = await this.settings();
 		return settings.local_mailbox_enabled;
 	});
+
+	localHubBlocked: ReactiveFn<ReactivePromise<boolean>, []> = reactive(
+		async () => {
+			if (!(await this.localMailboxEnabled())) return false;
+			return await subscribe<boolean>('subscribe_to_lan_multicast_blocked');
+		},
+	);
 
 	notificationsEnabled = reactive(async () => {
 		const settings = await this.settings();

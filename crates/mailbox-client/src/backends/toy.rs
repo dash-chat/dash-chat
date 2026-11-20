@@ -1,0 +1,667 @@
+use dashchat_utils::SeqNum;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+
+use mailbox_server::{
+    Blip, GetBlipsRequest, GetBlipsResponse, StoreBlipsRequest, StoreBlipsResponse,
+};
+
+use crate::blobs::blob_delivery::BlobDelivery;
+use crate::{
+    BlobReader, BlobUploadError, BlobUploadLifecycle, FetchRequest, FetchResponse,
+    FetchTopicResponse, HTTP_CLIENT, IrohPusher, MailboxClient, MailboxId, MailboxItem, MailboxKey,
+    PublishResponse, UnfetchedBlobTracker, blob_transfer_timeout,
+};
+
+/// A client for the toy mailbox server.
+#[derive(Clone)]
+pub struct ToyMailboxClient<Item: MailboxItem> {
+    id: MailboxId,
+    base_url: String,
+    sender_pubkey: iroh::EndpointId,
+    tracker: std::sync::Arc<dyn UnfetchedBlobTracker>,
+    blob_reader: Option<std::sync::Arc<dyn BlobReader>>,
+    pusher: Option<IrohPusher>,
+    lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
+    phantom: std::marker::PhantomData<Item>,
+}
+
+impl<Item: MailboxItem> ToyMailboxClient<Item> {
+    pub fn new(
+        id: MailboxId,
+        base_url: impl Into<String>,
+        sender_pubkey: iroh::EndpointId,
+        tracker: std::sync::Arc<dyn UnfetchedBlobTracker>,
+        lifecycle: std::sync::Arc<dyn BlobUploadLifecycle>,
+    ) -> Self {
+        Self {
+            id,
+            base_url: base_url.into(),
+            sender_pubkey,
+            tracker,
+            blob_reader: None,
+            pusher: None,
+            lifecycle,
+            phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Attach a blob-bytes source so `store_blobs` streams blob bytes to the mailbox
+    /// (best-effort, in a spawned task) after announcing their hashes. Without a
+    /// reader the client only announces hashes and the mailbox fetches the bytes
+    /// from us.
+    pub fn with_blob_reader(mut self, blob_reader: std::sync::Arc<dyn BlobReader>) -> Self {
+        self.blob_reader = Some(blob_reader);
+        self
+    }
+
+    /// Attach an iroh pusher so blobs are pushed to the mailbox's iroh
+    /// endpoint (chunk-validated, resumable) before falling back to the HTTP
+    /// upload. `None` (e.g. a node with no networking layer) leaves delivery
+    /// on the HTTP path.
+    pub fn with_blob_pusher(mut self, pusher: Option<IrohPusher>) -> Self {
+        self.pusher = pusher;
+        self
+    }
+
+    fn blob_delivery(&self) -> BlobDelivery<Item> {
+        self.blob_delivery_with(self.tracker.clone())
+    }
+
+    fn blob_delivery_with(
+        &self,
+        tracker: std::sync::Arc<dyn UnfetchedBlobTracker>,
+    ) -> BlobDelivery<Item> {
+        BlobDelivery::new(
+            Arc::new(self.clone()),
+            self.blob_reader.clone(),
+            tracker,
+            self.lifecycle.clone(),
+        )
+    }
+
+    /// Announce blob hashes to the mailbox and reconcile the unfetched tracker,
+    /// then push the bytes the mailbox still needs in a detached best-effort task.
+    pub async fn store_blobs(&self, hashes: Vec<iroh_blobs::Hash>) -> anyhow::Result<()> {
+        self.blob_delivery().publish(hashes).await?;
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
+    fn id(&self) -> MailboxId {
+        self.id.clone()
+    }
+
+    fn url(&self) -> Option<String> {
+        Some(self.base_url.clone())
+    }
+
+    async fn publish(&self, ops: Vec<Item>) -> Result<PublishResponse<Item>, anyhow::Error> {
+        if ops.is_empty() {
+            return Ok(PublishResponse::default());
+        }
+
+        // Group operations by topic -> author -> seq_num
+        let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
+
+        for op in ops {
+            let topic_id = op.topic().to_mailbox_key();
+            let log_id = op.log().to_mailbox_key();
+            let seq_num = op.seq_num();
+            let blip = Self::serialize_operation(&op)?;
+
+            blips
+                .entry(topic_id)
+                .or_default()
+                .entry(log_id)
+                .or_default()
+                .insert(seq_num, blip);
+        }
+
+        let request = StoreBlipsRequest {
+            blips,
+            sender_pubkey: Some(self.sender_pubkey),
+            signature: Vec::new(),
+        };
+        let response = HTTP_CLIENT
+            .post(format!("{}/blips/store", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let response: StoreBlipsResponse = response.json().await?;
+
+            let mut result = PublishResponse::default();
+            for (topic_str, authors) in response.watermarks {
+                let topic = Item::Topic::from_mailbox_key(&topic_str)?;
+                for (author_str, watermark) in authors {
+                    let author = Item::Log::from_mailbox_key(&author_str)?;
+                    result.0.entry(topic).or_default().insert(author, watermark);
+                }
+            }
+            Ok(result)
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(anyhow::anyhow!(
+                "Failed to store blips: {} - {}",
+                status,
+                body
+            ))
+        }
+    }
+
+    async fn announce_blob_hashes(
+        &self,
+        hashes: Vec<iroh_blobs::Hash>,
+        expect_upload: bool,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let request = mailbox_server::RegisterHashesRequest {
+            blob_hashes: hashes,
+            sender_pubkey: self.sender_pubkey,
+            expect_upload,
+            signature: Vec::new(),
+        };
+        let response = HTTP_CLIENT
+            .post(format!("{}/blobs/register-hashes", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to store blobs: {status} - {body}");
+        }
+        let response: mailbox_server::RegisterHashesResponse = response.json().await?;
+        Ok(response.already_stored)
+    }
+
+    async fn upload_blob(&self, bytes: bytes::Bytes) -> Result<(), BlobUploadError> {
+        let response = HTTP_CLIENT
+            .post(format!("{}/blobs/upload", self.base_url))
+            .timeout(blob_transfer_timeout(bytes.len() as u64))
+            .body(bytes)
+            .send()
+            .await
+            .map_err(|err| {
+                if err.is_connect() {
+                    BlobUploadError::MailboxUnavailable(err.into())
+                } else {
+                    BlobUploadError::Blob(err.into())
+                }
+            })?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(BlobUploadError::Blob(anyhow::anyhow!(
+                "Failed to upload blob: {status} - {body}"
+            )));
+        }
+        Ok(())
+    }
+
+    async fn push_blob(&self, hash: iroh_blobs::Hash) -> Result<(), BlobUploadError> {
+        match &self.pusher {
+            Some(pusher) => pusher.push_blob(&self.id, hash).await,
+            None => Err(BlobUploadError::Blob(anyhow::anyhow!(
+                "no iroh pusher configured"
+            ))),
+        }
+    }
+
+    async fn report(&self, request: reporting::ReportRequest) -> Result<(), anyhow::Error> {
+        let response = HTTP_CLIENT
+            .post(format!("{}/report", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(anyhow::anyhow!("Failed to report: {} - {}", status, body))
+        }
+    }
+
+    async fn fetch(
+        &self,
+        request: FetchRequest<Item>,
+    ) -> Result<FetchResponse<Item>, anyhow::Error> {
+        // Convert FetchRequest to GetBlipsRequest
+        let mut topics: BTreeMap<String, BTreeMap<String, SeqNum>> = BTreeMap::new();
+
+        for (topic, authors) in request.0.iter() {
+            let topic_id = topic.to_mailbox_key();
+            let mut author_map: BTreeMap<String, SeqNum> = BTreeMap::new();
+
+            for (author, height) in authors.iter() {
+                author_map.insert(author.to_mailbox_key(), *height);
+            }
+
+            topics.insert(topic_id, author_map);
+        }
+
+        let get_request = GetBlipsRequest { topics };
+        let response = HTTP_CLIENT
+            .post(format!("{}/blips/get", self.base_url))
+            .json(&get_request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Failed to fetch blips: {} - {}",
+                status,
+                body
+            ));
+        }
+
+        let response = response.json::<GetBlipsResponse>().await?;
+
+        // Convert GetBlipsResponse to FetchResponse
+        let mut result: BTreeMap<Item::Topic, FetchTopicResponse<Item>> = BTreeMap::new();
+
+        for (topic_id_str, topic_response) in response.blips_by_topic {
+            let topic = Item::Topic::from_mailbox_key(&topic_id_str)?;
+
+            // Deserialize blips to operations
+            let items: Vec<Item> = topic_response
+                .blips
+                .into_values()
+                .flat_map(Self::decode_log)
+                .collect();
+
+            // Convert missing map
+            let mut missing: HashMap<Item::Log, Vec<SeqNum>> = HashMap::new();
+            for (author_str, seq_nums) in topic_response.missing {
+                let author = Item::Log::from_mailbox_key(&author_str)?;
+                missing.insert(author, seq_nums);
+            }
+
+            result.insert(topic, FetchTopicResponse { items, missing });
+        }
+
+        Ok(FetchResponse(result))
+    }
+}
+
+impl<Item: MailboxItem> ToyMailboxClient<Item> {
+    fn serialize_operation(item: &Item) -> Result<Blip, anyhow::Error> {
+        let bytes = p2panda_core::cbor::encode_cbor(item)?;
+        Ok(Blip::new(bytes))
+    }
+
+    fn deserialize_operation(blip: &Blip) -> Result<Item, anyhow::Error> {
+        Ok(p2panda_core::cbor::decode_cbor(blip.as_slice())?)
+    }
+
+    /// Decode one author's blobs in sequence order, stopping at the first one this build
+    /// cannot decode.
+    ///
+    /// The mailbox is shared with peers on other builds, so a blob we cannot decode must not
+    /// fail the whole exchange and wedge sync until retention expires it. Truncating rather
+    /// than skipping leaves the author's log short instead of ingesting operations whose
+    /// backlink can never arrive; every other author and topic in the exchange is unaffected.
+    fn decode_log(seq_blips: BTreeMap<SeqNum, Blip>) -> Vec<Item> {
+        let mut items = Vec::with_capacity(seq_blips.len());
+        for (seq_num, blip) in seq_blips {
+            match Self::deserialize_operation(&blip) {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    tracing::warn!(?err, seq_num, "undecodable mailbox blob; truncating log");
+                    break;
+                }
+            }
+        }
+        items
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+
+    fn blob_test_client(base_url: String) -> ToyMailboxClient<crate::testing::Msg> {
+        ToyMailboxClient::new(
+            "mbx".to_string(),
+            base_url,
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
+        )
+    }
+
+    type StoredBlips = BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>>>;
+
+    fn msg(topic: u8, author: char, seq: SeqNum) -> crate::testing::Msg {
+        crate::testing::Msg { topic, author, seq }
+    }
+
+    /// Spawn a fake mailbox server on a free port. It only stores blips and
+    /// echoes them back, plus computes simple contiguous watermarks; the
+    /// `missing` vector is always empty because callers only need to verify
+    /// that topic/author keys encode and decode correctly through the toy
+    /// client. Returns the server's base URL and shared storage.
+    async fn spawn_fake_mailbox_server() -> (String, Arc<Mutex<StoredBlips>>) {
+        let stored: Arc<Mutex<StoredBlips>> = Arc::new(Mutex::new(BTreeMap::new()));
+        let stored_in_store = stored.clone();
+        let stored_in_get = stored.clone();
+
+        let app = axum::Router::new()
+            .route(
+                "/blips/store",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::StoreBlipsRequest>| async move {
+                        let mut stored = stored_in_store.lock().unwrap();
+                        let mut watermarks: BTreeMap<String, BTreeMap<String, Option<SeqNum>>> =
+                            BTreeMap::new();
+                        for (topic, authors) in req.blips {
+                            let topic_entry = stored.entry(topic.clone()).or_default();
+                            let mut topic_watermarks: BTreeMap<String, Option<SeqNum>> =
+                                BTreeMap::new();
+                            for (author, seqs) in authors {
+                                let author_entry = topic_entry.entry(author.clone()).or_default();
+                                for (seq, blip) in &seqs {
+                                    author_entry.insert(*seq, blip.clone());
+                                }
+                                let watermark = seqs
+                                    .keys()
+                                    .enumerate()
+                                    .take_while(|(i, seq)| **seq == *i as SeqNum)
+                                    .map(|(_, seq)| seq)
+                                    .copied()
+                                    .last();
+                                topic_watermarks.insert(author, watermark);
+                            }
+                            watermarks.insert(topic, topic_watermarks);
+                        }
+                        axum::Json(mailbox_server::StoreBlipsResponse { watermarks })
+                    },
+                ),
+            )
+            .route(
+                "/blips/get",
+                axum::routing::post(
+                    move |axum::Json(req): axum::Json<mailbox_server::GetBlipsRequest>| async move {
+                        let stored = stored_in_get.lock().unwrap();
+                        let mut blips_by_topic: BTreeMap<
+                            String,
+                            mailbox_server::GetBlipsForTopicResponse,
+                        > = BTreeMap::new();
+                        for (topic, authors) in req.topics {
+                            let mut topic_blips: BTreeMap<String, BTreeMap<SeqNum, mailbox_server::Blip>> =
+                                BTreeMap::new();
+                            let mut missing: BTreeMap<String, Vec<SeqNum>> = BTreeMap::new();
+                            if let Some(topic_entry) = stored.get(&topic) {
+                                for (author, min_seq) in authors {
+                                    if let Some(author_entry) = topic_entry.get(&author) {
+                                        let filtered: BTreeMap<SeqNum, mailbox_server::Blip> =
+                                            author_entry
+                                                .iter()
+                                                .filter(|(seq, _)| **seq > min_seq)
+                                                .map(|(seq, blip)| (*seq, blip.clone()))
+                                                .collect();
+                                        topic_blips.insert(author, filtered);
+                                    } else {
+                                        missing.insert(author, Vec::new());
+                                    }
+                                }
+                            } else {
+                                for (author, _) in authors {
+                                    missing.insert(author, Vec::new());
+                                }
+                            }
+                            blips_by_topic.insert(
+                                topic,
+                                mailbox_server::GetBlipsForTopicResponse {
+                                    blips: topic_blips,
+                                    missing,
+                                },
+                            );
+                        }
+                        axum::Json(mailbox_server::GetBlipsResponse { blips_by_topic })
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+        (base_url, stored)
+    }
+
+    #[tokio::test]
+    async fn register_hashes_records_not_stored_and_removes_already_stored() {
+        // Server that reports h_stored as already stored, h_new as not.
+        let h_stored = iroh_blobs::Hash::new([1; 32]);
+        let h_new = iroh_blobs::Hash::new([2; 32]);
+        let app = axum::Router::new().route(
+            "/blobs/register-hashes",
+            axum::routing::post(
+                move |axum::Json(req): axum::Json<mailbox_server::RegisterHashesRequest>| async move {
+                    let already_stored: Vec<_> = req
+                        .blob_hashes
+                        .into_iter()
+                        .filter(|h| *h == h_stored)
+                        .collect();
+                    axum::Json(mailbox_server::RegisterHashesResponse { already_stored })
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let client = blob_test_client(base_url);
+        let already = client
+            .announce_blob_hashes(vec![h_stored, h_new], false)
+            .await
+            .unwrap();
+        assert_eq!(already, vec![h_stored]);
+    }
+
+    #[tokio::test]
+    async fn publish_and_fetch_round_trip_msg_keys() {
+        let (base_url, stored) = spawn_fake_mailbox_server().await;
+
+        let client = blob_test_client(base_url);
+
+        let response = client
+            .publish(vec![msg(42, 'a', 0), msg(42, 'a', 1), msg(42, 'b', 0)])
+            .await
+            .unwrap();
+
+        // The watermark response decoded the string keys back to Msg's Topic
+        // and Log types.
+        assert_eq!(response.watermark(&42, &'a'), Some(1));
+        assert_eq!(response.watermark(&42, &'b'), Some(0));
+
+        // The keys were encoded as bare strings, not JSON arrays/objects.
+        let stored = stored.lock().unwrap();
+        assert_eq!(stored.keys().collect::<Vec<_>>(), vec!["42"]);
+        let author_keys: std::collections::BTreeSet<&str> =
+            stored["42"].keys().map(|s| s.as_str()).collect();
+        assert_eq!(author_keys, ["a", "b"].iter().copied().collect());
+        drop(stored);
+
+        // Fetch back the items above the reported local height.
+        let request = FetchRequest(BTreeMap::from([(
+            42u8,
+            BTreeMap::from([('a', 0), ('b', 0)]),
+        )]));
+        let response = client.fetch(request).await.unwrap();
+
+        let topic_response = response.0.get(&42).expect("topic 42");
+        let author_a_seqs: Vec<SeqNum> = topic_response
+            .items
+            .iter()
+            .filter(|m| m.log() == 'a')
+            .map(|m| m.seq_num())
+            .collect();
+        let author_b_seqs: Vec<SeqNum> = topic_response
+            .items
+            .iter()
+            .filter(|m| m.log() == 'b')
+            .map(|m| m.seq_num())
+            .collect();
+        assert_eq!(author_a_seqs, vec![1]);
+        assert!(author_b_seqs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn upload_blob_posts_raw_bytes() {
+        use std::sync::{Arc, Mutex};
+
+        // Server that records the raw body it received and echoes back its hash.
+        let received: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let received_in_handler = received.clone();
+        let app = axum::Router::new().route(
+            "/blobs/upload",
+            axum::routing::post(move |body: axum::body::Bytes| {
+                let received_in_handler = received_in_handler.clone();
+                async move {
+                    let hash = iroh_blobs::Hash::new(&body);
+                    *received_in_handler.lock().unwrap() = body.to_vec();
+                    axum::Json(mailbox_server::UploadBlobResponse { hash })
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let data = bytes::Bytes::from_static(b"raw blob bytes");
+        let client = blob_test_client(base_url);
+        client.upload_blob(data.clone()).await.unwrap();
+        assert_eq!(*received.lock().unwrap(), data.to_vec());
+    }
+
+    #[tokio::test]
+    async fn upload_blob_reports_mailbox_unavailable_when_unreachable() {
+        // Bind then drop the listener so the port is closed and the connect fails.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let base_url = format!("http://{addr}");
+
+        let err = blob_test_client(base_url)
+            .upload_blob(bytes::Bytes::from_static(b"x"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BlobUploadError::MailboxUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn upload_blob_reports_blob_failure_on_error_status() {
+        let app = axum::Router::new().route(
+            "/blobs/upload",
+            axum::routing::post(|| async {
+                (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "boom")
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let err = blob_test_client(base_url)
+            .upload_blob(bytes::Bytes::from_static(b"x"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BlobUploadError::Blob(_)));
+    }
+
+    #[tokio::test]
+    async fn store_blobs_uploads_bytes_then_announces() {
+        use std::sync::{Arc, Mutex};
+
+        struct StubReader(bytes::Bytes);
+        #[async_trait::async_trait]
+        impl BlobReader for StubReader {
+            async fn read_blob(&self, _hash: iroh_blobs::Hash) -> anyhow::Result<bytes::Bytes> {
+                Ok(self.0.clone())
+            }
+            async fn has_blob(&self, _hash: iroh_blobs::Hash) -> bool {
+                true
+            }
+        }
+
+        let data = bytes::Bytes::from_static(b"a blob");
+        let hash = iroh_blobs::Hash::new(&data);
+
+        // The mailbox has nothing yet, so the announce reports no `already_stored`
+        // and the client streams the bytes to `/blobs/upload` afterward.
+        let uploaded: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        let uploaded_in_handler = uploaded.clone();
+        let app = axum::Router::new()
+            .route(
+                "/blobs/upload",
+                axum::routing::post(move |body: axum::body::Bytes| {
+                    let uploaded_in_handler = uploaded_in_handler.clone();
+                    async move {
+                        let hash = iroh_blobs::Hash::new(&body);
+                        *uploaded_in_handler.lock().unwrap() = body.to_vec();
+                        axum::Json(mailbox_server::UploadBlobResponse { hash })
+                    }
+                }),
+            )
+            .route(
+                "/blobs/register-hashes",
+                axum::routing::post(
+                    |axum::Json(_req): axum::Json<mailbox_server::RegisterHashesRequest>| async move {
+                        axum::Json(mailbox_server::RegisterHashesResponse {
+                            already_stored: Vec::new(),
+                        })
+                    },
+                ),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let client = ToyMailboxClient::<crate::testing::Msg>::new(
+            "mbx".to_string(),
+            base_url,
+            iroh::SecretKey::from_bytes(&[3; 32]).public(),
+            std::sync::Arc::new(crate::NoopUnfetchedBlobTracker),
+            crate::testing::noop_upload_lifecycle(),
+        )
+        .with_blob_reader(std::sync::Arc::new(StubReader(data.clone())));
+
+        client.store_blobs(vec![hash]).await.unwrap();
+
+        // The upload is spawned, so wait for the detached task to deliver it.
+        for _ in 0..100 {
+            if *uploaded.lock().unwrap() == data.to_vec() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(*uploaded.lock().unwrap(), data.to_vec());
+    }
+}

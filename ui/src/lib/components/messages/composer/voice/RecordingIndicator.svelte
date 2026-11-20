@@ -18,7 +18,7 @@
 	src={wrapPathInSvg(mdiMicrophone)}
 ></wa-icon>
 <span class="text-sm tabular-nums" data-testid="voice-recording-timer"
-	>{formatDuration(elapsedMs)}</span
+	>{formatDuration(elapsedMs).padStart(5, '0')}</span
 >
 
 <style>

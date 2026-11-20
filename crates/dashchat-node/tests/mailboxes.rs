@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mailbox_late_join() {
@@ -107,6 +107,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi
@@ -115,6 +116,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
@@ -158,6 +160,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi
@@ -166,6 +169,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
@@ -262,7 +266,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config, "alice").await;
     let chat = alice
-        .create_group(std::collections::BTreeMap::new())
+        .create_chat_group(std::collections::BTreeMap::new())
         .await
         .unwrap();
 
@@ -279,7 +283,7 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
     PollConfig::default()
         .wait_for(|| async {
             tracked
-                .connection_state()
+                .health()
                 .borrow()
                 .last_success_at
                 .is_some()
@@ -289,10 +293,14 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
         .await
         .unwrap();
 
+    let alice_log = Log::new(
+        alice.device_id(),
+        dashchat_node::topic::application_log_id(*chat),
+    );
     let synced_before_send = alice
         .mailboxes
-        .sync_tracker()
-        .get_synced(&mailbox_id, &chat, &alice.device_id())
+        .operation_tracker()
+        .get_synced(&mailbox_id, &chat, &alice_log)
         .await
         .unwrap();
 
@@ -302,8 +310,8 @@ async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
         .wait_for(|| async {
             let synced = alice
                 .mailboxes
-                .sync_tracker()
-                .get_synced(&mailbox_id, &chat, &alice.device_id())
+                .operation_tracker()
+                .get_synced(&mailbox_id, &chat, &alice_log)
                 .await
                 .unwrap();
             (synced > synced_before_send)

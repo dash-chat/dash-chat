@@ -1,0 +1,78 @@
+/**
+ * The cloud mailbox over networks as slow as the ones measured across the
+ * global majority, where connection setup alone takes seconds. The mailbox
+ * answers every request eventually, so the chip must keep reading cloud and a message
+ * must reach the mailbox. One agent in a solo group, read from the home page,
+ * where the chip is.
+ */
+import { formatStatusTrace } from '../helpers/components/connection-status-indicator';
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
+import { NETWORK_PROFILES } from '../helpers/network-profiles';
+import { MAILBOX_HUNG_MS, UI_TIMEOUT } from '../helpers/timeouts';
+import {
+	healMailboxLink,
+	isRemoteMailbox,
+	shapeMailboxLink,
+} from '../setup/mailbox-control';
+import { type Agent, setupAgents } from '../setup/setup-agents';
+
+describe('Cloud mailbox over slow networks', function () {
+	this.timeout(300_000);
+
+	let agent: Agent;
+	let linkOpened = false;
+
+	const chip = () => agent.homePage.connectionStatusIndicator;
+	const messages = () => agent.groupChatPage.messages;
+
+	before(async function () {
+		if (isRemoteMailbox()) this.skip();
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
+		linkOpened = true;
+		await agent.createProfilePage.createProfile('Alice', 'Slow');
+		await createGroup(agent, 'Solo Group', []);
+		await agent.groupChatPage.back.click();
+		await agent.homePage.ready();
+		await chip().waitForStatus(
+			'cloud',
+			UI_TIMEOUT,
+			'the chip did not read cloud once the app settled',
+		);
+	});
+
+	afterEach(async () => {
+		if (linkOpened) await healMailboxLink();
+	});
+
+	for (const [network, conditions] of Object.entries(NETWORK_PROFILES)) {
+		it(`stays connected and hands over a message over ${network}`, async () => {
+			await shapeMailboxLink(conditions);
+			// Shaping drops the connections already open, which can fail the poll
+			// riding one; that failure is the harness's, so record from the first
+			// answer over the shaped link.
+			await chip().waitForStatus(
+				'cloud',
+				UI_TIMEOUT,
+				`the chip did not read cloud once the link was shaped as ${network}`,
+			);
+			const text = `over ${network}`;
+			await agent.homePage.chatListItem('Solo Group').click();
+			await agent.groupChatPage.ready();
+			await agent.groupChatPage.composer.sendMessage(text);
+			await messages().waitForMessageStatus(text, ['mailbox']);
+			await agent.groupChatPage.back.click();
+			await agent.homePage.ready();
+			const token = await chip().startRecordingStatus();
+			// As long as a mailbox that never answers takes to flip the chip, so
+			// requests failing at the full budget would have shown by now.
+			await agent.pause(MAILBOX_HUNG_MS);
+			const rendered = await chip().recordedStatuses(token);
+			if (rendered.some(sample => sample.status !== 'cloud')) {
+				throw new Error(
+					`the chip left cloud over ${network}, whose mailbox answers ` +
+						`every request (rendered: ${formatStatusTrace(rendered)})`,
+				);
+			}
+		});
+	}
+});

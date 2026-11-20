@@ -1,12 +1,13 @@
 use axum::{
     extract::{DefaultBodyLimit, State},
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use p2panda_net::NetworkId;
 use push_notifications_client::client::PushNotificationsClient;
-use redb::Database;
+use redb::{Database, TableHandle};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::{future::Future, path::PathBuf};
@@ -57,7 +58,8 @@ pub use watermarks_table::{WatermarksKey, WatermarksKeyError, WATERMARKS_TABLE};
 
 pub type TopicId = String;
 pub type Author = String;
-pub type SequenceNumber = u64;
+
+pub use dashchat_utils::SeqNum;
 
 /// Encode an iroh EndpointId as the canonical MailboxId string (base64url, no pad).
 pub fn encode_mailbox_id(id: iroh::EndpointId) -> String {
@@ -104,6 +106,28 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
     hex::FromHex::from_hex(hex)
 }
 
+/// Config options for the mailbox server. `None` passed to [`spawn_server`]
+/// means `ServerConfig::default()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ServerConfig {
+    /// Reject HTTP blob uploads with 410 Gone (e2e knob for proving blob
+    /// delivery goes over iroh push).
+    pub disable_blob_http_upload: bool,
+    /// Never run the blob fetch loop, so announced blobs are never pulled
+    /// from their sources (e2e knob for proving blob delivery goes over
+    /// client push, not mailbox pull).
+    pub disable_blob_fetch: bool,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            disable_blob_http_upload: false,
+            disable_blob_fetch: false,
+        }
+    }
+}
+
 /// Run the mailbox server on `listener` until `signal` resolves. `relay_url`
 /// and `network_id` configure the standalone [`BlobSync`] built when
 /// `blob_sync` is `None`.
@@ -117,8 +141,10 @@ pub async fn spawn_server(
     blob_sync: Option<BlobSync>,
     relay_url: Option<iroh::RelayUrl>,
     network_id: NetworkId,
+    config: Option<ServerConfig>,
     signal: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let config = config.unwrap_or_default();
     let db = init_db(db_path.clone())?;
     let db_arc = Arc::new(db);
 
@@ -136,7 +162,11 @@ pub async fn spawn_server(
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
-    let blob_fetch_handle = blob_sync.spawn_fetch_loop(blob_sync.fetch_config());
+    let blob_fetch_handle = if config.disable_blob_fetch {
+        None
+    } else {
+        Some(blob_sync.spawn_fetch_loop(blob_sync.fetch_config()))
+    };
     let blob_gc_handle = blob_sync.spawn_blob_gc_task();
 
     let push_client = match push_notifications_url {
@@ -148,7 +178,13 @@ pub async fn spawn_server(
     };
 
     let push_tasks = Arc::new(tokio::sync::Mutex::new(JoinSet::new()));
-    let app = create_app(db_arc, push_client, Arc::clone(&push_tasks), blob_sync);
+    let app = create_app(
+        db_arc,
+        push_client,
+        Arc::clone(&push_tasks),
+        blob_sync,
+        config,
+    );
 
     let addr = listener.local_addr()?;
 
@@ -165,7 +201,9 @@ pub async fn spawn_server(
     while tasks.join_next().await.is_some() {}
 
     cleanup_task.abort();
-    blob_fetch_handle.abort();
+    if let Some(handle) = blob_fetch_handle {
+        handle.abort();
+    }
     if let Some(handle) = blob_gc_handle {
         handle.abort();
     }
@@ -192,6 +230,7 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     let db = Database::create(&db_path)?;
 
     let write_txn = db.begin_write()?;
+    drop_legacy_tables(&write_txn)?;
     {
         let _blips_table = write_txn.open_table(BLIPS_TABLE)?;
         let _watermarks_table = write_txn.open_table(WATERMARKS_TABLE)?;
@@ -208,11 +247,27 @@ pub fn init_db(db_path: PathBuf) -> Result<Database, Box<dyn std::error::Error>>
     Ok(db)
 }
 
+/// Drop tables superseded by a versioned rename. Their key layout no longer
+/// matches, so their rows can never be read, served or pruned.
+fn drop_legacy_tables(write_txn: &redb::WriteTransaction) -> Result<(), redb::Error> {
+    const LEGACY_TABLES: [&str; 2] = ["blips", "watermarks"];
+    let legacy: Vec<_> = write_txn
+        .list_tables()?
+        .filter(|table| LEGACY_TABLES.contains(&table.name()))
+        .collect();
+    for table in legacy {
+        tracing::info!("Dropping legacy table {}", table.name());
+        write_txn.delete_table(table)?;
+    }
+    Ok(())
+}
+
 pub fn create_app(
     db: Arc<Database>,
     push_client: Option<Arc<PushNotificationsClient>>,
     push_tasks: Arc<tokio::sync::Mutex<JoinSet<()>>>,
     blob_sync: BlobSync,
+    config: ServerConfig,
 ) -> Router {
     let state = AppState {
         db,
@@ -221,19 +276,69 @@ pub fn create_app(
         blob_sync,
     };
 
-    Router::new()
+    let router = Router::new()
         .route("/health", get(health_check))
         .route("/blips/store", post(store_blips))
         .route(
             "/blobs/register-hashes",
             post(register_hashes::register_hashes),
         )
-        .route("/blobs/upload", post(register_hashes::upload_blob))
         .route("/blips/get", post(get_blips_for_topics))
         .route("/peers/register", post(register_peer::register_peer))
-        .route("/report", post(report::report))
+        .route("/report", post(report::report));
+
+    // The disabled knob rejects explicitly: a bare 404 would read as a routing
+    // bug in client logs, where 410 says the server refuses on purpose.
+    let router = if config.disable_blob_http_upload {
+        router.route("/blobs/upload", post(blob_upload_disabled))
+    } else {
+        router.route("/blobs/upload", post(register_hashes::upload_blob))
+    };
+
+    router
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(MAX_PAYLOAD_SIZE))
         .with_state(state)
+}
+
+async fn blob_upload_disabled() -> (StatusCode, &'static str) {
+    (
+        StatusCode::GONE,
+        "blob HTTP upload is disabled on this mailbox",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use redb::{ReadableDatabase, TableDefinition};
+
+    use super::*;
+
+    #[test]
+    fn init_db_drops_legacy_tables() {
+        const LEGACY_BLIPS: TableDefinition<u64, &[u8]> = TableDefinition::new("blips");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.redb");
+        {
+            let db = Database::create(&path).unwrap();
+            let txn = db.begin_write().unwrap();
+            txn.open_table(LEGACY_BLIPS)
+                .unwrap()
+                .insert(1, b"old".as_slice())
+                .unwrap();
+            txn.commit().unwrap();
+        }
+
+        let db = init_db(path).unwrap();
+        let names: Vec<String> = db
+            .begin_read()
+            .unwrap()
+            .list_tables()
+            .unwrap()
+            .map(|table| table.name().to_string())
+            .collect();
+        assert!(!names.contains(&"blips".to_string()), "{names:?}");
+        assert!(names.contains(&"blips_v2".to_string()), "{names:?}");
+    }
 }

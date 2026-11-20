@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet, Block, useTheme } from 'konsta/svelte';
-	import { onMount } from 'svelte';
+	import { useTheme } from 'konsta/svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import {
+		MediaDraft,
+		type StagingOutcome,
+	} from '$lib/components/messages/composer/media-draft.svelte';
 	import { page } from '$app/state';
 	import { pushState } from '$app/navigation';
 	import { isIos, isMobile } from '$lib/utils/environment';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import {
-		type DraftMedia,
-		type IngestError,
+		type StagingError,
 		capturePhoto,
 		draftToMedia,
-		ingestFiles,
 		pickMedia,
 		AttachmentTooLargeError,
 		formatFileSize,
@@ -31,14 +33,17 @@
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import BelowKeyboardSurface from '$lib/components/BelowKeyboardSurface.svelte';
 	import { showToast } from '$lib/utils/toasts';
-	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
-	import SheetHandle from '$lib/components/SheetHandle.svelte';
+	import {
+		type RecentPhoto,
+		loadRecentPhotoFile,
+	} from '$lib/utils/recent-photos';
+	import EmojiPickerSheet from '$lib/components/messages/EmojiPickerSheet.svelte';
 	import MediaDropOverlay from '$lib/components/messages/composer/MediaDropOverlay.svelte';
 	import StagedAttachments from '$lib/components/messages/composer/StagedAttachments.svelte';
 	import StagedMediaPage from '$lib/components/messages/composer/StagedMediaPage.svelte';
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import StandaloneAttachButton from '$lib/components/messages/composer/StandaloneAttachButton.svelte';
-	import InlineAttachButton from '$lib/components/messages/composer/InlineAttachButton.svelte';
+	import AttachButton from '$lib/components/messages/composer/AttachButton.svelte';
 	import CameraButton from '$lib/components/messages/composer/CameraButton.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import MediaPanel from '$lib/components/messages/composer/MediaPanel.svelte';
@@ -70,11 +75,21 @@
 
 	const theme = $derived(useTheme());
 
-	let media: DraftMedia | undefined = $state(undefined);
-	let hasContent = $derived(value.trim().length > 0 || media !== undefined);
+	const mediaDraft = new MediaDraft(openStagedMediaPage);
+	onDestroy(() => mediaDraft.clear());
+	const media = $derived(mediaDraft.media);
+	const showsStagedMedia = $derived(
+		(media !== undefined && media.kind !== 'voice_note') ||
+			mediaDraft.pendingPhotos > 0,
+	);
+	let hasContent = $derived(
+		value.trim().length > 0 || media !== undefined || mediaDraft.busy,
+	);
 	let messageInput: ReturnType<typeof MessageInput> | undefined = $state();
 	let showEmojiPicker = $state(false);
 	let sending = false;
+	let loadingMedia = $state(false);
+	let mediaBusy = $derived(loadingMedia || mediaDraft.busy);
 
 	let showMediaPanel = $state(false);
 
@@ -106,7 +121,7 @@
 	}
 
 	function discardDraftAndEdit(message: Message) {
-		media = undefined;
+		mediaDraft.clear();
 		startEdit(message);
 	}
 
@@ -171,12 +186,13 @@
 		// Enter-key path goes straight here, so hammering Enter during a slow
 		// send would otherwise fire multiple store.sendMessage calls.
 		if (!hasContent || sending) return false;
+		if (mediaBusy && media?.kind !== 'voice_note') return false;
 		sending = true;
 		const message = value;
-		const draft = media;
+		const stagedMedia = media;
 		const replyTo = replying;
 		try {
-			const wireMedia = draft ? await draftToMedia(draft) : null;
+			const wireMedia = stagedMedia ? await draftToMedia(stagedMedia) : null;
 			const hash = await store.sendMessage({
 				message,
 				media: wireMedia,
@@ -185,9 +201,7 @@
 			// Only clear what this send actually consumed: the user may have
 			// typed or staged new attachments while the send was confirming.
 			if (value === message) value = '';
-			if (media === draft) {
-				media = undefined;
-			}
+			if (stagedMedia) mediaDraft.discardSent(stagedMedia);
 			if (replying === replyTo) replying = null;
 			onSent?.(hash);
 			return true;
@@ -209,44 +223,113 @@
 		}
 	}
 
-	const ingestErrorMessages: Record<IngestError, () => string> = {
+	const stagingErrorMessages: Record<StagingError, () => string> = {
 		tooMany: () => m.errorTooManyAttachments(),
 		filesWithPhotos: () => m.errorFilesWithPhotos(),
 		oneFileAtATime: () => m.errorOneFileAtATime(),
 	};
 
-	/** Add files to the draft, toasting if a Signal mixing rule was violated. */
-	function stage(files: FileList | File[]) {
-		const result = ingestFiles(media, Array.from(files));
-		if (result.error) showToast(ingestErrorMessages[result.error](), 'error');
-		media = result.media;
-		if (isMobile && media && !page.state.stagedMedia) {
+	/** Add files to the draft and toast why anything was left out. */
+	async function stage(files: FileList | File[]) {
+		try {
+			const outcome = await mediaDraft.add(Array.from(files));
+			showStagingToast(outcome);
+		} finally {
+			closeEmptyStagedMediaPage();
+		}
+	}
+
+	// One toast at a time: a rule error explains more than the damaged count.
+	function showStagingToast({ error, undecodablePhotos }: StagingOutcome) {
+		if (error) {
+			showToast(stagingErrorMessages[error](), 'error');
+		} else if (undecodablePhotos > 0) {
+			showToast(
+				m.errorUndecodablePhotos({ count: undecodablePhotos }),
+				'error',
+			);
+		}
+	}
+
+	// A batch opens the page before its photos are prepared, so one that
+	// staged nothing (every photo damaged, or preparing failed) leaves it
+	// with nothing to show.
+	function closeEmptyStagedMediaPage() {
+		if (
+			isMobile &&
+			page.state.stagedMedia &&
+			!showsStagedMedia &&
+			!mediaDraft.busy
+		) {
+			history.back();
+		}
+	}
+
+	function openStagedMediaPage() {
+		if (isMobile && !page.state.stagedMedia) {
 			pushState('', { stagedMedia: true });
 		}
 	}
 
-	function stageFromPanel(files: File[]) {
-		showMediaPanel = false;
-		stage(files);
+	function stageOrToast(files: FileList | File[]) {
+		stage(files).catch(e => {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to stage files', e);
+		});
+	}
+
+	async function stageWhenLoaded(
+		load: () => Promise<FileList | File[] | null>,
+	) {
+		if (loadingMedia) return;
+		loadingMedia = true;
+		try {
+			const files = await load();
+			if (files && files.length > 0) await stage(files);
+		} finally {
+			loadingMedia = false;
+		}
+	}
+
+	async function pickAndStage(mode: 'image' | 'document', multiple: boolean) {
+		try {
+			await stageWhenLoaded(() => pickMedia(mode, multiple));
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+			console.error('Failed to pick files', e);
+		}
+	}
+
+	function pickPhotos() {
+		return pickAndStage('image', true);
+	}
+
+	function pickFile() {
+		return pickAndStage('document', false);
+	}
+
+	async function addRecentPhoto(photo: RecentPhoto) {
+		try {
+			await stageWhenLoaded(async () => {
+				const file = await loadRecentPhotoFile(photo);
+				showMediaPanel = false;
+				return [file];
+			});
+		} catch (e) {
+			console.error('Failed to load photo', e);
+			showToast(m.errorAddingPhoto(), 'error');
+		}
 	}
 
 	async function captureFromCamera() {
 		try {
-			const file = await capturePhoto();
-			if (file) stage([file]);
+			await stageWhenLoaded(async () => {
+				const file = await capturePhoto();
+				return file ? [file] : null;
+			});
 		} catch (e) {
 			showToast(m.errorUnexpected(), 'unexpected', e);
 			console.error('Failed to capture photo', e);
-		}
-	}
-
-	async function addMore() {
-		try {
-			const files = await pickMedia('image', true);
-			if (files && files.length > 0) stage(files);
-		} catch (e) {
-			showToast(m.errorUnexpected(), 'unexpected', e);
-			console.error('Failed to pick files', e);
 		}
 	}
 
@@ -256,13 +339,9 @@
 	// history entry, and the rule would discard every voice draft the moment it
 	// was staged.
 	$effect(() => {
-		if (
-			isMobile &&
-			media &&
-			media.kind !== 'voice_note' &&
-			!page.state.stagedMedia
-		)
-			media = undefined;
+		if (isMobile && showsStagedMedia && !page.state.stagedMedia) {
+			mediaDraft.clear();
+		}
 	});
 
 	$effect(() => {
@@ -276,7 +355,7 @@
 	let sendingVoiceNote = $state(false);
 
 	const voice = new VoiceRecorder(async draft => {
-		media = { kind: 'voice_note', voice: draft };
+		mediaDraft.setVoiceNote(draft);
 		sendingVoiceNote = true;
 		try {
 			await send();
@@ -306,22 +385,19 @@
 		const files = event.clipboardData?.files;
 		if (!files || files.length === 0) return;
 		event.preventDefault();
-		stage(files);
+		stageOrToast(files);
 	}
 
 	// Test-only: the native recorder can’t capture in the headless e2e harness.
 	onMount(() => {
 		const handler = (event: Event) => {
 			const detail = (event as CustomEvent).detail;
-			media = {
-				kind: 'voice_note',
-				voice: {
-					bytes: new Uint8Array(detail.bytes),
-					mimeType: detail.mimeType ?? 'audio/wav',
-					durationMs: detail.durationMs,
-					waveform: new Uint8Array(detail.waveform),
-				},
-			};
+			mediaDraft.setVoiceNote({
+				bytes: new Uint8Array(detail.bytes),
+				mimeType: detail.mimeType ?? 'audio/wav',
+				durationMs: detail.durationMs,
+				waveform: new Uint8Array(detail.waveform),
+			});
 		};
 		window.addEventListener('test-inject-voice-message', handler);
 		return () =>
@@ -329,10 +405,40 @@
 	});
 </script>
 
-<MediaDropOverlay onFiles={stage} />
+<MediaDropOverlay onFiles={stageOrToast} />
 
 {#snippet emojiButton()}
 	<EmojiButton onClick={openEmojiPicker} />
+{/snippet}
+
+{#snippet composerActions()}
+	{#if !editing}
+		{#if theme === 'material'}
+			<!-- Signal gives the inline plus its own HidingLinearLayout, pinned to
+			     the same end as the quick toggle, so neither shifts the other. -->
+			<div
+				class="composer-toggle composer-toggle-end-pivot absolute bottom-0 end-1 flex items-center"
+				class:composer-toggle-hidden={!drafting}
+				style="--toggle-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)"
+				aria-hidden={!drafting}
+			>
+				<AttachButton expanded={showMediaPanel} onClick={toggleMediaPanel} />
+			</div>
+		{/if}
+		<div
+			class="composer-toggle flex shrink-0 items-center"
+			class:composer-toggle-smooth={theme === 'ios'}
+			class:composer-toggle-end-pivot={theme !== 'ios'}
+			class:composer-toggle-hidden={drafting}
+			style="--toggle-width: 5rem; {theme === 'ios'
+				? '--toggle-duration: 250ms; --toggle-ease: cubic-bezier(0.25, 0.1, 0.25, 1); --toggle-hidden-transform: scale(0.1)'
+				: '--toggle-hidden-width: 2.5rem; --toggle-hidden-transform: scaleX(0.5)'}"
+			aria-hidden={drafting}
+		>
+			<CameraButton onClick={captureFromCamera} disabled={mediaBusy} />
+			<VoiceRecordButton {voice} />
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet editingBanner()}
@@ -358,18 +464,25 @@
 		use:renderAboveKeyboard
 	>
 		{#if !editing && !isMobile}
-			<StagedAttachments bind:media onFiles={stage} />
+			<StagedAttachments
+				draft={mediaDraft}
+				loadingMedia={mediaBusy}
+				onAddMore={pickPhotos}
+			/>
 		{/if}
 
-		<div class="m-2 relative">
+		<!-- Signal's iOS composer keeps 16pt clear of the screen edges. -->
+		<div class="relative {theme === 'ios' ? 'mx-4 my-2' : 'm-2'}">
 			<VoiceRecordingBar
 				{voice}
 				onLeavingChange={leaving => (voiceBarLeaving = leaving)}
+				banner={replyBanner}
 			/>
 
 			<div
 				class="input-row row gap-2"
 				class:covered={recordingCoversInput}
+				class:control-inset={theme !== 'ios'}
 				style="align-items: flex-end"
 			>
 				{#if editing}
@@ -395,29 +508,8 @@
 					hidden={recordingCoversInput}
 					before={isMobile && !isIos ? emojiButton : undefined}
 					banner={editing !== null ? editingBanner : replyBanner}
-				>
-					{#snippet after()}
-						{#if !editing && isMobile}
-							{#if drafting && theme === 'material'}
-								<InlineAttachButton
-									expanded={showMediaPanel}
-									onClick={toggleMediaPanel}
-								/>
-							{/if}
-							<div
-								class="flex shrink-0 items-center overflow-hidden transition-all duration-200 ease-out {drafting
-									? 'me-0 w-0 opacity-0'
-									: 'me-1 w-10 opacity-100'}"
-								aria-hidden={drafting}
-							>
-								<CameraButton onClick={captureFromCamera} />
-							</div>
-						{/if}
-						{#if isMobile && showVoiceButton}
-							<VoiceRecordButton {voice} />
-						{/if}
-					{/snippet}
-				</MessageInput>
+					after={isMobile ? composerActions : undefined}
+				/>
 
 				{#if editing}
 					{#if isWideScreen.value}
@@ -434,27 +526,37 @@
 						</div>
 					{:else if isIos}
 						<div
-							class="flex shrink-0 items-center justify-end transition-all duration-200 ease-out {drafting
-								? 'ms-0 w-[42px] opacity-100'
-								: '-ms-2 w-0 opacity-0'}"
-							style="transform: scale({drafting ? 1 : 0})"
+							class="ios-send flex shrink-0 items-center justify-end {drafting
+								? 'ms-0 w-[42px]'
+								: '-ms-2 w-0'}"
+							class:ios-send-hidden={!drafting}
 							aria-hidden={!drafting}
 						>
-							<SendButton onSend={send} />
+							<SendButton onSend={send} disabled={mediaBusy} />
 						</div>
-					{:else if drafting}
-						<SendButton onSend={send} />
-					{:else if theme !== 'ios'}
-						<StandaloneAttachButton
-							expanded={showMediaPanel}
-							onClick={toggleMediaPanel}
-						/>
+					{:else}
+						<div class="toggle-slot shrink-0">
+							<div class="toggle-child" class:toggle-hidden={!drafting}>
+								<SendButton onSend={send} disabled={mediaBusy} />
+							</div>
+							<div class="toggle-child" class:toggle-hidden={drafting}>
+								<StandaloneAttachButton
+									expanded={showMediaPanel}
+									onClick={toggleMediaPanel}
+								/>
+							</div>
+						</div>
 					{/if}
 				{:else}
-					{#if showVoiceButton}
+					<div
+						class="composer-toggle composer-toggle-smooth flex shrink-0 items-center"
+						class:composer-toggle-hidden={drafting}
+						style="--toggle-width: 2.5rem; --toggle-hidden-transform: scale(0.6)"
+						aria-hidden={drafting}
+					>
 						<VoiceRecordButton {voice} />
-					{/if}
-					<AttachMenuButton onFiles={stage} />
+					</div>
+					<AttachMenuButton onPickPhotos={pickPhotos} onPickFile={pickFile} />
 				{/if}
 			</div>
 		</div>
@@ -463,18 +565,22 @@
 	{#if isMobile}
 		<BelowKeyboardSurface open={showMediaPanel} class="bg-page-surface z-20">
 			<MediaPanel
-				onFiles={stageFromPanel}
+				loadingMedia={mediaBusy}
+				onPickPhotos={pickPhotos}
+				onPickFile={pickFile}
+				onAddRecent={addRecentPhoto}
 				onPickerOpen={() => (showMediaPanel = false)}
 			/>
 		</BelowKeyboardSurface>
 	{/if}
 </div>
 
-{#if isMobile && media && page.state.stagedMedia}
+{#if isMobile && showsStagedMedia && page.state.stagedMedia}
 	<StagedMediaPage
-		bind:media
+		draft={mediaDraft}
 		bind:value
 		{destinationName}
+		loadingMedia={mediaBusy}
 		onSend={async () => {
 			const keepFocus = document.activeElement instanceof HTMLTextAreaElement;
 			const sent = await send();
@@ -488,34 +594,120 @@
 			}
 			return sent;
 		}}
-		onAddMore={addMore}
+		onAddMore={pickPhotos}
 		onClose={() => history.back()}
 	/>
 {/if}
 
 <DiscardDraftDialog bind:this={discardDialog} onConfirm={discardDraftAndEdit} />
 
-<Sheet
-	class="pb-safe text-lg"
+<EmojiPickerSheet
 	opened={showEmojiPicker}
-	onBackdropClick={() => (showEmojiPicker = false)}
->
-	<div class="flex flex-col items-center">
-		<SheetHandle />
-	</div>
-	<Block>
-		<EmojiPickerWrapper
-			onEmojiSelected={emoji => {
-				value += emoji;
-				showEmojiPicker = false;
-			}}
-		></EmojiPickerWrapper>
-	</Block>
-</Sheet>
+	onClose={() => (showEmojiPicker = false)}
+	onEmojiSelected={emoji => {
+		value += emoji;
+		showEmojiPicker = false;
+	}}
+/>
 
 <style>
 	.input-row.covered {
 		visibility: hidden;
+	}
+
+	/* The round controls are 40px in Material's 44px row, so flex-end alone would
+	   drop them 2px below the input pill's axis. The row reserves that inset and
+	   the pill opts back out of it. iOS sizes both at 40 and needs none. */
+	.input-row.control-inset {
+		padding-block-end: 2px;
+	}
+
+	.input-row.control-inset > :global(.input-container) {
+		margin-block-end: -2px;
+	}
+
+	/* `--toggle-width` has to be explicit for the collapse to interpolate at all.
+	   The slot is held for the whole fade and given back in one step, the way
+	   Signal's ViewUtil.animateOut only applies GONE once the animation ends. */
+	.composer-toggle {
+		--toggle-duration: 150ms;
+		--toggle-ease: cubic-bezier(0.4, 0, 0.2, 1);
+		width: var(--toggle-width);
+		overflow-x: clip;
+		transition:
+			opacity var(--toggle-duration) var(--toggle-ease),
+			transform var(--toggle-duration) var(--toggle-ease),
+			width 0ms,
+			visibility 0ms;
+	}
+
+	/* Signal's HidingLinearLayout pivots the squeeze on its end edge
+	   (ScaleAnimation(1, 0.5f, 1, 1, RELATIVE_TO_SELF, 1f, RELATIVE_TO_SELF, 0.5f)),
+	   so the group collapses towards the pill's edge rather than its own middle. */
+	.composer-toggle.composer-toggle-end-pivot {
+		transform-origin: 100% 50%;
+	}
+
+	:global([dir='rtl']) .composer-toggle.composer-toggle-end-pivot {
+		transform-origin: 0% 50%;
+	}
+
+	.composer-toggle.composer-toggle-hidden {
+		width: var(--toggle-hidden-width, 0);
+		visibility: hidden;
+		opacity: 0;
+		transform: var(--toggle-hidden-transform);
+		transition-delay: 0ms, 0ms, var(--toggle-duration), var(--toggle-duration);
+	}
+
+	/* Releasing the slot in one step only goes unseen inside the pill, which is
+	   flex-1 and so keeps its width either way. Outside it the pill would snap
+	   wider, so collapse the slot on the same curve as the fade. */
+	.composer-toggle.composer-toggle-smooth {
+		transition:
+			opacity var(--toggle-duration) var(--toggle-ease),
+			transform var(--toggle-duration) var(--toggle-ease),
+			width var(--toggle-duration) var(--toggle-ease),
+			visibility 0ms;
+	}
+
+	.composer-toggle.composer-toggle-smooth.composer-toggle-hidden {
+		transition-delay: 0ms, 0ms, 0ms, var(--toggle-duration);
+	}
+
+	.toggle-slot {
+		position: relative;
+		width: 40px;
+		height: 40px;
+	}
+
+	.toggle-child {
+		position: absolute;
+		inset: 0;
+		transition:
+			opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+			transform 150ms cubic-bezier(0.4, 0, 0.2, 1),
+			visibility 0ms;
+	}
+
+	.toggle-child.toggle-hidden {
+		visibility: hidden;
+		opacity: 0;
+		transform: scale(0.6);
+		transition-delay: 0ms, 0ms, 150ms;
+	}
+
+	.ios-send {
+		transition:
+			opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+			transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+			width 250ms cubic-bezier(0.25, 0.1, 0.25, 1),
+			margin-inline-start 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+	}
+
+	.ios-send-hidden {
+		opacity: 0;
+		transform: scale(0.1);
 	}
 
 	/* During keyboard glides the bar can lead the keyboard's edge by a few px;

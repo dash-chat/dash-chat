@@ -1,14 +1,25 @@
-import { ImageBlobReduce } from 'image-blob-reduce';
+import type { ImageBlobReduce } from 'image-blob-reduce';
 
 const AVATAR_MAX_PX = 300;
 
-const reduce = new ImageBlobReduce();
+let reducer: Promise<ImageBlobReduce> | undefined;
+
+/** Loaded on first use: pica is too heavy to evaluate at app startup. */
+export function imageReducer(): Promise<ImageBlobReduce> {
+	if (reducer === undefined) {
+		reducer = import('image-blob-reduce').then(
+			({ ImageBlobReduce }) => new ImageBlobReduce(),
+		);
+	}
+	return reducer;
+}
 
 /**
  * Decode an image file and export it as an avatar-sized data URL. Rejects if
  * the file cannot be read or is not an image the webview can decode.
  */
 export async function fileToAvatar(file: File): Promise<string> {
+	const reduce = await imageReducer();
 	const canvas = await reduce
 		.toCanvas(file, { max: AVATAR_MAX_PX })
 		.catch(() => {

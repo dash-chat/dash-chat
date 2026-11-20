@@ -15,6 +15,7 @@ export class VoicePlayer {
 	#audio: HTMLAudioElement | undefined;
 	#objectUrl: string | undefined;
 	#loadPromise: Promise<boolean> | undefined;
+	#frame: number | undefined;
 	readonly #voice: VoiceNote;
 	readonly #onError: () => void;
 
@@ -37,6 +38,7 @@ export class VoicePlayer {
 			if (playing && playing !== this) playing.#audio?.pause();
 			playing = this;
 			this.paused = false;
+			this.#followPlayback();
 		};
 		const onPause = () => {
 			if (playing === this) playing = undefined;
@@ -51,14 +53,17 @@ export class VoicePlayer {
 		};
 		audio.addEventListener('play', onPlay);
 		audio.addEventListener('pause', onPause);
-		audio.addEventListener('timeupdate', this.#sync);
 		audio.addEventListener('ended', onEnded);
+		// The frame loop only runs during playback; a seek from outside this
+		// player (e.g. OS media controls) while paused would leave the bar stale.
+		audio.addEventListener('seeked', this.#sync);
 		return () => {
 			audio.removeEventListener('play', onPlay);
 			audio.removeEventListener('pause', onPause);
-			audio.removeEventListener('timeupdate', this.#sync);
 			audio.removeEventListener('ended', onEnded);
+			audio.removeEventListener('seeked', this.#sync);
 			if (playing === this) playing = undefined;
+			if (this.#frame !== undefined) cancelAnimationFrame(this.#frame);
 			if (this.#objectUrl) URL.revokeObjectURL(this.#objectUrl);
 		};
 	}
@@ -135,6 +140,18 @@ export class VoicePlayer {
 		} catch {
 			return undefined;
 		}
+	}
+
+	#followPlayback(): void {
+		if (this.#frame !== undefined) cancelAnimationFrame(this.#frame);
+		const tick = () => {
+			this.#sync();
+			this.#frame =
+				this.#audio && !this.#audio.paused
+					? requestAnimationFrame(tick)
+					: undefined;
+		};
+		tick();
 	}
 
 	#sync = (): void => {

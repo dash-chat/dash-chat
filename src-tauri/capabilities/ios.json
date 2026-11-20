@@ -6,6 +6,9 @@
 	"permissions": [
 		"ios-photos:default",
 		"fs:allow-temp-read-recursive",
-		"mcp-bridge:default"
+		{
+			"identifier": "fs:allow-remove",
+			"allow": [{ "path": "$TEMP/*.jpg" }]
+		}
 	]
 }

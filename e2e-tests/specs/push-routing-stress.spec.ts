@@ -17,8 +17,7 @@
  * Needs a physical Android receiver (its notifications are read through
  * dumpsys) and a Firebase service-account key, and skips itself unless
  * E2E_STRESS=1:
- *   PLATFORMS=android,desktop,desktop,desktop,desktop,desktop,desktop,desktop,desktop \
- *     just e2e run push-routing-stress
+ *   PHONES=android just e2e run push-routing-stress
  *
  * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
  * E2E_STRESS_COMMANDS (moves per sequence, default 15), E2E_STRESS_SEED
@@ -65,7 +64,6 @@ describe('Adding contacts on a phone, at scale', () => {
 		]);
 		const agents: Record<string, Agent> = { [PHONE]: phone };
 		CONTACTS.forEach((name, i) => (agents[name] = desktops[i]));
-		await createProfiles(agents);
 		// Asked here because this is where the model reads it: a mailbox that
 		// answered before the agents booted can miss the health probe once they
 		// are all running, and the model would then route no push at all —
@@ -76,7 +74,12 @@ describe('Adding contacts on a phone, at scale', () => {
 				'the mailbox is not forwarding pushes, so push routing cannot be exercised',
 			);
 		}
-		fuzzer = await Fuzzer.prepare(this, { agents });
+		fuzzer = await Fuzzer.prepare(this, {
+			agents,
+			// The exchange is what this spec searches, so its agents start as
+			// strangers rather than as the contacts a run is normally given.
+			setUp: createProfiles,
+		});
 	});
 
 	it('every add, message and notification is what the agents can know', async () => {

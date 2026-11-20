@@ -4,43 +4,47 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { mdiTrashCanOutline, mdiPlusBoxOutline } from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { type DraftMedia, MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import { MAX_STAGED_PHOTOS } from '$lib/utils/media';
+	import type { OutgoingPhoto } from 'dash-chat-stores';
 	import { objectUrl } from '$lib/actions/object-url';
 	import IconButton from '$lib/components/IconButton.svelte';
+	import PendingThumb from '$lib/components/PendingThumb.svelte';
 
 	interface Props {
-		/** The staged draft. Only the `photos` variant is rendered. */
-		media: DraftMedia | undefined;
+		photos: OutgoingPhoto[];
+		pendingPhotos: number;
 		/** Index of the currently shown photo. */
 		index?: number;
+		loadingMedia: boolean;
 		onAddMore: () => void;
+		onRemove: (index: number) => void;
 		/** Called when the last photo is removed and nothing remains to show. */
 		onClose: () => void;
 	}
 
 	let {
-		media = $bindable(),
+		photos,
+		pendingPhotos,
 		index = $bindable(0),
+		loadingMedia,
 		onAddMore,
+		onRemove,
 		onClose,
 	}: Props = $props();
-
-	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 
 	function select(i: number) {
 		index = Math.max(0, Math.min(photos.length - 1, i));
 	}
 
 	async function removePhoto(i: number) {
-		if (media?.kind !== 'photos') return;
-		const remaining = media.items.filter((_, j) => j !== i);
-		if (remaining.length === 0) {
+		const nothingRemains = photos.length + pendingPhotos <= 1;
+		onRemove(i);
+		if (nothingRemains) {
 			onClose();
 			return;
 		}
-		media = { kind: 'photos', items: remaining };
 		await tick();
-		index = Math.min(index, remaining.length - 1);
+		index = Math.max(0, Math.min(index, photos.length - 1));
 	}
 </script>
 
@@ -48,7 +52,7 @@
 	class="flex items-center justify-start gap-3 overflow-x-auto px-4 pt-3 pb-3"
 	data-testid="staged-media-strip"
 >
-	{#if photos.length > 1}
+	{#if photos.length + pendingPhotos > 1}
 		{#each photos as photo, i (photo)}
 			<div
 				class="staged-thumb relative h-14 w-14 shrink-0 overflow-hidden"
@@ -62,7 +66,7 @@
 					onclick={() => select(i)}
 				>
 					<img
-						use:objectUrl={photo}
+						use:objectUrl={{ data: photo.data, mimeType: photo.mime_type }}
 						alt={photo.name}
 						class="block h-full w-full object-cover"
 					/>
@@ -84,15 +88,22 @@
 				{/if}
 			</div>
 		{/each}
+		{#each { length: pendingPhotos }, i (i)}
+			<PendingThumb
+				class="h-14 w-14 rounded-xl border-2 border-white bg-white/10"
+				spinnerClass="!text-white"
+			/>
+		{/each}
 	{/if}
-	{#if photos.length < MAX_STAGED_PHOTOS}
+	{#if photos.length + pendingPhotos < MAX_STAGED_PHOTOS}
 		<div class="flex h-14 shrink-0 items-center">
 			<IconButton
 				icon={mdiPlusBoxOutline}
 				onClick={onAddMore}
+				disabled={loadingMedia}
 				label={m.addMoreAttachments()}
 				testid="staged-media-add-more"
-				class="shrink-0 !bg-[#3a3a3c] !opacity-100 hover:!bg-[#4a4a4c]"
+				class="shrink-0 !bg-[#3a3a3c] !opacity-100 enabled:hover:!bg-[#4a4a4c] disabled:!opacity-50"
 			/>
 		</div>
 	{/if}

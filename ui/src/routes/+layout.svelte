@@ -22,11 +22,14 @@
 		SettingsStore,
 		MailboxTrackerStore,
 		type IMailboxTrackerStore,
+		OnlinePeersStore,
+		type IOnlinePeersStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockChatsStore,
 		MockMailboxTrackerStore,
+		MockOnlinePeersStore,
 		MockSettingsClient,
 		MockTombstoneClient,
 		TombstoneClient,
@@ -41,7 +44,6 @@
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
-	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
@@ -56,11 +58,8 @@
 		forwardConsoleToTauriLog,
 		reportUncaughtErrors,
 	} from '$lib/utils/logs';
-	import {
-		listenForDeepLinks,
-		handleLaunchDeepLink,
-		handleUrls,
-	} from '$lib/utils/deep-links';
+	import { handleUrls } from '$lib/utils/deep-links';
+	import { followPendingNavigations } from '$lib/utils/pending-navigations';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
@@ -98,9 +97,6 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	// Never in the binary under test
-	const isE2E = import.meta.env.VITE_E2E === 'true';
-	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile && !isE2E;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -111,6 +107,7 @@
 	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
+	let onlinePeersStore: IOnlinePeersStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -142,6 +139,7 @@
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
 		mailboxTrackerStore = new MockMailboxTrackerStore();
+		onlinePeersStore = new MockOnlinePeersStore();
 		messageAckStore = new MessageAckStore(
 			new MockMessageAckClient(),
 			mailboxTrackerStore,
@@ -183,6 +181,7 @@
 			messageAckStore,
 			chatsClient,
 		);
+		onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
 
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,
@@ -194,10 +193,12 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
+	setContext('online-peers-store', onlinePeersStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
+	useKeepAlive(mailboxTrackerStore.connectionStatusForAllMailboxes);
 
 	// Nothing routed renders until the device id has resolved: pages read it
 	// synchronously (useDeviceId), and a notification-tap navigation can mount
@@ -239,18 +240,22 @@
 		);
 	});
 
-	if (isTauriEnv()) {
-		handleLaunchDeepLink(contactsStore);
-	}
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		return listenForDeepLinks(contactsStore);
+		return followPendingNavigations(contactsStore);
 	});
 </script>
 
-{#if showToolbar}
-	<PreviewToolbar />
-{/if}
+<!-- On a phone a long press on any link or image would otherwise pick it up
+     and float its title and URL under the finger. Drags the app asks for with
+     draggable="true" still go through. -->
+<svelte:document
+	ondragstart={e => {
+		const optedIn =
+			e.target instanceof Element && e.target.closest('[draggable="true"]');
+		if (isMobile && !optedIn) e.preventDefault();
+	}}
+/>
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>

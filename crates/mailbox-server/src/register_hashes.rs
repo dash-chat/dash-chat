@@ -94,11 +94,23 @@ pub async fn register_hashes(
 /// push bytes here immediately on publish so recipients get them without waiting
 /// for the mailbox to dial back and fetch. It is best-effort from the client's
 /// side: `/blobs/register-hashes` remains the source of truth, so a failed upload simply
-/// falls back to a fetch. The 64MB `DefaultBodyLimit` caps a single upload.
+/// falls back to a fetch. Uploads past the 16 MiB blob cap are rejected — the
+/// same limit the fetch and iroh-push paths enforce.
 pub async fn upload_blob(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<Json<UploadBlobResponse>, (StatusCode, String)> {
+    // An oversized blob is undeliverable receiver-side (`download_capped`
+    // refuses it), so retaining it would only serve an abusive sender.
+    if body.len() as u64 > dashchat_utils::blob_sync::MAX_BLOB_BYTES {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!(
+                "blob exceeds the {} byte cap",
+                dashchat_utils::blob_sync::MAX_BLOB_BYTES
+            ),
+        ));
+    }
     let hash = state
         .blob_sync
         .store_pushed_blob(body)
@@ -233,5 +245,23 @@ mod tests {
 
         assert_eq!(stored, iroh_blobs::Hash::new(&data));
         assert!(blob_sync.blobs.has(stored).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn upload_at_the_blob_cap_is_stored() {
+        let (server, _tmp) = crate::test_utils::create_test_server().await;
+        let body = vec![7u8; dashchat_utils::blob_sync::MAX_BLOB_BYTES as usize];
+        let expected = iroh_blobs::Hash::new(&body);
+        let response = server.post("/blobs/upload").bytes(body.into()).await;
+        response.assert_status_ok();
+        assert_eq!(response.json::<UploadBlobResponse>().hash, expected);
+    }
+
+    #[tokio::test]
+    async fn upload_over_the_blob_cap_is_rejected() {
+        let (server, _tmp) = crate::test_utils::create_test_server().await;
+        let body = vec![7u8; dashchat_utils::blob_sync::MAX_BLOB_BYTES as usize + 1];
+        let response = server.post("/blobs/upload").bytes(body.into()).await;
+        response.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

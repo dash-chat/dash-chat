@@ -7,7 +7,7 @@
  * records its API port so spec workers can reach it through the
  * `toxiproxy-node-client` library.
  */
-import { type ChildProcess, execSync, spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import {
 	closeSync,
 	mkdirSync,
@@ -18,6 +18,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+	type Bandwidth,
 	type Latency,
 	type Proxy,
 	type Timeout,
@@ -26,6 +27,7 @@ import {
 
 import { startAgentLogger } from './agent-logger';
 import { allocateFreePort } from './allocate-port';
+import { isOnPath } from './host-process';
 import { waitForPortListening } from './wait-for-port';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,12 +38,23 @@ const INFO_PATH = path.join(ROOT, '.dbs', 'e2e', 'toxiproxy-info.json');
 const SLOW_LATENCY_MS = 500;
 const SLOW_JITTER_MS = 250;
 
+/** Per-direction conditions of a degraded network, as toxiproxy can impose
+ *  them on the bytes of a connection. */
+export interface LinkConditions {
+	latencyMs: number;
+	/** Uniform, ± around `latencyMs`, drawn per chunk. */
+	jitterMs: number;
+	rateKBps: number;
+	/** The share of connections that lose a packet on the way and stall by what
+	 *  its retransmission costs. Toxiproxy can only slow a whole connection, so
+	 *  every later request on a stalled one pays it too. */
+	stall: { share: number; extraMs: number };
+}
+
 /** Every run's mailbox goes through the proxy, so a missing binary has to
  *  fail here, by name, rather than as a port that never listens. */
 function assertToxiproxyAvailable(): void {
-	try {
-		execSync('command -v toxiproxy-server', { stdio: 'ignore' });
-	} catch {
+	if (!isOnPath('toxiproxy-server')) {
 		throw new Error(
 			'toxiproxy-server not found — every e2e run degrades the cloud mailbox ' +
 				'through it. Run inside the nix dev shell, or install the ' +
@@ -138,6 +151,43 @@ export class Link {
 				attributes,
 			});
 		}
+	}
+
+	/** Every connection from now on crosses a network with these conditions,
+	 *  from its TLS handshake on. Connections opened before are dropped, so
+	 *  none keeps riding the healthy link. The toxics go on while the proxy is
+	 *  disabled: adding one while connections are being opened panics
+	 *  toxiproxy 2.12 (index out of range in `ToxicLink.AddToxic`). */
+	async shape(conditions: LinkConditions): Promise<void> {
+		const proxy = await this.enable(await this.healed(), false);
+		for (const stream of ['upstream', 'downstream'] as const) {
+			await proxy.addToxic<Latency>({
+				name: `latency_${stream}`,
+				type: 'latency',
+				stream,
+				toxicity: 1,
+				attributes: {
+					latency: conditions.latencyMs,
+					jitter: conditions.jitterMs,
+				},
+			});
+			await proxy.addToxic<Bandwidth>({
+				name: `bandwidth_${stream}`,
+				type: 'bandwidth',
+				stream,
+				toxicity: 1,
+				attributes: { rate: conditions.rateKBps },
+			});
+		}
+		// Rolled once per connection, so only the stalled share pays it.
+		await proxy.addToxic<Latency>({
+			name: 'stall_upstream',
+			type: 'latency',
+			stream: 'upstream',
+			toxicity: conditions.stall.share,
+			attributes: { latency: conditions.stall.extraMs, jitter: 0 },
+		});
+		await this.enable(proxy, true);
 	}
 
 	/** Connections open but nothing ever reaches the server, so every request

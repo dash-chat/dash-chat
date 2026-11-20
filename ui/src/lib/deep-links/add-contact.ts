@@ -77,6 +77,6 @@ export async function addContactFromCode(
 export function handle(
 	{ code }: Record<string, string>,
 	contactsStore: ContactsStore,
-) {
-	void addContactFromCode(contactsStore, code);
+): Promise<void> {
+	return addContactFromCode(contactsStore, code);
 }

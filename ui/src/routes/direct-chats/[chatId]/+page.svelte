@@ -2,7 +2,11 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
 
-	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
+	import {
+		useReactivePromise,
+		useReactivePromises,
+		useReactiveValue,
+	} from '$lib/stores/use-signal';
 	import { getContext, setContext, onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -51,24 +55,28 @@
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import { navbarSticky } from '$lib/actions/navbar-sticky';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import { isMobile } from '$lib/utils/environment';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import AvatarWithName from '$lib/components/profiles/AvatarWithName.svelte';
+	import PeerActiveOverP2p from '$lib/components/connection/PeerActiveOverP2p.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import ReportMessage from '$lib/components/messages/ReportMessage.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
 	import {
 		endsDeliveryStatusRun,
+		groupedEvents,
 		messagePosition,
 		scrollToMessage,
 		withoutMessages,
 	} from '$lib/components/messages/message-helpers';
 	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
 	import { useDeviceId } from '$lib/stores/my-device-id';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
+	import AwaitingAcceptanceBar from '$lib/components/direct-chats/bottom-bar/AwaitingAcceptanceBar.svelte';
 	import RequestMessagesDisclosure from '$lib/components/direct-chats/RequestMessagesDisclosure.svelte';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	let chatId = page.params.chatId!;
@@ -90,7 +98,12 @@
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const peerName = useReactivePromise(store.peerName);
 	const contactRequest = useReactivePromise(store.contactRequest);
-	const messageGroups = useReactivePromise(store.groupedEvents);
+	// TODO: pre-accept: remove with the AwaitingAcceptanceBar.
+	const pendingOutgoingRequest = useReactiveValue(store.pendingOutgoingRequest);
+	const messageListData = useReactivePromises(() => [
+		store.groupedEvents(),
+		store.messages.readOnly(),
+	]);
 	const readMessageHashes = useReactivePromise(
 		store.messages.readMessageHashes,
 	);
@@ -272,7 +285,7 @@
 
 <div
 	bind:this={parentDivEl}
-	class="absolute inset-0"
+	class="chat-page absolute inset-0"
 	data-testid="direct-chat-page"
 >
 	{#await $myDeviceId then myDeviceId}
@@ -287,6 +300,7 @@
 						{#if searchMode}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 w-full min-w-0"
 								leftClass="shrink-0"
 								centerTitle={false}
@@ -312,8 +326,11 @@
 						{:else}
 							<Navbar
 								transparent={true}
+								bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 								titleClass="opacity1 min-w-0 flex-1"
-								leftClass="shrink-0"
+								leftClass={theme === 'ios' && !isWideScreen.value
+									? 'shrink-0 me-4'
+									: 'shrink-0'}
 								centerTitle={false}
 							>
 								{#snippet left()}
@@ -326,7 +343,7 @@
 								{/snippet}
 								{#snippet title()}
 									<Link
-										class="flex w-full min-w-0 items-center justify-start"
+										class="flex w-full min-w-0 items-center justify-start ps-0"
 										href={`/direct-chats/${chatId}/chat-settings`}
 										data-testid="direct-chat-settings-link"
 									>
@@ -336,15 +353,19 @@
 													{profile}
 													blocked={isBlocked}
 													nameTestId="direct-chat-peer-name"
-												/>
+												>
+													{#snippet subtitle()}
+														<PeerActiveOverP2p {chatId} />
+													{/snippet}
+												</AvatarWithName>
 											{/await}
 										{:else}
 											{#await $peerName then peerName}
 												<span
-													class="flex w-full min-w-0 flex-row items-center gap-2"
+													class="flex w-full min-w-0 flex-row items-center gap-4"
 												>
 													<span class="shrink-0">
-														<Avatar waitingForProfile size="2.5rem" />
+														<PeerAvatar size="2.25rem" />
 													</span>
 													<span
 														class="flex-1 min-w-0 truncate {peerName
@@ -359,16 +380,12 @@
 										{/if}
 									</Link>
 								{/snippet}
-
-								<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-									<ConnectionStatusIndicator />
-								</div>
 							</Navbar>
 						{/if}
 					{/snippet}
 
 					{#await $readMessageHashes then readHashes}
-						{#await $messageGroups then messageGroupsInDays}
+						{#await $messageListData then [messageGroupsInDays, readOnly]}
 							{@const unreadDivider = unreadDividerTracker.compute(
 								messageGroupsInDays,
 								readHashes,
@@ -407,9 +424,8 @@
 													}}
 													onclick={() => (showPeerProfile = true)}
 												>
-													<Avatar
-														image={profile.avatar}
-														initials={profile.name.slice(0, 2)}
+													<PeerAvatar
+														{profile}
 														size={80}
 														testId="direct-chat-peer-avatar"
 													/>
@@ -426,8 +442,7 @@
 												</Link>
 											{:else}
 												<div class="column gap-2 items-center">
-													<Avatar
-														waitingForProfile
+													<PeerAvatar
 														size={80}
 														testId="direct-chat-peer-avatar"
 													/>
@@ -492,21 +507,27 @@
 								{/if}
 
 								<div
-									class="column m-2 gap-1"
+									class="swipe-clip-boundary column my-2 gap-1 px-4"
 									data-testid="direct-chat-messages"
 								>
 									{#each visibleGroupsInDays as messageGroupsInDay (messageGroupsInDay.day.valueOf())}
-										<div use:navbarSticky class="self-center z-10">
+										<div use:navbarSticky class="self-center z-[15]">
 											<DayTag class="quiet" day={messageGroupsInDay.day} />
 										</div>
 
-										{#each messageGroupsInDay.eventsGroups as messageGroup (messageGroup[0][0])}
-											<div
-												class="column"
-												style="gap: 1px"
-												data-testid="message-group"
-											>
-												{#each messageGroup as [hash, item], i (hash)}
+										<div class="column">
+											{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
+												<div
+													class="column"
+													class:pt-[1.5px]={i > 0 && isMobile}
+													class:pt-px={i > 0 && !isMobile}
+													class:pt-3={i === 0 &&
+														messageGroup !== messageGroupsInDay.eventsGroups[0]}
+													class:pb-[3px]={i === messageGroup.length - 1 &&
+														item.kind === 'message' &&
+														item.message.author !== myDeviceId}
+													data-message-group={messageGroup[0][0]}
+												>
 													{#if unreadDivider.hash === hash}
 														<div
 															class="unread-divider"
@@ -537,7 +558,7 @@
 																	{message}
 																	{position}
 																	{myDeviceId}
-																	{chatId}
+																	{readOnly}
 																	showDeliveryStatus={endsDeliveryStatusRun(
 																		messageGroup,
 																		i,
@@ -569,7 +590,7 @@
 																	{message}
 																	{position}
 																	{myDeviceId}
-																	{chatId}
+																	{readOnly}
 																	searchQuery={searchMode ? searchQuery : ''}
 																	sender={profile}
 																	onReply={() =>
@@ -586,13 +607,17 @@
 															</div>
 														{/if}
 													{/if}
-												{/each}
-											</div>
-										{/each}
+												</div>
+											{/each}
+										</div>
 									{/each}
 								</div>
 							</div>
+						{:catch error}
+							<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 						{/await}
+					{:catch error}
+						<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 					{/await}
 				</ReverseScrollPage>
 
@@ -675,20 +700,31 @@
 					{/await}
 				{/if}
 
-				<div class="absolute bottom-0 inset-x-0 z-30 bg-page-surface">
+				<div
+					class="chat-bottom-bar absolute bottom-0 inset-x-0 z-30"
+					class:bg-page-surface={theme === 'material'}
+				>
 					<div bind:clientHeight={bottomBarHeight}>
 						{#await $blocked then isBlocked}
 							{@const showComposer =
-								!searchMode && !isBlocked && !contactRequest}
+								!searchMode &&
+								!isBlocked &&
+								!contactRequest &&
+								!$pendingOutgoingRequest}
 							{#if showComposer}
-								<MessageComposer
-									bind:this={composer}
-									store={store.messages}
-									destinationName={profile ? fullName(profile) : undefined}
-									onSent={onMessageSent}
-								/>
+								<div class={theme === 'ios' ? 'pb-safe' : ''}>
+									<MessageComposer
+										bind:this={composer}
+										store={store.messages}
+										destinationName={profile ? fullName(profile) : undefined}
+										onSent={onMessageSent}
+									/>
+								</div>
 							{:else}
-								<div use:renderAboveKeyboard>
+								<div
+									use:renderAboveKeyboard
+									class={theme === 'ios' ? 'bg-page-surface pb-safe' : ''}
+								>
 									<div class="mx-4">
 										<Divider />
 									</div>
@@ -712,6 +748,10 @@
 											onBlock={() => (showBlockDialog = true)}
 											onReport={() => (showReportDialog = true)}
 											onAccept={() => (showAcceptDialog = true)}
+										/>
+									{:else if $pendingOutgoingRequest}
+										<AwaitingAcceptanceBar
+											name={$pendingOutgoingRequest.profileName}
 										/>
 									{/if}
 								</div>

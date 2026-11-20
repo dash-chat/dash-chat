@@ -1,13 +1,7 @@
-import {
-	type Equals,
-	type ReactiveFn,
-	ReactivePromise,
-	reactive,
-	watcher,
-} from 'signalium';
+import { type ReactiveFn, ReactivePromise, reactive, watcher } from 'signalium';
 import { type Readable } from 'svelte/store';
 
-import { getKeepAliveScope } from './keep-alive-scope.svelte';
+import { getKeepAliveScope, trackRpVersion } from './keep-alive-scope.svelte';
 
 export function useSignal<T, Args extends unknown[]>(
 	v: ReactiveFn<T, Args>,
@@ -98,40 +92,49 @@ export function useReactivePromise<
 	RP extends ReactivePromise<unknown>,
 	Args extends unknown[],
 >(v: (...args: Args) => RP, ...args: Args): Readable<Awaitable<Awaited<RP>>> {
-	type T = Awaited<RP>;
 	// Register with the nearest KeepAliveScope (if any) so the signalium cache
 	// for this (fn, args) is kept alive for the lifetime of the surrounding
 	// route group — not just this consumer's subscription.
 	getKeepAliveScope()?.keepAlive(v, args);
 
+	return storeFromSnapshots<Awaited<RP>>(() => {
+		const rp = v(...args);
+		// Track the RP's _version signal so the watcher is dirtied on every
+		// RP state transition. Async reactives reuse the same RP across
+		// re-runs (via _setPromise) without incrementing the signal's
+		// updatedCount, so the signal-level edge check sees no change.
+		// _version is bumped on every _setFlags call (pending, resolved,
+		// new value), which propagates dirty-ness through signalium's
+		// normal dependency graph.
+		trackRpVersion(rp);
+		return {
+			isReady: rp.isReady,
+			isRejected: rp.isRejected,
+			value: rp.value as Awaited<RP> | undefined,
+			error: rp.error,
+		};
+	});
+}
+
+interface AsyncSnapshot<T> {
+	isReady: boolean;
+	isRejected: boolean;
+	value: T | undefined;
+	error: unknown;
+}
+
+function storeFromSnapshots<T>(
+	readSnapshot: () => AsyncSnapshot<T>,
+): Readable<Awaitable<T>> {
 	const origin = callSite();
 
-	const w = watcher(
-		() => {
-			const rp = v(...args);
-			// Track the RP's _version signal so the watcher is dirtied on every
-			// RP state transition. Async reactives reuse the same RP across
-			// re-runs (via _setPromise) without incrementing the signal's
-			// updatedCount, so the signal-level edge check sees no change.
-			// _version is bumped on every _setFlags call (pending, resolved,
-			// new value), which propagates dirty-ness through signalium's
-			// normal dependency graph.
-			(rp as unknown as { _version: { value: unknown } })._version.value;
-			return {
-				isReady: rp.isReady,
-				isRejected: rp.isRejected,
-				value: rp.value,
-				error: rp.error,
-			};
-		},
-		{
-			equals: (prev, next) =>
-				prev.isReady === next.isReady &&
-				prev.isRejected === next.isRejected &&
-				Object.is(prev.value, next.value) &&
-				Object.is(prev.error, next.error),
-		},
-	);
+	const w = watcher(readSnapshot, {
+		equals: (prev, next) =>
+			prev.isReady === next.isReady &&
+			prev.isRejected === next.isRejected &&
+			Object.is(prev.value, next.value) &&
+			Object.is(prev.error, next.error),
+	});
 
 	return {
 		subscribe: set => {
@@ -213,14 +216,51 @@ export function useReactivePromises<
 >(sources: () => T): Readable<Awaitable<AwaitedValues<T>>> {
 	type Values = AwaitedValues<T>;
 
+	// Awaiting the sources is what connects them, so this holds relays open too.
+	getKeepAliveScope()?.keepAlive(
+		reactive(async () => await ReactivePromise.all(sources())),
+		[],
+	);
+
 	const sameValues = (a: readonly unknown[], b: readonly unknown[]) =>
 		a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 
-	// signalium runs an async reactive's `equals` against the resolved value but
-	// types it against the promise.
-	const equals = sameValues as unknown as Equals<Promise<Values>>;
+	let lastValues: Values | undefined;
 
-	return useReactivePromise(
-		reactive(async () => await ReactivePromise.all(sources()), { equals }),
-	);
+	return storeFromSnapshots<Values>(() => {
+		const rps = sources();
+		rps.forEach(trackRpVersion);
+
+		const rejected = rps.find(rp => rp.isRejected && !rp.isPending);
+		if (rejected !== undefined) {
+			return {
+				isReady: false,
+				isRejected: true,
+				value: undefined,
+				error: rejected.error,
+			};
+		}
+
+		// A refreshing source holds the whole tuple back, so callers never see
+		// values from two different moments.
+		if (!rps.every(rp => rp.isReady && !rp.isPending)) {
+			return {
+				isReady: false,
+				isRejected: false,
+				value: undefined,
+				error: undefined,
+			};
+		}
+
+		const values = rps.map(rp => rp.value) as Values;
+		if (lastValues === undefined || !sameValues(lastValues, values)) {
+			lastValues = values;
+		}
+		return {
+			isReady: true,
+			isRejected: false,
+			value: lastValues,
+			error: undefined,
+		};
+	});
 }

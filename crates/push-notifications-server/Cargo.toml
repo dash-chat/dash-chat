@@ -8,6 +8,7 @@ name = "push-notifications-server"
 path = "src/main.rs"
 
 [dependencies]
+panic-policy = { workspace = true }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 async-trait = "0.1.89"

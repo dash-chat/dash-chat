@@ -19,7 +19,7 @@
 	rounded
 	inline
 	onClick={onclick}
-	class="!h-9 !w-9 shrink-0 !p-0 !text-inherit"
+	class="!h-11 !w-11 shrink-0 !p-0 !text-inherit"
 	style="background: color-mix(in srgb, currentColor 15%, transparent)"
 	data-testid="voice-play-button"
 	aria-label={paused ? m.voicePlay() : m.voicePause()}

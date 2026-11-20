@@ -1,38 +1,32 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { type ContactsStore } from 'dash-chat-stores';
-	import { getContext } from 'svelte';
-	import { useReactivePromise } from '$lib/stores/use-signal';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiSquareEditOutline } from '@mdi/js';
 	import AllChats from '$lib/components/chats/AllChats.svelte';
+	import AddContactNavbarButton from '$lib/components/contacts/AddContactNavbarButton.svelte';
+	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
 	import UpdaterBanner from '$lib/components/UpdaterBanner.svelte';
 
 	import { Link, Navbar, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pushState } from '$app/navigation';
-	import Avatar from '../profiles/Avatar.svelte';
 
-	const contactsStore: ContactsStore = getContext('contacts-store');
-	const myProfile = useReactivePromise(contactsStore.myProfile);
 	const theme = $derived(useTheme());
 </script>
 
 <div class="flex flex-col relative h-full">
-	<Navbar title={m.chats()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.chats()}
+		titleClass="opacity1 min-w-0 truncate"
+		transparent={true}
+	>
 		{#snippet left()}
-			{#await $myProfile then myProfile}
-				<Link iconOnly href="/settings" data-testid="home-settings-link">
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
-						size={42}
-					/>
-				</Link>
-			{/await}
+			<div class="grid size-11 place-items-center">
+				<ConnectionStatusIndicator />
+			</div>
 		{/snippet}
-
 		{#snippet right()}
+			<AddContactNavbarButton />
 			<Link
 				iconOnly
 				onClick={() => {

@@ -8,7 +8,7 @@ import { TestHelper } from '../../test-helper';
 
 export class EditPhotoPage extends TestHelper {
 	back = this.el(tid('edit-photo-back'));
-	avatar = new Avatar(this.agent, 'avatar-preview');
+	avatar = new Avatar(this.agent, tid('avatar-preview'));
 	close = this.el(tid('edit-photo-close'));
 	saveButton = this.el(tid('edit-photo-save-btn'));
 	cameraButton = this.el(tid('edit-photo-camera'));
@@ -30,5 +30,15 @@ export class EditPhotoPage extends TestHelper {
 	/** Pick `photo` with the gallery action, reporting what it asked the OS for. */
 	pickPhoto(photo: TestFileSpec): Promise<FilePickerRequest> {
 		return this.answerFilePicker(this.galleryButton, [photo]);
+	}
+
+	/** Give the avatar `photo` through whichever source this platform offers:
+	 * the camera on mobile, since the gallery there opens the OS picker that no
+	 * driver can answer, and the gallery on desktop, which has no camera action.
+	 * For tests that need an avatar rather than a particular way of choosing one. */
+	async setPhoto(photo: TestFileSpec): Promise<FilePickerRequest> {
+		return (await this.isMobileBuild())
+			? this.takePhoto(photo)
+			: this.pickPhoto(photo);
 	}
 }

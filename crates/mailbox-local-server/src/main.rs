@@ -11,9 +11,10 @@ struct Args {
     #[arg(short, long, default_value = "mailbox.redb")]
     db_path: PathBuf,
 
-    /// Port to listen on, on every interface.
-    #[arg(short, long, default_value_t = 3000)]
-    port: u16,
+    /// Port to listen on, on every interface. Without it, the port this hub
+    /// served on last is reused when still free, else any free port is taken.
+    #[arg(short, long)]
+    port: Option<u16>,
 
     /// P2P network id, as 64 hex characters (defaults to the production network)
     #[arg(long, value_parser = mailbox_server::parse_network_id)]
@@ -22,6 +23,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    panic_policy::install_panic_hook();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -45,7 +48,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Bound before anything is announced, so a port that cannot be served is
     // never advertised.
-    let listener = tokio::net::TcpListener::bind(format!("[::]:{}", args.port)).await?;
+    let listener = match args.port {
+        Some(port) => tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?,
+        None => {
+            let (listener, _) = mailbox_local_server::reserve_listener(&args.db_path)?;
+            listener.set_nonblocking(true)?;
+            tokio::net::TcpListener::from_std(listener)?
+        }
+    };
     let port = listener.local_addr()?.port();
     let announcement = std::sync::Arc::new(mailbox_local_server::spawn_local_hub_announcement(
         endpoint_id,
@@ -72,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         None,
         None,
         args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
+        None,
         signal,
     )
     .await;

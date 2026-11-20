@@ -7,8 +7,8 @@
  * is the entire scenario. On a device whose OS lets a backgrounded app keep
  * polling, nothing fails and this passes on any build — that is the intended
  * outcome, not a gap. On a device that denies a backgrounded app the network,
- * the polls fail for real, and the chip must still not be on screen when the
- * user returns.
+ * the polls fail for real, and the chip must still not read disconnected when
+ * the user returns.
  *
  * The chip's own reporting — flipping to "disconnected" when the mailbox is
  * genuinely unreachable, and back — is covered by `offline-transition-ux`.
@@ -17,7 +17,6 @@ import {
 	formatStatusTrace,
 	samplesOnResume,
 } from '../helpers/components/connection-status-indicator';
-import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 /** How long the app stays backgrounded. Android cuts a backgrounded app's
@@ -28,10 +27,8 @@ import { type Agent, setupAgents } from '../setup/setup-agents';
 const BACKGROUND_MS = 20_000;
 
 /** How long the connection must hold up in the foreground before the app is
- *  sent away. The gate can only see instability once it is bad enough to render
- *  the chip, which takes three consecutive failures — about 15s on the flakiest
- *  link measured — so it cannot go much below this without missing exactly the
- *  case it exists to catch. */
+ *  sent away. A single failed poll already shows as pending, but a link that
+ *  flaps rarely needs this long to drop one. */
 const FOREGROUND_HEALTHY_MS = 20_000;
 
 // wdio arms its per-test abort timer from the mocha timeout at invocation
@@ -53,21 +50,22 @@ describe('Connection status after resuming from the background', function () {
 		// users have: it is the foreground service that keeps the process alive,
 		// and enabling it is precisely what stops Android reclaiming the app —
 		// the thing this spec is about.
-
-		// A members-less group chat is the cheapest way to a page where
-		// ConnectionStatusIndicator is mounted.
-		await createGroup(agent, 'Solo Group', []);
+		await agent.homePage.ready();
 	});
 
 	it('does not show the disconnected chip on returning from a long background', async () => {
-		const indicator = agent.groupChatPage.connectionStatusIndicator;
+		const indicator = agent.homePage.connectionStatusIndicator;
 
 		// Let startup settle: the cloud mailbox is registered after a `/health`
-		// round trip, so the chip can legitimately be up for a moment first.
-		// `!== 'disconnected'` rather than `=== 'connected'`: a local mailbox on
-		// the network shows the "local" chip, which is not the poop.
+		// round trip and a first poll, so the chip can legitimately read pending
+		// or disconnected for a moment first.
+		// 'local' too: a local mailbox on the network stands in for an
+		// unreachable cloud, which is not the poop.
 		await agent.waitUntil(
-			async () => (await indicator.status()) !== 'disconnected',
+			async () => {
+				const status = await indicator.status();
+				return status === 'cloud' || status === 'local';
+			},
 			{ timeout: 90_000, interval: 1_000 },
 		);
 
@@ -79,7 +77,14 @@ describe('Connection status after resuming from the background', function () {
 		const foregroundToken = await indicator.startRecordingStatus();
 		await agent.pause(FOREGROUND_HEALTHY_MS);
 		const foreground = await indicator.recordedStatuses(foregroundToken);
-		if (foreground.some(sample => sample.status === 'disconnected')) {
+		if (
+			foreground.some(
+				sample =>
+					sample.status === 'disconnected' ||
+					sample.status === 'pending' ||
+					sample.status === null,
+			)
+		) {
 			throw new Error(
 				`the connection is not stable while the app is in the foreground, so this run ` +
 					`cannot tell an inherited verdict from a freshly earned one ` +
@@ -92,16 +97,12 @@ describe('Connection status after resuming from the background', function () {
 		await agent.backgroundApp();
 		await agent.pause(BACKGROUND_MS);
 		await agent.startApp();
-		await agent.groupChatPage.ready();
+		await agent.homePage.ready();
 
 		// `recordedStatuses` throws if the recording did not survive — the webview
 		// is then a new one, meaning Android reclaimed the app, and what was on
 		// screen in between was never observed. That is inconclusive, not a pass.
-		const onScreen = samplesOnResume(
-			await agent.groupChatPage.connectionStatusIndicator.recordedStatuses(
-				token,
-			),
-		);
+		const onScreen = samplesOnResume(await indicator.recordedStatuses(token));
 		if (onScreen === null) {
 			throw new Error(
 				'the page never reported becoming visible, so what the user saw on resume is unknown',

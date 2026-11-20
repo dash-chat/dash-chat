@@ -1,7 +1,10 @@
-import { createProfilesAndExchangeContacts } from '../helpers/flows/exchange-contacts';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
-describe('Deleting messages', () => {
+// Message deletion is disabled until p2panda moves encrypted payloads into the
+// operation body: a delete drops only the body.
+describe.skip('Deleting messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 
@@ -10,7 +13,8 @@ describe('Deleting messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await createProfilesAndExchangeContacts({ Alice: agent1, Bob: agent2 });
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('deletes a message for everyone, showing a placeholder on both sides', async () => {

@@ -17,16 +17,16 @@ import {
 	mailboxServing,
 	mailboxWakesPhones,
 } from '../../setup/mailbox-control';
+import { convergeNetworks } from '../../setup/phone-lan';
 import type { Agent } from '../../setup/setup-agents';
 import type { WifiNetwork } from '../../setup/test-env';
 import type { RenderedMessage } from '../components/messages';
-import { contactLinkOf } from '../flows/exchange-contacts';
-import { createGroup } from '../flows/exchange-contacts-and-create-group';
+import { createProfiles } from '../flows/create-profiles';
+import { contactLinkOf, exchangeContacts } from '../flows/exchange-contacts';
 import {
 	type Real,
 	type StressAgent,
 	ensureHome,
-	labNetworks,
 	log,
 	newReal,
 	openChatByTitle,
@@ -45,6 +45,15 @@ import { type Move, type Moves, steps } from './moves/move';
 export type { Move, Moves } from './moves/move';
 
 type Sequence = Iterable<fc.AsyncCommand<ExpectedModel, Real>>;
+
+/** The world a run starts from unless its spec asks for another: a profile
+ *  each, and every pair of them contacts. */
+async function profilesAndContacts(
+	agents: Record<string, Agent>,
+): Promise<void> {
+	await createProfiles(agents);
+	await exchangeContacts(Object.values(agents));
+}
 
 /** A fuzz test runs as long as its moves take: `prepare` lifts the mocha
  *  timeout of every test in its suite to this. It has to happen before a
@@ -86,28 +95,31 @@ interface RunParams {
 
 export class Fuzzer {
 	private constructor(
-		private readonly model: ExpectedModel,
+		private model: ExpectedModel,
 		private readonly real: Real,
+		private readonly agents: Record<string, Agent>,
+		private readonly setUp: (agents: Record<string, Agent>) => Promise<void>,
 	) {}
 
 	/**
-	 * A fuzzer over `agents` — the ones a spec has already set up and given
-	 * profiles, by name, as `createProfiles` takes them — driven to where
-	 * moves expect them: preview features on, each
-	 * one's contact link collected, and — given networks to walk phones and
-	 * hubs through, and a Wi-Fi card on the host for the hubs, or the `cloud`
-	 * mailbox's link to degrade — a members-less group chat each, to read the
-	 * connection chip in. It makes no contacts and seeds nothing: it reads
-	 * whatever the agents already have — who they are contacts of, the groups
-	 * they are in, the messages in each chat — and starts the model from
-	 * that, so a spec can exchange contacts itself beforehand, or hand over
-	 * agents another run left behind, and a run's own `addContact` moves are
-	 * checked like any other move. The network the phones are on to begin with is
-	 * the run's home network: phones may walk onto it, and the hubs are on it
-	 * whenever the card is. Preparation is not repeatable, so a spec prepares
-	 * once, from its `before` hook — whose context `ctx` is, so that the
-	 * suite's tests can be freed of their timeout before any of them starts —
-	 * and runs as often as it likes.
+	 * A fuzzer over `agents`, by the name each goes by. It builds the world
+	 * itself — a profile each, then whatever `setUp` adds — and drives them to
+	 * where moves expect them: preview features on and each one's contact link
+	 * collected. The model is then read back off the devices — who they are contacts
+	 * of, the groups they are in, the messages in each chat — so a `setUp` is
+	 * described once, in the app's own terms, and never also in the model.
+	 * Leave `setUp` out and the agents start as strangers, which is what lets a
+	 * run's own `addContact` moves be checked like any other move.
+	 *
+	 * Building the world is the fuzzer's because `search` does it again for
+	 * every sequence: only a world that can be rebuilt can be shrunk against.
+	 *
+	 * The host's own network is the run's home one: phones may walk back onto
+	 * it, and the hubs are on it whenever the card is. It is never one of the
+	 * test networks.
+	 * A spec prepares once, from its `before` hook — whose context `ctx` is,
+	 * so that the suite's tests can be freed of their timeout before any of
+	 * them starts — and runs as often as it likes.
 	 */
 	static async prepare(
 		ctx: Mocha.Context,
@@ -117,6 +129,10 @@ export class Fuzzer {
 			 *  chat row, a notification and a move report name its agent. */
 			agents: Record<string, Agent>;
 			networks?: WifiNetwork[];
+			/** What a spec wants on the agents beyond a profile each — contacts
+			 *  exchanged, chats seeded. Run on every rebuild, so a sequence
+			 *  always starts from the same world. */
+			setUp?: (agents: Record<string, Agent>) => Promise<void>;
 		},
 	): Promise<Fuzzer> {
 		const suite = ctx.test?.parent;
@@ -144,24 +160,95 @@ export class Fuzzer {
 					'networks are configured but the host has no Wi-Fi card',
 				);
 			}
-			await restoreNetworks(real);
 			assertInRange(
 				real.hubsDevice,
-				labNetworks(real).map(n => n.ssid),
+				real.networks.map(n => n.ssid),
 			);
 		}
-		for (const sa of real.agents) {
+		return new Fuzzer(
+			newModel(real),
+			real,
+			init.agents,
+			init.setUp ?? profilesAndContacts,
+		);
+	}
+
+	/** Whether a world stands: `prepare` leaves none, since `search` would
+	 *  wipe it before its first sequence anyway. */
+	private built = false;
+
+	/** Make the world a sequence starts from, on apps that have just been
+	 *  installed: profiles, then whatever `setUp` adds, then the model read
+	 *  back off the devices. [`rebuild`] calls this again for every sequence,
+	 *  which is what a search's shrinking rests on. */
+	private async build(): Promise<void> {
+		this.built = true;
+		await this.setUp(this.agents);
+		for (const sa of this.real.agents) {
 			sa.notificationTexts = await readNotificationTexts(sa);
 		}
-		const model = newModel(real);
-		await prepareAgents(model, real);
-		await recordExistingState(model, real);
+		// A spec that took the mailbox down before preparing gets a model whose
+		// cloud is already unreachable, and a rebuild has to read it afresh.
+		this.real.cloudUsable = await mailboxServing();
+		this.model = newModel(this.real);
+		await prepareAgents(this.model, this.real);
+		await recordExistingState(this.model, this.real);
 		// The devices start where the model says they do — nothing showing,
 		// the clear above having taken. Asserting it here makes a clear that
 		// did not work say so, instead of surfacing as the first move being
 		// blamed for a notification an earlier run left behind.
-		await expectNotifications(model, real);
-		return new Fuzzer(model, real);
+		await expectNotifications(this.model, this.real);
+	}
+
+	/**
+	 * Put the world back to the install a sequence starts from: every app
+	 * wiped and built again from nothing.
+	 *
+	 * This is what lets a search shrink. fast-check drops a move and runs the
+	 * rest expecting the same start, so a sequence that began where the last
+	 * one ended would be changing the start state and the moves together —
+	 * and what came back was the smallest move that fails *there*, a
+	 * reproduction that reproduced nothing.
+	 */
+	private async rebuild(): Promise<ExpectedModel> {
+		if (mailboxDegradable()) await healMailboxLink();
+		// The sequence before this one left hubs running under names the fresh
+		// model no longer knows, and its phones off the air where [`build`]
+		// cannot exchange a contact with them. Both have to go back before
+		// anything is built on top.
+		await parkHubs(this.real);
+		if (this.real.networks.length > 0) await restoreNetworks(this.real);
+		await Promise.all(
+			this.real.agents.map(async sa => {
+				await sa.agent.stopApp();
+				await sa.agent.clearAppData();
+				await sa.agent.startApp();
+				// The wipe takes the persisted p2p setting with it, and a spec
+				// that turned it off meant it for every sequence, not the first.
+				if (!sa.agent.p2p) await sa.agent.disableP2p();
+			}),
+		);
+		await this.build();
+		await this.leaveNetworks();
+		return this.model;
+	}
+
+	/** Phones start a sequence off the air, as [`resetAgent`] leaves them, so
+	 *  the moves that join a network are the only thing that puts them on one. */
+	private async leaveNetworks(): Promise<void> {
+		if (!this.model.hasNetworks()) return;
+		for (const sa of this.real.agents) {
+			await sa.agent.disableWifi();
+			this.model.agentLeave(sa.name);
+		}
+	}
+
+	/** The world as it stands, with the cloud healthy and every app on screen:
+	 *  what a soak's one long sequence carries on from. */
+	private async settle(): Promise<ExpectedModel> {
+		if (!this.built) await this.build();
+		await resetSequence(this.model, this.real);
+		return this.model;
 	}
 
 	/**
@@ -182,6 +269,7 @@ export class Fuzzer {
 				numRuns: opts.attempts,
 				seed: opts.seed,
 			},
+			() => this.rebuild(),
 		);
 	}
 
@@ -194,12 +282,17 @@ export class Fuzzer {
 				maxLength: opts.length,
 			}),
 			{ numRuns: 1, seed: opts.seed, endOnFailure: true },
+			() => this.settle(),
 		);
 	}
 
 	/** Run a reported sequence exactly as the search that found it did. */
 	replay(moves: Move[]): Promise<void> {
-		return this.run(fc.constant(moves), { numRuns: 1, endOnFailure: true });
+		return this.run(
+			fc.constant(moves),
+			{ numRuns: 1, endOnFailure: true },
+			() => this.rebuild(),
+		);
 	}
 
 	/**
@@ -214,8 +307,9 @@ export class Fuzzer {
 	private async run(
 		sequences: fc.Arbitrary<Sequence>,
 		params: RunParams,
+		startSequence: () => Promise<ExpectedModel>,
 	): Promise<void> {
-		const { model, real } = this;
+		const { real } = this;
 		const seed = params.seed ?? Math.floor(Math.random() * 2 ** 31);
 		log(`seed ${seed}`);
 		let out: fc.RunDetails<[Sequence]>;
@@ -226,7 +320,7 @@ export class Fuzzer {
 					sequence++;
 					log(`sequence ${sequence}: ${[...moves].length} moves drawn`);
 					return fc.asyncModelRun(async () => {
-						await resetSequence(model, real);
+						const model = await startSequence();
 						return { model, real };
 					}, moves);
 				}),
@@ -251,67 +345,17 @@ export class Fuzzer {
 	}
 }
 
-/** Put a phone back on its usual network however a run left it: on the
- *  air, with every test network forgotten so the supplicant cannot pick one
- *  again. Throws if no saved network is in range. */
-async function restorePhone(
-	sa: StressAgent,
-	networks: WifiNetwork[],
-): Promise<void> {
-	await sa.agent.enableWifi();
-	for (const network of networks) await sa.agent.forgetWifi(network.ssid);
-}
-
-/** The network every phone is on to begin with is the run's home network:
- *  the listed entry of that name, or that name alone when it is not listed.
- *  Read before anything is left or forgotten, so the run cannot take the
- *  network everyone sits on for a lab one. */
-async function inferHomeNetwork(real: Real): Promise<void> {
-	const infos = await Promise.all(real.agents.map(sa => sa.agent.wifiInfo()));
-	const ssids = new Set(infos.map(info => info.ssid));
-	if (ssids.size !== 1) {
-		throw new Error(
-			`the phones are on different networks to begin with (${[...ssids].join(', ')}); put them on the host's network`,
-		);
-	}
-	const [ssid] = ssids;
-	if (ssid === '') {
-		console.log('[wifi] the phones are on no network; no home network');
-		return;
-	}
-	const listed = real.networks.find(n => n.ssid === ssid);
-	if (listed !== undefined) listed.home = true;
-	else real.networks.push({ ssid, passphrase: '', home: true });
-	console.log(`[wifi] home network: ${ssid}`);
-}
-
-/** The host's card and every phone back on their usual networks. */
-async function restoreNetworks(real: Real): Promise<void> {
-	// Per phone and independent, so every phone does it at once; only the
-	// host's own card has to be taken off the lab networks in turn.
-	await Promise.all(real.agents.map(sa => sa.agent.enableWifi()));
-	await inferHomeNetwork(real);
-	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
-	await Promise.all(real.agents.map(sa => restorePhone(sa, labNetworks(real))));
+/** The host's card and every phone back on the host's usual network — what
+ *  a sequence starts from. */
+function restoreNetworks(real: Real): Promise<void> {
+	return convergeNetworks(real.agents.map(sa => sa.agent));
 }
 
 /** Drive every agent to where moves expect it. Each drives its own session
  *  and reads nothing of another's, so they are prepared at once: with a
- *  handful of agents this is the difference between one wait and n of them.
- *  The group names are drawn before, and recorded after, so the shared model
- *  is only ever touched from here. */
+ *  handful of agents this is the difference between one wait and n of them. */
 async function prepareAgents(model: ExpectedModel, real: Real): Promise<void> {
-	const chipChats = new Map<StressAgent, string>();
-	if (model.watchesChip()) {
-		for (const sa of real.agents) chipChats.set(sa, model.nextGroupName());
-	}
-	await Promise.all(
-		real.agents.map(sa => prepareAgent(model, sa, chipChats.get(sa) ?? null)),
-	);
-	for (const [sa, chatName] of chipChats) {
-		model.setChipChat(sa.name, model.addGroup(sa.name, [], chatName));
-		model.wentHome(sa.name);
-	}
+	await Promise.all(real.agents.map(sa => prepareAgent(model, sa)));
 }
 
 /** What one agent's screen says it already has: the chats in its list, and
@@ -441,13 +485,11 @@ function describeFound(found: FoundState[]): string {
 		.join('; ');
 }
 
-/** One agent: preview features on, its device's notifications cleared, its
- *  add-contact link collected, and the members-less group a run that watches
- *  the connection chip reads it in. */
+/** One agent: preview features on, its device's notifications cleared, and
+ *  its add-contact link collected. */
 async function prepareAgent(
 	model: ExpectedModel,
 	sa: StressAgent,
-	chipChat: string | null,
 ): Promise<void> {
 	await sa.agent.enablePreviewFeatures();
 	// The device keeps what earlier runs posted across the session's app data
@@ -457,10 +499,6 @@ async function prepareAgent(
 	// `exchangeContacts` is their direct chat.
 	await ensureHome(sa, model);
 	sa.link = await contactLinkOf(sa.agent);
-	if (chipChat === null) return;
-	await createGroup(sa.agent, chipChat, []);
-	await sa.agent.groupChatPage.back.click();
-	await sa.agent.homePage.ready();
 }
 
 /** Park every hub and take the host's card off the test networks. */
@@ -478,16 +516,12 @@ async function teardown(real: Real): Promise<void> {
 	if (mailboxDegradable()) await healMailboxLink();
 	await parkHubs(real);
 	if (real.networks.length === 0) return;
-	for (const network of labNetworks(real)) await leaveWifi(network.ssid);
-	await Promise.all(
-		real.agents.map(async sa => {
-			try {
-				await restorePhone(sa, labNetworks(real));
-			} catch {
-				/* no saved network in range; nothing to restore */
-			}
-		}),
-	);
+	try {
+		await restoreNetworks(real);
+	} catch (err) {
+		/* a phone with no network of its own in range; it stays where it is */
+		console.log(`[wifi] ${String(err)}`);
+	}
 }
 
 /**
@@ -523,6 +557,9 @@ async function resetAgent(
 		model.foreground(sa.name);
 	}
 	if (!model.hasNetworks()) return;
+	// Nothing of the run's stays saved while the radio is off, so turning it
+	// back on can only land the phone on a network of its own.
+	await sa.agent.forgetWifi();
 	await sa.agent.disableWifi();
 	model.agentLeave(sa.name);
 }

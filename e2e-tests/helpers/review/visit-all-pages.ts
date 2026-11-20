@@ -58,16 +58,16 @@ export async function visitProfilePages(
 		await agent.execute(() =>
 			localStorage.removeItem('first-chat-tooltip-shown'),
 		);
-		await agent.homePage.settingsLink.click();
+		await agent.mainTabbar.settingsTab.click();
 		await agent.settingsPage.ready();
-		await agent.settingsPage.back.click();
+		await agent.mainTabbar.chatsTab.click();
 		await agent.homePage.firstChatTooltip.waitForExist();
 		pages.push(await runCheck(agent, 'home-with-tooltip', co));
 		await agent.homePage.firstChatTooltip.click();
 		await breathe();
 	}
 
-	await agent.homePage.settingsLink.click();
+	await agent.mainTabbar.settingsTab.click();
 	await agent.settingsPage.ready();
 	pages.push(await runCheck(agent, 'settings', co));
 	await breathe();
@@ -109,7 +109,7 @@ export async function visitProfilePages(
 		await agent.profilePage.back.click();
 		await agent.settingsPage.ready();
 	}
-	await agent.settingsPage.back.click();
+	await agent.mainTabbar.chatsTab.click();
 	await agent.homePage.ready();
 
 	return summarize(pages);
@@ -127,7 +127,7 @@ export async function visitOtherPages(
 	const pages: PageResult[] = [];
 
 	await agent.homePage.ready();
-	await agent.homePage.settingsLink.click();
+	await agent.mainTabbar.settingsTab.click();
 	await agent.settingsPage.ready();
 
 	// The offline settings page exists everywhere but iOS ({#if !isIos}).
@@ -190,7 +190,7 @@ export async function visitOtherPages(
 		await agent.settingsPage.ready();
 	}
 
-	await agent.settingsPage.back.click();
+	await agent.mainTabbar.chatsTab.click();
 	await agent.homePage.ready();
 	await breathe();
 

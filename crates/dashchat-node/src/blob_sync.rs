@@ -5,10 +5,9 @@ use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::provider::events::{
-    ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
+    AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
 };
-use mailbox_client::manager::Mailboxes;
-use p2panda::operation::{LogId, Operation};
+use mailboxes_manager::Mailboxes;
 use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
@@ -29,7 +28,7 @@ pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 use crate::{
     AsBody, ChatPayload, DeviceId, Payload, TopicId,
     mailbox::MailboxOperation,
-    stores::{LocalStore, OpStore},
+    stores::{OpStore, ReadOperation},
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
@@ -57,28 +56,39 @@ impl BlobSync {
         root: PathBuf,
         blob_fetch: BlobFetchPool,
         sources: MixedSourceLookup,
-        local_store: LocalStore,
+        unfetched_tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
+        local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     ) -> anyhow::Result<Self> {
         let store = iroh_blobs::store::fs::FsStore::load(root).await?;
 
         let mask = EventMask {
             connected: ConnectMode::Notify,
             get: RequestMode::NotifyLog,
+            // Every push waits on the event listener's authorization: accepted
+            // only while this node's endpoint hosts a local hub (the only
+            // legitimate target of a push), refused and logged otherwise. An
+            // always-open push port would let any peer that learns this node's
+            // EndpointId write unbounded, never-collected bytes into this
+            // store — no GC is configured for it.
+            push: RequestMode::Intercept,
             ..EventMask::DEFAULT
         };
         let (events, rx) = EventSender::channel(256, mask);
-        spawn_download_event_listener(rx, local_store);
+        let iroh_endpoint = endpoint.endpoint().await?;
+        spawn_download_event_listener(
+            rx,
+            unfetched_tracker,
+            iroh_endpoint.id(),
+            local_hub_registry,
+        );
 
         let blobs = iroh_blobs::BlobsProtocol::new(&store, Some(events));
         let mixed_alpn =
             p2panda_net::hash_protocol_id_with_network_id(iroh_blobs::ALPN, endpoint.network_id());
         endpoint.accept(iroh_blobs::ALPN, blobs.clone()).await?;
-        let downloader = Downloader::new_with_opts(
-            &store,
-            &endpoint.endpoint().await?,
-            &mixed_alpn,
-            Default::default(),
-        );
+        let downloader = Downloader::builder(&store, &iroh_endpoint)
+            .alpn(mixed_alpn.as_slice())
+            .build();
 
         Ok(Self {
             blobs,
@@ -269,12 +279,29 @@ impl BlobSync {
 /// row for that mailbox — the mailbox now has the blob.
 fn spawn_download_event_listener(
     mut rx: tokio::sync::mpsc::Receiver<ProviderMessage>,
-    local_store: LocalStore,
+    tracker: std::sync::Arc<dyn mailbox_client::UnfetchedBlobTracker>,
+    own_endpoint_id: iroh::EndpointId,
+    local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 ) {
     tokio::spawn(async move {
         let mut connections: HashMap<u64, iroh::EndpointId> = HashMap::new();
         while let Some(msg) = rx.recv().await {
             match msg {
+                ProviderMessage::PushRequestReceived(msg) => {
+                    let allowed = local_hub_registry.hosts(own_endpoint_id);
+                    if !allowed {
+                        tracing::info!(
+                            hash = %msg.inner.request.hash,
+                            "refusing blob push: this node is not hosting a local hub"
+                        );
+                    }
+                    let verdict = if allowed {
+                        Ok(())
+                    } else {
+                        Err(AbortReason::Permission)
+                    };
+                    msg.tx.send(verdict).await.ok();
+                }
                 ProviderMessage::ClientConnectedNotify(msg) => {
                     if let Some(id) = msg.inner.endpoint_id {
                         connections.insert(msg.inner.connection_id, id);
@@ -286,16 +313,14 @@ fn spawn_download_event_listener(
                 ProviderMessage::GetRequestReceivedNotify(msg) => {
                     let hash = msg.inner.request.hash;
                     let endpoint = connections.get(&msg.inner.connection_id).copied();
-                    let local_store = local_store.clone();
+                    let tracker = tracker.clone();
                     let mut updates = msg.rx;
                     tokio::spawn(async move {
                         while let Ok(Some(update)) = updates.recv().await {
                             if let RequestUpdate::Completed(_) = update {
                                 if let Some(endpoint) = endpoint {
                                     let mailbox_id = mailbox_server::encode_mailbox_id(endpoint);
-                                    if let Err(err) =
-                                        local_store.remove_unfetched_blob(&mailbox_id, hash).await
-                                    {
+                                    if let Err(err) = tracker.remove(&mailbox_id, &[hash]).await {
                                         tracing::error!(?err, %hash, "failed to clear unfetched blob after download");
                                     }
                                 }
@@ -409,15 +434,18 @@ impl BlobFetchPool {
     /// `TopicId`. `LogId = blake3(topic.as_bytes())` is one-way, so callers
     /// must supply this mapping from their own store. Returns `None` to skip
     /// an operation whose topic cannot be recovered.
+    ///
+    /// TODO: find a way to avoid re-streaming all operations on startup
     pub async fn from_ops(
-        ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
+        ops: impl Stream<Item = Result<ReadOperation, anyhow::Error>> + '_,
         topic_store: SqliteStore,
+        decrypt_index: &crate::blob_crypto::BlobDecryptIndex,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
         let mut s = store.stack.lock().await;
         tokio::pin!(ops);
         while let Some(op) = ops.try_next().await? {
-            let Some(body) = op.body else {
+            let Ok(Some(body)) = op.body else {
                 continue;
             };
             let Ok(payload) = Payload::try_from_body(&body) else {
@@ -440,6 +468,7 @@ impl BlobFetchPool {
                             );
                             continue;
                         };
+                        decrypt_index.insert_blobs(topic, media);
                         for item in media {
                             s.push((topic, item.hash()));
                         }
@@ -464,7 +493,7 @@ impl MixedSourceLookup {
     /// Return a list of providers for the blobs in a topic.
     /// Mailboxes come first, then peer subscribers.
     pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
-        let log_id = LogId::from_topic(topic);
+        let log_id = crate::topic::application_log_id(topic);
         let mut sources = vec![];
         sources.extend(self.mailboxes.get_sources(&topic).await?);
         sources.extend(

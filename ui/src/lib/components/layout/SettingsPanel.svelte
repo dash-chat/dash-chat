@@ -1,9 +1,12 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { fullName, type ContactsStore } from 'dash-chat-stores';
+	import {
+		fullName,
+		type ContactsStore,
+		type SettingsStore,
+	} from 'dash-chat-stores';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { useReactivePromise, useReactiveValue } from '$lib/stores/use-signal';
 	import {
 		mdiAccountCircleOutline,
 		mdiBellOutline,
@@ -15,32 +18,24 @@
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { m } from '$lib/paraglide/messages.js';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { showAddContactInContentPanel } from '$lib/utils/add-contact-content-panel';
 	import {
+		Link,
 		List,
 		ListItem,
 		Navbar,
-		NavbarBackLink,
 		Preloader,
 		useTheme,
 	} from 'konsta/svelte';
 	import TitleTruncatedListItem from '$lib/components/TitleTruncatedListItem.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { isIos } from '$lib/utils/environment';
-	import type { Action } from 'svelte/action';
-	import Avatar from '../profiles/Avatar.svelte';
+	import PeerAvatar from '../profiles/PeerAvatar.svelte';
+	import WarningIcon from '../WarningIcon.svelte';
 
-	const stopPropagation: Action = node => {
-		const stop = (e: Event) => {
-			e.stopPropagation();
-			e.preventDefault();
-		};
-		node.addEventListener('pointerdown', stop);
-		return {
-			destroy() {
-				node.removeEventListener('pointerdown', stop);
-			},
-		};
-	};
+	const settingsStore: SettingsStore = getContext('settings-store');
+	const localHubBlocked = useReactiveValue(settingsStore.localHubBlocked);
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 
@@ -52,8 +47,18 @@
 
 <div class="settings-panel">
 	<Navbar title={m.settings()} titleClass="opacity1" transparent={true}>
-		{#snippet left()}
-			<NavbarBackLink onClick={() => goto('/')} data-testid="settings-back" />
+		{#snippet right()}
+			<Link
+				iconOnly
+				aria-label={m.addContact()}
+				data-testid="settings-qr-link"
+				onClick={() =>
+					isWideScreen.value
+						? showAddContactInContentPanel()
+						: goto('/settings/profile/add-contact')}
+			>
+				<wa-icon src={wrapPathInSvg(mdiQrcode)}> </wa-icon>
+			</Link>
 		{/snippet}
 	</Navbar>
 
@@ -81,26 +86,12 @@
 				titleFontSizeMaterial="text-xl"
 			>
 				{#snippet media()}
-					<Avatar
-						image={myProfile?.avatar}
-						initials={myProfile?.name.slice(0, 2)}
+					<PeerAvatar
+						profile={myProfile}
 						style={isWideScreen.value || theme === 'ios'
 							? '--size: 64px'
-							: '--size: 64px; margin-inline-start: 16px'}
+							: '--size: 64px; margin-inline-start: 6px'}
 					/>
-				{/snippet}
-				{#snippet after()}
-					<a
-						href="/settings/profile/add-contact"
-						class="qr-button text-black dark:text-white"
-						data-testid="settings-qr-link"
-						use:stopPropagation
-						style={isWideScreen.value || theme === 'ios' ? '' : 'margin: 16px'}
-						aria-label={m.addContact()}
-					>
-						<wa-icon src={wrapPathInSvg(mdiQrcode)} style="font-size: 22px"
-						></wa-icon>
-					</a>
 				{/snippet}
 			</TitleTruncatedListItem>
 		</List>
@@ -172,6 +163,16 @@
 							style="font-size: 28px"
 						></wa-icon>
 					{/snippet}
+					{#snippet after()}
+						{#if $localHubBlocked === true}
+							<WarningIcon
+								size={24}
+								label={m.localHubCantBeFound()}
+								color="text-red-500"
+								data-testid="settings-offline-hub-warning"
+							/>
+						{/if}
+					{/snippet}
 				</ListItem>
 			</List>
 		{/if}
@@ -204,23 +205,5 @@
 	.settings-panel {
 		display: flex;
 		flex-direction: column;
-	}
-
-	.qr-button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 36px;
-		height: 36px;
-		border-radius: 50%;
-		border: none;
-		background-color: var(--k-color-bg-300, rgba(128, 128, 128, 0.15));
-		cursor: pointer;
-		text-decoration: none;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.qr-button:active {
-		opacity: 0.7;
 	}
 </style>
