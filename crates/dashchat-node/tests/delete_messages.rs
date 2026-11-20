@@ -731,3 +731,68 @@ async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
         "a junk hash in the payload disabled chain-completeness validation"
     );
 }
+
+/// A peer that syncs a message only after its author deleted it for everyone
+/// receives the message body-less, and the delete must still tombstone it.
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_before_the_peer_synced_the_message_still_tombstones_it() {
+    setup();
+    let poll = PollConfig::default();
+    let mb = TestMailbox::from_env();
+    let config = NodeConfig::testing().no_p2p();
+
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mb)
+        .await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    // Alice sends and deletes while offline, so no copy of the body ever
+    // leaves her store.
+    alice.clear_mailboxes().await;
+    let msg = alice
+        .send_message_raw(chat, "gone before bobbi saw it".into())
+        .await
+        .unwrap();
+    alice
+        .delete_message_for_everyone(chat, msg.hash())
+        .await
+        .unwrap();
+    alice.send_message_raw(chat, "after".into()).await.unwrap();
+    alice.add_mailbox(&mb).await;
+
+    poll.wait_for(|| async {
+        let seen = bobbi
+            .get_messages(chat)
+            .await
+            .unwrap()
+            .iter()
+            .any(|m| m.content.message() == "after");
+        seen.then_some(()).ok_or("bobbi has not synced alice's log")
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        payload_present(&bobbi, *chat, alice.device_id(), msg.hash()).await,
+        Some(false),
+        "bobbi received the deleted payload"
+    );
+    assert!(
+        bobbi
+            .projection
+            .is_tombstoned(*chat, msg.hash())
+            .await
+            .unwrap(),
+        "bobbi never tombstoned a message deleted before he synced it"
+    );
+}
