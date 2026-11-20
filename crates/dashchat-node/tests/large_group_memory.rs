@@ -17,9 +17,13 @@ const DEFAULT_GROUP_SIZE: usize = 9;
 /// Long enough for the discovery walks to tell every node about every other.
 const SETTLE: Duration = Duration::from_secs(60);
 
-/// What a node may allocate past what it held before the group. It holds about 80 MB more once
-/// the group has formed, and over 450 MB when its sync sessions pile up.
-const MAX_GROWTH_PER_NODE_MB: usize = 250;
+/// What a node may allocate past what it held before the group: about 80 MB while the group
+/// forms and settles.
+const MAX_GROWTH_PER_NODE_MB: usize = 150;
+
+/// Where the allocator starts refusing, so that sync sessions piling up, at over 450 MB a node,
+/// end the process the way running out of memory does.
+const ALLOCATION_LIMIT_PER_NODE_MB: usize = 250;
 
 #[global_allocator]
 static ALLOCATOR: Cap<System> = Cap::new(System, usize::MAX);
@@ -54,9 +58,8 @@ async fn forming_a_large_group_stays_within_its_memory() {
     introduce_peers(&nodes).await.unwrap();
 
     let allocated_before_group = ALLOCATOR.allocated();
-    // Past this the allocator refuses, and the process aborts as it does when the OS runs out.
     ALLOCATOR
-        .set_limit(allocated_before_group + group_size * MAX_GROWTH_PER_NODE_MB * 1024 * 1024)
+        .set_limit(allocated_before_group + group_size * ALLOCATION_LIMIT_PER_NODE_MB * 1024 * 1024)
         .unwrap();
 
     let (owner, members) = nodes.split_first().unwrap();
@@ -85,9 +88,15 @@ async fn forming_a_large_group_stays_within_its_memory() {
         .unwrap();
     tokio::time::sleep(SETTLE).await;
 
-    println!(
-        "group of {group_size}: each node holds {} MB more than before the group (peak {} MB in all)",
-        megabytes(ALLOCATOR.allocated().saturating_sub(allocated_before_group)) / group_size,
-        megabytes(ALLOCATOR.max_allocated()),
+    let peak_growth_per_node_mb = megabytes(
+        ALLOCATOR
+            .max_allocated()
+            .saturating_sub(allocated_before_group),
+    ) / group_size;
+    println!("group of {group_size}: each node grew by up to {peak_growth_per_node_mb} MB");
+    assert!(
+        peak_growth_per_node_mb <= MAX_GROWTH_PER_NODE_MB,
+        "forming a group of {group_size} grew each node by up to {peak_growth_per_node_mb} MB, \
+         more than {MAX_GROWTH_PER_NODE_MB} MB"
     );
 }
