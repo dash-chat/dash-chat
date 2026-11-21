@@ -171,6 +171,7 @@ impl NodeContext {
             // ALPN is hashed with the network id, so foreign connections are
             // rejected at protocol negotiation.
             config.network_id = e2e_network_id();
+            config.require_ipv6 = false;
             config
         } else {
             dashchat_node::NodeConfig::default()
@@ -247,6 +248,14 @@ mod tests {
         assert!(!config.enable_p2p);
         assert!(!config.enable_blob_sync);
         assert!(app_context().node_config().enable_blob_sync);
+    }
+
+    #[test]
+    fn ipv6_is_required_outside_e2e_builds() {
+        assert_eq!(
+            app_context().node_config().require_ipv6,
+            !cfg!(feature = "e2e-tests")
+        );
     }
 
     #[test]
