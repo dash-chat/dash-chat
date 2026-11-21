@@ -89,7 +89,7 @@ impl crate::Node {
             .get_log(&self.device_id(), &log_id, None)
             .await?
         {
-            let Some(body) = op.body? else { continue };
+            let Ok(Some(body)) = op.body else { continue };
             if let Ok(Payload::DeviceGroup(DeviceGroupPayload::AddContact {
                 agent_id,
                 direct_chat_topic_id,

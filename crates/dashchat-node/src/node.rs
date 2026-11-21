@@ -1315,7 +1315,7 @@ impl Node {
         let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
         for author in self.op_store.get_authors(log_id).await? {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body? else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
                     Payload::try_from_body(&body)
                 else {
@@ -2202,7 +2202,7 @@ impl Node {
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
             for op in self.op_store.get_log(&device_id, &log_id, None).await? {
-                let Some(body) = op.body? else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::Inbox(InboxPayload::ContactRequest {
                     agent_id: req_agent,
                     reply_topic,
