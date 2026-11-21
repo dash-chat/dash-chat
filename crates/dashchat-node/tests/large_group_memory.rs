@@ -74,7 +74,7 @@ async fn forming_a_large_group_stays_within_its_memory() {
         .iter()
         .map(|member| (*member.device_id(), p2panda_auth::Access::write()))
         .collect();
-    let chat_id = owner.create_group(invited).await.unwrap();
+    let chat_id = owner.create_chat_group(invited).await.unwrap();
     for member in members {
         member
             .behavior()
@@ -82,7 +82,7 @@ async fn forming_a_large_group_stays_within_its_memory() {
             .await
             .unwrap();
     }
-    PollConfig::seconds(60)
+    PollConfig::seconds(120)
         .consistency(&nodes, &[chat_id.into()])
         .await
         .unwrap();

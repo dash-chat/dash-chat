@@ -16,6 +16,10 @@ use tokio::time::Duration;
 /// and when an honest node publishes its own media (`store_media`).
 pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 
+/// AEAD tag added by blob encryption: a stored ciphertext is this much larger
+/// than its plaintext, and must still fit under [`MAX_BLOB_BYTES`].
+pub const BLOB_ENCRYPTION_OVERHEAD: u64 = 16;
+
 /// Download `hash` from `providers`, aborting if the transfer exceeds
 /// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
 pub async fn download_capped(
@@ -75,5 +79,24 @@ pub async fn download_capped(
             tracing::warn!(%hash, "blob download timed out");
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+
+    /// The UI derives its attachment cap from `ui/src/lib/utils/media-limits.json`,
+    /// which mirrors the constants above; this fails when either side drifts.
+    #[test]
+    fn ui_media_limits_match() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../ui/src/lib/utils/media-limits.json"
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(json["max_blob_bytes"], MAX_BLOB_BYTES);
+        assert_eq!(json["blob_encryption_overhead"], BLOB_ENCRYPTION_OVERHEAD);
     }
 }

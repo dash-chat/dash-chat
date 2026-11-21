@@ -1,4 +1,5 @@
 import type { Agent } from '../../setup/setup-agents';
+import { SYNC_TIMEOUT } from '../timeouts';
 
 /** Get `agent` back to its chat list if a chat is on screen. */
 async function leaveChat(agent: Agent): Promise<void> {
@@ -53,4 +54,11 @@ async function exchangePair(agent1: Agent, agent2: Agent): Promise<void> {
 	await agent1.directChatPage.ready();
 	await agent2.addContactPage.enterAddContactLink(link1);
 	await agent2.directChatPage.ready();
+	// TODO: pre-accept: the composer only shows once the other side's add has
+	// synced, so wait for it rather than hand a spec a chat it can't type in.
+	for (const agent of [agent1, agent2]) {
+		await agent.directChatPage.composer.messageInput.waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
+	}
 }

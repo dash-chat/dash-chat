@@ -1,4 +1,6 @@
 use p2panda::Hash;
+use p2panda_encryption::crypto::xchacha20::XAeadNonce;
+use p2panda_encryption::data_scheme::GroupSecretId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -67,7 +69,13 @@ pub enum OutgoingMedia {
 pub type MediaBundle = Vec<MediaMetadata>;
 
 /// The metadata to refer to a media blob, which appears in the message content.
-/// Each variant carries only what its kind needs
+/// Each variant carries only what its kind needs.
+///
+/// The blob is encrypted towards the chat's space: `hash` is the hash of the
+/// ciphertext, and `group_secret_id`/`nonce` mirror p2panda's
+/// `SpacesArgs::Application` so the blob can be decrypted with the space
+/// secret it was encrypted with, regardless of later rotations. `size` is the
+/// plaintext size.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum MediaMetadata {
@@ -85,6 +93,10 @@ pub enum MediaMetadata {
         //       not really getting what we want from Compat anyway.
         #[serde(with = "hash_bytes")]
         hash: iroh_blobs::Hash,
+        #[serde(with = "fixed_bytes")]
+        group_secret_id: GroupSecretId,
+        #[serde(with = "fixed_bytes")]
+        nonce: XAeadNonce,
     },
     File {
         name: String,
@@ -92,6 +104,10 @@ pub enum MediaMetadata {
         size: u64,
         #[serde(with = "hash_bytes")]
         hash: iroh_blobs::Hash,
+        #[serde(with = "fixed_bytes")]
+        group_secret_id: GroupSecretId,
+        #[serde(with = "fixed_bytes")]
+        nonce: XAeadNonce,
     },
     VoiceNote {
         mime_type: String,
@@ -100,6 +116,10 @@ pub enum MediaMetadata {
         waveform: Vec<u8>,
         #[serde(with = "hash_bytes")]
         hash: iroh_blobs::Hash,
+        #[serde(with = "fixed_bytes")]
+        group_secret_id: GroupSecretId,
+        #[serde(with = "fixed_bytes")]
+        nonce: XAeadNonce,
     },
 }
 
@@ -111,24 +131,63 @@ impl MediaMetadata {
             | MediaMetadata::VoiceNote { hash, .. } => *hash,
         }
     }
+
+    pub fn group_secret_id(&self) -> GroupSecretId {
+        match self {
+            MediaMetadata::Photo {
+                group_secret_id, ..
+            }
+            | MediaMetadata::File {
+                group_secret_id, ..
+            }
+            | MediaMetadata::VoiceNote {
+                group_secret_id, ..
+            } => *group_secret_id,
+        }
+    }
+
+    pub fn nonce(&self) -> XAeadNonce {
+        match self {
+            MediaMetadata::Photo { nonce, .. }
+            | MediaMetadata::File { nonce, .. }
+            | MediaMetadata::VoiceNote { nonce, .. } => *nonce,
+        }
+    }
 }
 
+/// [`fixed_bytes`] for an `iroh_blobs::Hash`, whose `Display` is the same
+/// lowercase hex the human-readable form uses.
 mod hash_bytes {
-    use std::fmt;
-
     use iroh_blobs::Hash;
-    use serde::{Deserializer, Serialize, Serializer, de};
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(hash: &Hash, serializer: S) -> Result<S::Ok, S::Error> {
-        // Mirror iroh's own impl for human-readable formats (hex string, so the
-        // JSON the frontend reads matches `Hash`), but emit a CBOR byte string
-        // otherwise: iroh's non-human-readable impl writes a 32-element array,
-        // which serde's untagged-enum buffering (`dashchat_compat::Compat`)
-        // cannot reconstruct from CBOR.
+        super::fixed_bytes::serialize(hash.as_bytes(), serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Hash, D::Error> {
+        super::fixed_bytes::deserialize(deserializer).map(Hash::from_bytes)
+    }
+}
+
+/// Serialize a fixed-size byte array as a hex string in human-readable formats
+/// (what the frontend reads from JSON) and as a byte string otherwise.
+/// Serde's default for arrays and iroh's `Hash` both write an N-element sequence,
+/// which serde's untagged-enum buffering (`dashchat_compat::Compat`) cannot
+/// reconstruct from CBOR.
+mod fixed_bytes {
+    use std::fmt;
+
+    use serde::{Deserializer, Serialize, Serializer, de};
+
+    pub fn serialize<S: Serializer, const N: usize>(
+        bytes: &[u8; N],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            serializer.serialize_str(&hash.to_string())
+            serializer.serialize_str(&hex::encode(bytes))
         } else {
-            serde_bytes::Bytes::new(hash.as_bytes()).serialize(serializer)
+            serde_bytes::Bytes::new(bytes).serialize(serializer)
         }
     }
 
@@ -136,39 +195,44 @@ mod hash_bytes {
     /// through serde's `Content` deserializer, which reports `is_human_readable
     /// == true` even for CBOR, so the encoding can't be inferred from the
     /// deserializer — dispatch on the value shape instead.
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Hash, D::Error> {
-        struct HashVisitor;
+    pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
+        deserializer: D,
+    ) -> Result<[u8; N], D::Error> {
+        struct FixedBytesVisitor<const N: usize>;
 
-        impl<'de> de::Visitor<'de> for HashVisitor {
-            type Value = Hash;
+        impl<'de, const N: usize> de::Visitor<'de> for FixedBytesVisitor<N> {
+            type Value = [u8; N];
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a blob hash as a hex string or 32 bytes")
+                write!(f, "{N} bytes as a hex string, byte string or sequence")
             }
 
-            fn visit_str<E: de::Error>(self, s: &str) -> Result<Hash, E> {
-                s.parse().map_err(E::custom)
-            }
-
-            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Hash, E> {
-                let arr: [u8; 32] = bytes
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                let bytes = hex::decode(s).map_err(E::custom)?;
+                bytes
+                    .as_slice()
                     .try_into()
-                    .map_err(|_| E::invalid_length(bytes.len(), &self))?;
-                Ok(Hash::from_bytes(arr))
+                    .map_err(|_| E::invalid_length(bytes.len(), &self))
             }
 
-            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Hash, A::Error> {
-                let mut arr = [0u8; 32];
+            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+                bytes
+                    .try_into()
+                    .map_err(|_| E::invalid_length(bytes.len(), &self))
+            }
+
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut arr = [0u8; N];
                 for (i, slot) in arr.iter_mut().enumerate() {
                     *slot = seq
                         .next_element()?
                         .ok_or_else(|| de::Error::invalid_length(i, &self))?;
                 }
-                Ok(Hash::from_bytes(arr))
+                Ok(arr)
             }
         }
 
-        deserializer.deserialize_any(HashVisitor)
+        deserializer.deserialize_any(FixedBytesVisitor::<N>)
     }
 }
 
@@ -291,6 +355,35 @@ mod tests {
         // string (matching the `Hash` TS type), not a byte array.
         let json = serde_json::to_value(&v1).unwrap();
         assert_eq!(json["reply"], serde_json::json!(target.to_hex()));
+    }
+
+    #[test]
+    fn media_metadata_roundtrip() {
+        let meta = MediaMetadata::Photo {
+            name: "photo.jpg".into(),
+            mime_type: "image/jpeg".into(),
+            size: 1024,
+            width: 640,
+            height: 480,
+            hash: iroh_blobs::Hash::new([42u8; 32]),
+            group_secret_id: [7; 32],
+            nonce: [9; 24],
+        };
+
+        let bytes = encode_cbor(&meta).unwrap();
+        let decoded: MediaMetadata = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded, meta);
+
+        // The frontend reads these as hex strings from JSON.
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(json["hash"], serde_json::json!(meta.hash().to_hex()));
+        assert_eq!(
+            json["group_secret_id"],
+            serde_json::json!(hex::encode([7u8; 32]))
+        );
+        assert_eq!(json["nonce"], serde_json::json!(hex::encode([9u8; 24])));
+        let from_json: MediaMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(from_json, meta);
     }
 
     /// Wire bytes from clients that predate the `lamport` field must keep

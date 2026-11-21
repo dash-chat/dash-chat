@@ -45,12 +45,12 @@ async fn photo_reaches_receiver_when_sender_and_receiver_are_never_online_togeth
     let bobbi_dir = bobbi.shutdown().await;
 
     link.throttle_uploads(WEAK_UPLINK_BYTES_PER_SEC);
-    alice
+    let message = alice
         .send_message(chat, "look at this", Some(photo()), None)
         .await
         .unwrap();
     let meta = sent_media(&alice, chat).await;
-    wait_until_mailbox_holds_message(&mailbox, *chat, photo_hash(&meta)).await;
+    wait_until_mailbox_holds_message(&mailbox, *chat, message.hash()).await;
     tokio::time::sleep(CRAWLING).await;
     let alice_dir = alice.shutdown().await;
     // A closed app's connections die with it, even where an in-process node
@@ -97,12 +97,12 @@ async fn photo_reaches_receiver_when_online_senders_first_transfer_fails() {
     let chat = alice.direct_chat_with(&bobbi);
 
     link.throttle_uploads(WEAK_UPLINK_BYTES_PER_SEC);
-    alice
+    let message = alice
         .send_message(chat, "look at this", Some(photo()), None)
         .await
         .unwrap();
     let meta = sent_media(&alice, chat).await;
-    wait_until_mailbox_holds_message(&mailbox, *chat, photo_hash(&meta)).await;
+    wait_until_mailbox_holds_message(&mailbox, *chat, message.hash()).await;
     tokio::time::sleep(CRAWLING).await;
     link.drop_connections();
     link.unthrottle();
@@ -121,6 +121,7 @@ async fn photo_reaches_receiver_when_online_senders_first_transfer_fails() {
 /// in the sender's log, which itself must never reach the mailbox. The member
 /// offline throughout then gets the kept photo from the mailbox alone.
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
     setup_photo_delivery_tracing();
     let poll = PollConfig::seconds(30);
@@ -138,7 +139,7 @@ async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
             .unwrap();
     }
     let chat = alice
-        .create_group(maplit::btreemap! {
+        .create_chat_group(maplit::btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
             *carol.device_id() => p2panda_auth::Access::manage(),
         })
@@ -166,13 +167,13 @@ async fn photo_reaches_mailbox_through_a_member_after_its_sender_is_gone() {
         .send_message(chat, "deleted", Some(photo()), None)
         .await
         .unwrap();
-    alice
+    let kept = alice
         .send_message(chat, "kept", Some(photo()), None)
         .await
         .unwrap();
     let deleted_meta = media_of(&alice, chat, "deleted").await;
     let kept_meta = media_of(&alice, chat, "kept").await;
-    wait_until_mailbox_holds_message(&mailbox, *chat, photo_hash(&kept_meta)).await;
+    wait_until_mailbox_holds_message(&mailbox, *chat, kept.hash()).await;
     alice
         .delete_message_for_everyone(chat, deleted.hash())
         .await
@@ -272,7 +273,7 @@ async fn connect_to_mailbox(node: &TestNode, mailbox: &common::StandaloneMailbox
 async fn wait_until_mailbox_holds_message(
     mailbox: &common::StandaloneMailbox,
     topic: TopicId,
-    photo: iroh_blobs::Hash,
+    message: p2panda::Hash,
 ) {
     let inspector = common::inspection_client(&mailbox.id, &mailbox.url);
     PollConfig {
@@ -286,12 +287,7 @@ async fn wait_until_mailbox_holds_message(
             .unwrap();
         topics
             .get(&topic)
-            .is_some_and(|topic| {
-                topic
-                    .items
-                    .iter()
-                    .any(|op| op.blob_hashes().contains(&photo))
-            })
+            .is_some_and(|topic| topic.items.iter().any(|op| op.hash() == message))
             .then_some(())
             .ok_or("the photo message has not reached the mailbox")
     })

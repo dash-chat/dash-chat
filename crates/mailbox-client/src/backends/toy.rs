@@ -46,7 +46,7 @@ impl<Item: MailboxItem> ToyMailboxClient<Item> {
         }
     }
 
-    /// Attach a blob-bytes source so `publish` streams blob bytes to the mailbox
+    /// Attach a blob-bytes source so `store_blobs` streams blob bytes to the mailbox
     /// (best-effort, in a spawned task) after announcing their hashes. Without a
     /// reader the client only announces hashes and the mailbox fetches the bytes
     /// from us.
@@ -106,12 +106,9 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
         // Group operations by topic -> author -> seq_num
         let mut blips: BTreeMap<String, BTreeMap<String, BTreeMap<SeqNum, Blip>>> = BTreeMap::new();
 
-        let blob_hashes: Vec<iroh_blobs::Hash> =
-            ops.iter().flat_map(|op| op.blob_hashes()).collect();
-
         for op in ops {
             let topic_id = op.topic().to_mailbox_key();
-            let log_id = op.author().to_mailbox_key();
+            let log_id = op.log().to_mailbox_key();
             let seq_num = op.seq_num();
             let blip = Self::serialize_operation(&op)?;
 
@@ -136,13 +133,12 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
 
         if response.status().is_success() {
             let response: StoreBlipsResponse = response.json().await?;
-            self.store_blobs(blob_hashes).await?;
 
             let mut result = PublishResponse::default();
             for (topic_str, authors) in response.watermarks {
                 let topic = Item::Topic::from_mailbox_key(&topic_str)?;
                 for (author_str, watermark) in authors {
-                    let author = Item::Author::from_mailbox_key(&author_str)?;
+                    let author = Item::Log::from_mailbox_key(&author_str)?;
                     result.0.entry(topic).or_default().insert(author, watermark);
                 }
             }
@@ -285,9 +281,9 @@ impl<Item: MailboxItem> MailboxClient<Item> for ToyMailboxClient<Item> {
                 .collect();
 
             // Convert missing map
-            let mut missing: HashMap<Item::Author, Vec<SeqNum>> = HashMap::new();
+            let mut missing: HashMap<Item::Log, Vec<SeqNum>> = HashMap::new();
             for (author_str, seq_nums) in topic_response.missing {
-                let author = Item::Author::from_mailbox_key(&author_str)?;
+                let author = Item::Log::from_mailbox_key(&author_str)?;
                 missing.insert(author, seq_nums);
             }
 
@@ -493,7 +489,7 @@ mod tests {
             .unwrap();
 
         // The watermark response decoded the string keys back to Msg's Topic
-        // and Author types.
+        // and Log types.
         assert_eq!(response.watermark(&42, &'a'), Some(1));
         assert_eq!(response.watermark(&42, &'b'), Some(0));
 
@@ -516,13 +512,13 @@ mod tests {
         let author_a_seqs: Vec<SeqNum> = topic_response
             .items
             .iter()
-            .filter(|m| m.author() == 'a')
+            .filter(|m| m.log() == 'a')
             .map(|m| m.seq_num())
             .collect();
         let author_b_seqs: Vec<SeqNum> = topic_response
             .items
             .iter()
-            .filter(|m| m.author() == 'b')
+            .filter(|m| m.log() == 'b')
             .map(|m| m.seq_num())
             .collect();
         assert_eq!(author_a_seqs, vec![1]);

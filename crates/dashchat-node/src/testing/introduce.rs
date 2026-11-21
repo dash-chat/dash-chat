@@ -5,7 +5,7 @@ use crate::testing::test_node::TestNode;
 /// pkarr). In production that resolution happens over the internet or over mDNS;
 /// doing it explicitly keeps tests fully local and avoids flakiness of mDNS.
 ///
-/// Each `insert_peer_addr` awaits the node actor's confirmation, so the
+/// Each `insert_peer_addr` awaits the node's confirmation, so the
 /// introduction has taken hold in the address book by the time this returns.
 pub async fn introduce_peers(nodes: impl IntoIterator<Item = &TestNode>) -> anyhow::Result<()> {
     let nodes: Vec<&TestNode> = nodes.into_iter().collect();

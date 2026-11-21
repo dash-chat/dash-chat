@@ -63,6 +63,15 @@ describe('Iroh blob push', () => {
 		await alice.directChatPage.composer.messageInput.waitForExist({
 			timeout: SYNC_TIMEOUT,
 		});
+		// The exchange UI completes while Bob's accept is still landing: his
+		// node creates the chat space — and persists its mailbox subscription —
+		// asynchronously, and without it he can never catch up after a restart.
+		// His message reaching Alice proves it happened before he goes offline.
+		await bob.directChatPage.composer.messageInput.waitForExist({
+			timeout: SYNC_TIMEOUT,
+		});
+		await bob.directChatPage.composer.sendMessage('settled');
+		await alice.directChatPage.messages.waitForMessage('settled');
 	});
 
 	it('runs the mailbox with HTTP blob upload disabled', async () => {

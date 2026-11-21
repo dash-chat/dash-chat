@@ -37,6 +37,12 @@ export interface IContactsClient {
 		handler: (agents: Record<DeviceId, AgentId>) => void,
 	): UnsubscribeFunction;
 
+	/** A newer profile arrived; `agentId` is undefined while the publishing
+	 * device's agent is unknown. */
+	onProfileChanged(
+		handler: (agentId: AgentId | undefined) => void,
+	): UnsubscribeFunction;
+
 	// The direct-chat topic id shared with the peer device.
 	directChatId(devicePubkey: DeviceId): Promise<ChatId>;
 
@@ -114,6 +120,14 @@ export class ContactsClient implements IContactsClient {
 	): UnsubscribeFunction {
 		return onSystemEvent('AgentsIntroduced', event =>
 			handler(event.payload.agents),
+		);
+	}
+
+	onProfileChanged(
+		handler: (agentId: AgentId | undefined) => void,
+	): UnsubscribeFunction {
+		return onSystemEvent('ProfileChanged', event =>
+			handler(event.payload.agent_id ?? undefined),
 		);
 	}
 

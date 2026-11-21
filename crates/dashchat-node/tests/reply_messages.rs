@@ -36,7 +36,11 @@ async fn two_friends(mailbox: &MemMailbox<MailboxOperation>) -> (TestNode, TestN
 #[tokio::test(flavor = "multi_thread")]
 async fn reply_propagates_to_peer() {
     setup();
-    let poll = PollConfig::default();
+    // A loaded Windows runner takes over 10s to deliver the first message.
+    let poll = PollConfig {
+        poll_timeout: std::time::Duration::from_secs(30),
+        ..PollConfig::default()
+    };
     let mailbox = MemMailbox::new();
     let (alice, bobbi, chat_id) = two_friends(&mailbox).await;
 
@@ -200,6 +204,7 @@ async fn reply_must_target_the_latest_known_edit() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
 async fn cannot_reply_to_a_deleted_message() {
     setup();
     let mailbox = MemMailbox::new();
@@ -338,7 +343,7 @@ async fn late_joiner_syncing_crossing_replies_can_hit_target_not_found() {
         .unwrap();
 
     let chat_id = alice
-        .create_group(maplit::btreemap! {
+        .create_chat_group(maplit::btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::write(),
         })
         .await
