@@ -148,11 +148,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_log_heights_by_author() {
-        let config = NodeConfig {
-            require_ipv6: false,
-            ..NodeConfig::default()
-        };
-        let node = TestNode::new(config, "test_node").await;
+        let node = TestNode::new(NodeConfig::testing(), "test_node").await;
 
         let log_id = LogId::from(node.device_group_topic());
         let log_heights = get_log_heights_by_author(&node.op_store.store, &log_id)

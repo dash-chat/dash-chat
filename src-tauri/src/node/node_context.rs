@@ -251,6 +251,14 @@ mod tests {
     }
 
     #[test]
+    fn ipv6_is_required_outside_e2e_builds() {
+        assert_eq!(
+            app_context().node_config().require_ipv6,
+            !cfg!(feature = "e2e-tests")
+        );
+    }
+
+    #[test]
     fn p2p_follows_the_role() {
         assert!(app_context().node_config().enable_p2p);
         assert!(

@@ -904,18 +904,8 @@ mod tests {
         let topic_a = Topic::random();
         let topic_b = Topic::random();
 
-        let alice = Node::builder()
-            .require_ipv6(false)
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
-        let bobbi = Node::builder()
-            .require_ipv6(false)
-            .network_id(network_id.into())
-            .spawn()
-            .await
-            .unwrap();
+        let alice = spawn_node_on(network_id).await;
+        let bobbi = spawn_node_on(network_id).await;
 
         let (alice_streams, alice_drain) = TopicStreams::new(alice, None);
         let (bobbi_streams, bobbi_drain) = TopicStreams::new(bobbi, None);
@@ -972,13 +962,17 @@ mod tests {
         }
     }
 
-    async fn spawn_node() -> Node {
+    async fn spawn_node_on(network_id: Topic) -> Node {
         Node::builder()
             .require_ipv6(false)
-            .network_id(Topic::random().into())
+            .network_id(network_id.into())
             .spawn()
             .await
             .unwrap()
+    }
+
+    async fn spawn_node() -> Node {
+        spawn_node_on(Topic::random()).await
     }
 
     /// Pull the drain forever, acknowledging every operation as processed.
