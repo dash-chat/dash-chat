@@ -74,7 +74,9 @@ pub struct NodeConfig {
     /// over the internet.
     pub use_relay: bool,
     /// Whether the node fails to start when it can't open an IPv6 socket.
-    /// Tests turn it off so they run on hosts without IPv6.
+    /// On in production to keep p2panda's long-standing strict behaviour, so a
+    /// host without IPv6 fails loudly. Tests and e2e builds turn it off so they
+    /// run on hosts without IPv6.
     pub require_ipv6: bool,
     /// Whether to participate in peer-to-peer connectivity with other Dash Chat
     /// clients. When disabled, all communication flows through mailbox servers.
