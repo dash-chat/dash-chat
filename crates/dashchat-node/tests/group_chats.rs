@@ -863,7 +863,9 @@ async fn test_group_events() {
     assert_eq!(introduced, cammy.agent_id());
 }
 
-async fn next_invitation(node: &TestNode) -> (ChatId, p2panda::Hash) {
+/// The next invitation `node` is notified of, passing over any naming `skip`: an earlier
+/// invitation can be announced again before a later one arrives.
+async fn next_invitation(node: &TestNode, skip: Option<p2panda::Hash>) -> (ChatId, p2panda::Hash) {
     node.watcher
         .lock()
         .await
@@ -873,7 +875,9 @@ async fn next_invitation(node: &TestNode) -> (ChatId, p2panda::Hash) {
                 Payload::Chat(ChatPayload::JoinGroup {
                     chat_id,
                     add_member_operation_hash,
-                }) => Some((*chat_id, *add_member_operation_hash)),
+                }) if Some(*add_member_operation_hash) != skip => {
+                    Some((*chat_id, *add_member_operation_hash))
+                }
                 _ => None,
             },
         )
@@ -912,7 +916,7 @@ async fn test_invitation_names_the_operation_adding_the_invitee() {
         })
         .await
         .unwrap();
-    let (invited_to, create) = next_invitation(&bobbi).await;
+    let (invited_to, create) = next_invitation(&bobbi, None).await;
     assert_eq!(invited_to, chat_id);
     assert!(adds_member(&alice, create, bobbi.device_id()).await);
 
@@ -924,9 +928,8 @@ async fn test_invitation_names_the_operation_adding_the_invitee() {
         .add_group_member(chat_id, *bobbi.device_id(), Access::write())
         .await
         .unwrap();
-    let (invited_to, re_add) = next_invitation(&bobbi).await;
+    let (invited_to, re_add) = next_invitation(&bobbi, Some(create)).await;
     assert_eq!(invited_to, chat_id);
-    assert_ne!(re_add, create);
     assert!(adds_member(&alice, re_add, bobbi.device_id()).await);
 }
 

@@ -209,3 +209,8 @@ slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
 [[profile.default.overrides]]
 filter = 'binary(reply_messages) & test(late_joiner_syncing_crossing_replies_can_hit_target_not_found)'
 slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Several ack round trips, each up to 30s on a loaded Windows runner.
+[[profile.default.overrides]]
+filter = 'binary(message_acks) & test(acks_are_delta_encoded_and_never_cascade)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
