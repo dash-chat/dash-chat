@@ -73,6 +73,9 @@ pub struct NodeConfig {
     /// Whether to register the node with the hardcoded relay so it is reachable
     /// over the internet.
     pub use_relay: bool,
+    /// Whether the node fails to start when it can't open an IPv6 socket.
+    /// Tests turn it off so they run on hosts without IPv6.
+    pub require_ipv6: bool,
     /// Whether to participate in peer-to-peer connectivity with other Dash Chat
     /// clients. When disabled, all communication flows through mailbox servers.
     ///
@@ -189,6 +192,7 @@ impl NodeConfig {
             // to effect expected behavior of existing tests.
             mdns_mode: MdnsDiscoveryMode::Disabled,
             use_relay: false,
+            require_ipv6: false,
             enable_p2p: true,
             enable_blob_sync: true,
             // Retry blob downloads quickly so tests don't wait on the
@@ -228,6 +232,7 @@ impl Default for NodeConfig {
             network_id: *NETWORK_ID,
             mdns_mode: MdnsDiscoveryMode::Active,
             use_relay: true,
+            require_ipv6: true,
             enable_p2p: true,
             enable_blob_sync: true,
             blob_fetch: BlobFetchConfig::default(),
@@ -385,7 +390,9 @@ impl Node {
         if no_networking {
             builder = builder.offline();
         } else {
-            builder = builder.mdns_mode(config.mdns_mode.clone());
+            builder = builder
+                .mdns_mode(config.mdns_mode.clone())
+                .require_ipv6(config.require_ipv6);
 
             if config.use_relay {
                 builder = builder.relay_url(RELAY_URL.clone());

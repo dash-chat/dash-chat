@@ -905,11 +905,13 @@ mod tests {
         let topic_b = Topic::random();
 
         let alice = Node::builder()
+            .require_ipv6(false)
             .network_id(network_id.into())
             .spawn()
             .await
             .unwrap();
         let bobbi = Node::builder()
+            .require_ipv6(false)
             .network_id(network_id.into())
             .spawn()
             .await
@@ -972,6 +974,7 @@ mod tests {
 
     async fn spawn_node() -> Node {
         Node::builder()
+            .require_ipv6(false)
             .network_id(Topic::random().into())
             .spawn()
             .await
