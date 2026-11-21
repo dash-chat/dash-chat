@@ -120,7 +120,11 @@ async fn direct_chat_message_is_acked() {
 async fn acks_are_delta_encoded_and_never_cascade() {
     setup();
 
-    let poll = PollConfig::default();
+    // A loaded Windows runner takes over 10s for an ack to come back.
+    let poll = PollConfig {
+        poll_timeout: std::time::Duration::from_secs(30),
+        ..PollConfig::default()
+    };
     let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;

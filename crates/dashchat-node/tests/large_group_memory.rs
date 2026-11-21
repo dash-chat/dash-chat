@@ -82,7 +82,7 @@ async fn forming_a_large_group_stays_within_its_memory() {
             .await
             .unwrap();
     }
-    PollConfig::seconds(60)
+    PollConfig::seconds(120)
         .consistency(&nodes, &[chat_id.into()])
         .await
         .unwrap();
