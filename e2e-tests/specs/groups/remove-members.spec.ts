@@ -140,6 +140,9 @@ describe('Removing group members', () => {
 		if (agent2.platform === 'desktop' || !pushTestingEnabled()) this.skip();
 		const notifications = notificationHelperFor(agent2);
 		const marker = `AFTER_REMOVAL_${Date.now()}`;
+		// Read from the webview, which the session is off while it reads
+		// Notification Center for a backgrounded app.
+		const newMessage = await agent2.tr('youHaveANewMessage');
 		await notifications.clear();
 		await agent2.backgroundApp();
 
@@ -162,9 +165,7 @@ describe('Removing group members', () => {
 				body: ping,
 			});
 			await expect(notifications).not.toHaveDelivered({ body: marker });
-			await expect(notifications).not.toHaveDelivered({
-				title: await agent2.tr('youHaveANewMessage'),
-			});
+			await expect(notifications).not.toHaveDelivered({ title: newMessage });
 		} finally {
 			await agent2.startApp();
 			await agent2.homePage.ready();
