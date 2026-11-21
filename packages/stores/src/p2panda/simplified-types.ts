@@ -4,6 +4,8 @@ export interface SimplifiedOperation<B> {
 	hash: Hash;
 	header: SimplifiedHeader;
 	body: B | undefined;
+	/** Set when the operation has a payload, which does not decrypt. */
+	undecryptable?: boolean;
 }
 
 export interface SimplifiedHeader {
@@ -27,6 +29,9 @@ export interface SimplifiedHeader {
 	previous: Array<Hash>;
 
 	topic_id: Hash;
+
+	/// The log this operation belongs to, which mailbox sync state is keyed by.
+	log_id: Hash;
 
 	/// p2panda-auth group-control extension. Present on operations that author a group action
 	/// (Create / Add / Remove / Promote / Demote) instead of a chat payload body.

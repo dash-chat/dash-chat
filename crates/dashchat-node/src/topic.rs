@@ -2,12 +2,6 @@
 //!
 //! # List of topics
 //!
-//! ## `Announcements` (ActorId)
-//!
-//! Each node has their own announcements topic.
-//! It is backed by a space with the node as sole Manager, with everyone else having Read access.
-//! The node uses this to publish profile updates
-//!
 //! ## `Auth` (ActorId)
 //!
 //! KeyBundle and Auth control messages are published to this topic.
@@ -104,7 +98,6 @@ pub mod kind {
         };
     }
 
-    topic_kind!(Announcements);
     topic_kind!(DeviceGroup);
 
     // Either direct or group chat
@@ -168,8 +161,27 @@ impl sqlx::Decode<'_, Sqlite> for Topic<kind::Untyped> {
 
 // conversion traits for p2panda core types.
 
-impl<K: TopicKind> From<Topic<K>> for LogId {
-    fn from(value: Topic<K>) -> Self {
+/// The log an author's application operations on a space-backed topic live
+/// in. Chats and the device group are spaces; p2panda keeps what is published
+/// into a space apart from the space's control logs.
+pub fn application_log_id(topic: TopicId) -> LogId {
+    p2panda::spaces::application_log_id(topic.into())
+}
+
+impl From<Topic<kind::Chat>> for LogId {
+    fn from(value: Topic<kind::Chat>) -> Self {
+        application_log_id(value.into())
+    }
+}
+
+impl From<Topic<kind::DeviceGroup>> for LogId {
+    fn from(value: Topic<kind::DeviceGroup>) -> Self {
+        application_log_id(value.into())
+    }
+}
+
+impl From<Topic<kind::Inbox>> for LogId {
+    fn from(value: Topic<kind::Inbox>) -> Self {
         LogId::from_topic(value.into())
     }
 }
@@ -214,6 +226,7 @@ impl<K: TopicKind> Topic<K> {
     pub fn alias_named(self, name: &str) -> Self {
         self.id.alias_named(name);
         LogId::from_topic(self.id).alias_named(name);
+        application_log_id(self.id).alias_named(name);
         self
     }
 }
@@ -222,14 +235,6 @@ impl std::str::FromStr for Topic<kind::Untyped> {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(TopicId::from_str(s)?.into())
-    }
-}
-
-impl Topic<kind::Announcements> {
-    pub fn announcements(agent_id: AgentId) -> Self {
-        let t = Self::new(*agent_id.as_bytes());
-        t.alias_named(&format!("announcements({:?})", agent_id.aliased()));
-        t
     }
 }
 

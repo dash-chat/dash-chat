@@ -174,7 +174,7 @@ async fn push_notifications_topics(node: &Node) -> anyhow::Result<HashSet<PushTo
     // list, like the inbox a contact replies to a request on; the stores cover
     // what it has not subscribed to yet while it starts.
     let listened_to_topics = node.mailboxes.subscribed_topics().await;
-    let stored_topics = node.subscribed_topics().await?;
+    let stored_topics = node.subscribed_spaces().await?;
     let inbox_topics = node
         .get_active_inbox_topics()
         .await
@@ -250,7 +250,7 @@ mod tests {
             .add_topic_subscriptions(&device(&node), &HashSet::from([other_topic.clone()]))
             .await
             .unwrap();
-        let group = node.create_group(BTreeMap::new()).await.unwrap();
+        let group = node.create_chat_group(BTreeMap::new()).await.unwrap();
 
         let group_topic = PushTopicId::from(group.to_hex());
         eventually("the server has the group's topic", || async {
@@ -275,7 +275,7 @@ mod tests {
             new_topics,
         );
 
-        let group = node.create_group(BTreeMap::new()).await.unwrap();
+        let group = node.create_chat_group(BTreeMap::new()).await.unwrap();
         let group_topic = PushTopicId::from(group.to_hex());
         let mut confirmed_topics = subscriptions.confirmed_topics.clone();
         tokio::time::timeout(
@@ -368,7 +368,7 @@ mod tests {
         wait_until_synced(&server, &node).await;
 
         subscriptions.shutdown().await;
-        let group = node.create_group(BTreeMap::new()).await.unwrap();
+        let group = node.create_chat_group(BTreeMap::new()).await.unwrap();
         tokio::time::sleep(CHANGES_DEBOUNCE * 3).await;
 
         let group_topic = PushTopicId::from(group.to_hex());

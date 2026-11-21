@@ -89,7 +89,7 @@ const hashes = (ops: SimplifiedOperation<Payload>[]) => ops.map(op => op.hash);
 describe('dropOpsAuthoredWhileNotAMember', () => {
 	it('leaves a chat that never names us untouched', () => {
 		const ops = [message('m1', 1), add('add-other', 2, OTHER)];
-		assert.deepEqual(dropOpsAuthoredWhileNotAMember(ops, ME), ops);
+		assert.deepEqual(dropOpsAuthoredWhileNotAMember(ops, ops, ME), ops);
 	});
 
 	it('hides everything after our removal but the removal itself', () => {
@@ -101,7 +101,7 @@ describe('dropOpsAuthoredWhileNotAMember', () => {
 			add('add-other', 5, OTHER),
 			rename('renamed', 6),
 		];
-		assert.deepEqual(hashes(dropOpsAuthoredWhileNotAMember(ops, ME)), [
+		assert.deepEqual(hashes(dropOpsAuthoredWhileNotAMember(ops, ops, ME)), [
 			'create',
 			'before',
 			'remove-me',
@@ -118,7 +118,7 @@ describe('dropOpsAuthoredWhileNotAMember', () => {
 			message('back', 6),
 			remove('remove-other', 7, OTHER),
 		];
-		assert.deepEqual(hashes(dropOpsAuthoredWhileNotAMember(ops, ME)), [
+		assert.deepEqual(hashes(dropOpsAuthoredWhileNotAMember(ops, ops, ME)), [
 			'create',
 			'remove-me',
 			'add-me',
@@ -129,7 +129,7 @@ describe('dropOpsAuthoredWhileNotAMember', () => {
 
 	it('hides an op stamped at the very moment of our removal', () => {
 		const ops = [create(1), remove('remove-me', 2, ME), message('same', 2)];
-		assert.deepEqual(hashes(dropOpsAuthoredWhileNotAMember(ops, ME)), [
+		assert.deepEqual(hashes(dropOpsAuthoredWhileNotAMember(ops, ops, ME)), [
 			'create',
 			'remove-me',
 		]);
@@ -144,7 +144,7 @@ describe('dropOpsAuthoredSinceLeaving', () => {
 			remove('remove-me', 3, ME),
 			rename('new', 4),
 		];
-		assert.deepEqual(hashes(dropOpsAuthoredSinceLeaving(ops, ME)), [
+		assert.deepEqual(hashes(dropOpsAuthoredSinceLeaving(ops, ops, ME)), [
 			'create',
 			'old',
 		]);
@@ -158,6 +158,6 @@ describe('dropOpsAuthoredSinceLeaving', () => {
 			rename('new', 4),
 			add('add-me', 5, ME),
 		];
-		assert.deepEqual(dropOpsAuthoredSinceLeaving(ops, ME), ops);
+		assert.deepEqual(dropOpsAuthoredSinceLeaving(ops, ops, ME), ops);
 	});
 });

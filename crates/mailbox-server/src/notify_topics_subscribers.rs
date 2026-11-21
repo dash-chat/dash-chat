@@ -36,7 +36,12 @@ async fn send_push_notifications(
                 let topic = PushTopicId::from(topic);
                 let ops = ops
                     .into_iter()
-                    .map(|(op_id, author)| (OperationId::from(op_id), VerifyingKey::from(author)))
+                    .map(|(op_id, author)| {
+                        (
+                            OperationId::from(op_id),
+                            VerifyingKey::from(device_of(&author).to_string()),
+                        )
+                    })
                     .collect();
                 (topic, ops)
             })
@@ -54,5 +59,23 @@ async fn send_push_notifications(
         tracing::error!("Failed to notify push subscribers: {e:#}");
     } else {
         tracing::info!("Notified push subscribers for topics.");
+    }
+}
+
+/// The device behind a mailbox log key. Clients key logs as `<device>.<log id>`
+/// so one device can hold several logs in a topic; the push server only knows
+/// devices.
+fn device_of(log_key: &str) -> &str {
+    log_key.split('.').next().unwrap_or(log_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::device_of;
+
+    #[test]
+    fn device_of_strips_the_log_id() {
+        assert_eq!(device_of("aa.bb"), "aa");
+        assert_eq!(device_of("aa"), "aa");
     }
 }

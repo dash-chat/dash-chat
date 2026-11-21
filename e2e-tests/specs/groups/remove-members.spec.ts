@@ -123,9 +123,15 @@ describe('Removing group members', () => {
 				'After the removal',
 			),
 		).toBe(false);
-		await expect(
-			agent2.groupChatPage.messages.systemMessage('group_member_added'),
-		).not.toBeExisting();
+		// Bob was added by his own Add op, so that is the one add he may see.
+		const adds =
+			await agent2.groupChatPage.messages.systemMessageTexts(
+				'group_member_added',
+			);
+		expect(adds).toHaveLength(1);
+		expect(adds[0]).toContain(
+			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice' }),
+		);
 		await agent2.groupChatPage.infoLink.click();
 		await agent2.groupInfoPage.ready();
 		await agent2.groupInfoPage.name.waitForExist();

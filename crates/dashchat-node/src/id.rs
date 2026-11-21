@@ -49,6 +49,106 @@ impl mailbox_client::MailboxKey for DeviceId {
     }
 }
 
+/// The ID of a p2panda log, as a mailbox addresses it.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    From,
+    Into,
+    Deref,
+)]
+pub struct LogId(p2panda::operation::LogId);
+
+impl std::str::FromStr for LogId {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let hash: p2panda::Hash = s.parse()?;
+        Ok(LogId(hash.into()))
+    }
+}
+
+impl LogId {
+    /// Hex-encoded bytes of the underlying log id.
+    pub fn to_hex(&self) -> String {
+        p2panda::Hash::from_bytes(*self.0.as_bytes()).to_hex()
+    }
+}
+
+impl std::fmt::Display for LogId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_hex())
+    }
+}
+
+/// One of a device's logs, which is what a mailbox stores and serves within
+/// a topic. Serialized as its mailbox key so it can key a JSON map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Log {
+    pub author: DeviceId,
+    pub log_id: LogId,
+}
+
+const LOG_KEY_SEPARATOR: char = '.';
+
+impl Log {
+    pub fn new(author: DeviceId, log_id: impl Into<LogId>) -> Self {
+        Self {
+            author,
+            log_id: log_id.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for Log {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{LOG_KEY_SEPARATOR}{}", self.author, self.log_id)
+    }
+}
+
+impl std::str::FromStr for Log {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (author, log_id) = s
+            .split_once(LOG_KEY_SEPARATOR)
+            .ok_or_else(|| anyhow::anyhow!("log key missing '{LOG_KEY_SEPARATOR}': {s}"))?;
+        Ok(Self {
+            author: author.parse()?,
+            log_id: log_id.parse()?,
+        })
+    }
+}
+
+impl mailbox_client::MailboxKey for Log {
+    fn to_mailbox_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn from_mailbox_key(key: &str) -> Result<Self, anyhow::Error> {
+        key.parse()
+    }
+}
+
+impl Serialize for Log {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Log {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key = String::deserialize(deserializer)?;
+        key.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 /// The ID for an "agent" which may control multiple devices.
 #[derive(
     Clone,

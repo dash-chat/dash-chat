@@ -2,7 +2,10 @@ import { reactive, signal } from 'signalium';
 
 import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
-import { dropOpsAuthoredSinceLeaving } from '../chats/op-visibility';
+import {
+	dropOpsAuthoredSinceLeaving,
+	dropOpsAuthoredWhileNotAMember,
+} from '../chats/op-visibility';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { MessageAckStore } from '../message-acks/message-ack-store';
@@ -62,6 +65,7 @@ export class GroupChatStore {
 			chatId,
 			messagesClient,
 			reactive(async () => !(await this.me()).member),
+			() => this.controlOps(),
 		);
 		this.client.onGroupMembersChanged(this.chatId, () => {
 			this.membersVersion.value++;
@@ -78,6 +82,7 @@ export class GroupChatStore {
 	info = reactive(async () => {
 		const opsAuthoredBeforeLeaving = dropOpsAuthoredSinceLeaving(
 			await this.messages.opsByTimestamp(),
+			await this.controlOps(),
 			await this.contactsStore.myDeviceId(),
 		);
 
@@ -122,10 +127,20 @@ export class GroupChatStore {
 		},
 	);
 
+	/** Just the group control ops, which live in their own log. */
+	private controlOps = reactive(async () => {
+		void this.membersVersion.value;
+		return await this.client.getControlOps(this.chatId);
+	});
+
 	controlEvents = reactive(async () => {
-		const opsAuthoredWhileAMember =
-			await this.messages.opsAuthoredWhileAMember();
+		const controlOps = await this.controlOps();
 		const myDeviceId = await this.contactsStore.myDeviceId();
+		const opsAuthoredWhileAMember = dropOpsAuthoredWhileNotAMember(
+			controlOps,
+			controlOps,
+			myDeviceId,
+		);
 
 		const events: Record<Hash, GroupControlEvent> = {};
 		for (const op of opsAuthoredWhileAMember) {
@@ -160,10 +175,9 @@ export class GroupChatStore {
 			};
 		}
 
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
 		const opAuthorByHash: Record<Hash, DeviceId> = {};
-		for (const ops of Object.values(logs)) {
-			for (const op of ops) opAuthorByHash[op.hash] = op.header.verifying_key;
+		for (const op of await this.controlOps()) {
+			opAuthorByHash[op.hash] = op.header.verifying_key;
 		}
 
 		for (const [hash, event] of Object.entries(controlEvents)) {

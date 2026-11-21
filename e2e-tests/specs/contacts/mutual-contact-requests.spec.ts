@@ -48,7 +48,7 @@ describe('Mutual contact requests', () => {
 
 	it('discloses both profiles once mutual contact is established', async () => {
 		// The peer avatars resolve from placeholder to real profiles once the
-		// contact establishment and profile announcements sync over p2p.
+		// contact establishment and profiles sync over p2p.
 		await Promise.all([
 			alice.directChatPage.waitForPeerProfile(),
 			bob.directChatPage.waitForPeerProfile(),

@@ -31,7 +31,7 @@ impl Behavior {
         // ack (it learns our agent_id only then), so wait for it to land before
         // returning a fully-established mutual contact.
         let me = self.node.agent_id();
-        PollConfig::seconds(15)
+        PollConfig::seconds(30)
             .wait_for(|| async {
                 if other.get_contacts().await?.contains(&me) {
                     Ok(())
@@ -100,7 +100,7 @@ impl Behavior {
             .context("no group invitation found")?;
 
         tracing::info!(?chat_id, "accepted group invitation");
-        self.node.join_group(chat_id).await?;
+        self.node.join_chat_group(chat_id).await?;
         tracing::info!(?chat_id, "joined group");
         Ok(chat_id)
     }

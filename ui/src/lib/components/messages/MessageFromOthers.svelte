@@ -4,15 +4,17 @@
 		fullName,
 		hasBody,
 		isDeleted,
+		isUndecryptable,
 		type DeviceId,
 		type Hash,
 		type Message,
 		type MessagesStore,
 		type Profile,
 	} from 'dash-chat-stores';
-	import type { MessagePosition } from './message-helpers';
+	import { type MessagePosition, hasMessageActions } from './message-helpers';
 	import MessageContent from './MessageContent.svelte';
 	import DeletedMessage from './DeletedMessage.svelte';
+	import UndecryptableMessage from './UndecryptableMessage.svelte';
 	import MessageTimestamp from './MessageTimestamp.svelte';
 	import EditedIndicator from './EditedIndicator.svelte';
 	import Reactions from './Reactions.svelte';
@@ -54,6 +56,7 @@
 
 	const isLast = $derived(position === 'last' || position === 'single');
 	const deleted = $derived(isDeleted(message.content));
+	const undecryptable = $derived(isUndecryptable(message.content));
 	const senderDisplayName = $derived(
 		sender && sender.name ? fullName(sender) : m.unknownSender(),
 	);
@@ -75,11 +78,16 @@
 	let slideEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
+	const hasActions = $derived(
+		hasMessageActions(message, myDeviceId, readOnly, onReply !== undefined),
+	);
+
 	function onLongPress(e: MouseEvent | TouchEvent) {
 		actionsMounted = true;
 		if (isMobile) {
-			reactionsOpened = true;
-		} else if (e instanceof MouseEvent) {
+			// A writable chat's overlay always has the reaction bar to show.
+			reactionsOpened = hasActions || !readOnly;
+		} else if (hasActions && e instanceof MouseEvent) {
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
@@ -123,6 +131,8 @@
 						{myDeviceId}
 						senderName={senderDisplayName}
 					/>
+				{:else if undecryptable}
+					<UndecryptableMessage {message} {position} {myDeviceId} />
 				{:else}
 					<Card
 						contentWrapPadding="px-2 py-(--message-padding-y)"
@@ -164,7 +174,7 @@
 	</div>
 {/snippet}
 
-{#if deleted}
+{#if deleted || undecryptable}
 	<div class="group flex justify-start">{@render bubble()}</div>
 {:else if isMobile}
 	<SwipeToReply {readOnly} {onReply} target={slideEl}
