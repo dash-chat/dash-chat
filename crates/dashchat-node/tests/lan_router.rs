@@ -67,7 +67,7 @@ mod localhost {
     use std::time::Duration;
 
     use dashchat_node::testing::{PollConfig, TestNode, introduce_peers, teach_peers};
-    use dashchat_node::{AddContactResult, NodeConfig, TopicId};
+    use dashchat_node::{AddContactResult, DirectChatId, NodeConfig, TopicId};
 
     /// `RUST_LOG` directives, if any, go to the test's tracing output.
     fn tracing() {
@@ -118,6 +118,20 @@ mod localhost {
             .expect("the author's own ops are processed")
     }
 
+    /// Send once `node` has joined the chat's space: the accept that brings
+    /// it in has to reach it first. That takes two rounds of the router's
+    /// Want and Have timers, since the space's control ops name the group
+    /// log the rest of them are in.
+    async fn send_when_joined(node: &TestNode, chat: DirectChatId, text: &str) {
+        let poll = PollConfig {
+            poll_timeout: Duration::from_secs(120),
+            ..poll()
+        };
+        poll.wait_for(|| async { node.send_message(chat, text, None, None).await.map(|_| ()) })
+            .await
+            .expect("the chat's space is joined through the router")
+    }
+
     /// Spec test 2: with native sync blocked both ways, the contact
     /// request, the accept and a direct-chat message still converge, so
     /// the router carried them.
@@ -142,9 +156,7 @@ mod localhost {
             .await
             .expect("the inbox converges through the router");
         a.accept_contact(b.agent_id()).await.unwrap();
-        b.send_message(direct_chat, "hello over the router", None, None)
-            .await
-            .unwrap();
+        send_when_joined(&b, direct_chat, "hello over the router").await;
         wait_for_ops(&b, &[*direct_chat]).await;
         poll()
             .consistency([&a, &b], [&*direct_chat])
@@ -190,9 +202,7 @@ mod localhost {
             .await
             .expect("the inbox converges through b");
         a.accept_contact(c.agent_id()).await.unwrap();
-        c.send_message(direct_chat, "hello via b", None, None)
-            .await
-            .unwrap();
+        send_when_joined(&c, direct_chat, "hello via b").await;
         wait_for_ops(&c, &[*direct_chat]).await;
         poll()
             .consistency([&a, &c], [&*direct_chat])

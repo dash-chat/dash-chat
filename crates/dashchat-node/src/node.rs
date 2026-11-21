@@ -656,6 +656,14 @@ impl Node {
         self.filesystem.data_path()
     }
 
+    /// Tell the router that a space's membership moved, which can give its
+    /// topic logs to follow.
+    pub(crate) fn lan_router_topics_changed(&self) {
+        if let Some(router) = &self.lan_router {
+            router.topics_changed();
+        }
+    }
+
     /// Ops the LAN router has delivered so far; `None` when it is not
     /// running (see [`crate::lan_router::LanRouter::delivered_count`]).
     #[cfg(feature = "lan-router")]
