@@ -404,5 +404,15 @@
     "chatRowP2pBadgeLabel": "Соединенные сверст-к-пи",
     "connectedPeersCount_one": "",
     "connectedPeersCount_few": "{{count}}",
-    "connectedPeersCount_many": "{{count}}"
+    "connectedPeersCount_many": "{{count}}",
+    "makeAdmin": "Стать администратором",
+    "memberWillBeAbleToEditGroup": "{{name}} сможет редактировать эту группу и её участников.",
+    "errorUndecodablePhotos_one": "Не удалось добавить {{count}} фотографию: файлы повреждены.",
+    "errorUndecodablePhotos_few": "Не удалось добавить {{count}} фотографии: файлы повреждены.",
+    "errorUndecodablePhotos_many": "Не удалось добавить {{count}} фотографий: файлы повреждены.",
+    "activeOverP2p": "Активный",
+    "connectionModeTitle": "Режим подключения",
+    "connectionModeConnected": "Подключено",
+    "connectionModeTryingToConnect": "Попытка подключения…",
+    "connectionModeIsolationTitle": "Изоляция"
 }
