@@ -23,6 +23,7 @@ const DEFAULT_LEVEL: LevelFilter = LevelFilter::Warn;
 const LEVELS: &[(&str, LevelFilter)] = &[
     ("dashchat_node", LevelFilter::Debug),
     ("dashchat_utils", LevelFilter::Debug),
+    ("dash_router", LevelFilter::Debug),
     ("p2panda_net::discovery", LevelFilter::Debug),
     ("p2panda_net::gossip", LevelFilter::Debug),
     ("p2panda_net::iroh_mdns", LevelFilter::Debug),

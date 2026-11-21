@@ -14,6 +14,7 @@ pub mod topic;
 pub mod util;
 
 mod id;
+pub mod lan_router;
 pub mod mailbox;
 pub mod membership;
 mod online_peers;

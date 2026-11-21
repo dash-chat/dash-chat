@@ -152,19 +152,25 @@ pub enum ProcessorEvent {
 
     ImportFailed {
         topic: Topic,
+        origin: ImportOrigin,
         error: ImportError,
     },
 
     /// A space's membership changed.
-    SpaceMembersChanged {
-        topic: Topic,
-    },
+    SpaceMembersChanged { topic: Topic },
 
     /// A group-auth operation on `topic`'s space was processed.
-    GroupMembershipOp {
-        topic: Topic,
-        header: Header,
-    },
+    GroupMembershipOp { topic: Topic, header: Header },
+}
+
+/// Which delivery path handed over an import stream, so a failure on one
+/// path never tears down the other's subscription.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImportOrigin {
+    Mailbox,
+    // Constructed only by the feature-on router.
+    #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
+    LanRouter,
 }
 
 /// Per-topic p2panda streams.
@@ -195,6 +201,11 @@ pub struct TopicStreams {
     drain_tx: mpsc::UnboundedSender<DrainCommand>,
 
     shut_down: AtomicBool,
+
+    /// Testing: peers whose native sync is blocked on every topic; applied
+    /// to each topic as it is opened (`publisher`).
+    #[cfg(feature = "testing")]
+    native_sync_blocked: std::sync::Mutex<std::collections::BTreeSet<p2panda::NodeId>>,
 }
 
 #[derive(Clone, From)]
@@ -248,6 +259,7 @@ enum DrainCommand {
     Unsubscribe(Topic),
     Import {
         topic: Topic,
+        origin: ImportOrigin,
         publisher: Publisher,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     },
@@ -275,6 +287,8 @@ impl TopicStreams {
             in_process: processed,
             drain_tx,
             shut_down: AtomicBool::new(false),
+            #[cfg(feature = "testing")]
+            native_sync_blocked: Default::default(),
         };
 
         (streams, drain)
@@ -331,6 +345,17 @@ impl TopicStreams {
         let mut pubs = self.publishers.lock().await;
         if let Some(sub) = pubs.get(&topic) {
             return Ok((sub.clone(), false));
+        }
+
+        // Testing: the one place a topic becomes syncable, so the block
+        // cannot race the first sync session.
+        #[cfg(feature = "testing")]
+        if !matches!(space, StreamIntent::ExistingOnly) {
+            let blocked = self.native_sync_blocked.lock().unwrap().clone();
+            for node_id in blocked {
+                self.with_node(async |node| node.topic_block(node_id, topic).await)
+                    .await?;
+            }
         }
 
         let (publisher, subscriber) = match space {
@@ -471,11 +496,13 @@ impl TopicStreams {
     pub(crate) async fn import(
         &self,
         topic: Topic,
+        origin: ImportOrigin,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) -> Result<(), StreamsError> {
         let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
         self.send_to_drain(DrainCommand::Import {
             topic,
+            origin,
             publisher,
             stream,
         })
@@ -578,6 +605,31 @@ impl TopicStreams {
             .await??)
     }
 
+    /// Testing: refuse every connection with `node_id` in both directions
+    /// (p2panda's global blocklist, enforced by the endpoint hooks).
+    #[cfg(feature = "testing")]
+    pub(crate) async fn block_peer(&self, node_id: p2panda::NodeId) -> Result<(), StreamsError> {
+        self.with_node(async |node| node.block(node_id).await).await
+    }
+
+    /// Testing: block native log sync with `node_id` on every topic,
+    /// subscribed now or later (p2panda's per-topic blocklist, checked when
+    /// a sync session is initiated or accepted). Gossip is unaffected.
+    #[cfg(feature = "testing")]
+    pub(crate) async fn block_native_sync_with(
+        &self,
+        node_id: p2panda::NodeId,
+    ) -> Result<(), StreamsError> {
+        // Held across the blocks so a topic opening meanwhile sees `node_id`.
+        let pubs = self.publishers.lock().await;
+        self.native_sync_blocked.lock().unwrap().insert(node_id);
+        for topic in pubs.keys().copied() {
+            self.with_node(async |node| node.topic_block(node_id, topic).await)
+                .await?;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn register_bootstrap(
         &self,
         node_id: NodeId,
@@ -654,7 +706,7 @@ pub(crate) struct TopicDrain {
 
     /// Import tasks spawned so an import does not block the drain.
     /// Dropped with the drain, aborting any still-parked imports.
-    import_tasks: JoinSet<Option<(Topic, ImportError)>>,
+    import_tasks: JoinSet<Option<(Topic, ImportOrigin, ImportError)>>,
 }
 
 impl TopicDrain {
@@ -678,8 +730,12 @@ impl TopicDrain {
                 }
                 Some(result) = self.import_tasks.join_next() => {
                     match result {
-                        Ok(Some((topic, error))) => {
-                            return Some(ProcessorEvent::ImportFailed { topic, error });
+                        Ok(Some((topic, origin, error))) => {
+                            return Some(ProcessorEvent::ImportFailed {
+                                topic,
+                                origin,
+                                error,
+                            });
                         }
                         Ok(None) => {}
                         Err(err) => error!(?err, "import task panicked"),
@@ -699,10 +755,11 @@ impl TopicDrain {
             }
             DrainCommand::Import {
                 topic,
+                origin,
                 publisher,
                 stream,
             } => {
-                self.spawn_import(topic, publisher, stream);
+                self.spawn_import(topic, origin, publisher, stream);
             }
         }
     }
@@ -710,13 +767,14 @@ impl TopicDrain {
     fn spawn_import(
         &mut self,
         topic: Topic,
+        origin: ImportOrigin,
         publisher: Publisher,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
     ) {
         self.import_tasks.spawn(async move {
             let err = publisher.tx().import(stream).await.err()?;
-            error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
-            Some((topic, err))
+            error!(topic = ?topic.aliased(), ?origin, ?err, "import stream failed; topic will not receive further deliveries on this path until re-imported");
+            Some((topic, origin, err))
         });
     }
 

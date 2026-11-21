@@ -78,6 +78,10 @@ p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b
 p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
 p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "4fb6b52b" }
 
+# Dash Router LAN gossip shell. It must pin the same p2panda rev as above, so
+# there is exactly one VerifyingKey type.
+dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "p2panda-0.8", features = ["p2panda"] }
+
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.4.1", default-features = false, features = [
   "tls-ring",
