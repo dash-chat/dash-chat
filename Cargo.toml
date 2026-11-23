@@ -72,9 +72,8 @@ p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "f248
 p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
 
 # Dash Router LAN gossip shell. It must pin the same p2panda rev as above, so
-# there is exactly one VerifyingKey type; dashchat-node's `lan-router` feature
-# does not compile until it does.
-dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "main", features = ["p2panda"] }
+# there is exactly one VerifyingKey type.
+dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "p2panda-0.8", features = ["p2panda"] }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.5.0", default-features = false, features = [
