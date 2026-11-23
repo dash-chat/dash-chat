@@ -214,3 +214,15 @@ slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
 [[profile.default.overrides]]
 filter = 'binary(message_acks) & test(acks_are_delta_encoded_and_never_cascade)'
 slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Three members, a group and a profile wait per member: 30s on Windows, past a minute on a
+# loaded Linux runner.
+[[profile.default.overrides]]
+filter = 'binary(profiles) & test(profile_reaches_group_members)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Forms a group over p2p, then sends photos through a deliberately throttled mailbox uplink:
+# about 47s on Windows and past the default minute on a loaded run.
+[[profile.default.overrides]]
+filter = 'binary(photo_delivery) & test(photo_reaches_mailbox_through_a_member_after_its_sender_is_gone)'
+slow-timeout = { period = "60s", terminate-after = 3, on-timeout = "fail" }

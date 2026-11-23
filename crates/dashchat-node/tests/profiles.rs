@@ -233,7 +233,11 @@ async fn profile_reaches_contacts_unless_blocked() {
 async fn profile_reaches_group_members() {
     dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
 
-    let poll = PollConfig::default();
+    // A loaded runner takes over 10s for a profile to reach a fellow member.
+    let poll = PollConfig {
+        poll_timeout: std::time::Duration::from_secs(30),
+        ..PollConfig::default()
+    };
     let mailbox = TestMailbox::from_env();
     let make_node = async |name| {
         TestNode::new(NodeConfig::testing(), name)
