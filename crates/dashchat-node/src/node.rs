@@ -134,6 +134,25 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
+    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
+    /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
+    /// without it this flag is ignored with a warning. Off by default, and
+    /// [`Self::no_p2p`] turns it off. A router that fails to start, or to
+    /// follow a topic, is logged and skipped: the p2panda path never depends on it.
+    ///
+    /// The router floods to every member of the node's gossip overlay on its
+    /// topic, which is not LAN-scoped by construction. Op bodies are not
+    /// end-to-end encrypted, so every overlay member reads them, and relays
+    /// keep them in `lan_router.redb`; this is why the flag defaults off and
+    /// is not exposed in the UI yet.
+    pub enable_lan_router: bool,
+    /// Quiet window after a locally authored op before the LAN router pushes
+    /// a Have for every op authored in the window (dash-router
+    /// `PushDebouncePolicy::window_ms`).
+    pub lan_router_push_debounce: std::time::Duration,
+    /// Hard cap after the oldest still-pending authored op, so a steady
+    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
+    pub lan_router_push_max_latency: std::time::Duration,
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
@@ -154,25 +173,6 @@ pub struct NodeConfig {
     /// Consulted by the blob push-authorization loop. Created above the node
     /// (and shared with hub spawns) because a hub outlives node rebuilds.
     pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
-    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
-    /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
-    /// without it this flag is ignored with a warning. Off by default, and
-    /// [`Self::no_p2p`] turns it off. A router that fails to start, or to
-    /// follow a topic, is logged and skipped: the p2panda path never depends on it.
-    ///
-    /// The router floods to every member of the node's gossip overlay on its
-    /// topic, which is not LAN-scoped by construction. Op bodies are not
-    /// end-to-end encrypted, so every overlay member reads them, and relays
-    /// keep them in `lan_router.redb`; this is why the flag defaults off and
-    /// is not exposed in the UI yet.
-    pub enable_lan_router: bool,
-    /// Quiet window after a locally authored op before the LAN router pushes
-    /// a Have for every op authored in the window (dash-router
-    /// `PushDebouncePolicy::window_ms`).
-    pub lan_router_push_debounce: std::time::Duration,
-    /// Hard cap after the oldest still-pending authored op, so a steady
-    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
-    pub lan_router_push_max_latency: std::time::Duration,
 }
 
 impl NodeConfig {
@@ -224,14 +224,14 @@ impl NodeConfig {
             enable_message_acks: true,
             read_only: false,
             stream_cursor_prefix: None,
+            enable_lan_router: false,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
             local_hub_registry: Default::default(),
-            enable_lan_router: false,
-            lan_router_push_debounce: std::time::Duration::from_millis(50),
-            lan_router_push_max_latency: std::time::Duration::from_millis(200),
         }
     }
 
@@ -259,14 +259,14 @@ impl Default for NodeConfig {
             enable_message_acks: true,
             read_only: false,
             stream_cursor_prefix: None,
+            enable_lan_router: true,
+            lan_router_push_debounce: std::time::Duration::from_millis(50),
+            lan_router_push_max_latency: std::time::Duration::from_millis(200),
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
             import_recorded_operations: false,
             sqlite_gate: Default::default(),
             local_hub_registry: Default::default(),
-            enable_lan_router: true,
-            lan_router_push_debounce: std::time::Duration::from_millis(50),
-            lan_router_push_max_latency: std::time::Duration::from_millis(200),
         }
     }
 }
@@ -473,7 +473,7 @@ impl Node {
             data_path: filesystem.data_path().clone(),
             device_id: *node_keys.device_id(),
             op_store: op_store.clone(),
-            actor_tx: actor_tx.clone(),
+            streams: streams.clone(),
         })
         .await
         .unwrap_or_else(|e| {
@@ -841,12 +841,7 @@ impl Node {
         if self.endpoint.is_none() {
             return Ok(());
         }
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::BlockPeer { node_id, reply_tx })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-        reply_rx.await?;
+        self.streams.block_peer(node_id).await?;
         Ok(())
     }
 
@@ -859,12 +854,7 @@ impl Node {
         if self.endpoint.is_none() {
             return Ok(());
         }
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(Command::BlockNativeSync { node_id, reply_tx })
-            .await
-            .map_err(|err| anyhow::anyhow!("send to actor error: {err}"))?;
-        reply_rx.await?;
+        self.streams.block_native_sync_with(node_id).await?;
         Ok(())
     }
 
@@ -1896,6 +1886,10 @@ impl Node {
 
     /// Abort the stream processing background task, allowing database handles to be released.
     pub async fn shutdown(&self) -> Result<(), ShutdownError> {
+        if let Some(router) = &self.lan_router {
+            router.shutdown().await;
+        }
+
         // Stop any deferred stored-topic initialization before we tear down
         // the p2panda node or clear mailboxes, so it cannot race SQLite pool closure
         // or re-insert topics into mailboxes after clear().
@@ -1906,10 +1900,6 @@ impl Node {
 
         // While the network is still up, so peers see us leave instead of timing us out.
         self.online_peers.leave_all().await;
-
-        if let Some(router) = &self.lan_router {
-            router.shutdown().await;
-        }
 
         // Stop polling mailboxes so the manager loop stops issuing OpStore queries.
         self.mailboxes.clear().await;
@@ -3059,7 +3049,7 @@ mod lan_router_tests {
         let router = node.lan_router.clone().expect("router on");
         router.shutdown().await;
         assert!(router.subscribe_topic(TopicId::random()).await.is_err());
-        node.initialize_topic(TopicId::random()).await.unwrap();
+        node.initialize_stream(TopicId::random()).await.unwrap();
         node.shutdown().await;
     }
 

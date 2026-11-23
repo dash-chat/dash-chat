@@ -195,7 +195,7 @@ impl OpStore {
     }
 
     /// Collect a log's entries, decoding each stored operation into our extension type.
-    async fn log_operations(
+    pub(crate) async fn log_operations(
         &self,
         author: &DeviceId,
         log_id: &LogId,
@@ -256,21 +256,21 @@ impl OpStore {
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
     }
 
+    /// Whether an operation is stored, with or without its body.
+    #[cfg(feature = "lan-router")]
+    pub(crate) async fn has_operation(&self, hash: &Hash) -> anyhow::Result<bool> {
+        use p2panda_store::operations::OperationStore;
+        Ok(p2panda_store::tx!(self.store, {
+            OperationStore::<Operation, Hash>::has_operation_tx(&self.store, hash).await?
+        }))
+    }
+
     /// An operation as the app reads it.
     pub async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<ReadOperation>> {
         let Some(operation) = self.get_stored_operation(hash).await? else {
             return Ok(None);
         };
         Ok(self.read(vec![operation]).await?.pop())
-    }
-
-    /// Whether an operation is stored, with or without its body.
-    #[cfg(feature = "lan-router")]
-    pub(crate) async fn has_operation(&self, hash: &Hash) -> anyhow::Result<bool> {
-        use p2panda_store::operations::OperationStore;
-        OperationStore::<Operation, Hash>::has_operation(&self.store, hash)
-            .await
-            .map_err(|err| anyhow::anyhow!("failed to look up operation {hash:?}: {err}"))
     }
 
     #[deprecated = "will be replace by proper use of p2panda-streams"]
@@ -521,9 +521,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use mailbox_client::store::MailboxStore;
-    use maplit::btreemap;
     use p2panda::operation::{Header, LogId};
-    use p2panda_core::Body;
 
     use super::test_support::*;
     use super::*;

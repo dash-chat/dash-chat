@@ -4,8 +4,9 @@
 //! Everything is a no-op unless BOTH the `lan-router` cargo feature is on
 //! and `NodeConfig::enable_lan_router` is true. The node calls this module
 //! at four points: `LanRouter::spawn` in `Node::init`, `subscribe_topic`
-//! from `initialize_topic`, and, after an operation is acked, `authored`
-//! for our own ops (the router pushes them) or `hint_changed` for others'.
+//! once a topic's stream or space is open, and, after an operation is
+//! acked, `authored` for our own ops (the router pushes them) or
+//! `hint_changed` for others'.
 //! With the feature off, this file is the stub below and every call site's
 //! `Option` is `None`.
 
@@ -14,9 +15,8 @@ use std::sync::Arc;
 
 use p2panda::VerifyingKey;
 use p2panda::streams::ProcessedOperation;
-use tokio::sync::mpsc;
 
-use crate::node::actor::Command;
+use crate::node::streams::TopicStreams;
 use crate::payload::Payload;
 use crate::stores::OpStore;
 use crate::topic::TopicId;
@@ -31,7 +31,7 @@ pub struct LanRouterParams {
     pub push_max_latency: std::time::Duration,
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
-    pub(crate) actor_tx: mpsc::Sender<Command>,
+    pub(crate) streams: Arc<TopicStreams>,
 }
 
 #[cfg(not(feature = "lan-router"))]
@@ -52,7 +52,7 @@ impl LanRouter {
     pub async fn unsubscribe_topic(&self, _topic: TopicId) -> anyhow::Result<()> {
         Ok(())
     }
-    pub fn hint_changed(&self, _author: VerifyingKey, _topic: TopicId) {}
+    pub fn hint_changed(&self, _author: VerifyingKey, _log_id: p2panda::operation::LogId) {}
     pub async fn authored(&self, _operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
         Ok(())
     }
@@ -86,7 +86,7 @@ mod imp {
     use rand::SeedableRng as _;
     use serde::{Deserialize, Serialize};
     use serde_bytes::ByteBuf;
-    use tokio::sync::{Mutex, broadcast, oneshot};
+    use tokio::sync::{Mutex, broadcast, mpsc};
     use tokio::task::JoinHandle;
     use tokio_stream::wrappers::ReceiverStream;
 
@@ -94,7 +94,7 @@ mod imp {
 
     /// The router's log identity: `(LogId, author)`, channel first so the
     /// relay store's ordered scans keep one topic's logs contiguous. The
-    /// channel (`LogId = blake3(topic)`) is what a subscription names.
+    /// channel (a topic's [`router_channel`]) is what a subscription names.
     #[derive(
         Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug,
     )]
@@ -160,6 +160,9 @@ mod imp {
                 author: author.0,
             }
         }
+        fn author_prefix(author: &AuthorKey) -> u32 {
+            u32::from_be_bytes([author.0[0], author.0[1], author.0[2], author.0[3]])
+        }
     }
 
     impl dash_router::disk::LogKey for RouterLog {
@@ -184,9 +187,9 @@ mod imp {
     pub(crate) struct OpStoreExt {
         store: OpStore,
         /// `LogId → (TopicId, import channel)`: the inverse of
-        /// `LogId::from_topic` for the topics this node follows, paired with
-        /// the channel that topic's imported ops go down (consumed by the
-        /// actor's `Command::Import`). One map so (un)registration is a
+        /// [`router_channel`] for the topics this node follows, paired with
+        /// the channel that topic's imported ops go down (consumed by
+        /// `TopicStreams::import`). One map so (un)registration is a
         /// single lock. Read on every held/fetch/ingest; written on
         /// (un)subscribe. Never held across an await.
         topics: Arc<RwLock<HashMap<LogId, (TopicId, mpsc::Sender<Operation>)>>>,
@@ -210,11 +213,12 @@ mod imp {
         /// Returns false if already registered.
         pub(crate) fn register_topic(
             &self,
+            log_id: LogId,
             topic: TopicId,
             import_tx: mpsc::Sender<Operation>,
         ) -> bool {
             use std::collections::hash_map::Entry;
-            match self.topics.write().unwrap().entry(LogId::from_topic(topic)) {
+            match self.topics.write().unwrap().entry(log_id) {
                 Entry::Occupied(_) => false,
                 Entry::Vacant(e) => {
                     e.insert((topic, import_tx));
@@ -223,11 +227,8 @@ mod imp {
             }
         }
 
-        pub(crate) fn unregister_topic(&self, topic: TopicId) {
-            self.topics
-                .write()
-                .unwrap()
-                .remove(&LogId::from_topic(topic));
+        pub(crate) fn unregister_topic(&self, log_id: &LogId) {
+            self.topics.write().unwrap().remove(log_id);
         }
 
         #[cfg(test)]
@@ -341,7 +342,7 @@ mod imp {
                 // `get_log`'s cursor is exclusive ("after"): start one below
                 // the first wanted seq, or from the beginning when that is 0.
                 let after = r.boundaries().first().and_then(|s| s.checked_sub(1));
-                for op in self.store.get_log(&author, &log_id, after).await? {
+                for op in self.store.log_operations(&author, &log_id, after).await? {
                     let seq = op.header.seq_num;
                     if seq > acked || !r.contains(seq) {
                         continue;
@@ -459,19 +460,23 @@ mod imp {
         }
     }
 
+    /// The one log of `topic` the router carries: a space's application log,
+    /// or a plain stream's only log. A space's control logs are left to
+    /// p2panda sync and the mailboxes.
+    pub(crate) async fn router_channel(streams: &TopicStreams, topic: TopicId) -> LogId {
+        if streams.is_space(topic).await {
+            crate::topic::application_log_id(topic)
+        } else {
+            LogId::from_topic(topic)
+        }
+    }
+
     pub(crate) async fn open_transport(
-        actor_tx: &mpsc::Sender<Command>,
+        streams: &TopicStreams,
     ) -> anyhow::Result<GossipTransport<Publisher, Subscription>> {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        actor_tx
-            .send(Command::RouterStream {
-                topic: router_topic(),
-                reply_tx,
-            })
+        let (publisher, subscription) = streams
+            .ephemeral_stream::<ByteBuf>(router_topic())
             .await
-            .map_err(|_| anyhow!("actor channel closed"))?;
-        let (publisher, subscription) = reply_rx
-            .await?
             .map_err(|e| anyhow!("ephemeral stream: {e}"))?;
         Ok(GossipTransport::new(
             Publisher(publisher),
@@ -483,6 +488,7 @@ mod imp {
     /// a LAN in under a minute. Revisit with an estimator for `n`.
     const WANT_TTL: Duration = Duration::from_secs(2);
     const HAVE_TTL: Duration = Duration::from_secs(2);
+    const HEARD_TTL: Duration = Duration::from_secs(2);
     /// A relay cache sized for a phone: a payload-bearing op costs two
     /// units, so at worst ~16k ops × ~4 KB ≈ 64 MB of unvalidated peer
     /// bytes. `lan_router.redb` never shrinks and persists after the flag
@@ -497,7 +503,7 @@ mod imp {
     pub struct LanRouter {
         handle: RouterHandle<RouterLog>,
         ext: OpStoreExt,
-        actor_tx: mpsc::Sender<Command>,
+        streams: Arc<TopicStreams>,
         node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
         events_task: Mutex<Option<JoinHandle<()>>>,
     }
@@ -512,11 +518,12 @@ mod imp {
                 DiskRelayStore::<RouterLog>::open(&params.data_path.join("lan_router.redb"))
                     .context("opening lan_router.redb")?;
             let ext = OpStoreExt::new(params.op_store);
-            let transport = open_transport(&params.actor_tx).await?;
+            let transport = open_transport(&params.streams).await?;
             let config = CoreConfig {
                 router: RouterConfig {
                     want_ttl: WANT_TTL.into(),
                     have_ttl: HAVE_TTL.into(),
+                    heard_ttl: HEARD_TTL.into(),
                 },
                 relay_cap: RELAY_CAP,
                 evict_at: EVICT_AT,
@@ -575,7 +582,7 @@ mod imp {
             Ok(Some(Arc::new(Self {
                 handle,
                 ext,
-                actor_tx: params.actor_tx,
+                streams: params.streams,
                 node_task: Mutex::new(Some(node_task)),
                 events_task: Mutex::new(Some(events_task)),
             })))
@@ -588,14 +595,15 @@ mod imp {
         /// first is still in flight; callers must not rely on the second
         /// call observing the first's failure.
         pub async fn subscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
+            let channel = router_channel(&self.streams, topic).await;
             let (tx, rx) = mpsc::channel(IMPORT_CHANNEL);
-            if !self.ext.register_topic(topic, tx) {
+            if !self.ext.register_topic(channel, topic, tx) {
                 return Ok(());
             }
-            let result = self.import_and_subscribe(topic, rx).await;
+            let result = self.import_and_subscribe(topic, channel, rx).await;
             match &result {
                 Ok(()) => tracing::debug!(topic = ?topic.aliased(), "lan router following topic"),
-                Err(_) => self.ext.unregister_topic(topic),
+                Err(_) => self.ext.unregister_topic(&channel),
             }
             result
         }
@@ -603,20 +611,15 @@ mod imp {
         async fn import_and_subscribe(
             &self,
             topic: TopicId,
+            channel: LogId,
             rx: mpsc::Receiver<Operation>,
         ) -> anyhow::Result<()> {
             let stream = Box::pin(ReceiverStream::new(rx));
-            let (reply_tx, reply_rx) = oneshot::channel();
-            self.actor_tx
-                .send(Command::Import {
-                    topic,
-                    stream,
-                    reply_tx,
-                })
+            self.streams
+                .import(topic, stream)
                 .await
-                .map_err(|_| anyhow!("actor channel closed"))?;
-            reply_rx.await?.map_err(|e| anyhow!("import: {e}"))?;
-            self.handle.subscribe(LogId::from_topic(topic)).await
+                .map_err(|e| anyhow!("import: {e}"))?;
+            self.handle.subscribe(channel).await
         }
 
         /// How many ops the router ingested that were not already in the
@@ -632,7 +635,7 @@ mod imp {
         /// own ops live in the ext store, never here).
         #[cfg(feature = "testing")]
         pub async fn relay_holds_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
-            let channel = LogId::from_topic(topic);
+            let channel = router_channel(&self.streams, topic).await;
             Ok(self
                 .handle
                 .relay_held()
@@ -642,15 +645,15 @@ mod imp {
         }
 
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-            self.ext.unregister_topic(topic);
-            self.handle.unsubscribe(LogId::from_topic(topic)).await
+            let channel = router_channel(&self.streams, topic).await;
+            self.ext.unregister_topic(&channel);
+            self.handle.unsubscribe(channel).await
         }
 
-        /// An op on `topic` by `author` was acked: the router's held view
+        /// An op in `author`'s `log_id` was acked: the router's held view
         /// of that log may have grown. Lossy by design.
-        pub fn hint_changed(&self, author: VerifyingKey, topic: TopicId) {
-            self.ext
-                .hint(RouterLog::new(LogId::from_topic(topic), author));
+        pub fn hint_changed(&self, author: VerifyingKey, log_id: LogId) {
+            self.ext.hint(RouterLog::new(log_id, author));
         }
 
         /// A locally authored op was acked: hand it to the router, which
@@ -701,37 +704,45 @@ mod imp {
     mod lan_router_tests {
         use super::*;
 
-        /// A real p2panda node + actor, offline is fine for these tests
-        /// (ephemeral streams need networking, so use the online builder
-        /// with no discovery and a random network id).
-        async fn params(enabled: bool) -> (LanRouterParams, tempfile::TempDir) {
+        /// A real p2panda node, offline is fine for these tests (ephemeral
+        /// streams need networking, so use the online builder with no
+        /// discovery and a random network id). The drain is returned so the
+        /// streams stay open for as long as the test holds it.
+        async fn params(
+            enabled: bool,
+        ) -> (
+            LanRouterParams,
+            tempfile::TempDir,
+            crate::node::streams::TopicDrain,
+        ) {
             let dir = tempfile::tempdir().unwrap();
             let node = p2panda::Node::builder()
                 .network_id(p2panda::Topic::random().into())
                 .spawn()
                 .await
                 .unwrap();
-            let store = OpStore::from_sqlite(node.store());
-            let (actor, _events) = crate::node::actor::Actor::new(node, None);
-            let actor_tx = actor.spawn().await.unwrap();
+            let store = node.store();
+            let (streams, drain) = TopicStreams::new(node, None);
+            let streams = Arc::new(streams);
             let device_id = p2panda::SigningKey::generate().verifying_key();
             (
                 LanRouterParams {
                     enabled,
                     data_path: dir.path().to_path_buf(),
                     device_id,
-                    op_store: store,
+                    op_store: OpStore::from_sqlite(store, streams.clone()),
                     push_debounce: Duration::from_millis(50),
                     push_max_latency: Duration::from_millis(200),
-                    actor_tx,
+                    streams,
                 },
                 dir,
+                drain,
             )
         }
 
         #[tokio::test(flavor = "multi_thread")]
         async fn disabled_spawns_nothing() {
-            let (p, dir) = params(false).await;
+            let (p, dir, _drain) = params(false).await;
             assert!(LanRouter::spawn(p).await.unwrap().is_none());
             assert!(!dir.path().join("lan_router.redb").exists());
         }
@@ -739,10 +750,12 @@ mod imp {
         /// Subscribing twice is a no-op; unsubscribing drops the topic.
         #[tokio::test(flavor = "multi_thread")]
         async fn subscribe_topic_is_idempotent() {
-            let (p, dir) = params(true).await;
+            let (p, dir, _drain) = params(true).await;
+            let streams = p.streams.clone();
             let r = LanRouter::spawn(p).await.unwrap().expect("enabled");
             assert!(dir.path().join("lan_router.redb").exists());
             let topic = TopicId::random();
+            streams.subscribe(topic).await.unwrap();
             r.subscribe_topic(topic).await.unwrap();
             r.subscribe_topic(topic).await.unwrap();
             assert!(r.ext.has_topic(&LogId::from_topic(topic)));
@@ -755,12 +768,10 @@ mod imp {
         /// really retries rather than returning early as "already done".
         #[tokio::test(flavor = "multi_thread")]
         async fn failed_subscribe_rolls_back() {
-            let (p, _dir) = params(true).await;
-            let actor_tx = p.actor_tx.clone();
+            let (p, _dir, _drain) = params(true).await;
+            let streams = p.streams.clone();
             let r = LanRouter::spawn(p).await.unwrap().expect("enabled");
-            let (reply_tx, reply_rx) = oneshot::channel();
-            actor_tx.send(Command::Shutdown { reply_tx }).await.unwrap();
-            reply_rx.await.unwrap();
+            streams.shutdown().await;
             let topic = TopicId::random();
             assert!(r.subscribe_topic(topic).await.is_err());
             assert!(!r.ext.has_topic(&LogId::from_topic(topic)));
@@ -774,7 +785,7 @@ mod imp {
         /// Shutdown stops the router task promptly.
         #[tokio::test(flavor = "multi_thread")]
         async fn shutdown_is_clean() {
-            let (p, _dir) = params(true).await;
+            let (p, _dir, _drain) = params(true).await;
             let r = LanRouter::spawn(p).await.unwrap().expect("enabled");
             tokio::time::timeout(std::time::Duration::from_secs(5), r.shutdown())
                 .await
@@ -846,6 +857,7 @@ mod imp {
         use crate::{DeviceId, SeqNum};
 
         struct Fixture {
+            _node: crate::testing::TestNode,
             ext: OpStoreExt,
             topic: TopicId,
             log_id: LogId,
@@ -860,12 +872,14 @@ mod imp {
 
         /// As `fixture`, with seqs `0..n` stored.
         async fn fixture_n(n: SeqNum, acked: Option<SeqNum>) -> Fixture {
-            let store = OpStore::temporary_sqlite().await.unwrap();
+            let node =
+                crate::testing::TestNode::new(crate::NodeConfig::testing().no_p2p(), "ext").await;
+            let store = node.op_store.clone();
             let ext = OpStoreExt::new(store.clone());
             let topic = TopicId::random();
             let log_id = LogId::from_topic(topic);
             let (tx, import_rx) = mpsc::channel(8);
-            assert!(ext.register_topic(topic, tx));
+            assert!(ext.register_topic(log_id, topic, tx));
             let key = p2panda::SigningKey::generate();
             let mut backlink = None;
             for seq in 0..n {
@@ -884,6 +898,7 @@ mod imp {
                 .await;
             }
             Fixture {
+                _node: node,
                 ext,
                 topic,
                 log_id,
@@ -893,7 +908,7 @@ mod imp {
         }
 
         /// Only acked seqs are held: stored ops above the ack cursor are not.
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn held_stops_at_acked_height() {
             let f = fixture(Some(1)).await;
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
@@ -907,7 +922,7 @@ mod imp {
             assert_eq!(of.get(&log), Some(&Ranges::range(0, 2)));
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn unacked_log_is_not_held() {
             let f = fixture(None).await;
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
@@ -920,7 +935,7 @@ mod imp {
             );
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn fetch_serves_acked_ops_with_encoded_headers() {
             let f = fixture(Some(2)).await;
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
@@ -935,7 +950,7 @@ mod imp {
             assert_eq!(ops[1].2.payload.as_deref(), Some(&[1u8][..]));
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn ingest_forwards_a_valid_op_to_the_topic_channel() {
             let mut f = fixture(Some(3)).await;
             let other = p2panda::SigningKey::generate();
@@ -954,11 +969,16 @@ mod imp {
 
         /// An op p2panda has stored but not yet acked is novel to the
         /// router; ingesting it again is neither a forward nor a rejection.
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn ingest_skips_ops_already_stored() {
             let mut f = fixture(None).await;
             let author = DeviceId::from(f.key.verifying_key());
-            let stored = f.ext.store.get_log(&author, &f.log_id, None).await.unwrap();
+            let stored = f
+                .ext
+                .store
+                .log_operations(&author, &f.log_id, None)
+                .await
+                .unwrap();
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
             let wire = dash_router::core::Op {
                 header: stored[1].header.encode(),
@@ -972,7 +992,7 @@ mod imp {
 
         /// An op whose header disagrees with the claimed log or seq is
         /// rejected and not forwarded.
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn ingest_rejects_mismatched_header() {
             let mut f = fixture(Some(3)).await;
             let other = p2panda::SigningKey::generate();
@@ -1001,7 +1021,7 @@ mod imp {
 
         /// A forged signature or a swapped body is rejected before the op
         /// reaches the import channel (and so p2panda's live-sync forward).
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn ingest_rejects_bad_signature_and_body() {
             let mut f = fixture(Some(3)).await;
             let other = p2panda::SigningKey::generate();
@@ -1032,7 +1052,7 @@ mod imp {
         }
 
         /// An op on a log under no registered topic is rejected.
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn ingest_without_topic_mapping_is_an_error() {
             let mut f = fixture(Some(3)).await;
             let stray_log_id = LogId::from_topic(TopicId::random());
@@ -1049,7 +1069,7 @@ mod imp {
 
         /// `get_log`'s cursor is exclusive: a non-zero start must still
         /// include its first seq, and gaps in the request are respected.
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn fetch_honours_nonzero_start_and_gaps() {
             let f = fixture_n(6, Some(5)).await;
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
@@ -1065,7 +1085,7 @@ mod imp {
 
         /// A peer-named log whose author bytes are not a valid key is an
         /// unknown log: it must not fail the batch it arrives in.
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn bogus_author_is_unknown_not_an_error() {
             let f = fixture(Some(1)).await;
             // Not every 32-byte string is a curve point (`[0xFF; 32]` is, as
@@ -1100,7 +1120,7 @@ mod imp {
             );
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn hint_reaches_changed_subscribers() {
             let f = fixture(Some(3)).await;
             let mut rx = f.ext.changed();
@@ -1109,11 +1129,11 @@ mod imp {
             assert_eq!(rx.recv().await.unwrap(), BTreeSet::from([log]));
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "multi_thread")]
         async fn unregistered_topic_disappears_from_held_all() {
             let f = fixture(Some(3)).await;
             assert!(!f.ext.held_all().await.unwrap().is_empty());
-            f.ext.unregister_topic(f.topic);
+            f.ext.unregister_topic(&f.log_id);
             assert!(f.ext.held_all().await.unwrap().is_empty());
             assert!(!f.ext.has_topic(&f.log_id));
         }
