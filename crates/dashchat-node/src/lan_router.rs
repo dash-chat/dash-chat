@@ -64,6 +64,7 @@ pub struct LanRouterParams {
     pub data_path: PathBuf,
     pub device_id: VerifyingKey,
     pub op_store: OpStore,
+    pub is_space: Arc<dyn imp::IsSpace>,
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub(crate) streams: Arc<TopicStreams>,
@@ -689,10 +690,24 @@ mod imp {
     const REFRESH_EVERY: Duration = Duration::from_secs(30);
     const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
+    /// Something that knows how to answer: is `topic` a space?
+    #[async_trait::async_trait]
+    pub trait IsSpace: Send + Sync + 'static {
+        async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool>;
+    }
+
+    #[async_trait::async_trait]
+    impl IsSpace for crate::stores::LocalStore {
+        async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool> {
+            self.is_space(topic).await
+        }
+    }
+
     pub struct LanRouter {
         handle: RouterHandle<RouterLog>,
         ext: OpStoreExt,
         streams: Arc<TopicStreams>,
+        is_space: Arc<dyn IsSpace>,
         node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
         events_task: Mutex<Option<JoinHandle<()>>>,
         refresh_task: Mutex<Option<JoinHandle<()>>>,
@@ -804,6 +819,7 @@ mod imp {
                 handle,
                 ext,
                 streams: params.streams,
+                is_space: params.is_space,
                 node_task: Mutex::new(Some(node_task)),
                 events_task: Mutex::new(Some(events_task)),
                 refresh_task: Mutex::new(None),
@@ -867,7 +883,7 @@ mod imp {
             let store = &self.ext.store;
             let by_author = store.topic_logs(&topic).await?;
             let mut logs: BTreeSet<LogId> = by_author.values().flatten().copied().collect();
-            if !self.streams.is_space(topic).await {
+            if !self.is_space.is_space(topic).await? {
                 logs.insert(LogId::from_topic(topic));
                 return Ok(logs);
             }
@@ -1030,6 +1046,7 @@ mod imp {
                 .await
                 .unwrap();
             let store = node.store();
+            let local_store = node.local_store.clone();
             let (streams, drain) = TopicStreams::new(node, None);
             let streams = Arc::new(streams);
             let device_id = p2panda::SigningKey::generate().verifying_key();
@@ -1040,6 +1057,7 @@ mod imp {
                     device_id,
                     op_store: OpStore::from_sqlite(store, streams.clone()),
                     streams,
+                    is_space: Arc::new(local_store),
                 },
                 dir,
                 drain,

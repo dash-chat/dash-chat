@@ -456,6 +456,7 @@ impl Node {
             device_id: *node_keys.device_id(),
             op_store: op_store.clone(),
             streams: streams.clone(),
+            is_space: Arc::new(local_store.clone()),
         })
         .await
         .context("starting the LAN router")?;
