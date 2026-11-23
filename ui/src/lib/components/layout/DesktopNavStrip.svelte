@@ -24,11 +24,11 @@
 	<a
 		href="/"
 		data-testid="main-tab-chats"
-		aria-label={m.chats()}
 		aria-current={isSettings ? undefined : 'page'}
 		title={m.chats()}
 		class={tabClass(!isSettings)}
 	>
+		<span class="sr-only">{m.chats()}</span>
 		<ChatsUnreadBadge>
 			<span class="block size-5 *:size-full">
 				{@html chatsSvg}
