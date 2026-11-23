@@ -51,13 +51,15 @@ reporting = { path = "crates/reporting" }
 # - `encrypt_aux`/`decrypt_aux` and `Space::with_secrets` for encrypting
 #   auxiliary data (media blobs) towards a space.
 # - The gossip manager survives a message arriving before the first subscriber.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728", features = [
+# - The pipeline thread gets a 16 MiB stack: the orderer recurses once per
+#   pending operation a new one releases, which overran 2 MiB on catch-up.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -65,9 +67,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d38
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "f248b7fbe3878dbbdc5f78395cee0876b717218a" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.5.0", default-features = false, features = [
