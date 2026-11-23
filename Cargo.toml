@@ -41,12 +41,9 @@ local-hub-discovery = { path = "crates/local-hub-discovery" }
 lan-multicast-probe = { path = "crates/lan-multicast-probe" }
 reporting = { path = "crates/reporting" }
 
-# p2panda 0.8.1 with the offline-node backport and the groups extension API,
-# merged with `dashchat-named-stream-cursors`, which adds:
-# - SQLite transactions begin with BEGIN IMMEDIATE, so the app and the iOS push
-#   extension sharing one database file stop refusing each other's writes with
-#   "database is locked".
-# - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
+# p2panda main past 0.8.1 with our patches on top (branch `dashchat-main`),
+# among them:
+# - The offline-node backport.
 # - `can_remove_member` lets a member remove themself, matching the group
 #   CRDT, so a non-admin can leave a space.
 # - `PendingSpace::publisher`, so a space's topic can import mailbox
@@ -54,13 +51,13 @@ reporting = { path = "crates/reporting" }
 # - `encrypt_aux`/`decrypt_aux` and `Space::with_secrets` for encrypting
 #   auxiliary data (media blobs) towards a space.
 # - The gossip manager survives a message arriving before the first subscriber.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7", features = [
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -68,12 +65,12 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7"
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "92cc73b7" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "88e361d383d2c39838a5fbd0246946b1f0637728" }
 
 # iroh imports must match p2panda iroh dep version
-iroh = { version = "1.4.1", default-features = false, features = [
+iroh = { version = "1.5.0", default-features = false, features = [
   "tls-ring",
 ] }
 iroh-blobs = "0.104.0"
