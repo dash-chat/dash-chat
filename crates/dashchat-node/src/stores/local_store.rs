@@ -184,7 +184,9 @@ impl LocalStore {
         Ok(rows.into_iter().map(|(id,)| *id).collect())
     }
 
-    pub async fn is_subscribed_space(&self, topic: TopicId) -> anyhow::Result<bool> {
+    /// Whether we subscribed to `topic` as a space rather than a plain stream.
+    // TODO: consider newtypes/marker types for topics, moving this into the type system.
+    pub async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool> {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT 1 FROM subscribed_spaces WHERE topic_id = ?")
                 .bind(topic.as_bytes().to_vec())
@@ -215,6 +217,8 @@ impl LocalStore {
         Ok(())
     }
 
+    /// Reads pick a topic's message log by its row (`Node::app_message_log_id`), so
+    /// without it the topic's messages are no longer found.
     pub async fn register_topic_as_unsubscribed<K: AutoRegisteredTopic>(
         &self,
         topic: Topic<K>,

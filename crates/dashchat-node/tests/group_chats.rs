@@ -426,8 +426,26 @@ async fn test_chat_authors_are_readable_while_stored_spaces_are_rejoined() {
     let bobbi = TestNode::new_at_path(app_config, "bobbi", bobbi_dir).await;
 
     let message_log = bobbi.app_message_log_id(chat_id.into()).await.unwrap();
-    let authors = bobbi.op_store.get_authors(message_log).await.unwrap();
-    assert!(authors.contains(&alice.device_id()));
+    let authors = bobbi
+        .op_store
+        .get_authors(message_log.clone())
+        .await
+        .unwrap();
+    assert!(
+        authors.contains(&alice.device_id()),
+        "expected alice among the chat's authors, got {authors:?}"
+    );
+
+    let alice_log = bobbi
+        .op_store
+        .get_log(&alice.device_id(), &message_log, None)
+        .await
+        .unwrap();
+    assert!(!alice_log.is_empty(), "alice's messages read back empty");
+    assert!(
+        alice_log.iter().all(|op| op.body.is_ok()),
+        "some of alice's messages read back undecryptable"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

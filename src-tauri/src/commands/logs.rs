@@ -220,7 +220,7 @@ pub async fn get_log(
     let log_id = node
         .app_message_log_id(topic_id)
         .await
-        .map_err(|e| format!("Failed to get log: {e:?}"))?;
+        .map_err(|e| format!("Failed to resolve the message log: {e:?}"))?;
     let log = node
         .op_store
         .get_log(&author, &log_id, None)
@@ -245,7 +245,7 @@ pub async fn get_authors(
     let log_id = node
         .app_message_log_id(topic_id)
         .await
-        .map_err(|e| format!("Failed to get log: {e:?}"))?;
+        .map_err(|e| format!("Failed to resolve the message log: {e:?}"))?;
     let authors = node
         .op_store
         .get_authors(log_id)
