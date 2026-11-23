@@ -451,9 +451,11 @@ impl OpProjection {
             // so it is what defines a topic as a group chat in the projection.
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 let chat_id = ChatId::from_topic_id(topic)?;
-                if self.mark_group_as_group_chat(chat_id).await? {
-                    events.push(SystemNotification::GroupChatAdded { chat_id });
-                }
+                self.mark_group_as_group_chat(chat_id).await?;
+                // Announced even when the group was already marked: the iOS push
+                // extension marks it in the shared store first, and the app's
+                // frontend still has to hear about it.
+                events.push(SystemNotification::GroupChatAdded { chat_id });
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
@@ -803,15 +805,14 @@ impl OpProjection {
         Ok(())
     }
 
-    /// Returns whether the chat was not a group chat before.
-    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<bool> {
+    async fn mark_group_as_group_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
         let mut tx = self.pool.begin().await?;
-        let result = sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
+        sqlx::query("INSERT OR IGNORE INTO group_chats (chat_id) VALUES (?)")
             .bind(chat_id.to_vec())
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(result.rows_affected() > 0)
+        Ok(())
     }
 
     pub async fn is_group_chat(&self, chat_id: ChatId) -> anyhow::Result<bool> {
