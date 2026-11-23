@@ -120,6 +120,22 @@ impl TestNode {
         }
     }
 
+    /// Empty the projection of the shut-down node stored at `store_dir`.
+    pub async fn clear_projection_at_path(store_dir: &TempDir) {
+        let filesystem = Filesystem::new(store_dir.path().to_path_buf());
+        let pool = crate::stores::create_sqlite_pool(
+            filesystem.local_store_path(),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
+        let projection = OpProjection::new(pool.clone()).await.unwrap();
+        projection.clear().await.unwrap();
+        pool.close().await;
+    }
+
     /// Shut down the node's background tasks and return the store directory.
     /// The store directory can be passed to `new_at_path` to restart the node.
     pub async fn shutdown(self) -> Arc<TempDir> {
