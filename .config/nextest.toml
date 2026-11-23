@@ -215,6 +215,11 @@ slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
 filter = 'binary(message_acks) & test(acks_are_delta_encoded_and_never_cascade)'
 slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
 
+# Three members, a block, and a wait for an ack before a removal: up to 55s on Windows.
+[[profile.default.overrides]]
+filter = 'binary(blocking) & test(test_blocked_group_member_control_and_info_still_apply)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
 # Three members, a group and a profile wait per member: 30s on Windows, past a minute on a
 # loaded Linux runner.
 [[profile.default.overrides]]

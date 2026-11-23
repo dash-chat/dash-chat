@@ -2164,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.22.3"
+version = "0.22.5"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -2216,7 +2216,7 @@ dependencies = [
  "serde_json",
  "sonix-i18n",
  "sqlite-gate",
- "sqlx 0.9.0",
+ "sqlx 0.9.1",
  "sysinfo",
  "tauri",
  "tauri-build",
@@ -2318,7 +2318,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "sqlite-gate",
- "sqlx 0.9.0",
+ "sqlx 0.9.1",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -4834,7 +4834,7 @@ dependencies = [
  "log",
  "netlink-packet-core 0.8.2",
  "netlink-packet-route 0.28.0",
- "netlink-proto",
+ "netlink-proto 0.12.2",
  "netlink-sys 0.8.8",
  "rtnetlink",
  "system-configuration 0.7.0",
@@ -5002,9 +5002,9 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "iroh"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3689cab508af9bcef7816c1201b403595ec6aa20e7d15e1f9683bb4be4a5b17"
+checksum = "40ac5d8330439176254581b6db4bc6f1d947d7cc741fda4e04b96d758addf1db"
 dependencies = [
  "backon",
  "blake3",
@@ -5051,9 +5051,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-base"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43b72366b16001af3a51574233df88ca6d62da0215807549a769e7de887da803"
+checksum = "eff8f9146946feac461ef2e5fcf7b4b795eff44958ef6faa85cba3cecea62ab3"
 dependencies = [
  "curve25519-dalek 5.0.0",
  "data-encoding",
@@ -5064,6 +5064,7 @@ dependencies = [
  "n0-error",
  "rand 0.10.3",
  "serde",
+ "tracing",
  "url",
  "zeroize",
 ]
@@ -5110,9 +5111,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-dns"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7481d0792dde1035a2b06ec06ed3cf6d01fcb1a494e6931b489e32073382048d"
+checksum = "2cf4ac424ab7e13357c7bff7b6320b865e6ffc2320d726b58d1c8162f52a1406"
 dependencies = [
  "arc-swap",
  "cfg_aliases",
@@ -5124,7 +5125,7 @@ dependencies = [
  "portable-atomic",
  "rand 0.10.3",
  "rustls 0.23.46",
- "simple-dns",
+ "simple-dns 0.13.1",
  "strum",
  "tokio",
  "tracing",
@@ -5133,9 +5134,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-gossip"
-version = "0.102.0"
+version = "0.103.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f78267c0d936a3f51b8aa24419a7a267e42d1800ac99315f48045f2540c57922"
+checksum = "74c4170847b5603f489c4d7771f1e7b263fa63a2521dbbb747601931987aa777"
 dependencies = [
  "blake3",
  "bytes",
@@ -5146,7 +5147,6 @@ dependencies = [
  "iroh",
  "iroh-base",
  "iroh-metrics",
- "irpc",
  "n0-error",
  "n0-future",
  "postcard",
@@ -5228,9 +5228,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-relay"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e5589e7c1475700686603a970275687f760df853bc6525c7eb1347aa31d7230"
+checksum = "aef6e9c979c78b0dadf6a2aac4ff629c4ffb91ec34586275673524248dc72f55"
 dependencies = [
  "blake3",
  "bytes",
@@ -5247,7 +5247,7 @@ dependencies = [
  "iroh-base",
  "iroh-dns",
  "iroh-metrics",
- "lru",
+ "lru 0.19.1",
  "n0-error",
  "n0-future",
  "noq",
@@ -5893,6 +5893,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83be4da409554841af087163ad187608824ad8ca8713d8e124c8e0f704a2f92f"
+dependencies = [
+ "hashbrown 0.17.1",
+]
+
+[[package]]
 name = "lru-slab"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6032,7 +6041,7 @@ dependencies = [
  "reporting",
  "serde",
  "sqlite-gate",
- "sqlx 0.9.0",
+ "sqlx 0.9.1",
  "tempfile",
  "tokio",
  "tracing",
@@ -6275,7 +6284,7 @@ dependencies = [
  "derive_more 2.1.1",
  "ipconfig",
  "jni 0.22.4",
- "lru",
+ "lru 0.18.4",
  "n0-error",
  "n0-future",
  "ndk-context",
@@ -6283,7 +6292,7 @@ dependencies = [
  "reqwest 0.13.5",
  "rustc-hash 2.1.3",
  "rustls 0.23.46",
- "simple-dns",
+ "simple-dns 0.12.0",
  "system-configuration 0.8.0",
  "tokio",
  "tokio-rustls 0.26.5",
@@ -6461,36 +6470,9 @@ dependencies = [
 
 [[package]]
 name = "netdev"
-version = "0.45.1"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "096c44b66a9b09b99b4dd36b1c295ff3a492039ccecaf55466bd6ddcdba59968"
-dependencies = [
- "block2 0.6.2",
- "dispatch2",
- "dlopen2",
- "ipnet",
- "jni 0.21.1",
- "libc",
- "mac-addr",
- "ndk-context",
- "netlink-packet-core 0.8.2",
- "netlink-packet-route 0.31.0",
- "netlink-sys 0.8.8",
- "objc2 0.6.4",
- "objc2-core-foundation",
- "objc2-core-wlan",
- "objc2-foundation 0.3.2",
- "objc2-system-configuration",
- "once_cell",
- "plist",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "netdev"
-version = "0.46.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3c52c2584961c68f5a6e3356797344061f818c93b8acc9cd6d7e284795e563e"
+checksum = "98a4d13f8061600697d721c5fd45262aba533a7d4a7670e7c64fd02d68e4a9fb"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -6551,18 +6533,6 @@ dependencies = [
 
 [[package]]
 name = "netlink-packet-route"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2288fcb784eb3defd5fb16f4c4160d5f477de192eac730f43e1d11c24d9a007"
-dependencies = [
- "bitflags 2.13.2",
- "libc",
- "log",
- "netlink-packet-core 0.8.2",
-]
-
-[[package]]
-name = "netlink-packet-route"
 version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59d48ffc8b73a506e1ff0878528c72668f2bfbc3d875b6be890a96be5d0d5576"
@@ -6590,6 +6560,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "netlink-proto"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97e03ae6247c6cdb499e8f14e98c72b83954d85822b687056e3a21150b438f2b"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "log",
+ "netlink-packet-core 0.9.0",
+ "netlink-sys 0.9.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "netlink-sys"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6609,19 +6594,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c99d38e00b420df49e940fe0826e667c3dad82ac68eb4c2bbf754c1c14a83a10"
 dependencies = [
  "bytes",
+ "futures-util",
  "libc",
  "log",
+ "tokio",
 ]
 
 [[package]]
 name = "netwatch"
-version = "0.19.3"
+version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39da9cad5f23aa43401f09497d3b280e51b5feba115d9ffbf38ca35d6ff95e96"
+checksum = "2acf7a1ca9205d7c1fc9a1595193a8cbaa7537b4a07dca93c6ae3de7c8d0e597"
 dependencies = [
  "atomic-waker",
  "bytes",
  "cfg_aliases",
+ "chrono",
  "derive_more 2.1.1",
  "ipnet",
  "js-sys",
@@ -6629,19 +6617,17 @@ dependencies = [
  "n0-error",
  "n0-future",
  "n0-watcher",
- "netdev 0.45.1",
- "netdev 0.46.3",
- "netlink-packet-core 0.8.2",
- "netlink-packet-route 0.31.0",
- "netlink-proto",
- "netlink-sys 0.8.8",
+ "netdev 0.47.0",
+ "netlink-packet-core 0.9.0",
+ "netlink-packet-route 0.33.0",
+ "netlink-proto 0.13.0",
+ "netlink-sys 0.9.0",
  "noq-udp",
  "objc2-core-foundation",
  "objc2-system-configuration",
  "pin-project-lite",
  "serde",
  "socket2 0.6.5",
- "time",
  "tokio",
  "tokio-util",
  "tracing",
@@ -6761,9 +6747,9 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 
 [[package]]
 name = "noq"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6249a065adc1edbc1704a95436f38dd60476064dbc3b7c47cf279e02d1590eb5"
+checksum = "0c2cf8bf3b78c2684a8485782c3357344416f264050f8d08a06c45c4642d87a2"
 dependencies = [
  "bytes",
  "cfg_aliases",
@@ -6783,9 +6769,9 @@ dependencies = [
 
 [[package]]
 name = "noq-proto"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c01a35be3ed37558c8db69554419f24eff8a63599b54f711bbe3863ec727c47d"
+checksum = "afb15c81d1f9b529d0c1f5095ee2e799eca9f361aa5f712424e758ce90f825d3"
 dependencies = [
  "aes-gcm 0.10.3",
  "bytes",
@@ -6812,9 +6798,9 @@ dependencies = [
 
 [[package]]
 name = "noq-udp"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d0160422832eea1cc11c34be04ee6d5a046452b0b46cfb14695d55a1f24c954"
+checksum = "716df6621d528211d75608903c0dd54bee78745444cdcbb791bcfbc55717a29f"
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -7768,7 +7754,7 @@ dependencies = [
 [[package]]
 name = "p2panda"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "futures-util",
  "p2panda-auth",
@@ -7794,7 +7780,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "p2panda-core",
  "petgraph",
@@ -7806,7 +7792,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "blake3",
  "cbor-core",
@@ -7821,7 +7807,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "blake3",
  "futures-util",
@@ -7836,7 +7822,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "chacha20poly1305 0.10.1",
  "curve25519-dalek 4.1.3",
@@ -7859,7 +7845,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7887,7 +7873,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -7903,7 +7889,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -7913,7 +7899,7 @@ dependencies = [
  "rand 0.10.3",
  "rand_chacha 0.10.0",
  "serde",
- "sqlx 0.9.0",
+ "sqlx 0.9.1",
  "thiserror 2.0.20",
  "tokio",
 ]
@@ -7921,7 +7907,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "futures-util",
  "indexmap 2.14.2",
@@ -7939,7 +7925,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.8.1"
-source = "git+https://github.com/dash-chat/p2panda?rev=92cc73b7#92cc73b71eda0e8de405b0c5222990c8868d176d"
+source = "git+https://github.com/dash-chat/p2panda?rev=88e361d383d2c39838a5fbd0246946b1f0637728#88e361d383d2c39838a5fbd0246946b1f0637728"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -7949,7 +7935,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "tokio",
- "tokio-stream",
  "tracing",
 ]
 
@@ -8062,16 +8047,6 @@ name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
-
-[[package]]
-name = "pem"
-version = "3.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
-dependencies = [
- "base64 0.22.1",
- "serde_core",
-]
 
 [[package]]
 name = "pem"
@@ -9024,7 +8999,7 @@ version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
- "pem 4.0.0",
+ "pem",
  "ring",
  "rustls-pki-types",
  "time",
@@ -9418,7 +9393,7 @@ dependencies = [
  "log",
  "netlink-packet-core 0.8.2",
  "netlink-packet-route 0.28.0",
- "netlink-proto",
+ "netlink-proto 0.12.2",
  "netlink-sys 0.8.8",
  "nix 0.30.1",
  "thiserror 1.0.69",
@@ -10465,6 +10440,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "simple-dns"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8aea2b78df6bbe38fb98d2c8140ada65fb63a314246a0c38626140dd21c69ff7"
+dependencies = [
+ "bitflags 2.13.2",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10625,7 +10609,7 @@ dependencies = [
 name = "sqlite-gate"
 version = "0.1.0"
 dependencies = [
- "sqlx 0.9.0",
+ "sqlx 0.9.1",
  "tokio",
 ]
 
@@ -10644,15 +10628,15 @@ dependencies = [
 
 [[package]]
 name = "sqlx"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "378620ccc25c62c89d8be1c819e76a88d59bdcc3304733330788948e619bfd71"
+checksum = "edb1dddfbdfe5fb99dba0541a87b2edb8adbd59e45815db22d32d4fbbb8813dd"
 dependencies = [
- "sqlx-core 0.9.0",
- "sqlx-macros 0.9.0",
- "sqlx-mysql 0.9.0",
- "sqlx-postgres 0.9.0",
- "sqlx-sqlite 0.9.0",
+ "sqlx-core 0.9.1",
+ "sqlx-macros 0.9.1",
+ "sqlx-mysql 0.9.1",
+ "sqlx-postgres 0.9.1",
+ "sqlx-sqlite 0.9.1",
 ]
 
 [[package]]
@@ -10691,9 +10675,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-core"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05b44e85bf579a8eeb4ceaa77a3a523baf2bf0e9bac7e40f405d537b5d2d5ccb"
+checksum = "c08f9787cc5aff062567dea2205f8ae37a617b04342633ab4f74944858ea6072"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -10714,7 +10698,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "smallvec",
  "thiserror 2.0.20",
  "tokio",
@@ -10738,14 +10722,14 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd2b84f2bc39a5705ef27ec785a11c934a41bbd4a24941e257927cddc26b60bf"
+checksum = "bf62c58a1e7fd6031ee684eee21d07572f5aebe71c273a01ae4f04eeeba47c47"
 dependencies = [
  "proc-macro2",
  "quote",
- "sqlx-core 0.9.0",
- "sqlx-macros-core 0.9.0",
+ "sqlx-core 0.9.1",
+ "sqlx-macros-core 0.9.1",
  "syn 2.0.119",
 ]
 
@@ -10776,9 +10760,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros-core"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb8d96de5fdc85a5c4ec813432b523ec637e80ba98f046555f75f7908ddac7c3"
+checksum = "c1ff75c9d609ac84aa8a3e0d92b5c0c54bf541a7f70db492fb40c9a4bea792c8"
 dependencies = [
  "cfg-if",
  "dotenvy",
@@ -10789,11 +10773,11 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.9",
- "sqlx-core 0.9.0",
- "sqlx-mysql 0.9.0",
- "sqlx-postgres 0.9.0",
- "sqlx-sqlite 0.9.0",
+ "sha2 0.11.0",
+ "sqlx-core 0.9.1",
+ "sqlx-mysql 0.9.1",
+ "sqlx-postgres 0.9.1",
+ "sqlx-sqlite 0.9.1",
  "syn 2.0.119",
  "thiserror 2.0.20",
  "tokio",
@@ -10844,9 +10828,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-mysql"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90b8020fe17c5f2c245bfa2505d7ef59c5604839527c740266ad2214acebea27"
+checksum = "19eeb93b96eb10a3a59dfb436f3daf87d2fc41168ed9e9dc153ec8257dd6a761"
 dependencies = [
  "bitflags 2.13.2",
  "byteorder",
@@ -10863,7 +10847,7 @@ dependencies = [
  "serde",
  "sha1 0.11.0",
  "sha2 0.11.0",
- "sqlx-core 0.9.0",
+ "sqlx-core 0.9.1",
  "thiserror 2.0.20",
  "tracing",
 ]
@@ -10907,9 +10891,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-postgres"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87a2bdd6e83f6b3ea525ca9fee568030508b58355a43d0b2c1674d5f79dcd65e"
+checksum = "b0e9e02f764a1fe640eeefc8eb33eeddd274204654ec9f2db8ff851a1dee2364"
 dependencies = [
  "atoi",
  "base64 0.22.1",
@@ -10933,7 +10917,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "smallvec",
- "sqlx-core 0.9.0",
+ "sqlx-core 0.9.1",
  "stringprep",
  "thiserror 2.0.20",
  "tracing",
@@ -10966,9 +10950,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-sqlite"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "488e99c397a62007e4229aec669a179816339afc6d2620ca6fa420dbee2e982c"
+checksum = "88b6b78a34ddcb1db4046d462db8f79cee811019d7297b99fca8fac5de26672e"
 dependencies = [
  "atoi",
  "flume 0.12.0",
@@ -10982,7 +10966,7 @@ dependencies = [
  "log",
  "percent-encoding",
  "serde",
- "sqlx-core 0.9.0",
+ "sqlx-core 0.9.1",
  "thiserror 2.0.20",
  "tracing",
  "url",
@@ -12040,8 +12024,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-sharekit"
 version = "0.4.0-rc.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1a89a463a6eb1a098a250a89c95578d3d2797165c7f2d4ad84294f632f6f703"
+source = "git+https://github.com/dash-chat/tauri-plugin-sharekit?rev=c382e55b6a033f8b62b814dab74758c7f5cacb0c#c382e55b6a033f8b62b814dab74758c7f5cacb0c"
 dependencies = [
  "log",
  "objc2 0.6.4",
@@ -12476,9 +12459,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",
@@ -12535,17 +12518,16 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls-acme"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af8573b15fdad8d66da116198cd8fd8d87ff62a67c1c6c3df7f62da1170793f"
+checksum = "14303ebe76ff697adc251341c800c56e7a6a15c53dcd6e45986dbc291e2ae9a4"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
- "chrono",
+ "base64 0.23.1",
  "futures",
  "log",
  "num-bigint",
- "pem 3.0.6",
+ "pem",
  "proc-macro2",
  "rcgen",
  "reqwest 0.13.5",
@@ -12587,9 +12569,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.19"
+version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "494815d09bf52b5548659851081238f0ca39ff638363907596da739561c62c52"
+checksum = "e464cf451ba96ebfc6f9b6542f17ee8b8956e33f1e40d9690624e59d7a7f8a4b"
 dependencies = [
  "bytes",
  "futures-core",
@@ -13633,6 +13615,12 @@ name = "whoami"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "626c4bac6755d76ffc12cb01b2eac751db1996b9e0041de9aa02c8c211ddc82c"
+dependencies = [
+ "libc",
+ "libredox",
+ "objc2-system-configuration",
+ "web-sys",
+]
 
 [[package]]
 name = "widestring"

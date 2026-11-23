@@ -303,8 +303,24 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         image: None,
     };
     cammy.set_group_info(chat, renamed.clone()).await.unwrap();
-    cammy
+    let text = cammy
         .send_message(chat, "blocked group text", None, None)
+        .await
+        .unwrap();
+    // Bobbi's ack of the text must not race his removal: an ack published as he is removed
+    // is processed by some members and not others.
+    let ack_poll = PollConfig {
+        poll_timeout: Duration::from_secs(30),
+        ..PollConfig::default()
+    };
+    ack_poll
+        .wait_for(|| async {
+            let acks = cammy.projection.delivered_acks(chat.into()).await.unwrap();
+            match acks.get(&cammy.device_id()) {
+                Some(acked) if acked.seq >= text.seq_num => Ok(()),
+                other => Err(format!("bobbi has not acked the text yet: {other:?}")),
+            }
+        })
         .await
         .unwrap();
     cammy

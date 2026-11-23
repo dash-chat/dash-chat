@@ -645,6 +645,7 @@
 					"$(inherited)",
 					"-force_load",
 					"\"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
@@ -690,7 +691,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 0.22.3;
+				CURRENT_PROJECT_VERSION = 0.22.5;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -723,17 +724,19 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 0.22.3;
+				MARKETING_VERSION = 0.22.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				"OTHER_LDFLAGS[arch=arm64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/arm64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				"OTHER_LDFLAGS[arch=x86_64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/x86_64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -787,7 +790,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 0.22.3;
+				CURRENT_PROJECT_VERSION = 0.22.5;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -814,16 +817,18 @@
 					"@executable_path/../../Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 0.22.3;
+				MARKETING_VERSION = 0.22.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				"OTHER_LDFLAGS[arch=arm64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/arm64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				"OTHER_LDFLAGS[arch=x86_64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/x86_64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -877,6 +882,7 @@
 					"$(inherited)",
 					"-force_load",
 					"\"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
