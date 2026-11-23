@@ -3,6 +3,7 @@
 	import chatsSvg from '$lib/assets/main-tabbar/chats.svg?raw';
 	import settingsSvg from '$lib/assets/main-tabbar/settings.svg?raw';
 	import { m } from '$lib/paraglide/messages.js';
+	import ChatsUnreadBadge from '../ChatsUnreadBadge.svelte';
 	import HubWarningBadge from '../HubWarningBadge.svelte';
 
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
@@ -23,14 +24,16 @@
 	<a
 		href="/"
 		data-testid="main-tab-chats"
-		aria-label={m.chats()}
 		aria-current={isSettings ? undefined : 'page'}
 		title={m.chats()}
 		class={tabClass(!isSettings)}
 	>
-		<span class="block size-5 *:size-full">
-			{@html chatsSvg}
-		</span>
+		<span class="sr-only">{m.chats()}</span>
+		<ChatsUnreadBadge>
+			<span class="block size-5 *:size-full">
+				{@html chatsSvg}
+			</span>
+		</ChatsUnreadBadge>
 	</a>
 	<a
 		href="/settings"

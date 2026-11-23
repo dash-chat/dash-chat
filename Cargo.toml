@@ -80,6 +80,10 @@ iroh-relay = "1.4.1"
 # tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
 # app, which tao drops on the scene lifecycle (dash-chat/tao branch dashchat)
 tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2e7fff8997bd5c77b9" }
+# tauri-plugin-sharekit 0.4.0-rc.8 + presenting the iOS share sheet from its own
+# window on iPhone: iOS 26 lays the sheet out broken when tao's window presents
+# it (dash-chat/tauri-plugin-sharekit branch dashchat)
+tauri-plugin-sharekit = { git = "https://github.com/dash-chat/tauri-plugin-sharekit", rev = "c382e55b6a033f8b62b814dab74758c7f5cacb0c" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
