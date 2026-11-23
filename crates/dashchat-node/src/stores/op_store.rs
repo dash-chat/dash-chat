@@ -1,6 +1,6 @@
 pub mod queries;
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 #[cfg(feature = "testing")]
 use std::{collections::HashMap, sync::RwLock};
@@ -17,24 +17,6 @@ use p2panda_store::topics::TopicStore;
 
 use crate::node::streams::{EncryptedMessage, TopicStreams, Unreadable};
 use crate::{mailbox::MailboxOperation, topic::TopicId, *};
-
-/// The shape of one `(author, log)` in the op store: its lowest and highest
-/// stored seq and how many rows lie in between.
-#[cfg(any(test, feature = "lan-router"))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LogSeqSummary {
-    pub min: SeqNum,
-    pub max: SeqNum,
-    pub count: SeqNum,
-}
-
-#[cfg(any(test, feature = "lan-router"))]
-impl LogSeqSummary {
-    /// Every seq from `min` to `max` is present.
-    pub fn is_contiguous(&self) -> bool {
-        self.max - self.min + 1 == self.count
-    }
-}
 
 /// The payload of an encrypted operation does not decrypt with the secret it names: the
 /// ciphertext is corrupt, or was encrypted with something else.
@@ -97,112 +79,8 @@ impl OpStore {
         author: &DeviceId,
         log_id: &LogId,
     ) -> anyhow::Result<Option<SeqNum>> {
-        use p2panda_store::cursors::CursorStore;
-        // The ack cursor is persisted by p2panda under the topic's string
-        // representation (see `StreamSubscription`'s internal `Acked`).
-        let cursor = p2panda_store::tx!(self.store, {
-            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
-                &self.store,
-                topic.to_string(),
-            )
-            .await?
-        });
+        let cursor = ack_cursor(&self.store, topic).await?;
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
-    }
-
-    /// [`Self::acked_log_height`] for every author of `log_id` in `topic`,
-    /// from one read of the topic's cursor.
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn acked_log_heights(
-        &self,
-        topic: &TopicId,
-        log_id: &LogId,
-    ) -> anyhow::Result<BTreeMap<DeviceId, SeqNum>> {
-        use p2panda_store::cursors::CursorStore;
-        let cursor = p2panda_store::tx!(self.store, {
-            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
-                &self.store,
-                topic.to_string(),
-            )
-            .await?
-        });
-        let Some(cursor) = cursor else {
-            return Ok(BTreeMap::new());
-        };
-        Ok(cursor
-            .state()
-            .iter()
-            .filter_map(|(author, logs)| Some((DeviceId::from(*author), *logs.get(log_id)?)))
-            .collect())
-    }
-
-    /// Changes whenever an operation is stored, by whichever path: p2panda
-    /// stores control operations that no stream event or ack announces.
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn latest_operation_rowid(&self) -> anyhow::Result<Option<i64>> {
-        queries::latest_operation_rowid(&self.store).await
-    }
-
-    /// The logs p2panda has associated with `topic`, by author.
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn topic_logs(
-        &self,
-        topic: &TopicId,
-    ) -> anyhow::Result<BTreeMap<DeviceId, Vec<LogId>>> {
-        let logs: BTreeMap<p2panda::VerifyingKey, Vec<LogId>> = self.store.resolve(topic).await?;
-        Ok(logs
-            .into_iter()
-            .map(|(author, logs)| (DeviceId::from(author), logs))
-            .collect())
-    }
-
-    /// The log of every group that `authors`' stored control operations of
-    /// the space `topic` name. Read from the operations as stored, so a
-    /// group is found before the space can be processed.
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn space_group_log_ids(
-        &self,
-        topic: &TopicId,
-        authors: impl IntoIterator<Item = &DeviceId>,
-    ) -> anyhow::Result<BTreeSet<LogId>> {
-        let space_log = p2panda::spaces::space_log_id((*topic).into());
-        let mut group_logs = BTreeSet::new();
-        for author in authors {
-            let ops = self.log_operations(author, &space_log, None, None).await?;
-            group_logs.extend(ops.iter().filter_map(space_group_log_id));
-        }
-        Ok(group_logs)
-    }
-
-    /// Every sequence number present for `author`'s log, ascending. The
-    /// router's held-range input when a log has gaps (see `lan_router.rs`).
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn get_log_seqs(
-        &self,
-        author: &DeviceId,
-        log_id: &LogId,
-    ) -> anyhow::Result<Vec<SeqNum>> {
-        queries::get_log_seqs(&self.store, author, log_id).await
-    }
-
-    /// One [`LogSeqSummary`] per author of `log_id`, from a single query.
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn get_log_seq_summaries(
-        &self,
-        log_id: &LogId,
-    ) -> anyhow::Result<BTreeMap<DeviceId, LogSeqSummary>> {
-        queries::get_log_seq_summaries(&self.store, log_id, None).await
-    }
-
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn get_log_seq_summary(
-        &self,
-        author: &DeviceId,
-        log_id: &LogId,
-    ) -> anyhow::Result<Option<LogSeqSummary>> {
-        let mut summaries =
-            queries::get_log_seq_summaries(&self.store, log_id, Some(author)).await?;
-        Ok(summaries.remove(author))
     }
 
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
@@ -296,19 +174,6 @@ impl OpStore {
         Ok(heights.is_some())
     }
 
-    /// `author`'s log after `from` (exclusive) up to `until` (inclusive), each
-    /// open-ended when `None`.
-    #[cfg(any(test, feature = "lan-router"))]
-    pub(crate) async fn get_log_until(
-        &self,
-        author: &DeviceId,
-        log_id: &LogId,
-        from: Option<SeqNum>,
-        until: Option<SeqNum>,
-    ) -> anyhow::Result<Vec<Operation>> {
-        self.log_operations(author, log_id, from, until).await
-    }
-
     /// Collect a log's entries, decoding each stored operation into our extension type.
     async fn log_operations(
         &self,
@@ -317,12 +182,7 @@ impl OpStore {
         from: Option<SeqNum>,
         until: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
-        self.store
-            .log_entries(author, log_id, from, until)?
-            .map_err(anyhow::Error::from)
-            .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
-            .try_collect()
-            .await
+        log_operations(&self.store, author, log_id, from, until).await
     }
 
     /// The operations of a log from `from` that are safe to send onward, as
@@ -370,15 +230,6 @@ impl OpStore {
         OperationStore::<Operation, Hash>::get_operation(&self.store, hash)
             .await
             .map_err(|err| anyhow::anyhow!("failed to get operation for {hash:?}: {err}"))
-    }
-
-    /// Whether an operation is stored, with or without its body.
-    #[cfg(feature = "lan-router")]
-    pub(crate) async fn has_operation(&self, hash: &Hash) -> anyhow::Result<bool> {
-        use p2panda_store::operations::OperationStore;
-        Ok(p2panda_store::tx!(self.store, {
-            OperationStore::<Operation, Hash>::has_operation_tx(&self.store, hash).await?
-        }))
     }
 
     /// An operation as the app reads it.
@@ -552,19 +403,33 @@ fn encrypted_message(op: &Operation) -> Option<(TopicId, EncryptedMessage)> {
     ))
 }
 
-/// The log of the group a space control operation names.
-#[cfg(any(test, feature = "lan-router"))]
-fn space_group_log_id(op: &Operation) -> Option<LogId> {
-    let ExtensionsVariantV1::Space(extensions) = &op.header.extensions.variant else {
-        return None;
-    };
-    match &extensions.args {
-        SpacesHeaderArgs::KeyAgreement { group_id, .. }
-        | SpacesHeaderArgs::SpaceUpdate { group_id, .. } => {
-            Some(p2panda::spaces::group_log_id(*group_id))
-        }
-        _ => None,
-    }
+/// The ack cursor of `topic`, which p2panda persists under the topic's string
+/// representation (see `StreamSubscription`'s internal `Acked`).
+pub(super) async fn ack_cursor(
+    store: &SqliteStore,
+    topic: &TopicId,
+) -> anyhow::Result<Option<p2panda_core::Cursor<p2panda::VerifyingKey, LogId>>> {
+    use p2panda_store::cursors::CursorStore;
+    Ok(p2panda_store::tx!(store, {
+        CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(store, topic.to_string()).await?
+    }))
+}
+
+/// `author`'s log after `from` (exclusive) up to `until` (inclusive), each
+/// open-ended when `None`, as it was stored.
+pub(super) async fn log_operations(
+    store: &SqliteStore,
+    author: &DeviceId,
+    log_id: &LogId,
+    from: Option<SeqNum>,
+    until: Option<SeqNum>,
+) -> anyhow::Result<Vec<Operation>> {
+    store
+        .log_entries(author, log_id, from, until)?
+        .map_err(anyhow::Error::from)
+        .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
+        .try_collect()
+        .await
 }
 
 /// Whether an operation carries an application payload, as opposed to a
@@ -652,7 +517,6 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use mailbox_client::store::MailboxStore;
-    use maplit::btreemap;
     use p2panda::operation::{Header, LogId};
     use p2panda_core::Body;
 
@@ -914,158 +778,5 @@ mod tests {
         assert!(stored.body.is_none());
         // The header is retained so log sync stays consistent.
         assert_eq!(stored.header.seq_num, message.seq_num);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn get_log_seqs_lists_present_seqs_ascending() {
-        let node = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
-        let store = &node.op_store;
-        let key = p2panda::SigningKey::generate();
-        let author = DeviceId::from(key.verifying_key());
-        let log_id = LogId::from_topic(TopicId::random());
-        let op0 = signed_op(&key, log_id, 0, None, b"a");
-        let op1 = signed_op(&key, log_id, 1, Some(op0.hash), b"b");
-        let op2 = signed_op(&key, log_id, 2, Some(op1.hash), b"c");
-        insert(store, &op2, &log_id).await;
-        insert(store, &op0, &log_id).await;
-        insert(store, &op1, &log_id).await;
-        assert_eq!(
-            store.get_log_seqs(&author, &log_id).await.unwrap(),
-            vec![0, 1, 2]
-        );
-        let other = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
-        assert_eq!(
-            store.get_log_seqs(&other, &log_id).await.unwrap(),
-            Vec::<SeqNum>::new()
-        );
-    }
-
-    /// Chained ops `0..n` for `key`, not inserted.
-    fn chain(key: &p2panda::SigningKey, log_id: LogId, n: SeqNum) -> Vec<Operation> {
-        let mut ops = Vec::new();
-        let mut backlink = None;
-        for seq in 0..n {
-            let op = signed_op(key, log_id, seq, backlink, &[seq as u8]);
-            backlink = Some(op.hash);
-            ops.push(op);
-        }
-        ops
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn log_seq_summaries_describe_a_run_and_a_gap() {
-        let node = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
-        let store = &node.op_store;
-        let log_id = LogId::from_topic(TopicId::random());
-        let run_key = p2panda::SigningKey::generate();
-        let gap_key = p2panda::SigningKey::generate();
-        for op in chain(&run_key, log_id, 3) {
-            insert(store, &op, &log_id).await;
-        }
-        for op in chain(&gap_key, log_id, 6)
-            .iter()
-            .filter(|op| [2, 3, 5].contains(&op.header.seq_num))
-        {
-            insert(store, op, &log_id).await;
-        }
-        let run = DeviceId::from(run_key.verifying_key());
-        let gap = DeviceId::from(gap_key.verifying_key());
-        let run_summary = LogSeqSummary {
-            min: 0,
-            max: 2,
-            count: 3,
-        };
-        let gap_summary = LogSeqSummary {
-            min: 2,
-            max: 5,
-            count: 3,
-        };
-        assert!(run_summary.is_contiguous());
-        assert!(!gap_summary.is_contiguous());
-        assert_eq!(
-            store.get_log_seq_summaries(&log_id).await.unwrap(),
-            btreemap! { run => run_summary, gap => gap_summary }
-        );
-        assert_eq!(
-            store.get_log_seq_summary(&gap, &log_id).await.unwrap(),
-            Some(gap_summary)
-        );
-        let other = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
-        assert_eq!(
-            store.get_log_seq_summary(&other, &log_id).await.unwrap(),
-            None
-        );
-        let other_log = LogId::from_topic(TopicId::random());
-        assert!(
-            store
-                .get_log_seq_summaries(&other_log)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn acked_log_heights_lists_every_author_of_the_log() {
-        let node = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
-        let store = &node.op_store;
-        let topic = TopicId::random();
-        let log_id = LogId::from_topic(topic);
-        let a = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
-        let b = DeviceId::from(p2panda::SigningKey::generate().verifying_key());
-        assert!(
-            store
-                .acked_log_heights(&topic, &log_id)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        ack_up_to(store, &topic, &a, log_id, 1).await;
-        ack_up_to(store, &topic, &b, log_id, 3).await;
-        ack_up_to(store, &topic, &b, LogId::from_topic(TopicId::random()), 9).await;
-        assert_eq!(
-            store.acked_log_heights(&topic, &log_id).await.unwrap(),
-            btreemap! { a => 1, b => 3 }
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn get_log_until_bounds_both_ends() {
-        let node = TestNode::new(NodeConfig::testing().no_p2p(), "alice").await;
-        let store = &node.op_store;
-        let key = p2panda::SigningKey::generate();
-        let log_id = LogId::from_topic(TopicId::random());
-        for op in chain(&key, log_id, 5) {
-            insert(store, &op, &log_id).await;
-        }
-        let author = DeviceId::from(key.verifying_key());
-        let seqs = |ops: Vec<Operation>| ops.iter().map(|op| op.header.seq_num).collect::<Vec<_>>();
-        assert_eq!(
-            seqs(
-                store
-                    .get_log_until(&author, &log_id, Some(1), Some(3))
-                    .await
-                    .unwrap()
-            ),
-            vec![2, 3]
-        );
-        assert_eq!(
-            seqs(
-                store
-                    .get_log_until(&author, &log_id, None, Some(1))
-                    .await
-                    .unwrap()
-            ),
-            vec![0, 1]
-        );
-        assert_eq!(
-            seqs(
-                store
-                    .get_log_until(&author, &log_id, None, Some(99))
-                    .await
-                    .unwrap()
-            ),
-            vec![0, 1, 2, 3, 4]
-        );
     }
 }

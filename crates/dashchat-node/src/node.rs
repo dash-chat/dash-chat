@@ -134,25 +134,10 @@ pub struct NodeConfig {
     /// A prefix for each topic's stream ack cursor name. When `None`, the node
     /// uses p2panda's default cursor, keyed by the topic.
     pub stream_cursor_prefix: Option<String>,
-    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
-    /// sync (see `lan_router.rs`). Requires the `lan-router` cargo feature;
-    /// without it this flag is ignored with a warning. Off by default, and
-    /// [`Self::no_p2p`] turns it off. A router that fails to start, or to
-    /// follow a topic, is logged and skipped: the p2panda path never depends on it.
-    ///
-    /// The router floods to every member of the node's gossip overlay on its
-    /// topic, which is not LAN-scoped by construction. Op bodies are not
-    /// end-to-end encrypted, so every overlay member reads them, and relays
-    /// keep them in `lan_router.redb`; this is why the flag defaults off and
-    /// is not exposed in the UI yet.
-    pub enable_lan_router: bool,
-    /// Quiet window after a locally authored op before the LAN router pushes
-    /// a Have for every op authored in the window (dash-router
-    /// `PushDebouncePolicy::window_ms`).
-    pub lan_router_push_debounce: std::time::Duration,
-    /// Hard cap after the oldest still-pending authored op, so a steady
-    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
-    pub lan_router_push_max_latency: std::time::Duration,
+    pub lan_router: crate::lan_router::LanRouterConfig,
+    /// Whether p2panda's log sync runs. Off, operations reach this node only
+    /// through mailboxes and the LAN router; gossip still runs.
+    pub enable_log_sync: bool,
     /// Whether to defer subscribing to all stored topics and replaying their
     /// backlogs until after `Node::new` returns.
     pub defer_stored_topics_initialization: bool,
@@ -181,7 +166,7 @@ impl NodeConfig {
         self.mdns_mode = MdnsDiscoveryMode::Disabled;
         self.use_relay = false;
         self.enable_p2p = false;
-        self.enable_lan_router = false;
+        self.lan_router.enabled = false;
         self
     }
 
@@ -224,9 +209,8 @@ impl NodeConfig {
             enable_message_acks: true,
             read_only: false,
             stream_cursor_prefix: None,
-            enable_lan_router: false,
-            lan_router_push_debounce: std::time::Duration::from_millis(50),
-            lan_router_push_max_latency: std::time::Duration::from_millis(200),
+            lan_router: crate::lan_router::LanRouterConfig::new(false),
+            enable_log_sync: true,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
             import_recorded_operations: false,
@@ -259,9 +243,8 @@ impl Default for NodeConfig {
             enable_message_acks: true,
             read_only: false,
             stream_cursor_prefix: None,
-            enable_lan_router: true,
-            lan_router_push_debounce: std::time::Duration::from_millis(50),
-            lan_router_push_max_latency: std::time::Duration::from_millis(200),
+            lan_router: crate::lan_router::LanRouterConfig::new(true),
+            enable_log_sync: true,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
             import_recorded_operations: false,
@@ -319,8 +302,7 @@ pub struct Node {
     message_ack_trigger: Arc<tokio::sync::Notify>,
     message_ack_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
     dirty_ack_topics: Arc<std::sync::Mutex<HashSet<ChatId>>>,
-    /// `None` unless `NodeConfig::enable_lan_router` and the `lan-router`
-    /// feature are both on (see `lan_router.rs`).
+    /// `None` unless `LanRouterConfig::enabled` (see `lan_router.rs`).
     lan_router: Option<Arc<crate::lan_router::LanRouter>>,
 }
 
@@ -434,6 +416,9 @@ impl Node {
         }
 
         let p2panda_node = builder.spawn().await?;
+        if !config.enable_log_sync {
+            p2panda_node.sync_block_list().restrictive().await;
+        }
         // @TODO: the store() method is behind the "test_utils" feature flag, if we actually do
         // need access to the store then we should make this method public.
         let store = p2panda_node.store();
@@ -464,22 +449,15 @@ impl Node {
 
         // === lan router === //
 
-        // The router is an optional accelerator: failing to start it must not
-        // take the p2panda path down with it.
         let lan_router = crate::lan_router::LanRouter::spawn(crate::lan_router::LanRouterParams {
-            enabled: config.enable_lan_router,
-            push_debounce: config.lan_router_push_debounce,
-            push_max_latency: config.lan_router_push_max_latency,
+            config: config.lan_router.clone(),
             data_path: filesystem.data_path().clone(),
             device_id: *node_keys.device_id(),
             op_store: op_store.clone(),
             streams: streams.clone(),
         })
         .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "lan router disabled: failed to start");
-            None
-        });
+        .context("starting the LAN router")?;
 
         // === blob sync === //
 
@@ -660,32 +638,12 @@ impl Node {
         }
     }
 
-    /// Ops the LAN router has delivered so far; `None` when it is not
-    /// running (see [`crate::lan_router::LanRouter::delivered_count`]).
-    #[cfg(feature = "lan-router")]
-    pub fn lan_router_delivered(&self) -> Option<u64> {
-        self.lan_router.as_ref().map(|r| r.delivered_count())
-    }
-
-    /// Testing: ops the relay store holds for others on `topic` (our own
-    /// ops live in the ext store, never here); `None` when the router is
-    /// not running.
-    #[cfg(all(feature = "lan-router", feature = "testing"))]
-    pub async fn lan_router_relay_holds(&self, topic: TopicId) -> Result<Option<bool>> {
-        match &self.lan_router {
-            Some(router) => Ok(Some(router.relay_holds_topic(topic).await?)),
-            None => Ok(None),
-        }
-    }
-
-    /// Testing: whether this node's relay store holds everything `other`'s
-    /// router serves; `None` when either router is not running.
-    #[cfg(all(feature = "lan-router", feature = "testing"))]
-    pub async fn lan_router_relay_covers(&self, other: &Node) -> Result<Option<bool>> {
-        match (&self.lan_router, &other.lan_router) {
-            (Some(relay), Some(served)) => Ok(Some(relay.relay_covers(served).await?)),
-            _ => Ok(None),
-        }
+    /// Testing: the running LAN router.
+    #[cfg(feature = "testing")]
+    pub fn lan_router(&self) -> anyhow::Result<Arc<crate::lan_router::LanRouter>> {
+        self.lan_router
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("the LAN router is not running"))
     }
 
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
@@ -847,31 +805,6 @@ impl Node {
         }
 
         self.streams.register_peer_addr(addr).await?;
-        Ok(())
-    }
-
-    /// Testing: refuse log sync with `node_id` on every topic (p2panda's
-    /// global sync blocklist). Gossip is unaffected. Set it before the peer
-    /// is introduced. A no-op on a node with no networking layer.
-    #[cfg(feature = "testing")]
-    pub async fn block_peer(&self, node_id: NodeId) -> Result<()> {
-        if self.endpoint.is_none() {
-            return Ok(());
-        }
-        self.streams.block_peer(node_id).await?;
-        Ok(())
-    }
-
-    /// Testing: turn p2panda's native log sync with `node_id` off on every
-    /// topic, subscribed now or later. Gossip is unaffected, so the LAN
-    /// router still runs between the two. A no-op on a node with no
-    /// networking layer.
-    #[cfg(feature = "testing")]
-    pub async fn block_native_sync_with(&self, node_id: NodeId) -> Result<()> {
-        if self.endpoint.is_none() {
-            return Ok(());
-        }
-        self.streams.block_native_sync_with(node_id).await?;
         Ok(())
     }
 
@@ -3061,9 +2994,9 @@ mod lan_router_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn initialize_topic_survives_a_dead_router() {
         let mut config = NodeConfig::testing();
-        config.enable_lan_router = true;
+        config.lan_router.enabled = true;
         let node = TestNode::new(config, "alice").await;
-        let router = node.lan_router.clone().expect("router on");
+        let router = node.lan_router().unwrap();
         router.shutdown().await;
         assert!(router.subscribe_topic(TopicId::random()).await.is_err());
         node.initialize_stream(TopicId::random()).await.unwrap();
@@ -3074,15 +3007,12 @@ mod lan_router_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn relay_holds_nothing_at_start() {
         let mut config = NodeConfig::testing();
-        config.enable_lan_router = true;
+        config.lan_router.enabled = true;
         let node = TestNode::new(config, "relay").await;
-        let topic = TopicId::random();
-        assert_eq!(
-            node.lan_router_relay_holds(topic).await.unwrap(),
-            Some(false)
-        );
+        let router = node.lan_router().unwrap();
+        assert!(!router.relay_holds_topic(TopicId::random()).await.unwrap());
         let off = TestNode::new(NodeConfig::testing(), "off").await;
-        assert_eq!(off.lan_router_relay_holds(topic).await.unwrap(), None);
+        assert!(off.lan_router().is_err());
         node.shutdown().await;
         off.shutdown().await;
     }

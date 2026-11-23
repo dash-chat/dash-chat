@@ -1,8 +1,8 @@
 //! The Dash Router LAN gossip shell, embedded (spec
 //! dash-router/docs/superpowers/specs/2026-09-22-dash-chat-lan-router-design.md §4).
 //!
-//! Everything is a no-op unless BOTH the `lan-router` cargo feature is on
-//! and `NodeConfig::enable_lan_router` is true. The node calls this module
+//! Everything is a no-op unless `LanRouterConfig::enabled` is true, which
+//! needs the `lan-router` cargo feature. The node calls this module
 //! at five points: `LanRouter::spawn` in `Node::init`, `subscribe_topic`
 //! once a topic's stream or space is open, `topics_changed` when a space's
 //! membership moves, and, after an operation is acked, `authored` for our
@@ -24,14 +24,46 @@ use crate::payload::Payload;
 use crate::stores::OpStore;
 use crate::topic::TopicId;
 
+#[derive(Clone, Debug)]
+pub struct LanRouterConfig {
+    /// Whether to run the Dash Router LAN gossip shell alongside p2panda
+    /// sync. A node configured to run it fails to start if the router
+    /// cannot, which includes a build without the `lan-router` cargo
+    /// feature. [`crate::NodeConfig::no_p2p`] turns it off. Once running,
+    /// failing to follow a topic is logged and skipped: the p2panda path
+    /// never depends on the router.
+    ///
+    /// The router floods to every member of the node's gossip overlay on its
+    /// topic, which is not LAN-scoped by construction, and relays keep what
+    /// they hear in `lan_router.redb`. Operations of a plain stream, such as
+    /// an inbox, are not end-to-end encrypted, so every overlay member reads
+    /// them. It is not exposed in the UI yet.
+    pub enabled: bool,
+    /// Quiet window after a locally authored op before the router pushes a
+    /// Have for every op authored in the window (dash-router
+    /// `PushDebouncePolicy::window_ms`).
+    pub push_debounce: std::time::Duration,
+    /// Hard cap after the oldest still-pending authored op, so a steady
+    /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
+    pub push_max_latency: std::time::Duration,
+}
+
+impl LanRouterConfig {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled,
+            push_debounce: std::time::Duration::from_millis(50),
+            push_max_latency: std::time::Duration::from_millis(200),
+        }
+    }
+}
+
 /// What the node hands the router at startup.
 pub struct LanRouterParams {
-    pub enabled: bool,
+    pub config: LanRouterConfig,
     pub data_path: PathBuf,
     pub device_id: VerifyingKey,
     pub op_store: OpStore,
-    pub push_debounce: std::time::Duration,
-    pub push_max_latency: std::time::Duration,
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub(crate) streams: Arc<TopicStreams>,
@@ -42,11 +74,11 @@ pub struct LanRouter;
 
 #[cfg(not(feature = "lan-router"))]
 impl LanRouter {
-    /// Always `None`: built without the `lan-router` feature.
     pub async fn spawn(params: LanRouterParams) -> anyhow::Result<Option<Arc<Self>>> {
-        if params.enabled {
-            tracing::warn!("enable_lan_router is set but this build has no lan-router feature");
-        }
+        anyhow::ensure!(
+            !params.config.enabled,
+            "the LAN router is enabled but this build has no lan-router feature"
+        );
         Ok(None)
     }
     pub async fn subscribe_topic(&self, _topic: TopicId) -> anyhow::Result<()> {
@@ -92,7 +124,7 @@ mod imp {
     use tokio::task::JoinHandle;
     use tokio_stream::wrappers::ReceiverStream;
 
-    use crate::stores::LogSeqSummary;
+    use crate::stores::{LanRouterStore, LogSeqSummary};
     use crate::{DeviceId, SeqNum};
 
     /// The router's log identity: `(LogId, author)`, channel first so the
@@ -227,7 +259,7 @@ mod imp {
     /// payload a tombstone could still drop.
     #[derive(Clone)]
     pub(crate) struct OpStoreExt {
-        store: OpStore,
+        store: LanRouterStore,
         /// Read on every held/fetch/ingest; written on (un)subscribe. Never
         /// held across an await.
         followed: Arc<RwLock<Followed>>,
@@ -239,7 +271,7 @@ mod imp {
     }
 
     impl OpStoreExt {
-        pub(crate) fn new(store: OpStore) -> Self {
+        pub(crate) fn new(store: LanRouterStore) -> Self {
             Self {
                 store,
                 followed: Default::default(),
@@ -698,14 +730,14 @@ mod imp {
 
     impl LanRouter {
         pub async fn spawn(params: LanRouterParams) -> anyhow::Result<Option<Arc<Self>>> {
-            if !params.enabled {
-                tracing::info!("lan router off: NodeConfig::enable_lan_router is false");
+            if !params.config.enabled {
+                tracing::info!("lan router off: LanRouterConfig::enabled is false");
                 return Ok(None);
             }
             let relay =
                 DiskRelayStore::<RouterLog>::open(&params.data_path.join("lan_router.redb"))
                     .context("opening lan_router.redb")?;
-            let ext = OpStoreExt::new(params.op_store);
+            let ext = OpStoreExt::new(LanRouterStore::new(params.op_store.store.clone()));
             let transport = open_transport(&params.streams).await?;
             let config = CoreConfig {
                 router: RouterConfig {
@@ -716,8 +748,8 @@ mod imp {
                 relay_cap: RELAY_CAP,
                 evict_at: EVICT_AT,
                 debounce: PushDebouncePolicy {
-                    window_ms: params.push_debounce.as_millis() as u64,
-                    max_latency_ms: params.push_max_latency.as_millis() as u64,
+                    window_ms: params.config.push_debounce.as_millis() as u64,
+                    max_latency_ms: params.config.push_max_latency.as_millis() as u64,
                 },
                 // Derived from the ephemeral stream's gossip limit.
                 max_wire_bytes: None,
@@ -1003,12 +1035,10 @@ mod imp {
             let device_id = p2panda::SigningKey::generate().verifying_key();
             (
                 LanRouterParams {
-                    enabled,
+                    config: LanRouterConfig::new(enabled),
                     data_path: dir.path().to_path_buf(),
                     device_id,
                     op_store: OpStore::from_sqlite(store, streams.clone()),
-                    push_debounce: Duration::from_millis(50),
-                    push_max_latency: Duration::from_millis(200),
                     streams,
                 },
                 dir,
@@ -1133,7 +1163,7 @@ mod imp {
         use crate::{DeviceId, SeqNum};
 
         struct Fixture {
-            _node: crate::testing::TestNode,
+            node: crate::testing::TestNode,
             ext: OpStoreExt,
             topic: TopicId,
             log_id: LogId,
@@ -1151,7 +1181,7 @@ mod imp {
             let node =
                 crate::testing::TestNode::new(crate::NodeConfig::testing().no_p2p(), "ext").await;
             let store = node.op_store.clone();
-            let ext = OpStoreExt::new(store.clone());
+            let ext = OpStoreExt::new(LanRouterStore::new(store.store.clone()));
             let topic = TopicId::random();
             let log_id = LogId::from_topic(topic);
             let (tx, import_rx) = mpsc::channel(8);
@@ -1175,7 +1205,7 @@ mod imp {
                 .await;
             }
             Fixture {
-                _node: node,
+                node,
                 ext,
                 topic,
                 log_id,
@@ -1210,17 +1240,17 @@ mod imp {
                 let op = signed_op(&f.key, f.log_id, seq, backlink, &[seq as u8]);
                 backlink = Some(op.hash);
                 if seq >= 2 && seq != 4 {
-                    insert(&f.ext.store, &op, &f.log_id).await;
+                    insert(&f.node.op_store, &op, &f.log_id).await;
                 }
             }
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
-            ack_up_to(&f.ext.store, &f.topic, &author, f.log_id, 3).await;
+            ack_up_to(&f.node.op_store, &f.topic, &author, f.log_id, 3).await;
             assert_eq!(
                 f.ext.held_all().await.unwrap().get(&log),
                 Some(&Ranges::range(2, 4)),
                 "prefix 0..2 pruned, 2 and 3 acked"
             );
-            ack_up_to(&f.ext.store, &f.topic, &author, f.log_id, 5).await;
+            ack_up_to(&f.node.op_store, &f.topic, &author, f.log_id, 5).await;
             let of = f.ext.held_of(&BTreeSet::from([log])).await.unwrap();
             assert_eq!(
                 of.get(&log),
@@ -1445,8 +1475,8 @@ mod imp {
             assert!(f.ext.follow_log(f.topic, space_log));
             let op0 = signed_op(&f.key, space_log, 0, None, b"a");
             let op1 = signed_op(&f.key, space_log, 1, Some(op0.hash), b"b");
-            insert(&f.ext.store, &op0, &space_log).await;
-            insert(&f.ext.store, &op1, &space_log).await;
+            insert(&f.node.op_store, &op0, &space_log).await;
+            insert(&f.node.op_store, &op1, &space_log).await;
 
             let log = RouterLog::new(space_log, f.key.verifying_key());
             let held = f.ext.held_all().await.unwrap();

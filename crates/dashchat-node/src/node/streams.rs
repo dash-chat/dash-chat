@@ -201,11 +201,6 @@ pub struct TopicStreams {
     drain_tx: mpsc::UnboundedSender<DrainCommand>,
 
     shut_down: AtomicBool,
-
-    /// Testing: peers whose native sync is blocked on every topic; applied
-    /// to each topic as it is opened (`publisher`).
-    #[cfg(feature = "testing")]
-    native_sync_blocked: std::sync::Mutex<std::collections::BTreeSet<p2panda::NodeId>>,
 }
 
 #[derive(Clone, From)]
@@ -287,8 +282,6 @@ impl TopicStreams {
             in_process: processed,
             drain_tx,
             shut_down: AtomicBool::new(false),
-            #[cfg(feature = "testing")]
-            native_sync_blocked: Default::default(),
         };
 
         (streams, drain)
@@ -345,21 +338,6 @@ impl TopicStreams {
         let mut pubs = self.publishers.lock().await;
         if let Some(sub) = pubs.get(&topic) {
             return Ok((sub.clone(), false));
-        }
-
-        // Testing: the one place a topic becomes syncable, so the block
-        // cannot race the first sync session.
-        #[cfg(feature = "testing")]
-        if !matches!(space, StreamIntent::ExistingOnly) {
-            let blocked = self.native_sync_blocked.lock().unwrap().clone();
-            for node_id in blocked {
-                self.with_node(async |node| {
-                    node.sync_block_list()
-                        .block_topic(node_id, topic.into())
-                        .await
-                })
-                .await?;
-            }
         }
 
         let (publisher, subscriber) = match space {
@@ -607,36 +585,6 @@ impl TopicStreams {
         Ok(self
             .with_node(async |node| node.ephemeral_stream(topic).await)
             .await??)
-    }
-
-    /// Testing: refuse log sync with `node_id` on every topic (p2panda's
-    /// global sync blocklist). Gossip is unaffected.
-    #[cfg(feature = "testing")]
-    pub(crate) async fn block_peer(&self, node_id: p2panda::NodeId) -> Result<(), StreamsError> {
-        self.with_node(async |node| node.sync_block_list().block(node_id).await)
-            .await
-    }
-
-    /// Testing: block native log sync with `node_id` on every topic,
-    /// subscribed now or later (p2panda's per-topic blocklist, checked when
-    /// a sync session is initiated or accepted). Gossip is unaffected.
-    #[cfg(feature = "testing")]
-    pub(crate) async fn block_native_sync_with(
-        &self,
-        node_id: p2panda::NodeId,
-    ) -> Result<(), StreamsError> {
-        // Held across the blocks so a topic opening meanwhile sees `node_id`.
-        let pubs = self.publishers.lock().await;
-        self.native_sync_blocked.lock().unwrap().insert(node_id);
-        for topic in pubs.keys().copied() {
-            self.with_node(async |node| {
-                node.sync_block_list()
-                    .block_topic(node_id, topic.into())
-                    .await
-            })
-            .await?;
-        }
-        Ok(())
     }
 
     pub(crate) async fn register_bootstrap(

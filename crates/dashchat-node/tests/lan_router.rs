@@ -3,7 +3,7 @@
 //! multicast and is ignored.
 #![cfg(feature = "lan-router")]
 
-use dashchat_node::{NodeConfig, testing::TestNode};
+use dashchat_node::{Node, NodeConfig, testing::TestNode};
 
 /// With the flag off nothing touches disk: the guarantee spec §4.5 makes.
 #[tokio::test(flavor = "multi_thread")]
@@ -17,7 +17,7 @@ async fn flag_off_creates_no_relay_file() {
 #[tokio::test(flavor = "multi_thread")]
 async fn flag_on_runs_the_router_and_shuts_down() {
     let mut config = NodeConfig::testing();
-    config.enable_lan_router = true;
+    config.lan_router.enabled = true;
     let node = TestNode::new(config, "on").await;
     assert!(node.data_path().join("lan_router.redb").exists());
     tokio::time::timeout(std::time::Duration::from_secs(10), node.shutdown())
@@ -25,44 +25,46 @@ async fn flag_on_runs_the_router_and_shuts_down() {
         .expect("shutdown does not hang");
 }
 
-/// A relay file that cannot be opened (here: a directory in its place)
-/// disables the router; it does not fail init.
+/// A node configured to run the router does not start without it: here the
+/// relay file cannot be opened (a directory is in its place).
 #[tokio::test(flavor = "multi_thread")]
-async fn router_spawn_failure_does_not_fail_init() {
+async fn router_spawn_failure_fails_init() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("lan_router.redb")).unwrap();
     let mut config = NodeConfig::testing();
-    config.enable_lan_router = true;
-    let node = TestNode::new_at_path(config, "broken", std::sync::Arc::new(dir)).await;
-    assert_eq!(node.lan_router_delivered(), None);
-    tokio::time::timeout(std::time::Duration::from_secs(10), node.shutdown())
-        .await
-        .expect("shutdown does not hang");
+    config.lan_router.enabled = true;
+    assert!(
+        Node::new(dir.path().into(), config, None, None)
+            .await
+            .is_err()
+    );
 }
 
-/// With no networking layer the router cannot open its gossip stream, so
-/// it stays off and the node still starts (the push extension's config).
+/// Nor with no networking layer, where the router cannot open its gossip
+/// stream. `no_p2p` turns the router off, so this takes setting it back on.
 #[tokio::test(flavor = "multi_thread")]
-async fn offline_node_with_the_flag_on_still_starts() {
+async fn router_on_without_networking_fails_init() {
+    let dir = tempfile::tempdir().unwrap();
     let mut config = NodeConfig::testing().no_p2p().no_blob_sync();
-    config.enable_lan_router = true;
-    let node = TestNode::new(config, "offline").await;
-    assert_eq!(node.lan_router_delivered(), None);
-    node.shutdown().await;
+    config.lan_router.enabled = true;
+    assert!(
+        Node::new(dir.path().into(), config, None, None)
+            .await
+            .is_err()
+    );
 }
 
 #[test]
 fn no_p2p_turns_the_router_off() {
     let mut config = NodeConfig::testing();
-    config.enable_lan_router = true;
-    assert!(!config.no_p2p().enable_lan_router);
+    config.lan_router.enabled = true;
+    assert!(!config.no_p2p().lan_router.enabled);
 }
 
 /// Router-only replication on localhost (dash-router spec
 /// 2026-09-23-lan-router-e2e-proof.md). No mDNS, no relay, no mailbox:
-/// nodes reach only the peers a test introduces, and p2panda's native sync
-/// is taken away with the testing switches, so convergence here is the
-/// router's doing.
+/// nodes reach only the peers a test introduces, and p2panda's log sync is
+/// off, so convergence here is the router's doing.
 mod localhost {
     use std::time::Duration;
 
@@ -75,11 +77,13 @@ mod localhost {
         dashchat_node::testing::setup_tracing(&[&filter], true);
     }
 
-    /// Router on; mDNS off, no relay, no mailbox. One random network id per
-    /// test, shared by cloning, so nothing outside the test is ever a peer.
+    /// Router on; log sync and mDNS off, no relay, no mailbox. One random
+    /// network id per test, shared by cloning, so nothing outside the test
+    /// is ever a peer.
     fn router_config() -> NodeConfig {
         let mut c = NodeConfig::testing().random_network_id();
-        c.enable_lan_router = true;
+        c.lan_router.enabled = true;
+        c.enable_log_sync = false;
         c
     }
 
@@ -138,17 +142,14 @@ mod localhost {
             .expect("the chat's space is joined through the router")
     }
 
-    /// Spec test 2: with native sync blocked both ways, the contact
-    /// request, the accept and a direct-chat message still converge, so
-    /// the router carried them.
+    /// Spec test 2: with log sync off, the contact request, the accept and
+    /// a direct-chat message still converge, so the router carried them.
     #[tokio::test(flavor = "multi_thread")]
-    async fn pair_replicates_over_the_router_with_native_sync_off() {
+    async fn pair_replicates_over_the_router_with_log_sync_off() {
         tracing();
         let config = router_config();
         let a = TestNode::new(config.clone(), "a").await;
         let b = TestNode::new(config, "b").await;
-        a.block_native_sync_with(*b.device_id()).await.unwrap();
-        b.block_native_sync_with(*a.device_id()).await.unwrap();
         introduce_peers([&a, &b]).await.unwrap();
 
         let qr = a.create_add_contact_qr_code().await.unwrap();
@@ -170,11 +171,11 @@ mod localhost {
             .expect("the direct chat converges through the router");
 
         assert!(
-            a.lan_router_delivered().unwrap() > 0,
+            a.lan_router().unwrap().delivered_count() > 0,
             "a received via the router"
         );
         assert!(
-            b.lan_router_delivered().unwrap() > 0,
+            b.lan_router().unwrap().delivered_count() > 0,
             "b received via the router"
         );
         a.shutdown().await;
@@ -186,10 +187,12 @@ mod localhost {
     async fn wait_for_relay(relay: &TestNode, node: &TestNode) {
         slow_poll()
             .wait_for(|| async {
-                match relay.lan_router_relay_covers(node).await? {
-                    Some(true) => Ok(()),
-                    _ => Err(anyhow::anyhow!("the relay does not hold everything yet")),
-                }
+                let served = node.lan_router()?;
+                anyhow::ensure!(
+                    relay.lan_router()?.relay_covers(&served).await?,
+                    "the relay does not hold everything yet"
+                );
+                Ok(())
             })
             .await
             .expect("the relay takes everything the node serves")
@@ -233,7 +236,7 @@ mod localhost {
         introduce_peers([&b, &c]).await.unwrap();
         send_when_joined(&c, direct_chat, "hello via b").await;
         wait_for_relay(&b, &c).await;
-        assert!(c.lan_router_delivered().unwrap() > 0);
+        assert!(c.lan_router().unwrap().delivered_count() > 0);
         c.shutdown().await;
 
         let a = TestNode::new_at_path(config, "a", a_dir).await;
@@ -253,11 +256,11 @@ mod localhost {
             "b never took part"
         );
         assert_eq!(
-            b.lan_router_delivered(),
-            Some(0),
+            b.lan_router().unwrap().delivered_count(),
+            0,
             "b relayed without delivering"
         );
-        assert!(a.lan_router_delivered().unwrap() > 0);
+        assert!(a.lan_router().unwrap().delivered_count() > 0);
         a.shutdown().await;
         b.shutdown().await;
     }
@@ -288,7 +291,7 @@ mod localhost {
         poll()
             .wait_for(|| async {
                 for topic in &topics {
-                    if b.lan_router_relay_holds(*topic).await? == Some(true) {
+                    if b.lan_router()?.relay_holds_topic(*topic).await? {
                         return Ok(());
                     }
                 }
@@ -304,8 +307,8 @@ mod localhost {
             "b never took part"
         );
         assert_eq!(
-            b.lan_router_delivered(),
-            Some(0),
+            b.lan_router().unwrap().delivered_count(),
+            0,
             "b holds it in the relay only"
         );
 
@@ -319,10 +322,10 @@ mod localhost {
             .expect("c's request reaches a from b's relay");
         assert_eq!(requester, c_agent);
         assert!(
-            a.lan_router_delivered().unwrap() > 0,
+            a.lan_router().unwrap().delivered_count() > 0,
             "a received via the router"
         );
-        assert_eq!(b.lan_router_delivered(), Some(0));
+        assert_eq!(b.lan_router().unwrap().delivered_count(), 0);
         a.shutdown().await;
         b.shutdown().await;
     }
@@ -357,7 +360,7 @@ mod mdns {
         let start = Instant::now();
         let mut config = NodeConfig::testing().random_network_id();
         config.mdns_mode = MdnsDiscoveryMode::Active;
-        config.enable_lan_router = true;
+        config.lan_router.enabled = true;
         let a = TestNode::new(config.clone(), "a").await;
         let b = TestNode::new(config, "b").await;
         let qr = a.create_add_contact_qr_code().await.unwrap();
@@ -387,8 +390,8 @@ mod mdns {
         println!("### {:.1?} direct chat converged", start.elapsed());
         println!(
             "### router delivered (a, b) = ({:?}, {:?})",
-            a.lan_router_delivered(),
-            b.lan_router_delivered()
+            a.lan_router().unwrap().delivered_count(),
+            b.lan_router().unwrap().delivered_count()
         );
         a.shutdown().await;
         b.shutdown().await;
