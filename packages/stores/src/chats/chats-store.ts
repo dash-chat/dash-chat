@@ -92,6 +92,14 @@ export class ChatsStore {
 		return summaries;
 	});
 
+	unreadMessagesCount = reactive(async () => {
+		const summaries = await this.allChatsSummaries();
+		return summaries.reduce(
+			(count, summary) => count + summary.unreadMessages,
+			0,
+		);
+	});
+
 	/** Every direct chat, whatever its lifecycle state: established contacts,
 	 * incoming contact requests, and outgoing requests awaiting their ack. */
 	private allDirectChatIds = reactive(async (): Promise<ChatId[]> => {
