@@ -27,11 +27,17 @@ describe('Receiving a message while the actions menu is open', () => {
 
 		await anchor.expectActionsMenuToStayOpen();
 
-		// Replying through the still-open menu must hit the anchor message, not
+		// Deleting through the still-open menu must hit the anchor message, not
 		// the one that arrived under it.
-		await anchor.replyAction.click();
-		const { replyPreview } = agent2.directChatPage.composer;
-		await replyPreview.waitForDisplayed();
-		expect(await replyPreview.getText()).toBe('Anchor');
+		await anchor.deleteAction.click();
+		await anchor.deleteDialog.waitForDisplayed();
+		await anchor.deleteForMeDialogConfirm.click();
+
+		await agent2.directChatPage.messages.waitForMessageGone('Anchor');
+		expect(
+			await agent2.directChatPage.messages.messageAreaContains(
+				'Arrived meanwhile',
+			),
+		).toBe(true);
 	});
 });

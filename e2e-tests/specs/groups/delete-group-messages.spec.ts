@@ -1,9 +1,7 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
-// Message deletion is disabled until p2panda moves encrypted payloads into the
-// operation body: a delete drops only the body.
-describe.skip('Deleting group messages', () => {
+describe('Deleting group messages', () => {
 	let agent1: Agent;
 	let agent2: Agent;
 

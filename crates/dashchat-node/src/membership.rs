@@ -8,7 +8,7 @@ pub type MembershipAction = GroupAction<ActorId, ()>;
 
 /// The group-auth action a space control operation carries, if it is one.
 pub fn membership_action(header: &Header) -> Option<MembershipAction> {
-    match header.extensions.spaces_args()? {
+    match header.extensions.spaces_args(None)? {
         SpacesArgs::Group { group_action, .. } => Some(group_action),
         _ => None,
     }

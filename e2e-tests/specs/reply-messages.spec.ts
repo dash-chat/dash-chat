@@ -133,9 +133,7 @@ describe('Replying to messages', () => {
 		});
 	});
 
-	// Message deletion is disabled until p2panda moves encrypted payloads into the
-	// operation body: a delete drops only the body.
-	it.skip('replaces the quoted content with a tombstone when the target is deleted for everyone', async () => {
+	it('replaces the quoted content with a tombstone when the target is deleted for everyone', async () => {
 		await agent1.directChatPage.composer.sendMessage('Secret plans');
 		const target =
 			await agent2.directChatPage.messages.waitForMessage('Secret plans');
@@ -182,9 +180,7 @@ describe('Replying to messages', () => {
 		});
 	});
 
-	// Message deletion is disabled until p2panda moves encrypted payloads into the
-	// operation body: a delete drops only the body.
-	it.skip('shows the tombstone when the target was deleted for me, without scrolling', async () => {
+	it('shows the tombstone when the target was deleted for me, without scrolling', async () => {
 		await agent1.directChatPage.composer.sendMessage('Ephemeral note');
 		const target =
 			await agent2.directChatPage.messages.waitForMessage('Ephemeral note');

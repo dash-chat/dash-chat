@@ -44,21 +44,6 @@ export function canCopyMessage(message: Message): boolean {
 	return hasBody(message.content) && message.content.message !== '';
 }
 
-/** Whether the actions menu has any item to offer on this message. */
-export function hasMessageActions(
-	message: Message,
-	myDeviceId: DeviceId,
-	readOnly: boolean,
-	canReply: boolean,
-): boolean {
-	if (MESSAGE_DELETION_ENABLED || canCopyMessage(message)) return true;
-	return !readOnly && (canReply || canEditMessage(message, myDeviceId));
-}
-
-/** Off while p2panda keeps encrypted payloads in the operation header, which
- * a delete (dropping only the body) cannot remove. */
-export const MESSAGE_DELETION_ENABLED = false;
-
 export function canDeleteMessageForEveryone(
 	message: Message,
 	myDeviceId: DeviceId,

@@ -22,7 +22,6 @@
 	import ExpandedReactionsSheet from './ExpandedReactionsSheet.svelte';
 	import { toggleReaction } from '$lib/utils/reactions';
 	import { writeText } from '$lib/utils/clipboard';
-	import { hasMessageActions } from './message-helpers';
 
 	interface Props {
 		message: Message;
@@ -141,19 +140,17 @@
 					></wa-icon>
 				</IconButton>
 			{/if}
-			{#if hasMessageActions(message, myDeviceId, readOnly, onReply !== undefined)}
-				<span bind:this={menuEl}>
-					<IconButton
-						onClick={() => (open = 'menu')}
-						label={m.messageOptions()}
-						testid="message-hover-menu"
-						class="!h-9 !w-9"
-					>
-						<wa-icon class="text-xl" src={wrapPathInSvg(mdiDotsHorizontal)}
-						></wa-icon>
-					</IconButton>
-				</span>
-			{/if}
+			<span bind:this={menuEl}>
+				<IconButton
+					onClick={() => (open = 'menu')}
+					label={m.messageOptions()}
+					testid="message-hover-menu"
+					class="!h-9 !w-9"
+				>
+					<wa-icon class="text-xl" src={wrapPathInSvg(mdiDotsHorizontal)}
+					></wa-icon>
+				</IconButton>
+			</span>
 		{/await}
 	</div>
 </div>

@@ -10,8 +10,7 @@ use futures::TryStreamExt;
 use p2panda::Hash;
 #[cfg(any(test, feature = "testing"))]
 use p2panda::operation::Header;
-use p2panda::operation::{ExtensionsVariantV1, LogId, Operation};
-use p2panda_spaces::SpacesArgs;
+use p2panda::operation::{ExtensionsVariantV1, LogId, Operation, SpacesHeaderArgs};
 use p2panda_store::SqliteStore;
 use p2panda_store::logs::LogStore;
 use p2panda_store::topics::TopicStore;
@@ -123,8 +122,7 @@ impl OpStore {
         Ok(read.collect())
     }
 
-    /// Decrypt the payload of each encrypted operation. p2panda stores such a payload only
-    /// as ciphertext in the header.
+    /// Decrypt the payload of each encrypted operation.
     //
     // TODO: once we have a projection of valid, processed operations that caches their plaintext,
     // we can afford to decrypt one message at a time instead of in a batch, which simplifies
@@ -393,30 +391,27 @@ impl mailbox_client::store::MailboxStore<MailboxOperation> for OpStore {
     }
 }
 
-/// The space and ciphertext of an encrypted operation that has no body to read.
+/// The space and ciphertext of an encrypted operation whose payload has not been deleted.
 fn encrypted_message(op: &Operation) -> Option<(TopicId, EncryptedMessage)> {
-    if op.body.is_some() {
-        return None;
-    }
     let ExtensionsVariantV1::Space(extensions) = &op.header.extensions.variant else {
         return None;
     };
-    let SpacesArgs::Application {
+    let SpacesHeaderArgs::Application {
         space_id,
         group_secret_id,
         nonce,
-        ciphertext,
         ..
     } = &extensions.args
     else {
         return None;
     };
+    let ciphertext = op.body.as_ref()?.to_bytes();
     Some((
         TopicId::from(*space_id),
         EncryptedMessage {
             group_secret_id: *group_secret_id,
             nonce: *nonce,
-            ciphertext: ciphertext.clone(),
+            ciphertext,
         },
     ))
 }
@@ -427,7 +422,7 @@ fn is_application(op: &Operation) -> bool {
     match &op.header.extensions.variant {
         ExtensionsVariantV1::Basic(_) => true,
         ExtensionsVariantV1::Space(extensions) => {
-            matches!(extensions.args, SpacesArgs::Application { .. })
+            matches!(extensions.args, SpacesHeaderArgs::Application { .. })
         }
     }
 }
@@ -700,19 +695,16 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let mut extensions = original.header.extensions.clone();
-        let ExtensionsVariantV1::Space(space) = &mut extensions.variant else {
-            panic!("a chat message is published into a space");
-        };
-        let SpacesArgs::Application { ciphertext, .. } = &mut space.args else {
-            panic!("a chat message is an application message");
-        };
+        let mut ciphertext = original.body.expect("a chat message has a body").to_bytes();
         ciphertext[0] ^= 1;
-        let header = Header::builder().build(&p2panda::SigningKey::generate(), extensions);
+        let header = Header::builder().body(&ciphertext).build(
+            &p2panda::SigningKey::generate(),
+            original.header.extensions.clone(),
+        );
         let tampered = Operation {
             hash: header.hash(),
             header,
-            body: None,
+            body: Some(Body::from_bytes(&ciphertext)),
         };
         insert(&alice.op_store, &tampered, &log_id).await;
 
@@ -726,7 +718,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "message deletion is temporarily disabled until p2panda moves encrypted payloads into the body"]
     async fn delete_body_drops_payload_keeps_header() {
         let (alice, _bobbi, chat) = contacts().await;
         let message = alice.send_message(chat, "hello", None, None).await.unwrap();
