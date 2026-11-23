@@ -2164,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "dash-chat"
-version = "0.22.3"
+version = "0.22.5"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -12024,8 +12024,7 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-sharekit"
 version = "0.4.0-rc.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1a89a463a6eb1a098a250a89c95578d3d2797165c7f2d4ad84294f632f6f703"
+source = "git+https://github.com/dash-chat/tauri-plugin-sharekit?rev=c382e55b6a033f8b62b814dab74758c7f5cacb0c#c382e55b6a033f8b62b814dab74758c7f5cacb0c"
 dependencies = [
  "log",
  "objc2 0.6.4",
