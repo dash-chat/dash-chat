@@ -7,9 +7,10 @@ pub mod push_notifications;
 pub(crate) use notified_operations_store::NotifiedOperationsStore;
 
 use anyhow::Context;
+#[cfg(mobile)]
+use dashchat_node::ChatId;
 use dashchat_node::{
-    AgentId, ChatId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic,
-    TopicId,
+    AgentId, DeviceId, FakeAgentId, MediaBundle, MediaMetadata, Node, Payload, Topic, TopicId,
 };
 use p2panda::operation::Header;
 use tauri::{AppHandle, Manager};
@@ -400,22 +401,27 @@ async fn is_accepted_agent(node: &Node, agent_id: AgentId) -> bool {
 /// comes after the departure — so what is not shown in the chat must not be
 /// announced either.
 async fn is_member_of(node: &Node, topic: TopicId) -> bool {
-    let chat_id = match ChatId::from_topic_id(topic) {
-        Ok(chat_id) => chat_id,
-        Err(err) => {
-            log::error!("Failed to read a chat id off topic {topic}: {err:?}");
-            return false;
-        }
-    };
-    match node.get_group_members(chat_id).await {
-        Ok(members) => members
-            .iter()
-            .any(|(member, _)| *member == node.device_id()),
+    match space_membership(node, topic).await {
+        Ok(membership) => membership == Some(true),
         Err(err) => {
             log::error!("Failed to load the members of {topic}: {err:?}");
             false
         }
     }
+}
+
+/// Whether we are among the members of `topic`'s space, or `None` when we hold
+/// no group for it: an inbox topic, or a space we have not joined yet.
+async fn space_membership(node: &Node, topic: TopicId) -> anyhow::Result<Option<bool>> {
+    let members = node.space_members(topic).await?;
+    if members.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(
+        members
+            .iter()
+            .any(|(member, _)| *member == node.device_id()),
+    ))
 }
 
 /// Signal-style placeholder body for a media message with no caption,
@@ -608,7 +614,7 @@ fn stable_notification_id(id_bytes: &[u8]) -> anyhow::Result<i32> {
 #[cfg(test)]
 mod tests {
     use dashchat_node::testing::{TestMailbox, TestNode};
-    use dashchat_node::{AddContactResult, AsBody, NodeConfig, Profile};
+    use dashchat_node::{AddContactResult, AsBody, ChatId, NodeConfig, Profile};
     use p2panda::operation::LogId;
 
     use super::*;
