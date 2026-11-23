@@ -228,6 +228,7 @@ impl NodeConfig {
 
 impl Default for NodeConfig {
     fn default() -> Self {
+        let enable_lan_router = cfg!(feature = "lan-router");
         Self {
             contact_code_expiry: Duration::days(7),
             mailboxes_config: MailboxesConfig::default(),
@@ -243,7 +244,7 @@ impl Default for NodeConfig {
             enable_message_acks: true,
             read_only: false,
             stream_cursor_prefix: None,
-            lan_router: crate::lan_router::LanRouterConfig::new(true),
+            lan_router: crate::lan_router::LanRouterConfig::new(enable_lan_router),
             enable_log_sync: true,
             defer_stored_topics_initialization: false,
             record_processed_operations: false,
