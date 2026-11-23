@@ -645,6 +645,7 @@
 					"$(inherited)",
 					"-force_load",
 					"\"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
@@ -730,10 +731,12 @@
 				"OTHER_LDFLAGS[arch=arm64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/arm64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				"OTHER_LDFLAGS[arch=x86_64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/x86_64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -820,10 +823,12 @@
 				"OTHER_LDFLAGS[arch=arm64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/arm64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				"OTHER_LDFLAGS[arch=x86_64]" = (
 					"$(inherited)",
 					"$(SRCROOT)/Externals/x86_64/$(CONFIGURATION)/libapp.a",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat.PushNotificationsExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -877,6 +882,7 @@
 					"$(inherited)",
 					"-force_load",
 					"\"$(DERIVED_FILE_DIR)/firebase-categories/libfb-categories.a\"",
+					"-lresolv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = studio.darksoil.dashchat;
 				PRODUCT_NAME = "Dash Chat";
