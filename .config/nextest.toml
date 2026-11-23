@@ -181,10 +181,10 @@ filter = 'binary(lan_sync_crowded_address_book)'
 slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
 
 # Setting up seven nodes, their contacts and the group takes 35-45s on CI on its own,
-# and the presence wait that follows is allowed 30s.
+# and over 110s on a loaded Windows runner; the presence wait that follows is allowed 30s.
 [[profile.default.overrides]]
 filter = 'binary(online_peers) & test(every_member_of_a_large_group_is_online)'
-slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "fail" }
 
 # Every write commits to disk, and commits are an order of magnitude slower on
 # Windows runners: 5000 sequential writes take ~12s on Linux and over 60s there.
@@ -198,3 +198,19 @@ slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
 [[profile.default.overrides]]
 filter = 'binary(message_encryption) & test(largest_message_reaches_the_other_member)'
 slow-timeout = { period = "60s", terminate-after = 3, on-timeout = "fail" }
+
+# Nine nodes form a group and are then left alone for a minute. That takes up to 230s on a
+# Windows runner and longer with spaces encryption, so allow twice that.
+[[profile.default.overrides]]
+filter = 'binary(large_group_memory)'
+slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
+
+# Takes about 30s on Linux CI and runs past a minute on a loaded Windows runner.
+[[profile.default.overrides]]
+filter = 'binary(reply_messages) & test(late_joiner_syncing_crossing_replies_can_hit_target_not_found)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Several ack round trips, each up to 30s on a loaded Windows runner.
+[[profile.default.overrides]]
+filter = 'binary(message_acks) & test(acks_are_delta_encoded_and_never_cascade)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }

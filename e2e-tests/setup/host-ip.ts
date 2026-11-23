@@ -50,6 +50,9 @@ function interfaceRank(name: string): number {
  *  timeout, so a run can rot for half an hour and the failures all look like
  *  unrelated sync bugs. */
 export function assertHostStillHolds(address: string, what: string): void {
+	// A pin may be a name, or an address the devices are routed to this host
+	// by, and neither shows up on an interface here.
+	if (address === process.env.E2E_HOST_IP) return;
 	const current = nonInternalIpv4s().map(h => h.address);
 	if (current.includes(address)) return;
 	throw new Error(

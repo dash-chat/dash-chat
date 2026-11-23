@@ -120,7 +120,11 @@ async fn direct_chat_message_is_acked() {
 async fn acks_are_delta_encoded_and_never_cascade() {
     setup();
 
-    let poll = PollConfig::default();
+    // A loaded Windows runner takes over 10s for an ack to come back.
+    let poll = PollConfig {
+        poll_timeout: std::time::Duration::from_secs(30),
+        ..PollConfig::default()
+    };
     let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
     let bobbi = make_node(&mailbox, "bobbi").await;
@@ -196,10 +200,19 @@ async fn acks_are_delta_encoded_and_never_cascade() {
 async fn burst_of_messages_coalesces_into_few_acks() {
     setup();
 
-    let poll = PollConfig::default();
+    // A loaded CI runner takes several seconds to send the five messages, so
+    // the debounce has to outlast that for them to count as one burst.
+    let bobbi_config = NodeConfig {
+        message_ack_debounce: Duration::from_secs(10),
+        ..NodeConfig::testing()
+    };
+    let poll = PollConfig::seconds(30);
     let mailbox = TestMailbox::from_env();
     let alice = make_node(&mailbox, "alice").await;
-    let bobbi = make_node(&mailbox, "bobbi").await;
+    let bobbi = TestNode::new(bobbi_config, "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
 
     alice
         .behavior()

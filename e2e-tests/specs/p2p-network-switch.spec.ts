@@ -171,6 +171,7 @@ describe('Pure p2p sync across a network switch', function () {
 	it('receives a message the peer sent while it was backgrounded off Wi-Fi, once back on the LAN and on screen', async () => {
 		const text = 'sent while you were in the background';
 		await alice.backgroundApp();
+		await alice.pocketDevice();
 		await alice.disableWifi();
 		stampedLog('Alice in the background and off Wi-Fi');
 		await bob.directChatPage.composer.sendMessage(text);
@@ -219,16 +220,17 @@ describe('Pure p2p sync across a network switch', function () {
 	});
 
 	it('receives a message the peer sent once both phones had moved to another Wi-Fi network after one was put away', async function () {
-		// Room for every reclaim attempt of the backgrounding and four network
+		// Room for every reclaim attempt of the pocketing and four network
 		// moves, so a slow one fails with its own error, not a mocha timeout.
 		this.timeout(LONG_AWAY_MS + 300_000);
 		const [, network] = wifiNetworks();
 		if (network === undefined) this.skip();
 		const text = 'sent once we had moved network after a while away';
-		// Backgrounding restarts the test runner, which needs internet.
+		// Pocketing restarts the test runner, which needs internet.
 		await bob.leaveWifi();
 		await alice.leaveWifi();
 		await alice.backgroundApp();
+		await alice.pocketDevice();
 		await alice.pause(AWAY_MS);
 		await alice.startApp();
 		stampedLog('Alice back on screen after a while away');

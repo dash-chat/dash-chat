@@ -50,8 +50,10 @@ import {
 	APP_PACKAGE,
 	androidAsksNotificationPermission,
 	androidHasInternet,
+	assertAndroidReachesBakedHost,
 	denyAndroidNotificationPermission,
 	isAndroidAppRunning,
+	pocketAndroidDevice,
 	pressAndroidBack,
 	pressAndroidHome,
 	resetAndroidNotificationPermission,
@@ -75,10 +77,12 @@ import {
 	clearIosAppData,
 	iosHasInternet,
 	killIosPushExtension,
+	pocketIosDevice,
 	resetIosAppState,
 } from './platforms/ios';
 import { iosWifi, iosWifiInfo } from './platforms/ios/wifi';
 import { launchDesktopAgentWithoutLocalNetworkAccess } from './platforms/macos';
+import { assertBakedHostStillHolds } from './platforms/platform';
 import {
 	type AgentPlatformName,
 	type PhonePlatformName,
@@ -166,11 +170,15 @@ export type Agent = WebdriverIO.Browser & {
 	 *  self-restarts into). */
 	stopApp(): Promise<void>;
 	/** Send the app to the background (home button) without killing it.
-	 *  On Android this is a home-key press; on iOS the phone is also locked and
-	 *  left for iOS to suspend the app and reclaim its sockets, as a phone put
-	 *  away does, then unlocked with the app still in the background; on
-	 *  desktop it is currently a no-op. */
+	 *  A home-button press on iOS and Android, returning once the app is
+	 *  backgrounded; on desktop it is currently a no-op. */
 	backgroundApp(): Promise<void>;
+	/** Lock the phone as one put away does, then unlock it, leaving the app on
+	 *  screen or in the background as it was. On iOS this waits for iOS to
+	 *  suspend the app and reclaim every socket it holds; on Android the screen
+	 *  stays off for as long as a backgrounding takes to register; on desktop
+	 *  it is a no-op. */
+	pocketDevice(): Promise<void>;
 	/** Whether the app's process is alive, foreground or background. A phone
 	 *  app the OS killed while it was backgrounded reports false. */
 	isAppRunning(): Promise<boolean>;
@@ -442,6 +450,16 @@ export function makeAgent(b: WebdriverIO.Browser, slot: number): Agent {
 		// `startApp` cancel the dispatch, leaving the app's Rust `on_pause` hook
 		// unrun and the "background" purely notional.
 		await b.pause(PROCESS_LIFECYCLE_DISPATCH_MS);
+	};
+	agent.pocketDevice = async () => {
+		if (agent.platform === 'desktop') {
+			return;
+		}
+		if (agent.platform === 'ios') {
+			await pocketIosDevice(b);
+			return;
+		}
+		await pocketAndroidDevice(deviceUdid(b), PROCESS_LIFECYCLE_DISPATCH_MS);
 	};
 	agent.isAppRunning = async () => {
 		if (agent.platform === 'desktop') {
@@ -1198,7 +1216,15 @@ export async function setupAgents<const T extends readonly AgentRequirement[]>(
 	);
 	specAgents.push(...agents);
 	forgetTestNetworksOnSignal();
+	// Here and not in wdio's beforeSession, whose errors it only logs.
+	if (slots.some(slot => slot !== null)) assertBakedHostStillHolds();
 	await convergeNetworks(agents);
+	for (const slot of slots) {
+		if (slot === null || phones[slot - 1] === 'ios') continue;
+		assertAndroidReachesBakedHost(
+			deviceUdid(browser.getInstance(`agent${slot}`)),
+		);
+	}
 	// However the suite ends, its phones go back on the host's LAN: an iPhone
 	// left on a test network would get the next run's build installed with no
 	// internet to verify it.

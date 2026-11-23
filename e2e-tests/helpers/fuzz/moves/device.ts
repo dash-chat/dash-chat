@@ -1,5 +1,5 @@
 /** Moves a device makes on its own: leaving and returning to the foreground,
- *  and stopping, starting and restarting the app. A backgrounded app keeps
+ *  putting the phone away, and stopping, starting and restarting the app. A backgrounded app keeps
  *  whatever it was showing, so it resumes there; a killed one comes back on
  *  the chat list, which is where the moves that kill it leave it — checking
  *  the list on the way out is what makes sure the app has written the reads
@@ -61,6 +61,43 @@ class ForegroundMove extends Move {
 	toString(): string {
 		return `foreground(${this.agentIdx})`;
 	}
+}
+
+/** Puts an agent's phone away and takes it out again, leaving its app on
+ * screen or in the background as it was. On iOS the app loses every socket
+ * meanwhile and has to recover from that. */
+class PocketMove extends Move {
+	constructor(readonly agentIdx: number) {
+		super();
+	}
+
+	check(m: Readonly<ExpectedModel>): boolean {
+		return pocketableNames(m).length > 0;
+	}
+
+	async perform(m: ExpectedModel, real: Real): Promise<void> {
+		const actor = byName(real, at(pocketableNames(m), this.agentIdx));
+		log(`${actor.name}: ${this.toString()}`);
+		await actor.agent.pocketDevice();
+		if (!m.isActive(actor.name)) return;
+		await waitForApp(actor);
+		if (m.hasNetworks()) {
+			await checkHubs(m, actor, 'taking the phone out again');
+		}
+	}
+
+	toString(): string {
+		return `pocket(${this.agentIdx})`;
+	}
+}
+
+/** Running phone apps, on screen or in the background, whose phone is on the
+ *  home LAN: the iOS test runner pocketing relaunches needs internet. */
+function pocketableNames(m: Readonly<ExpectedModel>): string[] {
+	const home = m.homeNetwork();
+	return [...m.activeMobileNames(), ...m.backgroundedNames()].filter(
+		n => !m.hasNetworks() || m.networkOf(n) === home,
+	);
 }
 
 /** Stops an agent's app from the foreground or the background, as swiping
@@ -151,6 +188,7 @@ class RestartMove extends Move {
 export const deviceMoves: Moves = [
 	{ build: a => new BackgroundMove(a), weight: 3 },
 	{ build: a => new ForegroundMove(a), weight: 3 },
+	{ build: a => new PocketMove(a), weight: 1 },
 	{ build: a => new StopAppMove(a), weight: 1 },
 	{ build: a => new StartAppMove(a), weight: 3 },
 	{ build: a => new RestartMove(a), weight: 1 },
@@ -160,6 +198,7 @@ export const deviceMoves: Moves = [
 export const move = {
 	background: (agentIdx: number): Move => new BackgroundMove(agentIdx),
 	foreground: (agentIdx: number): Move => new ForegroundMove(agentIdx),
+	pocket: (agentIdx: number): Move => new PocketMove(agentIdx),
 	stopApp: (agentIdx: number): Move => new StopAppMove(agentIdx),
 	startApp: (agentIdx: number): Move => new StartAppMove(agentIdx),
 	restart: (agentIdx: number): Move => new RestartMove(agentIdx),

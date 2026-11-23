@@ -419,12 +419,6 @@ export interface NoisePhotoSpec {
  * photo would resolve from the receiver's blob store and measure nothing.
  */
 async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
-	const canvas = document.createElement('canvas');
-	canvas.width = spec.width;
-	canvas.height = spec.height;
-	const ctx = canvas.getContext('2d');
-	if (!ctx) throw new Error('canvas context failed');
-	const image = ctx.createImageData(spec.width, spec.height);
 	// Seeded by name as well as the clock: on the clock alone, two attaches
 	// landing in the same millisecond encode to identical bytes and collapse into
 	// one blob.
@@ -432,18 +426,64 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
 	for (let i = 0; i < spec.name.length; i++) {
 		seed = (seed * 31 + spec.name.charCodeAt(i)) | 0;
 	}
-	fillPseudoRandom(image.data, seed);
-	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
-	ctx.putImageData(image, 0, 0);
-	const blob = await new Promise<Blob>((resolve, reject) =>
-		canvas.toBlob(
-			b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
-			'image/jpeg',
-			spec.quality ?? 0.9,
-		),
+	const blob = await noiseJpeg(
+		spec.width,
+		spec.height,
+		seed,
+		spec.quality ?? 0.9,
 	);
 	dispatchPaste([new File([blob], spec.name, { type: 'image/jpeg' })]);
 	return blob.size;
+}
+
+function noiseJpeg(
+	width: number,
+	height: number,
+	seed: number,
+	quality: number,
+): Promise<Blob> {
+	const canvas = document.createElement('canvas');
+	canvas.width = width;
+	canvas.height = height;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('canvas context failed');
+	const image = ctx.createImageData(width, height);
+	fillPseudoRandom(image.data, seed);
+	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+	ctx.putImageData(image, 0, 0);
+	return new Promise<Blob>((resolve, reject) =>
+		canvas.toBlob(
+			b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
+			'image/jpeg',
+			quality,
+		),
+	);
+}
+
+/** `file` as it is once its provider withdraws it: its bytes can no longer
+ * be read. */
+function withdrawn(file: File): File {
+	file.arrayBuffer = () =>
+		Promise.reject(
+			new DOMException(
+				'The requested file could not be read',
+				'NotReadableError',
+			),
+		);
+	return file;
+}
+
+function pasteUnreadableFile(name: string) {
+	dispatchPaste([
+		withdrawn(new File(['unreadable'], name, { type: 'text/plain' })),
+	]);
+}
+
+/** Paste a photo that decodes but whose bytes can no longer be read. */
+async function pasteUnreadablePhoto(name: string): Promise<void> {
+	const blob = await noiseJpeg(64, 64, 1, 0.9);
+	const file = withdrawn(new File([blob], name, { type: 'image/jpeg' }));
+	dispatchPaste([file]);
 }
 
 /**
@@ -685,6 +725,8 @@ export const testUtils = {
 	showKeyboard,
 	pasteFiles,
 	pasteNoisePhoto,
+	pasteUnreadablePhoto,
+	pasteUnreadableFile,
 	dropFiles,
 	injectVoiceMessage,
 	injectRecordedVoiceMessage,

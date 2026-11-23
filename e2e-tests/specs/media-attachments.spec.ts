@@ -237,6 +237,28 @@ describe('Media attachments', () => {
 		});
 	});
 
+	it('drops a photo whose file can no longer be read', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteUnreadablePhoto('withdrawn');
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUnreadablePhotos', { count: 1 }),
+		);
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg:
+				'Staged media UI stayed up after the unreadable photo was dropped',
+		});
+	});
+
+	it('drops a file that can no longer be read', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteUnreadableFile('withdrawn.txt');
+		await agent1.toast.expectMessage(await agent1.tr('errorUnreadableFile'));
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg:
+				'Staged media UI stayed up after the unreadable file was dropped',
+		});
+	});
+
 	it('shows a retry control and recovers after a failed image load', async () => {
 		await agent1.directChatPage.composer.attachPhotos('retry-blob');
 		await agent1.directChatPage.composer.send();

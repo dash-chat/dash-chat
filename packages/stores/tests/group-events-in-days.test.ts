@@ -83,6 +83,27 @@ describe('groupEventsInDays', () => {
 		assert.deepEqual(groupHashes(input), [['a'], ['b'], ['c']]);
 	});
 
+	it('keeps consecutive system events in one group across authors, timeframes and types', () => {
+		const input = events([
+			{ hash: 'message' },
+			{ hash: 'promoted', author: PEER, type: 'GroupControl', offsetMs: 1000 },
+			{
+				hash: 'added',
+				type: 'GroupControl',
+				offsetMs: 2 * MESSAGE_SET_TIMEFRAME_INTERVAL_MS,
+			},
+			{
+				hash: 'block',
+				type: 'Block',
+				offsetMs: 4 * MESSAGE_SET_TIMEFRAME_INTERVAL_MS,
+			},
+		]);
+		assert.deepEqual(groupHashes(input), [
+			['message'],
+			['promoted', 'added', 'block'],
+		]);
+	});
+
 	it('orders by lamport before timestamp', () => {
 		// The peer's clock runs behind: their reply to 'a' carries an earlier
 		// wall-clock timestamp but a higher lamport, and must still sort after.

@@ -22,7 +22,9 @@ Run one suite at a time per host: the devices, the pinned Appium/adb/mailbox por
 
 2. The phone's system WebView major must match one of the chromedrivers pinned as `nixpkgs-chromedriver-*` inputs in `flake.nix` (149 to 152 today). If a WebView update moves it past the set, add a nixpkgs revision that ships that chromedriver.
 
-3. Nothing else: the harness captures the `androidDev` shell env itself, builds the APK for the phone's ABI, installs it, bridges the mailbox with `adb reverse`, and keeps the screen awake (it sets `svc power stayon true` and a 30 minute `screen_off_timeout`, both persistent, so use a dedicated test device).
+3. Put the phone on the same LAN as the host. The app bakes the host's LAN IPv4 as its mailbox and push server address, so the host's firewall must let the LAN in and the access point must let its clients reach each other; if the harness picks the wrong interface, set `E2E_HOST_IP`.
+
+4. Nothing else: the harness captures the `androidDev` shell env itself, builds the APK for the phone's ABI, installs it, and keeps the screen awake (it sets `svc power stayon true` and a 30 minute `screen_off_timeout`, both persistent, so use a dedicated test device).
 
 `adb devices` order decides which phone is agent 1 and agent 2. Pin with `ANDROID_UDID1=<serial>` / `ANDROID_UDID2=<serial>`.
 

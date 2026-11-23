@@ -1129,6 +1129,26 @@ impl Node {
         Ok(())
     }
 
+    pub async fn promote_group_member_to_admin(
+        &self,
+        chat_id: ChatId,
+        member: VerifyingKey,
+    ) -> anyhow::Result<()> {
+        if !self.is_admin(chat_id, self.device_id()).await? {
+            return Err(anyhow::anyhow!(
+                "only an admin can promote a member: {chat_id:?}"
+            ));
+        }
+
+        let member = GroupMember::Individual(member);
+        self.streams
+            .space(chat_id.into())
+            .await?
+            .run(async move |space| space.promote(member.id(), AccessLevel::Manage).await)
+            .await??;
+        Ok(())
+    }
+
     pub async fn get_group_members(
         &self,
         chat_id: ChatId,
@@ -1189,6 +1209,13 @@ impl Node {
             .any(|(m, _)| *m != member);
 
         Ok(!found_other_member)
+    }
+
+    async fn is_admin(&self, chat_id: ChatId, member: DeviceId) -> anyhow::Result<bool> {
+        Ok(self
+            .get_group_members(chat_id)
+            .await?
+            .contains(&(member, p2panda_auth::Access::manage())))
     }
 
     async fn has_other_admins(&self, chat_id: ChatId, exclude: DeviceId) -> anyhow::Result<bool> {
@@ -1284,7 +1311,7 @@ impl Node {
         let mut newest: Option<(p2panda_core::Timestamp, PendingContactRequest)> = None;
         for author in self.op_store.get_authors(log_id).await? {
             for op in self.op_store.get_log(&author, &log_id, None).await? {
-                let Some(body) = op.body? else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::DeviceGroup(DeviceGroupPayload::PendingContactRequest(request))) =
                     Payload::try_from_body(&body)
                 else {
@@ -2163,7 +2190,7 @@ impl Node {
         for inbox in self.local_store.get_advertised_inbox_topics().await? {
             let log_id = LogId::from_topic(*inbox.topic);
             for op in self.op_store.get_log(&device_id, &log_id, None).await? {
-                let Some(body) = op.body? else { continue };
+                let Ok(Some(body)) = op.body else { continue };
                 let Ok(Payload::Inbox(InboxPayload::ContactRequest {
                     agent_id: req_agent,
                     reply_topic,

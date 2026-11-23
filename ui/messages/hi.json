@@ -269,7 +269,7 @@
     "errorLeavingGroup": "समूह छोड़ने में विफल रहा। फिर से प्रयास करें।।",
     "block": "ब्लॉक",
     "unblockContactTitle": "Unblock {{name}}?",
-    "blockContactDescription": "अवरुद्ध लोग आपको संदेश भेजने में सक्षम नहीं होंगे।।",
+    "blockContactDescription": "ब्लॉक्ड लोग आपको संदेश भेजने में सक्षम नहीं होंगे।।",
     "unblockContactDescription": "आप एक दूसरे को संदेश देने में सक्षम होंगे।।",
     "blockContactTitle": "ब्लॉक {{name}}?",
     "contactUnblockedToast": "{{name}} को अनब्लॉक किया गया है।।",
