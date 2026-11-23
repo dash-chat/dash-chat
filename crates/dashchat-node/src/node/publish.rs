@@ -46,12 +46,17 @@ impl Node {
     /// Get the application LogId for a topic, i.e. where messages go for this topic.
     /// For Space-based topics, this will be the application log of the space.
     /// For other topics, this will be the log id derived from the topic itself.
-    pub async fn app_message_log_id(&self, topic: TopicId) -> LogId {
-        if self.streams.is_space(topic).await {
+    //
+    // The stored row answers while startup is still rejoining the spaces. The live
+    // subscription answers for a space being created, whose row is written afterwards.
+    pub async fn app_message_log_id(&self, topic: TopicId) -> anyhow::Result<LogId> {
+        let is_space = self.streams.is_space(topic).await
+            || self.local_store.is_subscribed_space(topic).await?;
+        Ok(if is_space {
             crate::topic::application_log_id(topic)
         } else {
             LogId::from_topic(topic)
-        }
+        })
     }
 }
 

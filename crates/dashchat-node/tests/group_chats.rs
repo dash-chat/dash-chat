@@ -425,7 +425,7 @@ async fn test_chat_authors_are_readable_while_stored_spaces_are_rejoined() {
     app_config.defer_stored_topics_initialization = true;
     let bobbi = TestNode::new_at_path(app_config, "bobbi", bobbi_dir).await;
 
-    let message_log = bobbi.app_message_log_id(chat_id.into()).await;
+    let message_log = bobbi.app_message_log_id(chat_id.into()).await.unwrap();
     let authors = bobbi.op_store.get_authors(message_log).await.unwrap();
     assert!(authors.contains(&alice.device_id()));
 }
