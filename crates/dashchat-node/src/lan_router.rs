@@ -899,6 +899,16 @@ mod imp {
                 .any(|(log, ranges)| logs.contains(&log.log_id()) && !ranges.is_empty()))
         }
 
+        /// Testing: whether the relay store holds everything `other`'s
+        /// router serves.
+        #[cfg(feature = "testing")]
+        pub async fn relay_covers(&self, other: &LanRouter) -> anyhow::Result<bool> {
+            let served = other.ext.held_all().await?;
+            Ok(served
+                .difference(&self.handle.relay_held().await?)
+                .is_empty())
+        }
+
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
             self.unfollow(topic).await;
             Ok(())

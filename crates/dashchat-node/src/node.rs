@@ -678,6 +678,16 @@ impl Node {
         }
     }
 
+    /// Testing: whether this node's relay store holds everything `other`'s
+    /// router serves; `None` when either router is not running.
+    #[cfg(all(feature = "lan-router", feature = "testing"))]
+    pub async fn lan_router_relay_covers(&self, other: &Node) -> Result<Option<bool>> {
+        match (&self.lan_router, &other.lan_router) {
+            (Some(relay), Some(served)) => Ok(Some(relay.relay_covers(served).await?)),
+            _ => Ok(None),
+        }
+    }
+
     pub async fn get_active_inbox_topics(&self) -> Result<BTreeSet<InboxTopic>, Error> {
         self.local_store
             .get_advertised_inbox_topics()

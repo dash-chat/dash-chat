@@ -66,7 +66,7 @@ fn no_p2p_turns_the_router_off() {
 mod localhost {
     use std::time::Duration;
 
-    use dashchat_node::testing::{PollConfig, TestNode, introduce_peers, teach_peers};
+    use dashchat_node::testing::{PollConfig, TestNode, introduce_peers};
     use dashchat_node::{AddContactResult, DirectChatId, NodeConfig, TopicId};
 
     /// `RUST_LOG` directives, if any, go to the test's tracing output.
@@ -87,6 +87,15 @@ mod localhost {
         PollConfig {
             poll_interval: Duration::from_millis(500),
             poll_timeout: Duration::from_secs(60),
+        }
+    }
+
+    /// For waits that span several rounds of the router's Want and Have
+    /// timers.
+    fn slow_poll() -> PollConfig {
+        PollConfig {
+            poll_timeout: Duration::from_secs(120),
+            ..poll()
         }
     }
 
@@ -123,11 +132,8 @@ mod localhost {
     /// Want and Have timers, since the space's control ops name the group
     /// log the rest of them are in.
     async fn send_when_joined(node: &TestNode, chat: DirectChatId, text: &str) {
-        let poll = PollConfig {
-            poll_timeout: Duration::from_secs(120),
-            ..poll()
-        };
-        poll.wait_for(|| async { node.send_message(chat, text, None, None).await.map(|_| ()) })
+        slow_poll()
+            .wait_for(|| async { node.send_message(chat, text, None, None).await.map(|_| ()) })
             .await
             .expect("the chat's space is joined through the router")
     }
@@ -175,39 +181,72 @@ mod localhost {
         b.shutdown().await;
     }
 
-    /// Spec test 3: a and c can never connect (global block both ways) and
-    /// only b knows both. b never subscribes to their topics, delivers
-    /// nothing to its own p2panda store, and holds their chat in its relay.
+    /// Wait until `relay`'s relay store holds everything `node` serves, so
+    /// `node` can leave.
+    async fn wait_for_relay(relay: &TestNode, node: &TestNode) {
+        slow_poll()
+            .wait_for(|| async {
+                match relay.lan_router_relay_covers(node).await? {
+                    Some(true) => Ok(()),
+                    _ => Err(anyhow::anyhow!("the relay does not hold everything yet")),
+                }
+            })
+            .await
+            .expect("the relay takes everything the node serves")
+    }
+
+    /// Spec test 3: a and c are never online together and each only ever
+    /// meets b, so all they exchange passes through b's relay store. b
+    /// never subscribes to their topics and delivers nothing to its own
+    /// p2panda store.
     #[tokio::test(flavor = "multi_thread")]
     async fn relay_through_a_node_that_never_subscribes() {
         tracing();
         let config = router_config();
-        let a = TestNode::new(config.clone(), "a").await;
         let b = TestNode::new(config.clone(), "b").await;
-        let c = TestNode::new(config, "c").await;
-        a.block_peer(*c.device_id()).await.unwrap();
-        c.block_peer(*a.device_id()).await.unwrap();
-        teach_peers(&a, [&b]).await.unwrap();
-        teach_peers(&b, [&a, &c]).await.unwrap();
-        teach_peers(&c, [&b]).await.unwrap();
 
+        let a = TestNode::new(config.clone(), "a").await;
         let qr = a.create_add_contact_qr_code().await.unwrap();
+        let a_dir = a.shutdown().await;
+
+        let c = TestNode::new(config.clone(), "c").await;
+        introduce_peers([&b, &c]).await.unwrap();
+        let c_agent = c.agent_id();
         let AddContactResult::NewRequest(direct_chat) = c.add_contact(qr).await.unwrap() else {
             panic!("expected a fresh request");
         };
-        let topics = inbox_topics(&a).await;
-        wait_for_ops(&c, &topics).await;
-        poll()
-            .consistency([&a, &c], topics.iter())
+        wait_for_relay(&b, &c).await;
+        let c_dir = c.shutdown().await;
+
+        let a = TestNode::new_at_path(config.clone(), "a", a_dir).await;
+        introduce_peers([&a, &b]).await.unwrap();
+        let requester = a
+            .behavior()
+            .accept_next_contact()
             .await
-            .expect("the inbox converges through b");
-        a.accept_contact(c.agent_id()).await.unwrap();
+            .expect("c's request reaches a from b's relay");
+        assert_eq!(requester, c_agent);
+        wait_for_relay(&b, &a).await;
+        let a_dir = a.shutdown().await;
+
+        let c = TestNode::new_at_path(config.clone(), "c", c_dir).await;
+        introduce_peers([&b, &c]).await.unwrap();
         send_when_joined(&c, direct_chat, "hello via b").await;
-        wait_for_ops(&c, &[*direct_chat]).await;
-        poll()
-            .consistency([&a, &c], [&*direct_chat])
+        wait_for_relay(&b, &c).await;
+        assert!(c.lan_router_delivered().unwrap() > 0);
+        c.shutdown().await;
+
+        let a = TestNode::new_at_path(config, "a", a_dir).await;
+        introduce_peers([&a, &b]).await.unwrap();
+        slow_poll()
+            .wait_for(|| async {
+                match a.get_messages(direct_chat).await?.len() {
+                    0 => Err(anyhow::anyhow!("c's message has not reached a yet")),
+                    _ => Ok(()),
+                }
+            })
             .await
-            .expect("the direct chat converges through b");
+            .expect("c's message reaches a from b's relay");
 
         assert!(
             b.get_contacts().await.unwrap().is_empty(),
@@ -218,16 +257,9 @@ mod localhost {
             Some(0),
             "b relayed without delivering"
         );
-        assert_eq!(
-            b.lan_router_relay_holds(*direct_chat).await.unwrap(),
-            Some(true),
-            "b's relay holds the chat"
-        );
         assert!(a.lan_router_delivered().unwrap() > 0);
-        assert!(c.lan_router_delivered().unwrap() > 0);
         a.shutdown().await;
         b.shutdown().await;
-        c.shutdown().await;
     }
 
     /// Spec test 4: a relay serves an owner who was off the LAN when the op
