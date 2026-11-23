@@ -425,15 +425,6 @@ impl TopicStreams {
         let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));
     }
 
-    /// Whether we subscribed to `topic` as a space rather than a plain stream.
-    // TODO: consider newtypes/marker types for topics, moving this into the type system.
-    pub(crate) async fn is_space(&self, topic: Topic) -> bool {
-        matches!(
-            self.publishers.lock().await.get(&topic),
-            Some(Publisher::Space(_))
-        )
-    }
-
     /// Decrypt messages published into a space, with the secrets p2panda holds for it.
     /// Works for a space we have left as well.
     //

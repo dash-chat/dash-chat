@@ -7,7 +7,7 @@ use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 use jni::objects::JClass;
 #[cfg(target_os = "android")]
 use jni::JNIEnv;
-use p2panda::operation::Header;
+use p2panda::operation::{Header, LogId};
 use p2panda_core::Hash;
 use tauri_plugin_notification::*;
 
@@ -223,13 +223,10 @@ async fn handle_push_notification(
         .map_err(|_| anyhow!("topic_id bytes are not 32 bytes long"))?;
     let topic_id = TopicId::try_from(topic_bytes)?;
 
-    // Space, group and key bundle logs reach the mailbox too, but only the
-    // chat log holds anything worth a notification.
-    let chat_log = dashchat_node::LogId::from(application_log_id(topic_id));
-    if !log_hex.is_empty() && log_hex != chat_log.to_hex() {
+    let Some(log_id) = notifiable_log(topic_id, log_hex) else {
         log::debug!("Ignoring a push for a control log of {topic_hex}.");
         return Ok(None);
-    }
+    };
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
     // The setting alone, unlike `are_notifications_enabled`: there is no app
@@ -260,10 +257,17 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
+    // A member removed from a space still gets its pushes, and can read none of them.
+    if crate::notifications::space_membership(&node, topic_id).await? == Some(false) {
+        log::info!("Ignoring a push for a space we were removed from: {topic_hex}.");
+        return Ok(None);
+    }
+
     wait_for_pushed_operation_notification(
         node,
         &filesystem,
         topic_id,
+        log_id,
         verifying_key,
         seq_num,
         handler_deadline,
@@ -271,10 +275,24 @@ async fn handle_push_notification(
     .await
 }
 
+/// The log a push names, when its operations can be worth a notification: a
+/// space's application log, or the one log of a plain topic such as an inbox.
+/// Space, group and key bundle logs reach the mailbox too, and yield `None`.
+fn notifiable_log(topic_id: TopicId, log_hex: &str) -> Option<LogId> {
+    let application_log = application_log_id(topic_id);
+    if log_hex.is_empty() {
+        return Some(application_log);
+    }
+    [application_log, LogId::from_topic(topic_id)]
+        .into_iter()
+        .find(|log_id| dashchat_node::LogId::from(*log_id).to_hex() == log_hex)
+}
+
 async fn wait_for_pushed_operation_notification(
     node: dashchat_node::Node,
     filesystem: &FileSystem,
     topic_id: TopicId,
+    log_id: LogId,
     verifying_key: p2panda_core::VerifyingKey,
     seq_num: SeqNum,
     handler_deadline: tokio::time::Instant,
@@ -318,7 +336,7 @@ async fn wait_for_pushed_operation_notification(
         }
         let log = node
             .op_store
-            .get_log(&device_id, &application_log_id(topic_id), from)
+            .get_log(&device_id, &log_id, from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
         // An encrypted operation is not read until its secret arrives, and a later one may be.

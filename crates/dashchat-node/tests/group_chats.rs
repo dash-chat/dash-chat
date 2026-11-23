@@ -377,6 +377,77 @@ async fn test_group_chat_space_survives_restart() {
     .unwrap();
 }
 
+/// The app asks for a chat's authors as soon as it launches, while its node is still
+/// rejoining the stored spaces in the background.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_chat_authors_are_readable_while_stored_spaces_are_rejoined() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_chat_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    alice
+        .send_message_raw(chat_id, "before restart".into())
+        .await
+        .unwrap();
+
+    poll.wait_for(|| async {
+        let msgs = bobbi.get_messages(chat_id).await.unwrap().len();
+        (msgs == 1).then_some(()).ok_or(msgs)
+    })
+    .await
+    .unwrap();
+
+    let bobbi_dir = bobbi.shutdown().await;
+    let mut app_config = NodeConfig::testing();
+    app_config.defer_stored_topics_initialization = true;
+    let bobbi = TestNode::new_at_path(app_config, "bobbi", bobbi_dir).await;
+
+    let message_log = bobbi.app_message_log_id(chat_id.into()).await.unwrap();
+    let authors = bobbi
+        .op_store
+        .get_authors(message_log.clone())
+        .await
+        .unwrap();
+    assert!(
+        authors.contains(&alice.device_id()),
+        "expected alice among the chat's authors, got {authors:?}"
+    );
+
+    let alice_log = bobbi
+        .op_store
+        .get_log(&alice.device_id(), &message_log, None)
+        .await
+        .unwrap();
+    assert!(!alice_log.is_empty(), "alice's messages read back empty");
+    assert!(
+        alice_log.iter().all(|op| op.body.is_ok()),
+        "some of alice's messages read back undecryptable"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_chat_registered_in_op_projection() {
     setup();
