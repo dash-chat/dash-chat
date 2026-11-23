@@ -46,12 +46,12 @@ impl Node {
     /// Get the application LogId for a topic, i.e. where messages go for this topic.
     /// For Space-based topics, this will be the application log of the space.
     /// For other topics, this will be the log id derived from the topic itself.
-    pub async fn app_message_log_id(&self, topic: TopicId) -> LogId {
-        if self.streams.is_space(topic).await {
+    pub async fn app_message_log_id(&self, topic: TopicId) -> anyhow::Result<LogId> {
+        Ok(if self.local_store.is_space(topic).await? {
             crate::topic::application_log_id(topic)
         } else {
             LogId::from_topic(topic)
-        }
+        })
     }
 }
 

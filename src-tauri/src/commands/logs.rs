@@ -217,9 +217,13 @@ pub async fn get_log(
     app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<Vec<SimplifiedOperation>, String> {
     let node = app_node_manager.get().await?;
+    let log_id = node
+        .app_message_log_id(topic_id)
+        .await
+        .map_err(|e| format!("Failed to resolve the message log: {e:?}"))?;
     let log = node
         .op_store
-        .get_log(&author, &node.app_message_log_id(topic_id).await, None)
+        .get_log(&author, &log_id, None)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
 
@@ -238,9 +242,13 @@ pub async fn get_authors(
     app_node_manager: State<'_, AppNodeManager>,
 ) -> Result<std::collections::HashSet<DeviceId>, String> {
     let node = app_node_manager.get().await?;
+    let log_id = node
+        .app_message_log_id(topic_id)
+        .await
+        .map_err(|e| format!("Failed to resolve the message log: {e:?}"))?;
     let authors = node
         .op_store
-        .get_authors(node.app_message_log_id(topic_id).await)
+        .get_authors(log_id)
         .await
         .map_err(|e| format!("Failed to get log: {e:?}"))?;
     Ok(authors)
