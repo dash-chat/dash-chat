@@ -33,6 +33,7 @@ describe('Direct chat unread messages', () => {
 
 		await agent1.homePage.unreadBadge.waitForExist({ timeout: SYNC_TIMEOUT });
 		await expect(agent1.homePage.unreadBadge).toHaveText('3');
+		await expect(agent1.mainTabbar.chatsUnreadBadge).toHaveText('3');
 	});
 
 	it('marks the messages read on entering the chat, without scrolling', async () => {
@@ -47,6 +48,9 @@ describe('Direct chat unread messages', () => {
 			timeoutMsg:
 				'Unread badge did not clear after entering the chat without scrolling',
 		});
+		await agent1.mainTabbar.chatsUnreadBadge.waitForDisplayed({
+			reverse: true,
+		});
 	});
 
 	it('clears the badge on entering even when the unread messages overflow the viewport', async () => {
@@ -57,6 +61,7 @@ describe('Direct chat unread messages', () => {
 
 		await agent1.homePage.unreadBadge.waitForExist({ timeout: SYNC_TIMEOUT });
 		await expect(agent1.homePage.unreadBadge).toHaveText(`${COUNT}`);
+		await expect(agent1.mainTabbar.chatsUnreadBadge).toHaveText(`${COUNT}`);
 
 		await agent1.homePage.openChat('Bob');
 		await agent1.directChatPage.messages.waitForMessage(`overflow ${COUNT}`);
@@ -76,6 +81,9 @@ describe('Direct chat unread messages', () => {
 			reverse: true,
 			timeoutMsg:
 				'Unread badge did not clear after entering a chat whose unread messages overflow the viewport',
+		});
+		await agent1.mainTabbar.chatsUnreadBadge.waitForDisplayed({
+			reverse: true,
 		});
 	});
 });

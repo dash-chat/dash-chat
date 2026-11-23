@@ -4,6 +4,7 @@
 	import chatsSvg from '$lib/assets/main-tabbar/chats.svg?raw';
 	import settingsSvg from '$lib/assets/main-tabbar/settings.svg?raw';
 	import { m } from '$lib/paraglide/messages.js';
+	import ChatsUnreadBadge from '../ChatsUnreadBadge.svelte';
 	import HubWarningBadge from '../HubWarningBadge.svelte';
 
 	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
@@ -29,6 +30,8 @@
 			? 'min-w-28'
 			: 'max-h-none! [&_.k-tabbar-link-icon]:h-9 [&_.k-tabbar-link-icon]:w-15',
 	);
+	// Signal's active iOS tab stays neutral instead of taking the accent colour.
+	const tabColors = { textActiveIos: 'text-black dark:text-white' };
 </script>
 
 <Toolbar
@@ -42,19 +45,23 @@
 	<ToolbarPane class={hugTabs}>
 		<TabbarLink
 			class={tabClass}
+			colors={tabColors}
 			active={!isSettings}
 			label={m.chats()}
 			linkProps={{ href: '/' }}
 			data-testid="main-tab-chats"
 		>
 			{#snippet icon()}
-				<span class="block size-6 *:size-full">
-					{@html chatsSvg}
-				</span>
+				<ChatsUnreadBadge>
+					<span class="block size-6 *:size-full">
+						{@html chatsSvg}
+					</span>
+				</ChatsUnreadBadge>
 			{/snippet}
 		</TabbarLink>
 		<TabbarLink
 			class={tabClass}
+			colors={tabColors}
 			active={isSettings}
 			label={m.settings()}
 			linkProps={{ href: '/settings' }}
