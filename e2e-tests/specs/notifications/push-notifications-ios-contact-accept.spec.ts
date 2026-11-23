@@ -3,6 +3,7 @@ import {
 	contactLinkOf,
 	navigateToAddContact,
 } from '../../helpers/flows/exchange-contacts';
+import { PRE_ACCEPT_MESSAGING } from '../../helpers/pre-accept-messaging';
 import { SYNC_TIMEOUT } from '../../helpers/timeouts';
 import { pushTestingEnabled } from '../../setup/push-server';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
@@ -56,7 +57,13 @@ describe('Contact accepted while the app is backgrounded (iOS push extension)', 
 		await rex.directChatPage.ready();
 		// The requester can write before being accepted — the reported case had
 		// the user messaging the contacts that went missing.
-		await rex.directChatPage.composer.sendMessage('hi before accept');
+		// TODO: pre-accept: until Sam accepts, Rex gets a waiting bar instead of
+		// the composer.
+		if (PRE_ACCEPT_MESSAGING) {
+			await rex.directChatPage.composer.sendMessage('hi before accept');
+		} else {
+			await rex.directChatPage.awaitingAcceptBar.waitForExist();
+		}
 		await rex.directChatPage.back.click();
 		await rex.homePage.ready();
 
