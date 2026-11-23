@@ -122,6 +122,7 @@
             pkgs.pnpm
             pkgs.cargo-nextest
             pkgs.doctl
+            pkgs.jq
             pkgs.toxiproxy
             pkgs.stunnel
             pkgs.pkg-config
