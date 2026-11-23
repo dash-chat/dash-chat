@@ -353,8 +353,12 @@ impl TopicStreams {
         if !matches!(space, StreamIntent::ExistingOnly) {
             let blocked = self.native_sync_blocked.lock().unwrap().clone();
             for node_id in blocked {
-                self.with_node(async |node| node.topic_block(node_id, topic).await)
-                    .await?;
+                self.with_node(async |node| {
+                    node.sync_block_list()
+                        .block_topic(node_id, topic.into())
+                        .await
+                })
+                .await?;
             }
         }
 
@@ -605,11 +609,12 @@ impl TopicStreams {
             .await??)
     }
 
-    /// Testing: refuse every connection with `node_id` in both directions
-    /// (p2panda's global blocklist, enforced by the endpoint hooks).
+    /// Testing: refuse log sync with `node_id` on every topic (p2panda's
+    /// global sync blocklist). Gossip is unaffected.
     #[cfg(feature = "testing")]
     pub(crate) async fn block_peer(&self, node_id: p2panda::NodeId) -> Result<(), StreamsError> {
-        self.with_node(async |node| node.block(node_id).await).await
+        self.with_node(async |node| node.sync_block_list().block(node_id).await)
+            .await
     }
 
     /// Testing: block native log sync with `node_id` on every topic,
@@ -624,8 +629,12 @@ impl TopicStreams {
         let pubs = self.publishers.lock().await;
         self.native_sync_blocked.lock().unwrap().insert(node_id);
         for topic in pubs.keys().copied() {
-            self.with_node(async |node| node.topic_block(node_id, topic).await)
-                .await?;
+            self.with_node(async |node| {
+                node.sync_block_list()
+                    .block_topic(node_id, topic.into())
+                    .await
+            })
+            .await?;
         }
         Ok(())
     }

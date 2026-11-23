@@ -148,18 +148,36 @@ mod imp {
         }
     }
 
+    /// A [`RouterLog`]'s channel: the raw bytes of a `LogId`.
+    #[derive(
+        Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug,
+    )]
+    pub(crate) struct ChannelId([u8; 32]);
+
+    impl From<LogId> for ChannelId {
+        fn from(log_id: LogId) -> Self {
+            Self(*log_id.as_bytes())
+        }
+    }
+
+    impl std::fmt::Display for ChannelId {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", hex::encode(&self.0[..4]))
+        }
+    }
+
     impl dash_router::core::Log for RouterLog {
-        type Channel = LogId;
+        type Channel = ChannelId;
         type Author = AuthorKey;
-        fn channel(&self) -> LogId {
-            self.log_id()
+        fn channel(&self) -> ChannelId {
+            ChannelId(self.log_id)
         }
         fn author(&self) -> AuthorKey {
             AuthorKey(self.author)
         }
-        fn new(channel: LogId, author: AuthorKey) -> Self {
+        fn new(channel: ChannelId, author: AuthorKey) -> Self {
             Self {
-                log_id: *channel.as_bytes(),
+                log_id: channel.0,
                 author: author.0,
             }
         }
@@ -581,13 +599,6 @@ mod imp {
                 .await
                 .map_err(|e| anyhow!("gossip publish: {e}"))
         }
-
-        /// The node's gossip limit; the router packs its broadcasts to fit
-        /// it (less room for this envelope), so raising the node's
-        /// `GossipConfig::max_message_size` raises the router's budget too.
-        fn max_message_size(&self) -> Option<usize> {
-            Some(self.0.max_message_size())
-        }
     }
 
     pub(crate) struct Subscription(EphemeralStreamSubscription<ByteBuf>);
@@ -804,7 +815,7 @@ mod imp {
         async fn subscribe_logs(&self, topic: TopicId) -> anyhow::Result<()> {
             for log_id in self.topic_logs(topic).await? {
                 if self.ext.follow_log(topic, log_id) {
-                    self.handle.subscribe(log_id).await?;
+                    self.handle.subscribe(log_id.into()).await?;
                 }
             }
             Ok(())
@@ -852,7 +863,7 @@ mod imp {
         /// Unfollow `topic` and unsubscribe the logs only it had.
         async fn unfollow(&self, topic: TopicId) {
             for log_id in self.ext.unfollow_topic(topic) {
-                if let Err(e) = self.handle.unsubscribe(log_id).await {
+                if let Err(e) = self.handle.unsubscribe(log_id.into()).await {
                     tracing::debug!(error = %e, "lan router could not unsubscribe a log");
                 }
             }
@@ -1057,7 +1068,7 @@ mod imp {
             let t1 = TopicId::from([1u8; 32]);
             let t2 = TopicId::from([2u8; 32]);
             let l = RouterLog::new(LogId::from_topic(t1), key_b);
-            assert_eq!(l.channel(), LogId::from_topic(t1));
+            assert_eq!(l.channel(), LogId::from_topic(t1).into());
             assert_eq!(l.log_id(), LogId::from_topic(t1));
             assert_eq!(l.verifying_key().unwrap(), key_b);
             // Same topic, different authors, sorts inside the topic; a later

@@ -552,8 +552,6 @@ fn encrypted_message(op: &Operation) -> Option<(TopicId, EncryptedMessage)> {
     ))
 }
 
-/// Whether an operation carries an application payload, as opposed to a
-/// space, group or key bundle control message.
 /// The log of the group a space control operation names.
 #[cfg(any(test, feature = "lan-router"))]
 fn space_group_log_id(op: &Operation) -> Option<LogId> {
@@ -561,13 +559,16 @@ fn space_group_log_id(op: &Operation) -> Option<LogId> {
         return None;
     };
     match &extensions.args {
-        SpacesArgs::SpaceMembership { group_id, .. } | SpacesArgs::SpaceUpdate { group_id, .. } => {
+        SpacesHeaderArgs::KeyAgreement { group_id, .. }
+        | SpacesHeaderArgs::SpaceUpdate { group_id, .. } => {
             Some(p2panda::spaces::group_log_id(*group_id))
         }
         _ => None,
     }
 }
 
+/// Whether an operation carries an application payload, as opposed to a
+/// space, group or key bundle control message.
 fn is_application(op: &Operation) -> bool {
     match &op.header.extensions.variant {
         ExtensionsVariantV1::Basic(_) => true,
@@ -653,6 +654,7 @@ mod tests {
     use mailbox_client::store::MailboxStore;
     use maplit::btreemap;
     use p2panda::operation::{Header, LogId};
+    use p2panda_core::Body;
 
     use super::test_support::*;
     use super::*;

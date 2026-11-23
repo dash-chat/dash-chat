@@ -840,10 +840,9 @@ impl Node {
         Ok(())
     }
 
-    /// Testing: refuse every connection with `node_id` in both directions,
-    /// for every protocol (p2panda's global blocklist, enforced by the iroh
-    /// endpoint hooks). Set it before the peer is introduced. A no-op on a
-    /// node with no networking layer.
+    /// Testing: refuse log sync with `node_id` on every topic (p2panda's
+    /// global sync blocklist). Gossip is unaffected. Set it before the peer
+    /// is introduced. A no-op on a node with no networking layer.
     #[cfg(feature = "testing")]
     pub async fn block_peer(&self, node_id: NodeId) -> Result<()> {
         if self.endpoint.is_none() {

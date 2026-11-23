@@ -2274,7 +2274,7 @@ dependencies = [
 [[package]]
 name = "dash-router"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#4d2fbae15f86c8147511a876e681b64e8e53cfc7"
+source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#963ce77275481e903bb8301e1060bf0b70a3eac7"
 dependencies = [
  "anyhow",
  "dash-router-core",
@@ -2295,7 +2295,7 @@ dependencies = [
 [[package]]
 name = "dash-router-core"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#4d2fbae15f86c8147511a876e681b64e8e53cfc7"
+source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#963ce77275481e903bb8301e1060bf0b70a3eac7"
 dependencies = [
  "anyhow",
  "polestar",
@@ -2306,7 +2306,7 @@ dependencies = [
 [[package]]
 name = "dash-router-policy"
 version = "0.1.0"
-source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#4d2fbae15f86c8147511a876e681b64e8e53cfc7"
+source = "git+https://github.com/dash-chat/dash-router?branch=p2panda-0.8#963ce77275481e903bb8301e1060bf0b70a3eac7"
 dependencies = [
  "rand 0.9.5",
  "serde",
