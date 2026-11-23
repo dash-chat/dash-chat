@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use dashchat_node::testing::{PollConfig, TestNode, introduce_peers};
 use dashchat_node::{NodeConfig, TopicId};
+use p2panda::operation::LogId;
 
 fn config() -> NodeConfig {
     NodeConfig::testing().random_network_id()
@@ -48,13 +49,18 @@ async fn wait_for_ops(node: &TestNode, topics: &[TopicId]) {
         .expect("the author's own ops are processed")
 }
 
-/// With log sync off on both sides the contact request never crosses.
+/// With log sync off and no LAN router (and no mailbox), nothing carries
+/// operations between two nodes that know each other: the contact request
+/// never reaches a's store.
 #[tokio::test(flavor = "multi_thread")]
-async fn without_log_sync_the_pair_does_not_converge() {
+async fn without_log_sync_or_a_router_nothing_crosses() {
     let mut config = config();
     config.enable_log_sync = false;
+    config.lan_router.enabled = false;
     let a = TestNode::new(config.clone(), "a").await;
     let b = TestNode::new(config, "b").await;
+    assert!(a.lan_router().is_err());
+    assert!(b.lan_router().is_err());
     introduce_peers([&a, &b]).await.unwrap();
     let qr = a.create_add_contact_qr_code().await.unwrap();
     b.add_contact(qr).await.unwrap();
@@ -67,6 +73,18 @@ async fn without_log_sync_the_pair_does_not_converge() {
             .is_err(),
         "the inbox must not converge with log sync off"
     );
+    for topic in &topics {
+        let authors = a
+            .op_store
+            .get_authors(LogId::from_topic(*topic))
+            .await
+            .unwrap();
+        assert!(
+            !authors.contains(&b.device_id()),
+            "a stored an operation of b's"
+        );
+    }
+    assert!(a.get_contacts().await.unwrap().is_empty());
     a.shutdown().await;
     b.shutdown().await;
 }
