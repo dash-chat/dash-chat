@@ -257,6 +257,17 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
+    // A member removed from a space still gets its pushes, and can read none of them.
+    let members = node.space_members(topic_id).await?;
+    if !members.is_empty()
+        && !members
+            .iter()
+            .any(|(member, _)| *member == node.device_id())
+    {
+        log::info!("Ignoring a push for a space we were removed from: {topic_hex}.");
+        return Ok(None);
+    }
+
     wait_for_pushed_operation_notification(
         node,
         &filesystem,
