@@ -633,9 +633,14 @@ mod imp {
 
     /// Policy for v1: the swarm test's values, which converge fifty nodes on
     /// a LAN in under a minute. Revisit with an estimator for `n`.
-    const WANT_TTL: Duration = Duration::from_secs(2);
+    const TIMER_MIN: Duration = Duration::from_secs(1);
+    const TIMER_MAX: Duration = Duration::from_secs(10);
+    /// A Want is answered when the Have timer fires and a heard channel is
+    /// asked about when the Want timer does, so both must outlive the
+    /// longest timer.
+    const WANT_TTL: Duration = Duration::from_secs(12);
     const HAVE_TTL: Duration = Duration::from_secs(2);
-    const HEARD_TTL: Duration = Duration::from_secs(2);
+    const HEARD_TTL: Duration = Duration::from_secs(12);
     /// A relay cache sized for a phone: a payload-bearing op costs two
     /// units, so at worst ~16k ops × ~4 KB ≈ 64 MB of unvalidated peer
     /// bytes. `lan_router.redb` never shrinks and persists after the flag
@@ -719,12 +724,12 @@ mod imp {
             };
             let intervals = PolicyIntervals {
                 want: IntervalPolicy::Fixed {
-                    min_ms: 1_000.0,
-                    max_ms: 10_000.0,
+                    min_ms: TIMER_MIN.as_millis() as f64,
+                    max_ms: TIMER_MAX.as_millis() as f64,
                 },
                 have: IntervalPolicy::Fixed {
-                    min_ms: 1_000.0,
-                    max_ms: 10_000.0,
+                    min_ms: TIMER_MIN.as_millis() as f64,
+                    max_ms: TIMER_MAX.as_millis() as f64,
                 },
                 n: NETWORK_SIZE_ESTIMATE,
                 rng: rand::rngs::StdRng::from_os_rng(),
