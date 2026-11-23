@@ -3,10 +3,13 @@
 //!
 //! Everything is a no-op unless BOTH the `lan-router` cargo feature is on
 //! and `NodeConfig::enable_lan_router` is true. The node calls this module
-//! at four points: `LanRouter::spawn` in `Node::init`, `subscribe_topic`
-//! once a topic's stream or space is open, and, after an operation is
-//! acked, `authored` for our own ops (the router pushes them) or
-//! `hint_changed` for others'.
+//! at five points: `LanRouter::spawn` in `Node::init`, `subscribe_topic`
+//! once a topic's stream or space is open, `topics_changed` when a space's
+//! membership moves, and, after an operation is acked, `authored` for our
+//! own ops (the router pushes them) or `hint_changed` for others'.
+//!
+//! The router knows nothing of topics: each log of a followed topic is its
+//! own router channel, so following a topic is subscribing every log it has.
 //! With the feature off, this file is the stub below and every call site's
 //! `Option` is `None`.
 
@@ -53,6 +56,7 @@ impl LanRouter {
         Ok(())
     }
     pub fn hint_changed(&self, _author: VerifyingKey, _log_id: p2panda::operation::LogId) {}
+    pub fn topics_changed(&self) {}
     pub fn authored(&self, _operation: &ProcessedOperation<Payload>) {}
     pub async fn shutdown(&self) {}
 }
@@ -84,7 +88,7 @@ mod imp {
     use rand::SeedableRng as _;
     use serde::{Deserialize, Serialize};
     use serde_bytes::ByteBuf;
-    use tokio::sync::{Mutex, broadcast, mpsc};
+    use tokio::sync::{Mutex, Notify, broadcast, mpsc};
     use tokio::task::JoinHandle;
     use tokio_stream::wrappers::ReceiverStream;
 
@@ -93,7 +97,7 @@ mod imp {
 
     /// The router's log identity: `(LogId, author)`, channel first so the
     /// relay store's ordered scans keep one topic's logs contiguous. The
-    /// channel (a topic's [`router_channel`]) is what a subscription names.
+    /// channel (one of a topic's logs) is what a subscription names.
     #[derive(
         Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Debug,
     )]
@@ -179,20 +183,39 @@ mod imp {
         }
     }
 
+    /// What the router follows. A topic's logs are each their own router
+    /// channel, and a log can belong to several topics (a member's key
+    /// bundle log is one log across every space they are in).
+    #[derive(Default)]
+    struct Followed {
+        /// The channel each topic's imported ops go down (consumed by
+        /// `TopicStreams::import`).
+        imports: HashMap<TopicId, mpsc::Sender<Operation>>,
+        logs: HashMap<LogId, BTreeSet<TopicId>>,
+    }
+
+    /// Which of a log's stored seqs may be held and served.
+    enum Sendable {
+        All,
+        /// Only up to the ack cursor `topic` keeps for the log.
+        Acked(TopicId),
+    }
+
     /// The router's ext store: Dash Chat's own `OpStore`, seen as
-    /// `(LogId, author)` logs. Only logs under a registered topic exist for
-    /// the router, and only acked seqs are held or served (spec §4.2).
+    /// `(LogId, author)` logs. Only logs of a followed topic exist for the
+    /// router. What is held and served follows the mailbox's rule
+    /// (`OpStore::sendable_log_segment`): a plain stream's log only up to
+    /// its ack cursor, a space's logs in full, since their ops carry no
+    /// payload a tombstone could still drop.
     #[derive(Clone)]
     pub(crate) struct OpStoreExt {
         store: OpStore,
-        /// `LogId → (TopicId, import channel)`: the inverse of
-        /// [`router_channel`] for the topics this node follows, paired with
-        /// the channel that topic's imported ops go down (consumed by
-        /// `TopicStreams::import`). One map so (un)registration is a
-        /// single lock. Read on every held/fetch/ingest; written on
-        /// (un)subscribe. Never held across an await.
-        topics: Arc<RwLock<HashMap<LogId, (TopicId, mpsc::Sender<Operation>)>>>,
+        /// Read on every held/fetch/ingest; written on (un)subscribe. Never
+        /// held across an await.
+        followed: Arc<RwLock<Followed>>,
         hints: broadcast::Sender<BTreeSet<RouterLog>>,
+        /// Notified when a followed topic may have gained logs.
+        topics_changed: Arc<Notify>,
         rejected: Arc<AtomicU64>,
         forwarded: Arc<AtomicU64>,
     }
@@ -201,42 +224,80 @@ mod imp {
         pub(crate) fn new(store: OpStore) -> Self {
             Self {
                 store,
-                topics: Default::default(),
+                followed: Default::default(),
                 hints: broadcast::channel(64).0,
+                topics_changed: Default::default(),
                 rejected: Default::default(),
                 forwarded: Default::default(),
             }
         }
 
-        /// Register a topic and the channel its imported ops go down.
-        /// Returns false if already registered.
-        pub(crate) fn register_topic(
+        /// Follow a topic, importing its ops down `import_tx`. Returns
+        /// false if it is already followed.
+        pub(crate) fn follow_topic(
             &self,
-            log_id: LogId,
             topic: TopicId,
             import_tx: mpsc::Sender<Operation>,
         ) -> bool {
             use std::collections::hash_map::Entry;
-            match self.topics.write().unwrap().entry(log_id) {
+            match self.followed.write().unwrap().imports.entry(topic) {
                 Entry::Occupied(_) => false,
                 Entry::Vacant(e) => {
-                    e.insert((topic, import_tx));
+                    e.insert(import_tx);
                     true
                 }
             }
         }
 
-        pub(crate) fn unregister_topic(&self, log_id: &LogId) {
-            self.topics.write().unwrap().remove(log_id);
+        /// Count `log_id` as one of a followed topic's logs. Returns true
+        /// if no topic had it before, so the router is not subscribed yet.
+        pub(crate) fn follow_log(&self, topic: TopicId, log_id: LogId) -> bool {
+            let mut followed = self.followed.write().unwrap();
+            if !followed.imports.contains_key(&topic) {
+                return false;
+            }
+            let topics = followed.logs.entry(log_id).or_default();
+            let new = topics.is_empty();
+            topics.insert(topic);
+            new
+        }
+
+        /// Stop following a topic. Returns the logs no other topic has.
+        pub(crate) fn unfollow_topic(&self, topic: TopicId) -> Vec<LogId> {
+            let mut followed = self.followed.write().unwrap();
+            followed.imports.remove(&topic);
+            let mut orphaned = Vec::new();
+            followed.logs.retain(|log_id, topics| {
+                if topics.remove(&topic) && topics.is_empty() {
+                    orphaned.push(*log_id);
+                }
+                !topics.is_empty()
+            });
+            orphaned
         }
 
         #[cfg(test)]
-        pub(crate) fn has_topic(&self, log_id: &LogId) -> bool {
-            self.topics.read().unwrap().contains_key(log_id)
+        pub(crate) fn has_log(&self, log_id: &LogId) -> bool {
+            self.followed.read().unwrap().logs.contains_key(log_id)
         }
 
         pub(crate) fn hint(&self, log: RouterLog) {
             let _ = self.hints.send(BTreeSet::from([log])); // no receivers is fine
+        }
+
+        /// Any followed log may hold more: have the router re-read them all.
+        fn hint_all(&self) {
+            let _ = self.hints.send(BTreeSet::new());
+        }
+
+        fn followed_topics(&self) -> Vec<TopicId> {
+            self.followed
+                .read()
+                .unwrap()
+                .imports
+                .keys()
+                .copied()
+                .collect()
         }
 
         #[cfg(test)]
@@ -249,62 +310,114 @@ mod imp {
             self.forwarded.load(Ordering::Relaxed)
         }
 
-        fn topic_of(&self, log_id: &LogId) -> Option<TopicId> {
-            self.topics.read().unwrap().get(log_id).map(|(t, _)| *t)
+        /// `None` when no followed topic has the log.
+        fn sendable_of(&self, log_id: &LogId) -> Option<Sendable> {
+            let followed = self.followed.read().unwrap();
+            let topics = followed.logs.get(log_id)?;
+            let stream = topics
+                .iter()
+                .find(|topic| LogId::from_topic(**topic) == *log_id);
+            Some(stream.map_or(Sendable::All, |topic| Sendable::Acked(*topic)))
         }
 
-        fn import_tx_of(&self, log_id: &LogId) -> Option<mpsc::Sender<Operation>> {
-            self.topics
-                .read()
-                .unwrap()
-                .get(log_id)
-                .map(|(_, tx)| tx.clone())
+        fn import_txs_of(&self, log_id: &LogId) -> Vec<mpsc::Sender<Operation>> {
+            let followed = self.followed.read().unwrap();
+            let Some(topics) = followed.logs.get(log_id) else {
+                return Vec::new();
+            };
+            topics
+                .iter()
+                .filter_map(|topic| followed.imports.get(topic).cloned())
+                .collect()
         }
 
-        /// Acked seqs present for one log, as ranges; empty when nothing is
-        /// acked, the topic is unknown, or the author bytes are not a valid
-        /// key (a peer can name such a log; it is unknown, not an error).
+        /// The highest seq of `author`'s log that may be served: `Ok(None)`
+        /// for no limit, `Err(())` when nothing may be.
+        async fn sendable_height(
+            &self,
+            sendable: &Sendable,
+            author: &DeviceId,
+            log_id: &LogId,
+        ) -> anyhow::Result<Result<Option<SeqNum>, ()>> {
+            let Sendable::Acked(topic) = sendable else {
+                return Ok(Ok(None));
+            };
+            let acked = self.store.acked_log_height(topic, author, log_id).await?;
+            Ok(acked.map(Some).ok_or(()))
+        }
+
+        /// Sendable seqs present for one log, as ranges; empty when nothing
+        /// is sendable, no followed topic has the log, or the author bytes
+        /// are not a valid key (a peer can name such a log; it is unknown,
+        /// not an error).
         async fn held_one(&self, log: &RouterLog) -> anyhow::Result<Ranges> {
-            let Some(topic) = self.topic_of(&log.log_id()) else {
+            let log_id = log.log_id();
+            let Some(sendable) = self.sendable_of(&log_id) else {
                 return Ok(Ranges::empty());
             };
             let Ok(author) = log.verifying_key() else {
                 return Ok(Ranges::empty());
             };
             let author = DeviceId::from(author);
-            let log_id = log.log_id();
-            let Some(acked) = self
-                .store
-                .acked_log_height(&topic, &author, &log_id)
-                .await?
-            else {
+            let Ok(height) = self.sendable_height(&sendable, &author, &log_id).await? else {
                 return Ok(Ranges::empty());
             };
             let Some(summary) = self.store.get_log_seq_summary(&author, &log_id).await? else {
                 return Ok(Ranges::empty());
             };
-            self.held_below(&author, &log_id, summary, acked).await
+            self.held_below(&author, &log_id, summary, height).await
         }
 
-        /// The seqs of `summary` at or below `acked`. Acks are in log order
-        /// and only a prefix is ever pruned, so the stored seqs form one
-        /// run and the summary alone gives the answer; a gap (not expected)
-        /// falls back to listing every seq.
+        /// The seqs of `summary` at or below `height`, all of them when it
+        /// is `None`. Acks are in log order and only a prefix is ever
+        /// pruned, so the stored seqs form one run and the summary alone
+        /// gives the answer; a gap (not expected) falls back to listing
+        /// every seq.
         async fn held_below(
             &self,
             author: &DeviceId,
             log_id: &LogId,
             summary: LogSeqSummary,
-            acked: SeqNum,
+            height: Option<SeqNum>,
         ) -> anyhow::Result<Ranges> {
-            if summary.min > acked {
+            let top = height.map_or(summary.max, |height| summary.max.min(height));
+            if summary.min > top {
                 return Ok(Ranges::empty());
             }
             if summary.is_contiguous() {
-                return Ok(Ranges::range(summary.min, summary.max.min(acked) + 1));
+                return Ok(Ranges::range(summary.min, top + 1));
             }
             let seqs = self.store.get_log_seqs(author, log_id).await?;
-            Ok(Ranges::from_seqs(seqs.into_iter().filter(|q| *q <= acked)))
+            Ok(Ranges::from_seqs(seqs.into_iter().filter(|q| *q <= top)))
+        }
+
+        /// Every author's sendable seqs in one followed log.
+        async fn held_in_log(
+            &self,
+            log_id: LogId,
+            out: &mut LogRanges<RouterLog>,
+        ) -> anyhow::Result<()> {
+            let Some(sendable) = self.sendable_of(&log_id) else {
+                return Ok(());
+            };
+            let acked = match &sendable {
+                Sendable::All => None,
+                Sendable::Acked(topic) => Some(self.store.acked_log_heights(topic, &log_id).await?),
+            };
+            for (author, summary) in self.store.get_log_seq_summaries(&log_id).await? {
+                let height = match &acked {
+                    None => None,
+                    Some(acked) => match acked.get(&author) {
+                        Some(height) => Some(*height),
+                        None => continue,
+                    },
+                };
+                let r = self.held_below(&author, &log_id, summary, height).await?;
+                if !r.is_empty() {
+                    out.insert(RouterLog::new(log_id, *author), r);
+                }
+            }
+            Ok(())
         }
     }
 
@@ -321,25 +434,10 @@ mod imp {
         }
 
         async fn held_all(&self) -> anyhow::Result<LogRanges<RouterLog>> {
-            let topics: Vec<(LogId, TopicId)> = self
-                .topics
-                .read()
-                .unwrap()
-                .iter()
-                .map(|(log_id, (topic, _))| (*log_id, *topic))
-                .collect();
+            let log_ids: Vec<LogId> = self.followed.read().unwrap().logs.keys().copied().collect();
             let mut out = LogRanges::empty();
-            for (log_id, topic) in topics {
-                let acked = self.store.acked_log_heights(&topic, &log_id).await?;
-                for (author, summary) in self.store.get_log_seq_summaries(&log_id).await? {
-                    let Some(acked) = acked.get(&author) else {
-                        continue;
-                    };
-                    let r = self.held_below(&author, &log_id, summary, *acked).await?;
-                    if !r.is_empty() {
-                        out.insert(RouterLog::new(log_id, *author), r);
-                    }
-                }
+            for log_id in log_ids {
+                self.held_in_log(log_id, &mut out).await?;
             }
             Ok(out)
         }
@@ -354,7 +452,8 @@ mod imp {
                 if r.is_empty() {
                     continue;
                 }
-                let Some(topic) = self.topic_of(&log.log_id()) else {
+                let log_id = log.log_id();
+                let Some(sendable) = self.sendable_of(&log_id) else {
                     continue;
                 };
                 // A bogus author is an unknown log, not a batch failure.
@@ -362,19 +461,18 @@ mod imp {
                     continue;
                 };
                 let author = DeviceId::from(author);
-                let log_id = log.log_id();
-                let Some(acked) = self
-                    .store
-                    .acked_log_height(&topic, &author, &log_id)
-                    .await?
-                else {
+                let Ok(height) = self.sendable_height(&sendable, &author, &log_id).await? else {
                     continue;
                 };
                 // The store's lower bound is exclusive ("after"): start one
                 // below the first wanted seq, or from the beginning when
-                // that is 0. An open-ended want reads up to the ack cursor.
+                // that is 0. An open-ended want reads up to the sendable
+                // height.
                 let after = r.boundaries().first().and_then(|s| s.checked_sub(1));
-                let until = r.last().map_or(acked, |last| last.min(acked));
+                let until = match (r.last(), height) {
+                    (Some(last), Some(height)) => Some(last.min(height)),
+                    (last, height) => last.or(height),
+                };
                 for op in self
                     .store
                     .get_log_until(&author, &log_id, after, until)
@@ -414,15 +512,15 @@ mod imp {
                     "header log id != log"
                 );
                 let hash = header.hash();
-                // Held state is acked-only, so the router treats ops p2panda
-                // stored but has not acked yet as novel and ingests them again.
+                // A stream's held state is acked-only, so the router treats
+                // ops p2panda stored but has not acked yet as novel and
+                // ingests them again.
                 if self.store.has_operation(&hash).await? {
                     tracing::trace!(%log, seq, "lan router ingest: op already stored");
                     return Ok(());
                 }
-                let tx = self
-                    .import_tx_of(&log.log_id())
-                    .ok_or_else(|| anyhow!("no topic for log {log}"))?;
+                let txs = self.import_txs_of(&log.log_id());
+                ensure!(!txs.is_empty(), "no topic for log {log}");
                 let operation = Operation {
                     hash,
                     header,
@@ -432,9 +530,13 @@ mod imp {
                 // p2panda forwards imported ops to live-sync peers before its
                 // own pipeline validates them, so a forgery must stop here.
                 p2panda_core::validate_operation(&operation).context("invalid operation")?;
-                tx.send(operation)
-                    .await
-                    .map_err(|_| anyhow!("import channel closed"))?;
+                // An import assigns the op to its topic, so a log several
+                // topics share goes to each of them.
+                for tx in txs {
+                    tx.send(operation.clone())
+                        .await
+                        .map_err(|_| anyhow!("import channel closed"))?;
+                }
                 self.forwarded.fetch_add(1, Ordering::Relaxed);
                 tracing::debug!(%log, seq, "lan router forwarded a new op to p2panda");
                 Ok(())
@@ -497,15 +599,12 @@ mod imp {
         }
     }
 
-    /// The one log of `topic` the router carries: a space's application log,
-    /// or a plain stream's only log. A space's control logs are left to
-    /// p2panda sync and the mailboxes.
-    pub(crate) async fn router_channel(streams: &TopicStreams, topic: TopicId) -> LogId {
-        if streams.is_space(topic).await {
-            crate::topic::application_log_id(topic)
-        } else {
-            LogId::from_topic(topic)
-        }
+    /// The logs a space has before any op of it is stored.
+    fn space_logs(topic: TopicId) -> [LogId; 2] {
+        [
+            crate::topic::application_log_id(topic),
+            p2panda::spaces::space_log_id(topic.into()),
+        ]
     }
 
     pub(crate) async fn open_transport(
@@ -535,6 +634,11 @@ mod imp {
     const MAINTAIN_EVERY: Duration = Duration::from_secs(30);
     const NETWORK_SIZE_ESTIMATE: usize = 16;
     const IMPORT_CHANNEL: usize = 256;
+    /// How often the op store is checked for operations stored since the
+    /// last refresh pass.
+    const STORE_POLL_EVERY: Duration = Duration::from_secs(1);
+    /// A pass also runs this often unprompted.
+    const REFRESH_EVERY: Duration = Duration::from_secs(30);
     const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
     pub struct LanRouter {
@@ -543,6 +647,37 @@ mod imp {
         streams: Arc<TopicStreams>,
         node_task: Mutex<Option<JoinHandle<anyhow::Result<()>>>>,
         events_task: Mutex<Option<JoinHandle<()>>>,
+        refresh_task: Mutex<Option<JoinHandle<()>>>,
+    }
+
+    /// Keep `router`'s subscriptions and held view in step with the op
+    /// store. p2panda writes a space's control operations there without an
+    /// event or an ack, some of them after the call that caused them has
+    /// returned, so the store itself is watched.
+    async fn refresh_loop(router: std::sync::Weak<LanRouter>, changed: Arc<Notify>) {
+        let mut seen_rowid = None;
+        let mut last_pass = tokio::time::Instant::now();
+        loop {
+            let notified = tokio::time::timeout(STORE_POLL_EVERY, changed.notified())
+                .await
+                .is_ok();
+            let Some(router) = router.upgrade() else {
+                return;
+            };
+            let rowid = router
+                .ext
+                .store
+                .latest_operation_rowid()
+                .await
+                .ok()
+                .flatten();
+            if !notified && rowid == seen_rowid && last_pass.elapsed() < REFRESH_EVERY {
+                continue;
+            }
+            router.refresh().await;
+            seen_rowid = rowid;
+            last_pass = tokio::time::Instant::now();
+        }
     }
 
     impl LanRouter {
@@ -616,51 +751,111 @@ mod imp {
                 router_topic = ?router_topic().aliased(),
                 "lan router running"
             );
-            Ok(Some(Arc::new(Self {
+            let changed = ext.topics_changed.clone();
+            let router = Arc::new(Self {
                 handle,
                 ext,
                 streams: params.streams,
                 node_task: Mutex::new(Some(node_task)),
                 events_task: Mutex::new(Some(events_task)),
-            })))
+                refresh_task: Mutex::new(None),
+            });
+            let refresh_task = tokio::spawn(refresh_loop(Arc::downgrade(&router), changed));
+            *router.refresh_task.lock().await = Some(refresh_task);
+            Ok(Some(router))
         }
 
-        /// One router channel subscription per topic: every author's log on
-        /// it, known or not yet. Idempotent. A failure unregisters the
-        /// topic, so a later call retries instead of reporting success;
-        /// unregistering drops the import channel's only sender, which ends
-        /// the stream handed to p2panda, so a retry's fresh import never
-        /// runs beside a stale one (p2panda would allow it anyway: each
-        /// external stream is its own session).
+        /// Follow `topic`: one router channel subscription per log it has,
+        /// each covering every author's log on it, known or not yet. A
+        /// topic gains logs over time; [`Self::topics_changed`] and the
+        /// refresh pass pick those up. Idempotent.
+        ///
+        /// A failure unfollows the topic, so a later call retries instead of
+        /// reporting success; unfollowing drops the import channel's only
+        /// sender, which ends the stream handed to p2panda, so a retry's
+        /// fresh import never runs beside a stale one (p2panda would allow
+        /// it anyway: each external stream is its own session).
         /// Concurrent calls for the same topic may both return Ok while the
         /// first is still in flight; callers must not rely on the second
         /// call observing the first's failure.
         pub async fn subscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-            let channel = router_channel(&self.streams, topic).await;
-            let (tx, rx) = mpsc::channel(IMPORT_CHANNEL);
-            if !self.ext.register_topic(channel, topic, tx) {
-                return Ok(());
-            }
-            let result = self.import_and_subscribe(topic, channel, rx).await;
+            let result = self.import_and_subscribe(topic).await;
             match &result {
                 Ok(()) => tracing::debug!(topic = ?topic.aliased(), "lan router following topic"),
-                Err(_) => self.ext.unregister_topic(&channel),
+                Err(_) => self.unfollow(topic).await,
             }
+            self.ext.hint_all();
             result
         }
 
-        async fn import_and_subscribe(
-            &self,
-            topic: TopicId,
-            channel: LogId,
-            rx: mpsc::Receiver<Operation>,
-        ) -> anyhow::Result<()> {
-            let stream = Box::pin(ReceiverStream::new(rx));
-            self.streams
-                .import(topic, crate::node::streams::ImportOrigin::LanRouter, stream)
-                .await
-                .map_err(|e| anyhow!("import: {e}"))?;
-            self.handle.subscribe(channel).await
+        async fn import_and_subscribe(&self, topic: TopicId) -> anyhow::Result<()> {
+            let (tx, rx) = mpsc::channel(IMPORT_CHANNEL);
+            if self.ext.follow_topic(topic, tx) {
+                let stream = Box::pin(ReceiverStream::new(rx));
+                self.streams
+                    .import(topic, crate::node::streams::ImportOrigin::LanRouter, stream)
+                    .await
+                    .map_err(|e| anyhow!("import: {e}"))?;
+            }
+            self.subscribe_logs(topic).await
+        }
+
+        /// Subscribe every log of a followed topic that is not yet.
+        async fn subscribe_logs(&self, topic: TopicId) -> anyhow::Result<()> {
+            for log_id in self.topic_logs(topic).await? {
+                if self.ext.follow_log(topic, log_id) {
+                    self.handle.subscribe(log_id).await?;
+                }
+            }
+            Ok(())
+        }
+
+        /// Every log `topic` has. Beyond the ones p2panda has associated
+        /// with it, that is the ones a node that has stored nothing of them
+        /// yet must still ask for: a plain stream's only log, or a space's
+        /// own logs, the key bundle log of each author seen in it and the
+        /// log of each group its control ops name.
+        async fn topic_logs(&self, topic: TopicId) -> anyhow::Result<BTreeSet<LogId>> {
+            let store = &self.ext.store;
+            let by_author = store.topic_logs(&topic).await?;
+            let mut logs: BTreeSet<LogId> = by_author.values().flatten().copied().collect();
+            if !self.streams.is_space(topic).await {
+                logs.insert(LogId::from_topic(topic));
+                return Ok(logs);
+            }
+            logs.extend(space_logs(topic));
+            logs.extend(
+                by_author
+                    .keys()
+                    .map(|author| p2panda::spaces::member_log_id(**author)),
+            );
+            logs.extend(store.space_group_log_ids(&topic, by_author.keys()).await?);
+            Ok(logs)
+        }
+
+        /// A followed topic may have gained logs without an operation being
+        /// stored: look them over again now.
+        pub fn topics_changed(&self) {
+            self.ext.topics_changed.notify_one();
+        }
+
+        async fn refresh(&self) {
+            for topic in self.ext.followed_topics() {
+                if let Err(e) = self.subscribe_logs(topic).await {
+                    tracing::debug!(topic = ?topic.aliased(), error = %e, "lan router could not refresh a topic's logs");
+                }
+            }
+            self.ext.hint_all();
+            tracing::trace!("lan router refreshed its topics' logs");
+        }
+
+        /// Unfollow `topic` and unsubscribe the logs only it had.
+        async fn unfollow(&self, topic: TopicId) {
+            for log_id in self.ext.unfollow_topic(topic) {
+                if let Err(e) = self.handle.unsubscribe(log_id).await {
+                    tracing::debug!(error = %e, "lan router could not unsubscribe a log");
+                }
+            }
         }
 
         /// How many ops the router ingested that were not already in the
@@ -676,19 +871,21 @@ mod imp {
         /// own ops live in the ext store, never here).
         #[cfg(feature = "testing")]
         pub async fn relay_holds_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
-            let channel = router_channel(&self.streams, topic).await;
+            // A relay follows none of the topic's logs, so it cannot tell a
+            // space from a stream: look under every log either starts with.
+            let mut logs = BTreeSet::from(space_logs(topic));
+            logs.insert(LogId::from_topic(topic));
             Ok(self
                 .handle
                 .relay_held()
                 .await?
                 .iter()
-                .any(|(log, ranges)| log.log_id() == channel && !ranges.is_empty()))
+                .any(|(log, ranges)| logs.contains(&log.log_id()) && !ranges.is_empty()))
         }
 
         pub async fn unsubscribe_topic(&self, topic: TopicId) -> anyhow::Result<()> {
-            let channel = router_channel(&self.streams, topic).await;
-            self.ext.unregister_topic(&channel);
-            self.handle.unsubscribe(channel).await
+            self.unfollow(topic).await;
+            Ok(())
         }
 
         /// An op in `author`'s `log_id` was acked: the router's held view
@@ -745,6 +942,9 @@ mod imp {
             // The node task's end closes the events channel, so this task
             // has normally finished already; abort covers the timeout case.
             if let Some(t) = self.events_task.lock().await.take() {
+                t.abort();
+            }
+            if let Some(t) = self.refresh_task.lock().await.take() {
                 t.abort();
             }
         }
@@ -808,9 +1008,9 @@ mod imp {
             streams.subscribe(topic).await.unwrap();
             r.subscribe_topic(topic).await.unwrap();
             r.subscribe_topic(topic).await.unwrap();
-            assert!(r.ext.has_topic(&LogId::from_topic(topic)));
+            assert!(r.ext.has_log(&LogId::from_topic(topic)));
             r.unsubscribe_topic(topic).await.unwrap();
-            assert!(!r.ext.has_topic(&LogId::from_topic(topic)));
+            assert!(!r.ext.has_log(&LogId::from_topic(topic)));
             r.shutdown().await;
         }
 
@@ -824,7 +1024,7 @@ mod imp {
             streams.shutdown().await;
             let topic = TopicId::random();
             assert!(r.subscribe_topic(topic).await.is_err());
-            assert!(!r.ext.has_topic(&LogId::from_topic(topic)));
+            assert!(!r.ext.has_log(&LogId::from_topic(topic)));
             assert!(
                 r.subscribe_topic(topic).await.is_err(),
                 "retried, not skipped"
@@ -929,7 +1129,8 @@ mod imp {
             let topic = TopicId::random();
             let log_id = LogId::from_topic(topic);
             let (tx, import_rx) = mpsc::channel(8);
-            assert!(ext.register_topic(log_id, topic, tx));
+            assert!(ext.follow_topic(topic, tx));
+            assert!(ext.follow_log(topic, log_id));
             let key = p2panda::SigningKey::generate();
             let mut backlink = None;
             for seq in 0..n {
@@ -1056,7 +1257,7 @@ mod imp {
             let stored = f
                 .ext
                 .store
-                .get_log_until(&author, &f.log_id, None, SeqNum::MAX)
+                .get_log_until(&author, &f.log_id, None, None)
                 .await
                 .unwrap();
             let log = RouterLog::new(f.log_id, f.key.verifying_key());
@@ -1209,13 +1410,71 @@ mod imp {
             assert_eq!(rx.recv().await.unwrap(), BTreeSet::from([log]));
         }
 
+        /// Only a stream's own log waits for the ack cursor: any other log
+        /// of a topic (a space's) is held as soon as it is stored.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_log_other_than_the_streams_own_is_held_unacked() {
+            let f = fixture(None).await;
+            let space_log = LogId::from_topic(TopicId::random());
+            assert!(f.ext.follow_log(f.topic, space_log));
+            let op0 = signed_op(&f.key, space_log, 0, None, b"a");
+            let op1 = signed_op(&f.key, space_log, 1, Some(op0.hash), b"b");
+            insert(&f.ext.store, &op0, &space_log).await;
+            insert(&f.ext.store, &op1, &space_log).await;
+
+            let log = RouterLog::new(space_log, f.key.verifying_key());
+            let held = f.ext.held_all().await.unwrap();
+            assert_eq!(held.get(&log), Some(&Ranges::range(0, 2)));
+            assert_eq!(
+                held.get(&RouterLog::new(f.log_id, f.key.verifying_key())),
+                None,
+                "the stream's own log is still unacked"
+            );
+            let mut want = LogRanges::empty();
+            want.insert(log, Ranges::range(0, 2));
+            let served = f.ext.fetch(&want).await.unwrap();
+            assert_eq!(
+                served.iter().map(|(_, seq, _)| *seq).collect::<Vec<_>>(),
+                vec![0, 1]
+            );
+        }
+
+        /// A log two topics share is subscribed once, imported into both,
+        /// and kept until the last of them is unfollowed.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_shared_log_is_imported_into_each_topic() {
+            let mut f = fixture(Some(3)).await;
+            let second = TopicId::random();
+            let (tx, mut second_rx) = mpsc::channel(8);
+            assert!(f.ext.follow_topic(second, tx));
+            assert!(
+                !f.ext.follow_log(second, f.log_id),
+                "the router is already subscribed"
+            );
+
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, f.log_id, 0, None, b"hello");
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: op.body.as_ref().map(|b| b.to_bytes()),
+            };
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            f.ext.ingest(log, 0, wire).await.unwrap();
+            assert_eq!(f.import_rx.recv().await.unwrap().hash, op.hash);
+            assert_eq!(second_rx.recv().await.unwrap().hash, op.hash);
+
+            assert_eq!(f.ext.unfollow_topic(f.topic), vec![]);
+            assert!(f.ext.has_log(&f.log_id));
+            assert_eq!(f.ext.unfollow_topic(second), vec![f.log_id]);
+        }
+
         #[tokio::test(flavor = "multi_thread")]
         async fn unregistered_topic_disappears_from_held_all() {
             let f = fixture(Some(3)).await;
             assert!(!f.ext.held_all().await.unwrap().is_empty());
-            f.ext.unregister_topic(&f.log_id);
+            assert_eq!(f.ext.unfollow_topic(f.topic), vec![f.log_id]);
             assert!(f.ext.held_all().await.unwrap().is_empty());
-            assert!(!f.ext.has_topic(&f.log_id));
+            assert!(!f.ext.has_log(&f.log_id));
         }
     }
 }

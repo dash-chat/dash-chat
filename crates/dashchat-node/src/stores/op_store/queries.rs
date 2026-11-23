@@ -225,6 +225,19 @@ pub(super) async fn get_log_seq_summaries(
         .collect()
 }
 
+/// The row id of the operation stored last, which only ever grows.
+#[cfg(any(test, feature = "lan-router"))]
+pub(super) async fn latest_operation_rowid(db: &SqliteStore) -> Result<Option<i64>, anyhow::Error> {
+    let rowid = db
+        .execute(async move |tx| {
+            Ok(sqlx::query_scalar("SELECT MAX(rowid) FROM operations_v1")
+                .fetch_one(tx)
+                .await?)
+        })
+        .await?;
+    Ok(rowid)
+}
+
 #[cfg(test)]
 mod tests {
     use maplit::btreemap;

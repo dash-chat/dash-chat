@@ -267,9 +267,11 @@ impl Node {
                             .await;
                         }
                         Some(ProcessorEvent::GroupMembershipOp { topic, header }) => {
+                            node.lan_router_topics_changed();
                             node.notify(SystemNotification::Membership { topic: topic.into(), header }.into());
                         }
                         Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
+                            node.lan_router_topics_changed();
                             if let Err(err) = node.notify_group_members_changed(topic).await {
                                 warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
                             }

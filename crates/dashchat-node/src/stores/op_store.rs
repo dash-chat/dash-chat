@@ -1,6 +1,6 @@
 pub mod queries;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 #[cfg(feature = "testing")]
 use std::{collections::HashMap, sync::RwLock};
@@ -136,6 +136,44 @@ impl OpStore {
             .collect())
     }
 
+    /// Changes whenever an operation is stored, by whichever path: p2panda
+    /// stores control operations that no stream event or ack announces.
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn latest_operation_rowid(&self) -> anyhow::Result<Option<i64>> {
+        queries::latest_operation_rowid(&self.store).await
+    }
+
+    /// The logs p2panda has associated with `topic`, by author.
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn topic_logs(
+        &self,
+        topic: &TopicId,
+    ) -> anyhow::Result<BTreeMap<DeviceId, Vec<LogId>>> {
+        let logs: BTreeMap<p2panda::VerifyingKey, Vec<LogId>> = self.store.resolve(topic).await?;
+        Ok(logs
+            .into_iter()
+            .map(|(author, logs)| (DeviceId::from(author), logs))
+            .collect())
+    }
+
+    /// The log of every group that `authors`' stored control operations of
+    /// the space `topic` name. Read from the operations as stored, so a
+    /// group is found before the space can be processed.
+    #[cfg(any(test, feature = "lan-router"))]
+    pub(crate) async fn space_group_log_ids(
+        &self,
+        topic: &TopicId,
+        authors: impl IntoIterator<Item = &DeviceId>,
+    ) -> anyhow::Result<BTreeSet<LogId>> {
+        let space_log = p2panda::spaces::space_log_id((*topic).into());
+        let mut group_logs = BTreeSet::new();
+        for author in authors {
+            let ops = self.log_operations(author, &space_log, None, None).await?;
+            group_logs.extend(ops.iter().filter_map(space_group_log_id));
+        }
+        Ok(group_logs)
+    }
+
     /// Every sequence number present for `author`'s log, ascending. The
     /// router's held-range input when a log has gaps (see `lan_router.rs`).
     #[cfg(any(test, feature = "lan-router"))]
@@ -258,16 +296,17 @@ impl OpStore {
         Ok(heights.is_some())
     }
 
-    /// `author`'s log after `from` (exclusive) up to `until` (inclusive).
+    /// `author`'s log after `from` (exclusive) up to `until` (inclusive), each
+    /// open-ended when `None`.
     #[cfg(any(test, feature = "lan-router"))]
     pub(crate) async fn get_log_until(
         &self,
         author: &DeviceId,
         log_id: &LogId,
         from: Option<SeqNum>,
-        until: SeqNum,
+        until: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
-        self.log_operations(author, log_id, from, Some(until)).await
+        self.log_operations(author, log_id, from, until).await
     }
 
     /// Collect a log's entries, decoding each stored operation into our extension type.
@@ -515,6 +554,20 @@ fn encrypted_message(op: &Operation) -> Option<(TopicId, EncryptedMessage)> {
 
 /// Whether an operation carries an application payload, as opposed to a
 /// space, group or key bundle control message.
+/// The log of the group a space control operation names.
+#[cfg(any(test, feature = "lan-router"))]
+fn space_group_log_id(op: &Operation) -> Option<LogId> {
+    let ExtensionsVariantV1::Space(extensions) = &op.header.extensions.variant else {
+        return None;
+    };
+    match &extensions.args {
+        SpacesArgs::SpaceMembership { group_id, .. } | SpacesArgs::SpaceUpdate { group_id, .. } => {
+            Some(p2panda::spaces::group_log_id(*group_id))
+        }
+        _ => None,
+    }
+}
+
 fn is_application(op: &Operation) -> bool {
     match &op.header.extensions.variant {
         ExtensionsVariantV1::Basic(_) => true,
@@ -988,7 +1041,7 @@ mod tests {
         assert_eq!(
             seqs(
                 store
-                    .get_log_until(&author, &log_id, Some(1), 3)
+                    .get_log_until(&author, &log_id, Some(1), Some(3))
                     .await
                     .unwrap()
             ),
@@ -997,7 +1050,7 @@ mod tests {
         assert_eq!(
             seqs(
                 store
-                    .get_log_until(&author, &log_id, None, 1)
+                    .get_log_until(&author, &log_id, None, Some(1))
                     .await
                     .unwrap()
             ),
@@ -1006,7 +1059,7 @@ mod tests {
         assert_eq!(
             seqs(
                 store
-                    .get_log_until(&author, &log_id, None, 99)
+                    .get_log_until(&author, &log_id, None, Some(99))
                     .await
                     .unwrap()
             ),
