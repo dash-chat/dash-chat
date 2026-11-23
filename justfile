@@ -21,11 +21,8 @@ mod push 'scripts/push.just'
 # ios development
 mod ios 'scripts/ios.just'
 
-# build digital ocean droplet images and create droplets
-mod droplet 'scripts/droplet.just'
-
-# build docker images for the mailbox, LAN mailbox and push notifications servers
-mod docker 'scripts/docker.just'
+# build server docker images and create the droplets that run them
+mod infra 'scripts/infra.just'
 
 # Show available recipes.
 _default:
