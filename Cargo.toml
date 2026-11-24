@@ -55,13 +55,15 @@ reporting = { path = "crates/reporting" }
 #   pending operation a new one releases, which overran 2 MiB on catch-up.
 # - A space skips an application message whose body is missing (deleted, or
 #   delivered header-only) instead of failing on it.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9", features = [
+# - Orderer state is kept per cursor, so the app and the push extension
+#   sharing a store don't reset each other's.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -69,13 +71,13 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "78a843981d4071164d0bc5621e9e84275f17f3b9" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
 
 # Dash Router LAN gossip shell. It must pin the same p2panda rev as above, so
 # there is exactly one VerifyingKey type.
-dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "p2panda-0.8", features = ["p2panda"] }
+dash-router = { git = "https://github.com/dash-chat/dash-router", branch = "p2panda-orderer-per-cursor", features = ["p2panda"] }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.5.0", default-features = false, features = [
