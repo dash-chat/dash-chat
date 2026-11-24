@@ -197,9 +197,10 @@ export async function visitOtherPages(
 	await agent.developerPage.ready();
 	pages.push(await runCheck(agent, 'developer', co));
 	await breathe();
-	// Leaves developer mode locked again so the next visit starts from baseline.
-	await agent.developerPage.disable.click();
-	await agent.settingsPage.ready();
+	if (await agent.developerPage.back.isDisplayed()) {
+		await agent.developerPage.back.click();
+		await agent.settingsPage.ready();
+	}
 
 	await agent.mainTabbar.chatsTab.click();
 	await agent.homePage.ready();

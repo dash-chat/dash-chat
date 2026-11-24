@@ -5,11 +5,11 @@ const LAN_ROUTER_TOGGLE_INPUT_SELECTOR = `${tid('developer-lan-router-toggle')} 
 
 export class DeveloperPage extends TestHelper {
 	back = this.el(tid('developer-back'));
-	disable = this.el(tid('developer-disable'));
 	lanRouterToggleInput = this.el(LAN_ROUTER_TOGGLE_INPUT_SELECTOR);
+	page = this.el(tid('developer-page'));
 
 	async ready() {
-		await this.disable.waitForExist();
+		await this.page.waitForExist();
 	}
 
 	async lanRouterEnabled(): Promise<boolean> {

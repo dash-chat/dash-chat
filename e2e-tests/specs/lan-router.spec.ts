@@ -106,14 +106,4 @@ describe('Dash Router', function () {
 		await openDeveloperSettings(bob);
 		expect(await bob.developerPage.lanRouterEnabled()).toBe(true);
 	});
-
-	it('disabling developer mode turns the router off', async () => {
-		await bob.developerPage.disable.click();
-		await bob.settingsPage.ready();
-		await bob.mainTabbar.chatsTab.click();
-		await bob.homePage.ready();
-
-		await unlockDeveloperSettings(bob);
-		expect(await bob.developerPage.lanRouterEnabled()).toBe(false);
-	});
 });

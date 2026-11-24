@@ -427,11 +427,9 @@
 	"feedback": "Feedback",
 	"reportSent": "Report sent. Thank you!",
 	"reportQueued": "Report saved. It will be sent when you're back online.",
-	"developer": "Developer",
+	"developer": "Developer options",
 	"developerModeEnabled": "Developer mode enabled",
-	"developerModeDisabled": "Developer mode disabled",
-	"disableDeveloperMode": "Disable developer mode",
-	"lanRouter": "Dash Router",
+	"lanRouter": "Peer Relays",
 	"enableLanRouter": "Enable Dash Router",
 	"lanRouterDescription": "Experimental. Nearby devices store and forward each other's messages until they reach their recipients."
 }

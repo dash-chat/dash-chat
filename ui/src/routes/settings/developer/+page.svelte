@@ -33,15 +33,9 @@
 			togglingLanRouter = false;
 		}
 	}
-
-	async function disableDeveloperMode() {
-		await settingsStore.setDeveloperModeEnabled(false);
-		showToast(m.developerModeDisabled());
-		goto('/settings');
-	}
 </script>
 
-<Page>
+<Page data-testid="developer-page">
 	<Navbar title={m.developer()} titleClass="opacity1" transparent={true}>
 		{#snippet left()}
 			{#if !isWideScreen.value}
@@ -73,23 +67,6 @@
 				</ListItem>
 			</List>
 			<BlockFooter class="px-4">{m.lanRouterDescription()}</BlockFooter>
-		</div>
-
-		<div class="column center-in-desktop">
-			<BlockTitle>{m.developer()}</BlockTitle>
-			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-				<ListItem
-					title={m.disableDeveloperMode()}
-					link
-					chevron={false}
-					onClick={disableDeveloperMode}
-					data-testid="developer-disable"
-					colors={{
-						primaryTextIos: 'text-red-500',
-						primaryTextMaterial: 'text-red-500',
-					}}
-				/>
-			</List>
 		</div>
 	</div>
 </Page>
