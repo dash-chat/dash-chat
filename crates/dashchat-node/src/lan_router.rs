@@ -129,6 +129,17 @@ pub struct LanRouterParams {
     pub(crate) streams: Arc<TopicStreams>,
 }
 
+const RELAY_STORE_FILE_NAME: &str = "lan_router.redb";
+
+/// Delete what the router relayed for other peers. Only while no node runs
+/// the router on `data_path`.
+pub fn delete_relay_store(data_path: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::remove_file(data_path.join(RELAY_STORE_FILE_NAME)) {
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(not(feature = "lan-router"))]
 pub struct LanRouter;
 
@@ -811,10 +822,11 @@ mod imp {
         ))
     }
 
-    /// Policy for v1: the swarm test's values, which converge fifty nodes on
-    /// a LAN in under a minute. Revisit with an estimator for `n`.
-    const TIMER_MIN: Duration = Duration::from_secs(1);
-    const TIMER_MAX: Duration = Duration::from_secs(10);
+    /// Policy for v1: several times as often as the swarm test's 1 to 10 s,
+    /// which converge fifty nodes on a LAN in under a minute, so that a relay
+    /// has a copy within seconds. Revisit with an estimator for `n`.
+    const TIMER_MIN: Duration = Duration::from_millis(500);
+    const TIMER_MAX: Duration = Duration::from_millis(1500);
     /// A Want is answered when the Have timer fires and a heard channel is
     /// asked about when the Want timer does, so both must outlive the
     /// longest timer.
@@ -884,7 +896,7 @@ mod imp {
                 return Ok(None);
             }
             let relay =
-                DiskRelayStore::<RouterLog>::open(&params.data_path.join("lan_router.redb"))
+                DiskRelayStore::<RouterLog>::open(&params.data_path.join(RELAY_STORE_FILE_NAME))
                     .context("opening lan_router.redb")?;
             let ext = OpStoreExt::new(
                 LanRouterStore::new(params.op_store.store.clone()),

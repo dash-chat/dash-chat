@@ -54,6 +54,11 @@ export class SettingsStore {
 		},
 	);
 
+	lanRouterEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.lan_router_enabled;
+	});
+
 	notificationsEnabled = reactive(async () => {
 		const settings = await this.settings();
 		return settings.notifications_enabled;
@@ -85,11 +90,18 @@ export class SettingsStore {
 		await this.client.setLocalMailboxEnabled(enabled);
 	}
 
+	async setLanRouterEnabled(enabled: boolean): Promise<void> {
+		await this.client.setLanRouterEnabled(enabled);
+	}
+
 	async setNotificationsEnabled(enabled: boolean): Promise<void> {
 		await this.client.setNotificationsEnabled(enabled);
 	}
 
 	async setDeveloperModeEnabled(enabled: boolean): Promise<void> {
+		// The developer settings hold the only switch for the LAN router, so
+		// nothing may keep it running once they are hidden.
+		if (!enabled) await this.client.setLanRouterEnabled(false);
 		await this.client.setDeveloperModeEnabled(enabled);
 	}
 }
