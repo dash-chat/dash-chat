@@ -51,12 +51,13 @@ pub struct LanRouterConfig {
     /// router packs its frames to fit (minus dash-router's wire headroom),
     /// so a broadcast is never refused.
     ///
-    /// An operation whose header and payload do not fit one frame is
-    /// advertised header-only, which [`LanRouter`] refuses to ingest, so
-    /// this is also the largest operation the router can carry. It has to
-    /// clear a contact request's base64 avatar (tens of KiB); media is
-    /// exchanged as blobs, not as operation payloads, so nothing bigger
-    /// needs to pass this way.
+    /// An operation whose header and payload do not fit one frame crosses
+    /// header-only: the receiver stores it without its payload, so its log
+    /// keeps moving, and writes the payload back when a complete copy
+    /// reaches it. It has to clear a contact request's base64 avatar (tens
+    /// of KiB), which must be readable on arrival; media is exchanged as
+    /// blobs, not as operation payloads, so nothing bigger needs to pass
+    /// this way whole.
     ///
     /// Every peer pays for it past 128 KiB: iroh-gossip's send queue is
     /// 1 MiB per peer by default and never smaller than eight messages, so
@@ -458,11 +459,10 @@ mod imp {
         /// Write the payload back into an operation p2panda has stored
         /// without one, now that a peer has offered it.
         ///
-        /// An older build imported header-only advertisements (see
-        /// [`AsyncStorage::ingest`]), and p2panda's insert ignores a second,
-        /// complete copy, so those rows stay payload-less however often the
-        /// whole operation arrives again. The app reads payloads out of the
-        /// store, so such an operation is invisible to it forever.
+        /// An operation too big for one wire frame is ingested header-only
+        /// (see [`AsyncStorage::ingest`]), and p2panda's insert ignores a
+        /// second, complete copy, so without this the row stays
+        /// payload-less however often the whole operation arrives again.
         ///
         /// Repairs nothing else: the payload must be the one the stored
         /// header signs, the row must have no body, and the operation must
@@ -687,18 +687,6 @@ mod imp {
                     "header log id != log"
                 );
                 let hash = header.hash();
-                // An op too big for one wire frame is still advertised, but
-                // header-only (dash-router's `pack_have` drops its payload).
-                // Importing that would store the operation without its
-                // payload for good: p2panda's insert ignores a later,
-                // complete copy, and the app reads payloads back out of the
-                // store. Refuse it and leave the op to log sync or a
-                // mailbox, which carry it whole.
-                ensure!(
-                    header.payload_size == 0 || op.payload.is_some(),
-                    "op claims a {} byte payload the router did not carry",
-                    header.payload_size
-                );
                 // A stream's held state is acked-only, so the router treats
                 // ops p2panda stored but has not acked yet as novel and
                 // ingests them again.
@@ -709,6 +697,10 @@ mod imp {
                 }
                 let txs = self.import_txs_of(&log.log_id());
                 ensure!(!txs.is_empty(), "no topic for log {log}");
+                // An op too big for one wire frame arrives header-only
+                // (dash-router's `pack_have` drops its payload). It is
+                // imported as it came so the log keeps moving; `repair_body`
+                // fills the payload in once a complete copy turns up.
                 let operation = Operation {
                     hash,
                     header,
@@ -1111,9 +1103,8 @@ mod imp {
         /// its neighbours (DESIGN.md: "authors emit a Have for newly
         /// authored ops"). Relays park it for peers who are away. The ext
         /// ingest inside `append` is a no-op for an op p2panda already has.
-        /// An op whose header and body cannot fit `max_wire_bytes` alone is
-        /// never pushed (it is counted in `StatsSnapshot::oversize_drops`)
-        /// and is served only on request, header-only.
+        /// An op whose header and body cannot fit `max_wire_bytes` alone
+        /// goes header-only, pushed or served on request.
         ///
         /// Returns at once: the hand-off runs on its own task so a full
         /// router channel never stalls the caller's ack loop. If the router
@@ -1588,10 +1579,9 @@ mod imp {
         }
 
         /// An op too big for one wire frame is advertised header-only. It
-        /// must not be imported: p2panda would store it without its payload
-        /// for good, leaving it unreadable to the app.
+        /// is imported without its payload, so its log keeps moving.
         #[tokio::test(flavor = "multi_thread")]
-        async fn ingest_rejects_a_header_whose_payload_is_missing() {
+        async fn ingest_forwards_a_header_whose_payload_is_missing() {
             let mut f = fixture(Some(3)).await;
             let other = p2panda::SigningKey::generate();
             let op = signed_op(&other, f.log_id, 0, None, b"a payload the router dropped");
@@ -1600,14 +1590,12 @@ mod imp {
                 header: op.header.encode(),
                 payload: None,
             };
-            assert!(f.ext.ingest(log, 0, wire).await.is_err());
-            assert_eq!(f.ext.rejected(), 1);
-            assert_eq!(f.ext.forwarded(), 0);
-            assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
-            assert!(
-                !f.ext.store.has_operation(&op.hash).await.unwrap(),
-                "not stored either"
-            );
+            f.ext.ingest(log, 0, wire).await.unwrap();
+            let got = f.import_rx.recv().await.unwrap();
+            assert_eq!(got.hash, op.hash);
+            assert!(got.body.is_none());
+            assert_eq!(f.ext.forwarded(), 1);
+            assert_eq!(f.ext.rejected(), 0);
         }
 
         /// An op that carries no payload at all is still ingested.
