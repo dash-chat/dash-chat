@@ -339,7 +339,7 @@ impl BlobSync {
         if !self.current_provider_is_peer(progress).await {
             return false;
         }
-        let progress = *progress.borrow();
+        let progress = progress.borrow().clone();
         let status = self
             .blobs
             .status(hash)
@@ -351,8 +351,9 @@ impl BlobSync {
         if !Self::peer_is_stalled(&progress) {
             return false;
         }
+        let exclude = progress.recently_failed(std::time::Instant::now());
         self.sources
-            .any_mailbox_has_blob(topic, hash)
+            .any_mailbox_has_blob(topic, hash, &exclude)
             .await
             .unwrap_or(false)
     }
@@ -714,19 +715,21 @@ impl MixedSourceLookup {
     }
 
     /// Probe registered mailboxes for this topic and return whether any report
-    /// already holding the blob. Only mailboxes that are tracking `topic` and
-    /// are in `Active` health are considered.
+    /// already holding the blob. Only mailboxes that are tracking `topic`, are
+    /// in `Active` health, and are not in `exclude` are considered.
     pub async fn any_mailbox_has_blob(
         &self,
         topic: TopicId,
         hash: iroh_blobs::Hash,
+        exclude: &[iroh::EndpointId],
     ) -> anyhow::Result<bool> {
         // Only consider mailboxes that are subscribed to this topic. Otherwise
         // the switch could fire against a mailbox that won't appear in the
         // restarted provider list at all.
         let topic_sources = self.sources(topic).await?;
+        let exclude_set: HashSet<iroh::EndpointId> = exclude.iter().copied().collect();
         for decoded in topic_sources {
-            if !self.is_mailbox(decoded).await {
+            if !self.is_mailbox(decoded).await || exclude_set.contains(&decoded) {
                 continue;
             }
             let mailbox_id: mailbox_client::MailboxId =
@@ -1255,6 +1258,145 @@ mod tests {
         assert_eq!(
             calls, 1,
             "download from a mailbox should not be restarted to switch to a mailbox (calls: {calls})"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_now_does_not_switch_to_mailbox_that_just_failed_over_iroh() {
+        use dashchat_utils::FetchConfig as BlobFetchConfig;
+        use dashchat_utils::blob_sync::{BlobDownloader, BoxedDownloadStream};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+
+        /// A downloader that starts a peer download, reports that the peer failed
+        /// over iroh, then emits a `TryProvider` for a mailbox endpoint and stalls.
+        /// The mailbox is registered and claims to have the blob. If the switch
+        /// logic does not exclude recently-failed providers, it will abort and
+        /// restart; if it does, the original peer download keeps running.
+        struct PeerThenFailingMailboxDownloader {
+            calls: AtomicUsize,
+            peer: iroh::EndpointId,
+            mailbox: iroh::EndpointId,
+        }
+
+        #[async_trait::async_trait]
+        impl BlobDownloader for PeerThenFailingMailboxDownloader {
+            async fn download_with_opts(
+                &self,
+                _options: iroh_blobs::api::downloader::DownloadRequest,
+            ) -> anyhow::Result<BoxedDownloadStream> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                let peer = self.peer;
+                let mailbox = self.mailbox;
+                let stream = async_stream::stream! {
+                    yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
+                        id: peer,
+                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                            iroh_blobs::Hash::new([0; 32]),
+                        )),
+                    };
+                    // Give the poll loop time to see the peer as active.
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    // The peer failed over iroh.
+                    yield iroh_blobs::api::downloader::DownloadProgressItem::ProviderFailed {
+                        id: peer,
+                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                            iroh_blobs::Hash::new([0; 32]),
+                        )),
+                    };
+                    // Then iroh tries the mailbox next.
+                    yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
+                        id: mailbox,
+                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                            iroh_blobs::Hash::new([0; 32]),
+                        )),
+                    };
+                    // The mailbox also fails over iroh.
+                    yield iroh_blobs::api::downloader::DownloadProgressItem::ProviderFailed {
+                        id: mailbox,
+                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                            iroh_blobs::Hash::new([0; 32]),
+                        )),
+                    };
+                    // Stall forever; there are no more providers to try.
+                    std::future::pending::<()>().await;
+                };
+                Ok(Box::pin(stream))
+            }
+        }
+
+        // Slow background loop so it doesn't race with this test.
+        let mut config = crate::NodeConfig::testing();
+        config.blob_fetch = BlobFetchConfig {
+            concurrency: 1,
+            attempt_timeout: Duration::from_secs(60),
+            pass_interval: Duration::from_secs(3600),
+            retry_cooldown: Duration::from_secs(3600),
+        };
+
+        let alice = crate::testing::TestNode::new(config.clone(), "alice").await;
+        let bobbi = crate::testing::TestNode::new(config, "bobbi").await;
+        crate::testing::introduce_peers([&alice, &bobbi])
+            .await
+            .unwrap();
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat = bobbi.direct_chat_with(&alice);
+
+        let content = b"mailboxed-blob";
+        let hash = iroh_blobs::Hash::new(content.as_slice());
+
+        bobbi
+            .blob_sync()
+            .add_to_fetch_pool(
+                chat.into(),
+                alice.device_id(),
+                p2panda::Hash::from_bytes([0; 32]),
+                hash,
+            )
+            .await
+            .unwrap();
+
+        let peer = test_endpoint(1);
+        let mailbox_endpoint = test_endpoint(2);
+        let mailbox_id: mailbox_client::MailboxId =
+            mailbox_server::encode_mailbox_id(mailbox_endpoint).into();
+
+        // Register a fake mailbox that claims to have the blob immediately. Its
+        // iroh endpoint will be in recent_failures, so it must not trigger a
+        // switch even though the HTTP probe says yes.
+        bobbi
+            .mailboxes
+            .register(FakeMailbox {
+                id: mailbox_id,
+                target_hash: hash,
+                queried: AtomicUsize::new(0),
+                report_available_after_queries: 0,
+            })
+            .await;
+
+        let downloader = Arc::new(PeerThenFailingMailboxDownloader {
+            calls: AtomicUsize::new(0),
+            peer,
+            mailbox: mailbox_endpoint,
+        });
+
+        let mut blob_sync = bobbi.blob_sync().clone();
+        blob_sync.set_downloader(downloader.clone());
+
+        let _ = tokio::time::timeout(
+            Duration::from_millis(1500),
+            blob_sync.fetch_now(hash, Duration::from_secs(10)),
+        )
+        .await;
+
+        let calls = downloader.calls.load(Ordering::SeqCst);
+        assert_eq!(
+            calls, 1,
+            "should not switch to a mailbox that just failed over iroh (calls: {calls})"
         );
     }
 
