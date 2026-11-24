@@ -41,6 +41,10 @@ pub struct ReadOperation<E = Undecryptable> {
     pub body: Result<Option<p2panda_core::Body>, E>,
 }
 
+/// Decrypting loads a space's state and keys once per batch, so reading stored operations one
+/// at a time pays that for every operation.
+const OPERATIONS_PER_DECRYPT_BATCH: usize = 256;
+
 #[derive(Clone, derive_more::Deref, derive_more::DerefMut)]
 pub struct OpStore {
     #[deref]
@@ -258,7 +262,11 @@ impl OpStore {
         &self,
     ) -> impl futures::Stream<Item = Result<ReadOperation, anyhow::Error>> + '_ {
         queries::get_all_operations_not_fully_sorted(&self.store)
-            .try_filter_map(async |operation| Ok(self.read(vec![operation]).await?.pop()))
+            .try_chunks(OPERATIONS_PER_DECRYPT_BATCH)
+            .map_err(|err| err.1)
+            .and_then(async |operations| self.read(operations).await)
+            .map_ok(|read| futures::stream::iter(read.into_iter().map(Ok)))
+            .try_flatten()
     }
 
     /// Get the "height" of each log, which is actually the highest sequence number of the log.
