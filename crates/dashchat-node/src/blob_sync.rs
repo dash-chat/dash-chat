@@ -679,32 +679,79 @@ mod tests {
     }
 
     fn test_endpoint(n: u8) -> iroh::EndpointId {
-        iroh::EndpointId::from_bytes(&[n; 32]).expect("valid test key")
+        let mut seed = [0u8; 32];
+        seed[0] = n;
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+        iroh::EndpointId::from_bytes(signing_key.verifying_key().as_bytes())
+            .expect("valid test key")
     }
 
-    /// A downloader that counts calls and never completes. Useful for tests
-    /// that need to verify a slow download was cancelled and restarted.
-    struct CountingNeverEndingDownloader {
+    /// Every download attempt is slow and never completes after it emits a
+    /// single `TryProvider` event for the given endpoint. The number of calls
+    /// recorded here lets tests verify whether an attempt was cancelled and
+    /// restarted.
+    struct SlowDownloader {
         calls: std::sync::atomic::AtomicUsize,
-    }
-
-    impl CountingNeverEndingDownloader {
-        fn new() -> Self {
-            Self {
-                calls: std::sync::atomic::AtomicUsize::new(0),
-            }
-        }
+        provider: iroh::EndpointId,
     }
 
     #[async_trait::async_trait]
-    impl dashchat_utils::blob_sync::BlobDownloader for CountingNeverEndingDownloader {
+    impl dashchat_utils::blob_sync::BlobDownloader for SlowDownloader {
         async fn download_with_opts(
             &self,
             _options: iroh_blobs::api::downloader::DownloadRequest,
         ) -> anyhow::Result<dashchat_utils::blob_sync::BoxedDownloadStream> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let (_tx, rx) = tokio::sync::mpsc::channel(1);
-            Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
+            let provider = self.provider;
+            let stream = async_stream::stream! {
+                yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
+                    id: provider,
+                    request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                        iroh_blobs::Hash::new([0; 32]),
+                    )),
+                };
+                std::future::pending::<()>().await;
+            };
+            Ok(Box::pin(stream))
+        }
+    }
+
+    /// A fake mailbox that reports the blob as stored once it has been queried
+    /// enough times.
+    struct FakeMailbox {
+        id: mailbox_client::MailboxId,
+        target_hash: iroh_blobs::Hash,
+        queried: std::sync::atomic::AtomicUsize,
+        report_available_after_queries: usize,
+    }
+
+    #[async_trait::async_trait]
+    impl mailbox_client::MailboxClient<MailboxOperation> for FakeMailbox {
+        fn id(&self) -> mailbox_client::MailboxId {
+            self.id.clone()
+        }
+
+        async fn publish(
+            &self,
+            _ops: Vec<MailboxOperation>,
+        ) -> Result<mailbox_client::PublishResponse<MailboxOperation>, anyhow::Error> {
+            Ok(mailbox_client::PublishResponse::default())
+        }
+
+        async fn fetch(
+            &self,
+            _request: mailbox_client::FetchRequest<MailboxOperation>,
+        ) -> Result<mailbox_client::FetchResponse<MailboxOperation>, anyhow::Error> {
+            Ok(mailbox_client::FetchResponse(
+                std::collections::BTreeMap::new(),
+            ))
+        }
+
+        async fn has_blob(&self, hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
+            let count = self
+                .queried
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(count >= self.report_available_after_queries && hash == self.target_hash)
         }
     }
 
@@ -900,8 +947,7 @@ mod tests {
                 &self,
                 _options: iroh_blobs::api::downloader::DownloadRequest,
             ) -> anyhow::Result<BoxedDownloadStream> {
-                let (_tx, rx) = tokio::sync::mpsc::channel(1);
-                Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
+                Ok(Box::pin(futures::stream::pending()))
             }
         }
 
@@ -970,78 +1016,8 @@ mod tests {
     #[tokio::test]
     async fn fetch_now_cancels_slow_task_when_mailbox_gains_blob() {
         use dashchat_utils::FetchConfig as BlobFetchConfig;
-        use dashchat_utils::blob_sync::{BlobDownloader, BoxedDownloadStream};
-        use mailbox_client::{
-            FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
-        };
-        use std::collections::BTreeMap;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::time::Duration;
-
-        /// Every download attempt is slow and never completes after it emits a
-        /// single `TryProvider` event for the given endpoint. The number of calls
-        /// recorded here lets the test verify that a slow attempt was cancelled
-        /// and restarted.
-        struct SlowDownloader {
-            calls: AtomicUsize,
-            provider: iroh::EndpointId,
-        }
-
-        #[async_trait::async_trait]
-        impl BlobDownloader for SlowDownloader {
-            async fn download_with_opts(
-                &self,
-                _options: iroh_blobs::api::downloader::DownloadRequest,
-            ) -> anyhow::Result<BoxedDownloadStream> {
-                self.calls.fetch_add(1, Ordering::SeqCst);
-                let provider = self.provider;
-                let stream = async_stream::stream! {
-                    yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
-                        id: provider,
-                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
-                            iroh_blobs::Hash::new([0; 32]),
-                        )),
-                    };
-                    std::future::pending::<()>().await;
-                };
-                Ok(Box::pin(stream))
-            }
-        }
-
-        /// A fake mailbox that reports the blob as stored once it has been
-        /// queried enough times.
-        struct FakeMailbox {
-            id: MailboxId,
-            target_hash: iroh_blobs::Hash,
-            queried: AtomicUsize,
-            report_available_after_queries: usize,
-        }
-
-        #[async_trait::async_trait]
-        impl MailboxClient<MailboxOperation> for FakeMailbox {
-            fn id(&self) -> MailboxId {
-                self.id.clone()
-            }
-
-            async fn publish(
-                &self,
-                _ops: Vec<MailboxOperation>,
-            ) -> Result<PublishResponse<MailboxOperation>, anyhow::Error> {
-                Ok(PublishResponse::default())
-            }
-
-            async fn fetch(
-                &self,
-                _request: FetchRequest<MailboxOperation>,
-            ) -> Result<FetchResponse<MailboxOperation>, anyhow::Error> {
-                Ok(FetchResponse(BTreeMap::new()))
-            }
-
-            async fn has_blob(&self, hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
-                let count = self.queried.fetch_add(1, Ordering::SeqCst);
-                Ok(count >= self.report_available_after_queries && hash == self.target_hash)
-            }
-        }
 
         // Slow background loop so it doesn't race with this test.
         let mut config = crate::NodeConfig::testing();
@@ -1113,6 +1089,85 @@ mod tests {
         assert!(
             calls >= 2,
             "slow download should have been cancelled and restarted (calls: {calls})"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_now_does_not_switch_when_already_downloading_from_mailbox() {
+        use dashchat_utils::FetchConfig as BlobFetchConfig;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::Duration;
+
+        // Slow background loop so it doesn't race with this test.
+        let mut config = crate::NodeConfig::testing();
+        config.blob_fetch = BlobFetchConfig {
+            concurrency: 1,
+            attempt_timeout: Duration::from_secs(60),
+            pass_interval: Duration::from_secs(3600),
+            retry_cooldown: Duration::from_secs(3600),
+        };
+
+        let alice = crate::testing::TestNode::new(config.clone(), "alice").await;
+        let bobbi = crate::testing::TestNode::new(config, "bobbi").await;
+        crate::testing::introduce_peers([&alice, &bobbi])
+            .await
+            .unwrap();
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        let chat = bobbi.direct_chat_with(&alice);
+
+        let content = b"mailboxed-blob";
+        let hash = iroh_blobs::Hash::new(content.as_slice());
+
+        bobbi
+            .blob_sync()
+            .add_to_fetch_pool(
+                chat.into(),
+                alice.device_id(),
+                p2panda::Hash::from_bytes([0; 32]),
+                hash,
+            )
+            .await
+            .unwrap();
+
+        let mailbox_endpoint = test_endpoint(2);
+        let mailbox_id: mailbox_client::MailboxId =
+            mailbox_server::encode_mailbox_id(mailbox_endpoint).into();
+
+        // Register a fake mailbox that claims to have the blob immediately. If
+        // the switch logic failed to check the current provider, this would
+        // abort and restart the download.
+        bobbi
+            .mailboxes
+            .register(FakeMailbox {
+                id: mailbox_id,
+                target_hash: hash,
+                queried: AtomicUsize::new(0),
+                report_available_after_queries: 0,
+            })
+            .await;
+
+        let downloader = Arc::new(SlowDownloader {
+            calls: AtomicUsize::new(0),
+            provider: mailbox_endpoint,
+        });
+
+        let mut blob_sync = bobbi.blob_sync().clone();
+        blob_sync.set_downloader(downloader.clone());
+
+        let _ = tokio::time::timeout(
+            Duration::from_millis(1000),
+            blob_sync.fetch_now(hash, Duration::from_secs(10)),
+        )
+        .await;
+
+        let calls = downloader.calls.load(Ordering::SeqCst);
+        assert_eq!(
+            calls, 1,
+            "download from a mailbox should not be restarted to switch to a mailbox (calls: {calls})"
         );
     }
 
