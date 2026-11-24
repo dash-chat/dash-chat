@@ -19,6 +19,10 @@ pub(crate) struct Settings {
     #[serde(default = "default_p2p_enabled")]
     pub p2p_enabled: bool,
     pub developer_mode_enabled: bool,
+    /// Whether the node runs the LAN router. Written by
+    /// `set_lan_router_enabled`, which rebuilds the node, never by the generic
+    /// `set_setting`.
+    pub lan_router_enabled: bool,
 }
 
 impl Default for Settings {
@@ -30,6 +34,7 @@ impl Default for Settings {
             background_mode_enabled: false,
             p2p_enabled: default_p2p_enabled(),
             developer_mode_enabled: false,
+            lan_router_enabled: false,
         }
     }
 }
@@ -103,6 +108,12 @@ pub(crate) fn set_setting<R: Runtime>(
         ));
     }
 
+    if key == "lan_router_enabled" {
+        return Err(anyhow!(
+            "lan_router_enabled is set through set_lan_router_enabled, which rebuilds the node"
+        ));
+    }
+
     if let Some(obj) = current.as_object_mut() {
         obj.insert(key.clone(), value.clone());
     }
@@ -157,6 +168,16 @@ pub fn load_p2p_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {
 pub fn save_p2p_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
     let mut settings = load_settings(handle);
     settings.p2p_enabled = enabled;
+    save_settings(handle, &settings);
+}
+
+pub fn load_lan_router_enabled<R: Runtime>(handle: &AppHandle<R>) -> bool {
+    load_settings(handle).lan_router_enabled
+}
+
+pub fn save_lan_router_enabled<R: Runtime>(handle: &AppHandle<R>, enabled: bool) {
+    let mut settings = load_settings(handle);
+    settings.lan_router_enabled = enabled;
     save_settings(handle, &settings);
 }
 

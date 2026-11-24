@@ -193,6 +193,7 @@ pub fn run() {
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
             commands::settings::set_p2p_enabled,
+            commands::settings::set_lan_router_enabled,
             commands::mailbox_state::mailbox_subscribe_active_ids,
             commands::mailbox_state::mailbox_subscribe_all_ids,
             commands::mailbox_state::mailbox_subscribe_connection_state,

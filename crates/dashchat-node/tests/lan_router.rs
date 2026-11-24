@@ -40,6 +40,40 @@ async fn router_spawn_failure_fails_init() {
     );
 }
 
+/// The failed start leaves the data dir usable: the same node starts on it
+/// once the router is turned off.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_node_starts_without_the_router_after_failing_to_start_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("lan_router.redb")).unwrap();
+    let mut config = NodeConfig::testing();
+    config.lan_router.enabled = true;
+    assert!(
+        Node::new(dir.path().into(), config, None, None)
+            .await
+            .is_err()
+    );
+    let node = Node::new(dir.path().into(), NodeConfig::testing(), None, None)
+        .await
+        .unwrap();
+    node.shutdown().await.unwrap();
+}
+
+/// Deleting the relay store leaves nothing of the router on disk, and is
+/// fine with there being nothing to delete.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_relay_store_is_deleted_once_the_router_is_off() {
+    let mut config = NodeConfig::testing();
+    config.lan_router.enabled = true;
+    let node = TestNode::new(config, "on").await;
+    let data_path = node.data_path().clone();
+    let _keeps_the_data_dir = node.shutdown().await;
+    assert!(data_path.join("lan_router.redb").exists());
+    dashchat_node::lan_router::delete_relay_store(&data_path).unwrap();
+    assert!(!data_path.join("lan_router.redb").exists());
+    dashchat_node::lan_router::delete_relay_store(&data_path).unwrap();
+}
+
 /// Nor with no networking layer, where the router cannot open its gossip
 /// stream. `no_p2p` turns the router off, so this takes setting it back on.
 #[tokio::test(flavor = "multi_thread")]

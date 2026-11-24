@@ -28,6 +28,19 @@ pub async fn set_p2p_enabled(
         .map_err(|e| e.to_string())
 }
 
+/// Persist the LAN router switch and rebuild the node with or without it.
+#[tauri::command]
+pub async fn set_lan_router_enabled(
+    enabled: bool,
+    app: AppHandle,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), String> {
+    app_node_manager
+        .set_lan_router_enabled(&app, enabled)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(not(mobile))]
 #[tauri::command]
 pub async fn set_local_mailbox_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {

@@ -37,6 +37,11 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // `nodes=[]` stays readable: it says nobody was found, which is what a
         // discovery failure looks like, and it names no one.
         r"\b[a-z_]*(node|endpoint)(_id)?s?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
+        // The logs the LAN router follows, as it and dash-router label them:
+        // `log=1a2b3c4d/5e6f7a8b` (log id / author) and `channel=1a2b3c4d`.
+        // A log id is derived from the topic, so it names the conversation
+        // just as `topic=` does, and the author half names a device.
+        r"\b(log|channel)=[0-9a-fA-F]{8}(/[0-9a-fA-F]{8})?",
         // Media blob decrypt parameters as Debug output prints them (decimal
         // byte arrays), which the hex rules above miss. Hex-encoded forms are
         // already caught by the 40-char hex rule.
@@ -68,7 +73,7 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
         // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...]), Topic([...])
-        r"(VerifyingKey|Hash|Signature|InboxNonce|Topic)\(\[[\d, ]+\]\)",
+        r"(VerifyingKey|Hash|Signature|InboxNonce|Topic|PeerKey)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about/description fields with quoted values
@@ -142,6 +147,20 @@ mod tests {
         let redacted = redact(line);
         assert!(!redacted.contains("[7, 7, 200]"), "{redacted}");
         assert!(!redacted.contains("[9, 0, 13]"), "{redacted}");
+    }
+
+    #[test]
+    fn redacts_lan_router_log_ids() {
+        assert_eq!(
+            redact("lan router delivered an op log=1a2b3c4d/5e6f7a8b seq=3"),
+            "lan router delivered an op [REDACTED] seq=3"
+        );
+        assert_eq!(
+            redact("dash-router subscribed channel=1a2b3c4d relay_logs_migrated=0"),
+            "dash-router subscribed [REDACTED] relay_logs_migrated=0"
+        );
+        let redacted = redact("author=Some(PeerKey([12, 200, 7]))");
+        assert!(!redacted.contains("200"), "{redacted}");
     }
 
     #[test]

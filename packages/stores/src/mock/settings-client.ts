@@ -35,6 +35,7 @@ export class MockSettingsClient implements ISettingsClient {
 		qr_color: null,
 		local_mailbox_enabled: false,
 		p2p_enabled: true,
+		lan_router_enabled: false,
 		notifications_enabled: false,
 		background_mode_enabled: false,
 		developer_mode_enabled: false,
@@ -53,6 +54,11 @@ export class MockSettingsClient implements ISettingsClient {
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		this.settings.local_mailbox_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
+	async setLanRouterEnabled(enabled: boolean): Promise<void> {
+		this.settings.lan_router_enabled = enabled;
 		this.emitter.emit('updated', { ...this.settings });
 	}
 

@@ -162,6 +162,16 @@ impl NodeContext {
                 .is_none_or(crate::settings::load_p2p_enabled)
     }
 
+    /// Whether a Node built in this context runs the LAN router: only the app,
+    /// and only when the persisted `lan_router_enabled` setting says so.
+    fn lan_router_enabled(&self) -> bool {
+        self.role == NodeRole::App
+            && self
+                .app_handle
+                .as_ref()
+                .is_some_and(crate::settings::load_lan_router_enabled)
+    }
+
     /// Build a [`dashchat_node::NodeConfig`] from this context.
     pub fn node_config(&self) -> dashchat_node::NodeConfig {
         let mut config = if cfg!(feature = "e2e-tests") {
@@ -207,6 +217,8 @@ impl NodeContext {
             self.role == NodeRole::PushNotification && shares_store_with_running_app;
         config.import_recorded_operations =
             self.role == NodeRole::App && shares_store_with_running_app;
+
+        config.lan_router.enabled = self.lan_router_enabled();
 
         if !self.p2p_enabled() {
             config = config.no_p2p();
@@ -256,6 +268,17 @@ mod tests {
             !NodeContext::for_push_notifications(None)
                 .node_config()
                 .enable_p2p
+        );
+    }
+
+    #[test]
+    fn the_lan_router_is_off_with_no_setting_turning_it_on() {
+        assert!(!app_context().node_config().lan_router.enabled);
+        assert!(
+            !NodeContext::for_push_notifications(None)
+                .node_config()
+                .lan_router
+                .enabled
         );
     }
 

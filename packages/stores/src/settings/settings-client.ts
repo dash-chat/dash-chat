@@ -15,6 +15,7 @@ export interface Settings {
 	qr_color: string | null;
 	local_mailbox_enabled: boolean;
 	p2p_enabled: boolean;
+	lan_router_enabled: boolean;
 	notifications_enabled: boolean;
 	background_mode_enabled: boolean;
 	developer_mode_enabled: boolean;
@@ -30,6 +31,7 @@ export interface ISettingsClient {
 	getSettings(): Promise<Settings>;
 	setSetting(key: string, value: unknown): Promise<void>;
 	setLocalMailboxEnabled(enabled: boolean): Promise<void>;
+	setLanRouterEnabled(enabled: boolean): Promise<void>;
 	setNotificationsEnabled(enabled: boolean): Promise<void>;
 	setBackgroundModeEnabled(enabled: boolean): Promise<void>;
 	setDeveloperModeEnabled(enabled: boolean): Promise<void>;
@@ -59,6 +61,10 @@ export class SettingsClient implements ISettingsClient {
 
 	setLocalMailboxEnabled(enabled: boolean): Promise<void> {
 		return invokeAfterSetup('set_local_mailbox_enabled', { enabled });
+	}
+
+	setLanRouterEnabled(enabled: boolean): Promise<void> {
+		return invokeAfterSetup('set_lan_router_enabled', { enabled });
 	}
 
 	setNotificationsEnabled(enabled: boolean): Promise<void> {
