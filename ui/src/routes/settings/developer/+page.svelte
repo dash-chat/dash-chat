@@ -6,7 +6,6 @@
 	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockFooter,
-		BlockTitle,
 		List,
 		ListItem,
 		Navbar,
@@ -49,7 +48,6 @@
 
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
-			<BlockTitle>{m.lanRouter()}</BlockTitle>
 			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
 				<ListItem
 					title={m.enableLanRouter()}
