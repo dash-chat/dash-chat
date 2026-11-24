@@ -297,18 +297,22 @@ impl Node {
     }
 
     /// As the push extension, record `operation` for the app to process too,
-    /// unless the app acknowledged it already or authored it. Done before
-    /// processing it, so the record outlives the extension being killed
-    /// mid-way; returns whether to go on processing, since acknowledging an
-    /// unrecorded operation would hide it from the app for good.
+    /// unless the app acknowledged it already. Done before processing it, so
+    /// the record outlives the extension being killed mid-way; returns whether
+    /// to go on processing, since acknowledging an unrecorded operation would
+    /// hide it from the app for good.
+    ///
+    /// The app's own operations are recorded too: p2panda keys its orderer
+    /// state by topic, which the app and the extension share, so the
+    /// extension's orderer may be the one that releases a message the running
+    /// app published and is still waiting on.
+    // TODO: skip the app's own operations again once p2panda's orderer
+    // supports concurrent nodes on one store.
     async fn recorded_for_app(&self, operation: &ProcessedOperation<Payload>) -> bool {
         if !self.config.record_processed_operations {
             return true;
         }
         let author = DeviceId::from(operation.author());
-        if author == self.device_id() {
-            return true;
-        }
         let topic = TopicId::from(operation.topic());
         let header = operation.processed().header();
         let recorded = async {
