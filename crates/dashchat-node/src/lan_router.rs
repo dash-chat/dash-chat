@@ -58,13 +58,29 @@ impl LanRouterConfig {
     }
 }
 
+/// Whether a topic is a space rather than a plain stream: all the router
+/// needs of the node's `LocalStore`.
+#[async_trait::async_trait]
+pub trait IsSpace: Send + Sync + 'static {
+    async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool>;
+}
+
+#[async_trait::async_trait]
+impl IsSpace for crate::stores::LocalStore {
+    async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool> {
+        self.is_space(topic).await
+    }
+}
+
 /// What the node hands the router at startup.
 pub struct LanRouterParams {
     pub config: LanRouterConfig,
     pub data_path: PathBuf,
     pub device_id: VerifyingKey,
     pub op_store: OpStore,
-    pub is_space: Arc<dyn imp::IsSpace>,
+    /// Read only by the feature-on router.
+    #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
+    pub is_space: Arc<dyn IsSpace>,
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub(crate) streams: Arc<TopicStreams>,
@@ -690,19 +706,6 @@ mod imp {
     const REFRESH_EVERY: Duration = Duration::from_secs(30);
     const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 
-    /// Something that knows how to answer: is `topic` a space?
-    #[async_trait::async_trait]
-    pub trait IsSpace: Send + Sync + 'static {
-        async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool>;
-    }
-
-    #[async_trait::async_trait]
-    impl IsSpace for crate::stores::LocalStore {
-        async fn is_space(&self, topic: TopicId) -> anyhow::Result<bool> {
-            self.is_space(topic).await
-        }
-    }
-
     pub struct LanRouter {
         handle: RouterHandle<RouterLog>,
         ext: OpStoreExt,
@@ -1028,6 +1031,16 @@ mod imp {
     mod lan_router_tests {
         use super::*;
 
+        /// These tests follow plain streams only.
+        struct NoSpaces;
+
+        #[async_trait::async_trait]
+        impl IsSpace for NoSpaces {
+            async fn is_space(&self, _topic: TopicId) -> anyhow::Result<bool> {
+                Ok(false)
+            }
+        }
+
         /// A real p2panda node, offline is fine for these tests (ephemeral
         /// streams need networking, so use the online builder with no
         /// discovery and a random network id). The drain is returned so the
@@ -1046,7 +1059,6 @@ mod imp {
                 .await
                 .unwrap();
             let store = node.store();
-            let local_store = node.local_store.clone();
             let (streams, drain) = TopicStreams::new(node, None);
             let streams = Arc::new(streams);
             let device_id = p2panda::SigningKey::generate().verifying_key();
@@ -1057,7 +1069,7 @@ mod imp {
                     device_id,
                     op_store: OpStore::from_sqlite(store, streams.clone()),
                     streams,
-                    is_space: Arc::new(local_store),
+                    is_space: Arc::new(NoSpaces),
                 },
                 dir,
                 drain,
