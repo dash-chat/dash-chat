@@ -672,19 +672,21 @@ async function tapPoint(
 	// are not all CSS — `a*=name` chains off a parent — so this cannot be a
 	// `document.querySelector` inside the page.
 	const centreIfTopmost = (el: HTMLElement) => {
-		let rect = el.getBoundingClientRect();
-		let x = rect.x + rect.width / 2;
-		let y = rect.y + rect.height / 2;
-		if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
-			el.scrollIntoView({ block: 'center', inline: 'center' });
-			rect = el.getBoundingClientRect();
-			x = rect.x + rect.width / 2;
-			y = rect.y + rect.height / 2;
-		}
-		const topmost = document.elementFromPoint(x, y);
-		return topmost !== null && (topmost === el || el.contains(topmost))
-			? { x, y }
-			: null;
+		const centre = () => {
+			const rect = el.getBoundingClientRect();
+			return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+		};
+		const isTopmostAt = ({ x, y }: { x: number; y: number }) => {
+			const topmost = document.elementFromPoint(x, y);
+			return topmost !== null && (topmost === el || el.contains(topmost));
+		};
+		const where = centre();
+		if (isTopmostAt(where)) return where;
+		// Off screen, or at the edge of a scroller under a bar floating over
+		// it, such as the last settings row under the main tab bar.
+		el.scrollIntoView({ block: 'center', inline: 'center' });
+		const scrolled = centre();
+		return isTopmostAt(scrolled) ? scrolled : null;
 	};
 	let replaced = 0;
 	const centreOf = async (live: WebdriverIO.Element) => {
