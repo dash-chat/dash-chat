@@ -34,7 +34,6 @@
 	let lastTapAt = 0;
 
 	async function onVersionTap() {
-		if ($developerModeEnabled === true) return;
 		const now = Date.now();
 		tapCount = now - lastTapAt < MAX_TAP_GAP_MS ? tapCount + 1 : 1;
 		lastTapAt = now;
@@ -71,9 +70,11 @@
 
 				{#await versionPromise then version}
 					<ListItem
+						link
+						chevron={false}
 						title={m.version()}
 						after={version}
-						onClick={onVersionTap}
+						onClick={$developerModeEnabled === true ? undefined : onVersionTap}
 						data-testid="help-version"
 					/>
 				{/await}

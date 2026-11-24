@@ -66,6 +66,11 @@ export class MockSettingsClient implements ISettingsClient {
 		this.emitter.emit('updated', { ...this.settings });
 	}
 
+	async setDeveloperModeEnabled(enabled: boolean): Promise<void> {
+		this.settings.developer_mode_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
 	onSettingsUpdated(handler: (settings: Settings) => void): () => void {
 		return this.emitter.on('updated', handler);
 	}

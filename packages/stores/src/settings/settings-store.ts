@@ -90,6 +90,6 @@ export class SettingsStore {
 	}
 
 	async setDeveloperModeEnabled(enabled: boolean): Promise<void> {
-		await this.client.setSetting('developer_mode_enabled', enabled);
+		await this.client.setDeveloperModeEnabled(enabled);
 	}
 }
