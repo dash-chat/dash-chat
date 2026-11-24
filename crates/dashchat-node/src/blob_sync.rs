@@ -128,20 +128,24 @@ impl BlobSync {
         self.downloader = downloader;
     }
 
-    /// Spawn a per-topic fetch task and return a handle that can be polled and
-    /// aborted while the download is in flight.
+    /// Spawn a per-topic fetch task using a specific provider list. When
+    /// `providers` is empty, fall back to the topic's normal source list.
     async fn spawn_fetch(
         &self,
         topic: TopicId,
         hash: iroh_blobs::Hash,
         attempt_timeout: Duration,
+        providers: Option<Vec<iroh::EndpointId>>,
     ) -> BlobFetchTask {
-        let sources = match self.sources.sources(topic).await {
-            Ok(sources) => sources,
-            Err(err) => {
-                tracing::warn!(%hash, ?err, "blob source lookup failed");
-                return BlobFetchTask::failed();
-            }
+        let sources = match providers {
+            Some(providers) => providers,
+            None => match self.sources.sources(topic).await {
+                Ok(sources) => sources,
+                Err(err) => {
+                    tracing::warn!(%hash, ?err, "blob source lookup failed");
+                    return BlobFetchTask::failed();
+                }
+            },
         };
 
         if sources.is_empty() {
@@ -186,7 +190,7 @@ impl BlobSync {
             return true;
         }
 
-        let task = self.spawn_fetch(topic, hash, attempt_timeout).await;
+        let task = self.spawn_fetch(topic, hash, attempt_timeout, None).await;
         task.await_complete().await
     }
 
@@ -314,6 +318,7 @@ impl BlobSync {
     /// so racing the background loop is safe.
     pub async fn fetch_now(&self, hash: iroh_blobs::Hash, timeout: Duration) -> bool {
         let deadline = std::time::Instant::now() + timeout;
+        let mut switched_to_mailbox = false;
         loop {
             if self.blobs.has(hash).await.unwrap_or(false) {
                 return true;
@@ -329,7 +334,14 @@ impl BlobSync {
                 return false;
             }
             for topic in topics {
-                let task = self.spawn_fetch(topic, hash, remaining).await;
+                let providers = if switched_to_mailbox {
+                    self.sources.mailbox_sources(topic).await.ok()
+                } else {
+                    None
+                };
+                let task = self
+                    .spawn_fetch(topic, hash, remaining, providers.clone())
+                    .await;
                 let mut handle = task.handle;
                 let current_provider = task.current_provider;
                 let poll_interval = Duration::from_millis(250);
@@ -351,16 +363,16 @@ impl BlobSync {
                                 handle.abort();
                                 return true;
                             }
-                            // Only consider switching to a mailbox when the
-                            // current download is from a peer. If we're already
-                            // downloading from a mailbox, restarting would just
-                            // begin the same transfer again from scratch.
-                            if self.can_switch_to_mailbox(topic, hash, &current_provider).await {
+
+                            if !switched_to_mailbox
+                                && self.can_switch_to_mailbox(topic, hash, &current_provider).await
+                            {
                                 tracing::debug!(
                                     %hash,
                                     current_provider = ?*current_provider.borrow(),
-                                    "peer download in progress and mailbox reports blob, restarting fetch"
+                                    "peer download in progress and mailbox reports blob, switching to mailbox"
                                 );
+                                switched_to_mailbox = true;
                                 handle.abort();
                                 break;
                             }
@@ -654,19 +666,52 @@ impl MixedSourceLookup {
         Ok(sources)
     }
 
+    /// Return the iroh EndpointIds of mailboxes currently tracking `topic`.
+    pub async fn mailbox_sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
+        self.mailboxes.get_sources(&topic).await
+    }
+
     /// Whether `endpoint` identifies one of the registered mailboxes.
     pub async fn is_mailbox(&self, endpoint: iroh::EndpointId) -> bool {
         self.mailboxes.is_mailbox(endpoint).await
     }
 
     /// Probe registered mailboxes for this topic and return whether any report
-    /// already holding the blob.
+    /// already holding the blob. Only mailboxes that are tracking `topic` and
+    /// are in `Active` health are considered.
     pub async fn any_mailbox_has_blob(
         &self,
         topic: TopicId,
         hash: iroh_blobs::Hash,
     ) -> anyhow::Result<bool> {
-        self.mailboxes.any_mailbox_has_blob(&topic, hash).await
+        // Only consider mailboxes that are subscribed to this topic. Otherwise
+        // the switch could fire against a mailbox that won't appear in the
+        // restarted provider list at all.
+        let topic_mailboxes = self.mailbox_sources(topic).await?;
+        for decoded in topic_mailboxes {
+            let Some(tracked) = self
+                .mailboxes
+                .tracked_mailbox(&mailbox_server::encode_mailbox_id(decoded).into())
+                .await
+            else {
+                continue;
+            };
+            if tracked.health().borrow().status != mailbox_client::SyncStatus::Active {
+                continue;
+            }
+            let mailbox_id = tracked.client().await.id();
+            match tracked.client().await.has_blob(hash).await {
+                Ok(true) => {
+                    tracing::debug!(%hash, %mailbox_id, "mailbox reports blob available");
+                    return Ok(true);
+                }
+                Ok(false) => {}
+                Err(err) => {
+                    tracing::debug!(%hash, %mailbox_id, ?err, "mailbox blob probe failed");
+                }
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -1056,10 +1101,15 @@ mod tests {
 
         // Register a fake mailbox that will claim to have the blob after a
         // couple of probes, triggering cancellation of the slow P2P attempt.
+        // Its id must encode a valid endpoint id so it appears in the topic's
+        // mailbox source list.
+        let mailbox_endpoint = test_endpoint(2);
+        let mailbox_id: mailbox_client::MailboxId =
+            mailbox_server::encode_mailbox_id(mailbox_endpoint).into();
         bobbi
             .mailboxes
             .register(FakeMailbox {
-                id: "fake-mailbox".into(),
+                id: mailbox_id,
                 target_hash: hash,
                 queried: AtomicUsize::new(0),
                 report_available_after_queries: 2,
