@@ -388,6 +388,67 @@ mod localhost {
         a.shutdown().await;
         b.shutdown().await;
     }
+
+    /// Deleting a message drops its payload on every node that holds it, so
+    /// a member who joins afterwards is only ever offered that operation
+    /// without one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_member_who_joins_after_a_delete_receives_the_rest_of_the_chat() {
+        tracing();
+        let config = router_config();
+        let a = TestNode::new(config.clone(), "a").await;
+        let b = TestNode::new(config.clone(), "b").await;
+
+        let group = a.create_chat_group(Default::default()).await.unwrap();
+        a.send_message(group, "kept before", None, None)
+            .await
+            .unwrap();
+        let deleted = a.send_message(group, "deleted", None, None).await.unwrap();
+        a.delete_message_for_everyone(group, deleted.hash())
+            .await
+            .unwrap();
+        a.send_message(group, "kept after", None, None)
+            .await
+            .unwrap();
+        // Restarted so the router serves the chat from the store: until then it
+        // still hands out what it pushed when the messages were sent.
+        let a = TestNode::new_at_path(config, "a", a.shutdown().await).await;
+        introduce_peers([&a, &b]).await.unwrap();
+
+        let qr = a.create_add_contact_qr_code().await.unwrap();
+        b.add_contact(qr).await.unwrap();
+        slow_poll()
+            .wait_for(|| async { a.accept_contact(b.agent_id()).await })
+            .await
+            .expect("the contact request reaches a through the router");
+        a.add_group_member(group, *b.device_id(), p2panda_auth::Access::write())
+            .await
+            .unwrap();
+        slow_poll()
+            .wait_for(|| async { b.behavior().accept_next_group_invitation().await.map(drop) })
+            .await
+            .expect("the invitation reaches b through the router");
+
+        slow_poll()
+            .wait_for(|| async {
+                let mut messages: Vec<String> = b
+                    .get_messages(group)
+                    .await?
+                    .iter()
+                    .map(|message| message.content.message().to_string())
+                    .collect();
+                messages.sort();
+                anyhow::ensure!(
+                    messages == ["kept after", "kept before"],
+                    "b sees {messages:?}"
+                );
+                Ok(())
+            })
+            .await
+            .expect("b receives the messages that were not deleted");
+        a.shutdown().await;
+        b.shutdown().await;
+    }
 }
 
 /// Spec test 5: the one test that exercises real multicast. Ignored: it
