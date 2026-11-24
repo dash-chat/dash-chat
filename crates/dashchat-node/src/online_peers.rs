@@ -11,6 +11,7 @@ use tokio_stream::wrappers::WatchStream;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
+use crate::node::streams::{StreamsError, TopicStreams};
 use crate::stores::OpProjection;
 use crate::{DeviceId, TopicId};
 
@@ -37,22 +38,24 @@ pub(crate) type PresenceStream = (
 pub struct OnlinePeers {
     me: DeviceId,
     projection: OpProjection,
+    streams: Arc<TopicStreams>,
     presence_by_topic: Arc<Mutex<HashMap<TopicId, TopicPresence>>>,
 }
 
 impl OnlinePeers {
-    pub(crate) fn new(me: DeviceId, projection: OpProjection) -> Self {
+    pub(crate) fn new(me: DeviceId, projection: OpProjection, streams: Arc<TopicStreams>) -> Self {
         Self {
             me,
             projection,
+            streams,
             presence_by_topic: Default::default(),
         }
     }
 
-    pub(crate) async fn join(&self, topic: TopicId, stream: PresenceStream) {
+    pub(crate) async fn join(&self, topic: TopicId) -> Result<(), StreamsError> {
         self.presence(topic)
-            .join(self.me, stream, self.projection.clone())
-            .await;
+            .join(self.me, self.projection.clone())
+            .await
     }
 
     pub(crate) async fn leave(&self, topic: TopicId) {
@@ -85,13 +88,15 @@ impl OnlinePeers {
             .lock()
             .unwrap()
             .entry(topic)
-            .or_insert_with(TopicPresence::new)
+            .or_insert_with(|| TopicPresence::new(topic, self.streams.clone()))
             .clone()
     }
 }
 
 #[derive(Clone)]
 struct TopicPresence {
+    topic: TopicId,
+    streams: Arc<TopicStreams>,
     peers: Arc<TopicPeers>,
     /// `Some` while we are present on the topic. Held across a leave until its `Bye` is out, so
     /// a join waits for it.
@@ -99,16 +104,21 @@ struct TopicPresence {
 }
 
 impl TopicPresence {
-    fn new() -> Self {
+    fn new(topic: TopicId, streams: Arc<TopicStreams>) -> Self {
         Self {
+            topic,
+            streams,
             peers: Arc::new(TopicPeers::new()),
             task: Default::default(),
         }
     }
 
-    async fn join(&self, me: DeviceId, stream: PresenceStream, projection: OpProjection) {
+    /// The stream is opened under the lock: two opens of one topic that overlap each get a
+    /// gossip session of their own, and dropping either takes us off the topic's overlay.
+    async fn join(&self, me: DeviceId, projection: OpProjection) -> Result<(), StreamsError> {
         let mut task = self.task.lock().await;
         if task.is_none() {
+            let stream = self.streams.ephemeral_stream(self.topic.into()).await?;
             *task = Some(PresenceTask::spawn(
                 me,
                 stream,
@@ -116,6 +126,7 @@ impl TopicPresence {
                 self.peers.clone(),
             ));
         }
+        Ok(())
     }
 
     async fn leave(&self) {
