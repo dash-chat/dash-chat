@@ -26,16 +26,18 @@ const SHOWN_AFTER_LANDING: Duration = Duration::from_secs(5);
 /// download falls through to the sender, over the slow path. The photo lands
 /// on the mailbox moments later; the receiver has it soon after that.
 #[tokio::test]
+#[ignore = "requires unprivileged user namespaces (set DASHCHAT_PATCHBAY_TESTS=1 to run)"]
 async fn photo_arrives_once_it_is_on_the_mailbox_though_the_sender_is_far() -> anyhow::Result<()> {
     setup_tracing(&["dashchat=warn"], false);
-    let net = match patchbay::Network::new().await {
-        Ok(net) => net,
-        Err(err) if err.to_string().contains("user namespace") => {
-            eprintln!("skipping test: user namespaces unavailable: {err}");
-            return Ok(());
-        }
-        Err(err) => return Err(err),
-    };
+    if std::env::var("DASHCHAT_PATCHBAY_TESTS").as_deref() != Ok("1") {
+        eprintln!("skipping test: DASHCHAT_PATCHBAY_TESTS is not set to 1");
+        return Ok(());
+    }
+    if let Err(err) = patchbay::userns_available() {
+        eprintln!("skipping test: user namespaces unavailable: {err}");
+        return Ok(());
+    }
+    let net = patchbay::Network::new().await?;
     let [far, near, cloud] = net.regions(["far", "near", "dc"]).await?;
     net.link(&far, &cloud, Mbit(SENDER_TO_MAILBOX_MBIT)).await?;
     net.link(&far, &near, Mbit(SENDER_TO_RECEIVER_MBIT)).await?;
