@@ -134,8 +134,7 @@ impl Node {
         if !self.config.enable_p2p {
             return Ok(());
         }
-        let stream = self.streams.ephemeral_stream((*chat_id).into()).await?;
-        self.online_peers.join(*chat_id, stream).await;
+        self.online_peers.join(*chat_id).await?;
         Ok(())
     }
 

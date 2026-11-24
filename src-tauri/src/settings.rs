@@ -18,6 +18,7 @@ pub(crate) struct Settings {
     /// node, never by the generic `set_setting`.
     #[serde(default = "default_p2p_enabled")]
     pub p2p_enabled: bool,
+    pub developer_mode_enabled: bool,
 }
 
 impl Default for Settings {
@@ -28,6 +29,7 @@ impl Default for Settings {
             qr_color: None,
             background_mode_enabled: false,
             p2p_enabled: default_p2p_enabled(),
+            developer_mode_enabled: false,
         }
     }
 }

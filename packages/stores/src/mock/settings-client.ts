@@ -37,6 +37,7 @@ export class MockSettingsClient implements ISettingsClient {
 		p2p_enabled: true,
 		notifications_enabled: false,
 		background_mode_enabled: false,
+		developer_mode_enabled: false,
 	};
 
 	private emitter = new Emittery<{ updated: Settings }>();
@@ -62,6 +63,11 @@ export class MockSettingsClient implements ISettingsClient {
 
 	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
 		this.settings.background_mode_enabled = enabled;
+		this.emitter.emit('updated', { ...this.settings });
+	}
+
+	async setDeveloperModeEnabled(enabled: boolean): Promise<void> {
+		this.settings.developer_mode_enabled = enabled;
 		this.emitter.emit('updated', { ...this.settings });
 	}
 

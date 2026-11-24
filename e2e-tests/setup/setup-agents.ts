@@ -32,6 +32,7 @@ import { AddContactPage } from '../helpers/pages/new-message/add-contact-page';
 import { NewMessagePage } from '../helpers/pages/new-message/new-message-page';
 import { AccountPage } from '../helpers/pages/settings/account-page';
 import { AppearancePage } from '../helpers/pages/settings/appearance-page';
+import { DeveloperPage } from '../helpers/pages/settings/developer-page';
 import { ContactUsPage } from '../helpers/pages/settings/help/contact-us-page';
 import { HelpPage } from '../helpers/pages/settings/help/help-page';
 import { NotificationsPage } from '../helpers/pages/settings/notifications-page';
@@ -112,6 +113,7 @@ export type Agent = WebdriverIO.Browser & {
 	chatSettingsPage: ChatSettingsPage;
 	contactUsPage: ContactUsPage;
 	createProfilePage: CreateProfilePage;
+	developerPage: DeveloperPage;
 	directChatPage: DirectChatPage;
 	editAboutPage: EditAboutPage;
 	editNamePage: EditNamePage;
@@ -290,6 +292,7 @@ function attachPages(agent: Agent, b: WebdriverIO.Browser): void {
 	agent.chatSettingsPage = new ChatSettingsPage(b);
 	agent.contactUsPage = new ContactUsPage(b);
 	agent.createProfilePage = new CreateProfilePage(b);
+	agent.developerPage = new DeveloperPage(b);
 	agent.directChatPage = new DirectChatPage(b);
 	agent.editAboutPage = new EditAboutPage(b);
 	agent.editNamePage = new EditNamePage(b);
@@ -669,19 +672,21 @@ async function tapPoint(
 	// are not all CSS — `a*=name` chains off a parent — so this cannot be a
 	// `document.querySelector` inside the page.
 	const centreIfTopmost = (el: HTMLElement) => {
-		let rect = el.getBoundingClientRect();
-		let x = rect.x + rect.width / 2;
-		let y = rect.y + rect.height / 2;
-		if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) {
-			el.scrollIntoView({ block: 'center', inline: 'center' });
-			rect = el.getBoundingClientRect();
-			x = rect.x + rect.width / 2;
-			y = rect.y + rect.height / 2;
-		}
-		const topmost = document.elementFromPoint(x, y);
-		return topmost !== null && (topmost === el || el.contains(topmost))
-			? { x, y }
-			: null;
+		const centre = () => {
+			const rect = el.getBoundingClientRect();
+			return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+		};
+		const isTopmostAt = ({ x, y }: { x: number; y: number }) => {
+			const topmost = document.elementFromPoint(x, y);
+			return topmost !== null && (topmost === el || el.contains(topmost));
+		};
+		const where = centre();
+		if (isTopmostAt(where)) return where;
+		// Off screen, or at the edge of a scroller under a bar floating over
+		// it, such as the last settings row under the main tab bar.
+		el.scrollIntoView({ block: 'center', inline: 'center' });
+		const scrolled = centre();
+		return isTopmostAt(scrolled) ? scrolled : null;
 	};
 	let replaced = 0;
 	const centreOf = async (live: WebdriverIO.Element) => {

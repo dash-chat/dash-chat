@@ -520,7 +520,8 @@ impl Node {
         // === node === //
 
         let (processor_cancel_tx, processor_cancel_rx) = mpsc::channel(1);
-        let online_peers = OnlinePeers::new(node_keys.device_id(), projection.clone());
+        let online_peers =
+            OnlinePeers::new(node_keys.device_id(), projection.clone(), streams.clone());
         let node = Self {
             online_peers,
             op_store,
