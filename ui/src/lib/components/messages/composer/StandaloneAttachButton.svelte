@@ -19,7 +19,7 @@
 		glass
 			? '!h-[42px] !w-[42px] !bg-ios-light-glass !opacity-100 shadow-ios-light-glass backdrop-blur-lg dark:!bg-ios-dark-glass dark:shadow-ios-dark-glass'
 			: brand
-				? '!h-[42px] !w-[42px] !bg-brand-primary !opacity-100'
+				? '!h-10 !w-10 !bg-brand-primary !opacity-100'
 				: '',
 	);
 </script>

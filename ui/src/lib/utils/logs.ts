@@ -85,7 +85,26 @@ const describe = (value: unknown): string =>
 // Browsers surface a ResizeObserver delivery loop as an uncaught error. It is a
 // benign scheduling notice the spec requires, not an app failure, and every
 // layout pass can raise one.
-const ignoredErrors = ['ResizeObserver loop'];
+const ignoredErrors = [
+	'ResizeObserver loop',
+	// An e2e build embeds a WebDriver server whose element lookups run as page
+	// scripts, so the error it recovers from for a re-rendered element fires here.
+	...(import.meta.env.VITE_E2E === 'true' ? ['stale element reference'] : []),
+];
+
+// A webview reused across an app restart is navigated to about:blank, and a
+// promise chain left by the page it had before can still reach the IPC, where
+// the ACL refuses a call from a URL no capability covers. Nothing is live to
+// handle it and nothing was lost.
+const isCallFromTornDownPage = (message: string) =>
+	message.includes('not allowed on window') &&
+	message.includes('URL: about:blank');
+
+// The same about:blank refusal for the notification plugin's document-start
+// permission probe, which release builds report without naming the URL.
+const isRefusedStartupPermissionProbe = (message: string) =>
+	message ===
+	'Command plugin:notification|is_permission_granted not allowed by ACL';
 
 const isIgnoredError = (message: string) =>
 	ignoredErrors.some(ignored => message.includes(ignored));
@@ -110,7 +129,13 @@ export function reportUncaughtErrors(): void {
 	});
 	window.addEventListener('unhandledrejection', event => {
 		if (isAppShuttingDown()) return;
-		console.error(`[unhandledrejection] ${describe(event.reason)}`);
+		const reason = describe(event.reason);
+		if (
+			isCallFromTornDownPage(reason) ||
+			isRefusedStartupPermissionProbe(reason)
+		)
+			return;
+		console.error(`[unhandledrejection] ${reason}`);
 		showToast(m.errorUnexpected(), 'unexpected', event.reason);
 	});
 }

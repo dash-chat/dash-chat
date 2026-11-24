@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 mod common;
 
@@ -30,7 +30,7 @@ async fn no_p2p_cannot_sync_after_mailbox_removed() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     // A message sent while the mailbox is present syncs as usual.
     alice.send_message_raw(chat, "before".into()).await.unwrap();
@@ -111,6 +111,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             &url,
             alice.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -125,6 +126,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -136,7 +138,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     // Bobbi goes offline before any media exists.
@@ -149,6 +151,8 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
@@ -193,6 +197,7 @@ async fn no_p2p_exchanges_media_through_mailbox_only() {
             &url,
             bobbi.endpoint_id(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();
@@ -260,6 +265,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             &url,
             alice.endpoint_id(),
             alice.unfetched_blob_tracker(),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     alice.insert_peer_addr(mailbox_addr.clone()).await.unwrap();
@@ -272,6 +278,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             &url,
             bobbi.endpoint_id(),
             bobbi.unfetched_blob_tracker(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     // Poison: register the mailbox endpoint with NO usable transport. Op sync
@@ -289,7 +296,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let bobbi_agent_id = bobbi.agent_id();
 
     let bobbi_dir = bobbi.shutdown().await;
@@ -300,6 +307,8 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
@@ -342,6 +351,7 @@ async fn stale_mailbox_addr_is_refreshed_on_reregister() {
             &url,
             bobbi.endpoint_id(),
             bobbi.unfetched_blob_tracker(),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi.insert_peer_addr(mailbox_addr).await.unwrap();

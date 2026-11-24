@@ -1,7 +1,11 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 	import { m } from '$lib/paraglide/messages.js';
-	import { mdiDotsHorizontal, mdiHeartPlusOutline, mdiReply } from '@mdi/js';
+	import {
+		mdiDotsHorizontal,
+		mdiHeartPlusOutline,
+		mdiReplyOutline,
+	} from '@mdi/js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { Popover } from 'konsta/svelte';
 	import { getContext } from 'svelte';
@@ -11,13 +15,13 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import IconButton from '$lib/components/IconButton.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
 	import ExpandedReactionsSheet from './ExpandedReactionsSheet.svelte';
 	import { toggleReaction } from '$lib/utils/reactions';
 	import { writeText } from '$lib/utils/clipboard';
-	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		message: Message;
@@ -37,6 +41,7 @@
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
+	const readOnly = useReactivePromise(store.readOnly);
 
 	let open = $state<'reactions' | 'menu' | null>(null);
 
@@ -71,7 +76,7 @@
 	}
 
 	function react(emoji: string) {
-		toggleReaction(store, message, myDeviceId, emoji);
+		toggleReaction(store, message, emoji);
 		close();
 	}
 
@@ -89,7 +94,6 @@
 		close();
 		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
-		showToast(m.copiedMessageToClipboard());
 	}
 </script>
 
@@ -111,27 +115,32 @@
 		class="flex items-center gap-0.5 {reverse ? 'flex-row-reverse' : ''}"
 		data-testid="message-hover-toolbar"
 	>
-		<span bind:this={reactEl}>
-			<IconButton
-				onClick={() => (open = 'reactions')}
-				label={m.addReaction()}
-				testid="message-hover-react"
-				class="!h-9 !w-9"
-			>
-				<wa-icon class="text-xl" src={wrapPathInSvg(mdiHeartPlusOutline)}
-				></wa-icon>
-			</IconButton>
-		</span>
-		{#if onReply}
-			<IconButton
-				onClick={reply}
-				label={m.reply()}
-				testid="message-hover-reply"
-				class="!h-9 !w-9"
-			>
-				<wa-icon class="text-xl" src={wrapPathInSvg(mdiReply)}></wa-icon>
-			</IconButton>
-		{/if}
+		{#await $readOnly then readOnly}
+			{#if !readOnly}
+				<span bind:this={reactEl}>
+					<IconButton
+						onClick={() => (open = 'reactions')}
+						label={m.addReaction()}
+						testid="message-hover-react"
+						class="!h-9 !w-9"
+					>
+						<wa-icon class="text-xl" src={wrapPathInSvg(mdiHeartPlusOutline)}
+						></wa-icon>
+					</IconButton>
+				</span>
+			{/if}
+			{#if onReply && !readOnly}
+				<IconButton
+					onClick={reply}
+					label={m.reply()}
+					testid="message-hover-reply"
+					class="!h-9 !w-9"
+				>
+					<wa-icon class="text-xl" src={wrapPathInSvg(mdiReplyOutline)}
+					></wa-icon>
+				</IconButton>
+			{/if}
+		{/await}
 		<span bind:this={menuEl}>
 			<IconButton
 				onClick={() => (open = 'menu')}
@@ -160,7 +169,6 @@
 	>
 		<QuickReactionBar
 			{message}
-			{myDeviceId}
 			onReact={react}
 			onExpand={() => (expanded = true)}
 		/>
@@ -186,8 +194,9 @@
 {#if open !== null}
 	<ExpandedReactionsSheet
 		{message}
-		{myDeviceId}
 		opened={expanded}
 		onReact={react}
+		onClose={close}
+		backdrop={false}
 	/>
 {/if}

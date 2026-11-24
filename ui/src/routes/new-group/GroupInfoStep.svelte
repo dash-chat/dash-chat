@@ -6,13 +6,14 @@
 	import FormPage from '$lib/components/layout/FormPage.svelte';
 	import SelectableContactList from '$lib/components/contacts/SelectableContactList.svelte';
 	import SelectAvatar from '$lib/components/profiles/SelectAvatar.svelte';
-	import type { Profile, VerifyingKey } from 'dash-chat-stores';
+	import type { ContactWithProfile, VerifyingKey } from 'dash-chat-stores';
 
 	interface Props {
 		groupName: string;
 		groupImage: string | undefined;
 		selectedContacts: VerifyingKey[];
-		resolvedContacts: [VerifyingKey, Profile][];
+		resolvedContacts: ContactWithProfile[];
+		creating: boolean;
 		onBack: () => void;
 		onCreate: () => void;
 	}
@@ -22,6 +23,7 @@
 		groupImage = $bindable(),
 		selectedContacts,
 		resolvedContacts,
+		creating,
 		onBack,
 		onCreate,
 	}: Props = $props();
@@ -35,7 +37,7 @@
 	backTestId="new-group-info-back"
 	actionLabel={m.create()}
 	onAction={onCreate}
-	actionDisabled={groupName.trim() === ''}
+	actionDisabled={groupName.trim() === '' || creating}
 	navbarTestId="new-group-info-navbar"
 	actionTestId="new-group-create"
 	constrainedWidth
@@ -70,8 +72,8 @@
 		<BlockTitle>{m.members()}</BlockTitle>
 
 		<SelectableContactList
-			contacts={resolvedContacts.filter(([key]) =>
-				selectedContacts.includes(key),
+			contacts={resolvedContacts.filter(({ contact }) =>
+				selectedContacts.includes(contact.agentId),
 			)}
 			{selectedContacts}
 			selectable={false}

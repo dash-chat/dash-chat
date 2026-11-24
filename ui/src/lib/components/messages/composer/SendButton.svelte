@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { Preloader } from 'konsta/svelte';
+	import { Preloader, useTheme } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCheck, mdiSend } from '@mdi/js';
@@ -9,9 +9,18 @@
 		onSend: () => Promise<boolean>;
 		/** Show a checkmark (save edit) instead of the send arrow. */
 		editing?: boolean;
+		disabled?: boolean;
+		testid?: string;
 	}
 
-	let { onSend, editing = false }: Props = $props();
+	let {
+		onSend,
+		editing = false,
+		disabled = false,
+		testid = 'message-input-send',
+	}: Props = $props();
+
+	const theme = $derived(useTheme());
 
 	let loading = $state(false);
 
@@ -28,10 +37,14 @@
 
 <button
 	type="button"
-	class="send-button flex h-[42px] w-[42px] shrink-0 items-center justify-center p-0"
-	data-testid="message-input-send"
+	class="send-button flex shrink-0 items-center justify-center p-0 {theme ===
+	'ios'
+		? 'h-[42px] w-[42px]'
+		: 'h-10 w-10'}"
+	class:opacity-50={disabled}
+	data-testid={testid}
 	onclick={handleClick}
-	disabled={loading}
+	disabled={loading || disabled}
 	aria-label={editing ? m.save() : m.send()}
 >
 	{#if loading}
@@ -63,7 +76,7 @@
 		cursor: default;
 	}
 
-	.send-button:hover {
+	.send-button:not(:disabled):hover {
 		filter: brightness(1.1);
 	}
 

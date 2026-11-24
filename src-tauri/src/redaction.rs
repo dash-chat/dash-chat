@@ -10,12 +10,61 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"[A-Za-z0-9_:\-]{100,}",
         // Hex strings (40+ chars) — public keys, hashes, signatures
         r"[0-9a-fA-F]{40,}",
+        // iroh/p2panda node ids in short hex form (`me=fa30b1af97`,
+        // `peer=0a753b78eb`) that the 40-char hex rule above is too long to
+        // catch. Anchored on the `me=`/`peer=` label so ordinary short hex
+        // (contact codes) stays readable.
+        r"\b(me|peer)=[0-9a-fA-F]{8,}\b",
+        // The ids p2panda-net's discovery, gossip and address book label, which
+        // the rule above is too long to catch: sampling a run's Debug output
+        // shows `endpoint_id=…`, `node_id="…"`, `remote_node_id=…` and the
+        // topic ones — `topic=…`, `gossip_topic="…"`, `sync_topic="…"`, which
+        // name the conversation a device is in. Any prefix, an `_id` suffix or
+        // a plural, and either separator; the quotes are consumed so nothing
+        // survives as `""`. `alpn=`/`protocol_id=` are left: they are the same
+        // constant for every user of a build, and say nothing about who is
+        // using it.
+        r#"\b[a-z_]*(node_id|endpoint_id|topic(_id)?)s?["\s]*[=:]\s*"?[0-9a-fA-F]{8,}"?"#,
+        // The peers a gossip overlay joins, which the rule above misses on both
+        // counts — the label is `nodes`, not `node_id`, and the ids sit inside
+        // brackets. Sampling one run's os_log output found this shape 856 times
+        // (`(re-) join gossip overlay topic=… nodes=[…]`, `joined topic …`),
+        // naming who a device is gossiping with. The list is taken whole, so a
+        // second id cannot survive by being unlabelled. The `_id` and endpoint
+        // spellings are covered too, for a version that labels the same list
+        // differently: what the sample shows is the 10-character short form, so
+        // the 40-char hex rule above is no backstop for any of them. An empty
+        // `nodes=[]` stays readable: it says nobody was found, which is what a
+        // discovery failure looks like, and it names no one.
+        r"\b[a-z_]*(node|endpoint)(_id)?s?=\[[0-9a-fA-F][0-9a-fA-F,\s]*\]",
+        // Socket addresses of peers and of this device, as the address book
+        // prints them: `Ip(188.84.6.11:49882)`, and bracketed for v6,
+        // `Ip([2a02:…:1]:41234)` / `Ip([fe80::…%en0]:…)`. A peer's address says
+        // who a user is talking to and the public one says where they are.
+        // Anchored on p2panda's `Ip(…)` wrapper so the urls the app logs —
+        // `MAILBOX_URL: http://192.168.0.104:4338`, and the ones a connection
+        // error names — stay readable, since a wrong one is only ever spotted
+        // by reading it back.
+        r"Ip\(\[?[0-9a-zA-Z:.%_-]+\]?:[0-9]{1,5}\)",
         // Base64 blobs (40+ chars)
         r"[A-Za-z0-9+/]{40,}={0,2}",
+        // Mailbox id (base64url inbox address) as logged by the mailbox
+        // manager: `polling mailbox <id>` / `mailbox=<id>`. The base64 rule
+        // above misses it because the url-safe `-`/`_` split it below 40
+        // unbroken chars. Anchored on the label so it can't over-match other
+        // long url-safe tokens.
+        r"\bmailbox[ =:]+[A-Za-z0-9_\-]{20,}",
+        // Device / app-group container UUID, which only appears as a path
+        // segment (`<app_root>/<UUID>/0.13`). Anchored on the trailing `/`
+        // (the regex crate has no lookahead, so the slash is consumed) so it
+        // can't match bare UUID leaves such as Sentry's `debug_id` — redacting
+        // those makes the event fail to deserialize back into a DebugId and the
+        // whole report is dropped as unredactable.
+        r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/",
         // DeviceId and AgentId wrappers (must precede bare VerifyingKey/Hash patterns)
         r"(DeviceId|AgentId)\([^)]*\([^)]*\)\)",
-        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...])
-        r"(VerifyingKey|Hash|Signature|InboxNonce)\(\[[\d, ]+\]\)",
+        // Debug-formatted byte arrays: VerifyingKey([1, 2, ...]), Hash([...]), Signature([...]), InboxNonce([...]), Topic([...])
+        r"(VerifyingKey|Hash|Signature|InboxNonce|Topic)\(\[[\d, ]+\]\)",
         // Timestamps (seconds or microseconds since epoch, 10+ digits)
         r#""?timestamp"?\s*:?\s*\d{10,}"#,
         // Debug format: name/surname/about/description fields with quoted values
@@ -39,6 +88,12 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""data"\s*:\s*\[[\d,\s]*\]"#,
         // Debug format: emoji: Some("...")
         r#"emoji:\s*Some\("[^"]*"\)"#,
+        // Debug format: NotificationData fields carrying user content — title
+        // (sender or group name), body/large_body/summary (message text), and
+        // conversation_title (group name), and the letter tile's `text` (the
+        // sender's initials). The NSE logs the built notification, so these
+        // reach a report attachment and must be stripped.
+        r#"\b(title|body|large_body|summary|conversation_title|text):\s*(Some\()?"[^"]*"(\))?"#,
         // JSON format: "name":"...", "surname":"...", "about":"...", "description":"..."
         r#""(name|surname|about|description)"\s*:\s*"[^"]*""#,
         // JSON format: "profile_name":"..." — contact request QR placeholder.
@@ -50,6 +105,8 @@ pub static REDACTION_REGEXES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r#""message"\s*:\s*"[^"]*""#,
         // JSON format: "emoji":"..."
         r#""emoji"\s*:\s*"[^"]*""#,
+        // JSON format: notification title/body/summary/conversation_title/text.
+        r#""(title|body|large_body|summary|conversation_title|text)"\s*:\s*"[^"]*""#,
         // OS username inside filesystem paths. The whole `/home/<user>` (or
         // `/Users/<user>` / `\Users\<user>`) prefix is collapsed to [REDACTED];
         // the rest of the path is preserved so logs stay readable.
@@ -88,6 +145,94 @@ mod tests {
     }
 
     #[test]
+    fn redacts_discovery_topic_ids() {
+        let input = "(re-) join gossip overlay topic=371ac34c42 nodes=[]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] nodes=[]"
+        );
+        let input = "register sync protocol sync_topic=\"02d9de2757\"";
+        assert_eq!(redact(input), "register sync protocol [REDACTED]");
+        // The `_id` suffix, which nothing logs today — covered before
+        // something starts to.
+        let input = "subscribing topic_id=371ac34c42";
+        assert_eq!(redact(input), "subscribing [REDACTED]");
+    }
+
+    /// The exact lines one run's os_log produced, as the gossip and discovery
+    /// modules write them at Debug.
+    #[test]
+    fn redacts_the_peers_a_gossip_overlay_names() {
+        let input = "(re-) join gossip overlay topic=d63c2396b0 nodes=[9b26ccaba4]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] [REDACTED]"
+        );
+        let input = "joined topic topic=0083bbda68 nodes=[a64c9c1b7f, 7dd414f859]";
+        assert_eq!(redact(input), "joined topic [REDACTED] [REDACTED]");
+        // Finding nobody is not private, and it is what a discovery failure
+        // looks like.
+        let input = "(re-) join gossip overlay topic=d63c2396b0 nodes=[]";
+        assert_eq!(
+            redact(input),
+            "(re-) join gossip overlay [REDACTED] nodes=[]"
+        );
+        // The spellings the sample did not happen to show. What p2panda logs is
+        // the 10-character short form, so nothing else would catch these.
+        let input = "peers node_ids=[a64c9c1b7f, 7dd414f859] endpoint_ids=[9b26ccaba4]";
+        assert_eq!(redact(input), "peers [REDACTED] [REDACTED]");
+    }
+
+    #[test]
+    fn preserves_the_networks_own_constants() {
+        // The same for every user of a build, so they name nobody.
+        let input = "register protocol alpn=d129148097";
+        assert_eq!(redact(input), "register protocol alpn=d129148097");
+    }
+
+    #[test]
+    fn redacts_discovery_node_ids() {
+        let input = "mark node as stale remote_node_id=3026d92c8c";
+        assert_eq!(redact(input), "mark node as stale [REDACTED]");
+        let input = "successful discovery session node_id=\"5299f918f8\" topics=5";
+        assert_eq!(
+            redact(input),
+            "successful discovery session [REDACTED] topics=5"
+        );
+        let input = "discovered new transport info endpoint_id=fa09a0a99a";
+        assert_eq!(redact(input), "discovered new transport info [REDACTED]");
+    }
+
+    #[test]
+    fn redacts_peer_socket_addresses() {
+        let input = "addresses=[iroh] {Ip(188.84.6.11:49882), Ip(192.168.0.106:65133)}";
+        assert_eq!(redact(input), "addresses=[iroh] {[REDACTED], [REDACTED]}");
+    }
+
+    #[test]
+    fn redacts_ipv6_peer_socket_addresses() {
+        let input =
+            "addresses=[iroh] {Ip([2a02:8109:a1c0::1]:41234), Ip([fe80::1ff:fe23:4567%en0]:5353)}";
+        assert_eq!(redact(input), "addresses=[iroh] {[REDACTED], [REDACTED]}");
+    }
+
+    #[test]
+    fn preserves_the_url_a_build_is_pointed_at() {
+        // Every url the app logs carries a port, and reading one back is how a
+        // build pointed at the wrong mailbox gets spotted.
+        let input = "Using compile-time MAILBOX_URL: http://192.168.0.104:4338";
+        assert_eq!(
+            redact(input),
+            "Using compile-time MAILBOX_URL: http://192.168.0.104:4338"
+        );
+        let input = "error sending request for url (http://127.0.0.1:3200/health)";
+        assert_eq!(
+            redact(input),
+            "error sending request for url (http://127.0.0.1:3200/health)"
+        );
+    }
+
+    #[test]
     fn redacts_base64_blobs() {
         let input = "data=SGVsbG8gV29ybGQgdGhpcyBpcyBhIGxvbmcgYmFzZTY0IHN0cmluZw==";
         assert_eq!(redact(input), "data=[REDACTED]");
@@ -109,6 +254,15 @@ mod tests {
     fn redacts_signature_byte_array() {
         let input = "sig: Signature([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64])";
         assert_eq!(redact(input), "sig: [REDACTED]");
+    }
+
+    #[test]
+    fn redacts_topic_byte_array() {
+        let input = "Received notification: Op(OpNotification { topic: Topic([115, 141, 94, 24, 253, 20, 106, 114, 176, 29, 155, 223, 118, 237, 251, 242, 223, 65, 196, 109, 60, 229, 115, 151, 106, 243, 121, 82, 124, 168, 1, 2]), ";
+        assert_eq!(
+            redact(input),
+            "Received notification: Op(OpNotification { topic: [REDACTED], "
+        );
     }
 
     #[test]
@@ -354,6 +508,53 @@ mod tests {
     }
 
     #[test]
+    fn redacts_notification_data_debug() {
+        // The shape the NSE logs when showing a built notification: sender name
+        // in `title`, message text in `body`, group name in `conversation_title`.
+        let input = r##"NotificationData { id: 1, title: Some("Macky"), body: Some("lalala"), large_body: None, summary: None, large_icon_letter_tile: Some(LetterTile { text: Some("MQ"), background_color: "#8e8e93", text_color: "#ffffff" }), conversation_style: Some(ConversationStyle { sender_id: Some("abc"), conversation_title: Some("Family Chat") }) }"##;
+        let result = redact(input);
+        assert!(!result.contains("Macky"), "title (name) leaked: {result}");
+        assert!(
+            !result.contains("lalala"),
+            "body (message) leaked: {result}"
+        );
+        assert!(
+            !result.contains("Family Chat"),
+            "conversation_title leaked: {result}"
+        );
+        assert!(!result.contains("MQ"), "letter tile text leaked: {result}");
+    }
+
+    #[test]
+    fn redacts_notification_data_json() {
+        let input = r##"{"title":"Macky","body":"lalala","large_body":"long text","summary":"2 messages","conversation_title":"Family Chat","largeIconLetterTile":{"text":"MQ","backgroundColor":"#8e8e93"}}"##;
+        let result = redact(input);
+        assert!(!result.contains("Macky"), "title leaked: {result}");
+        assert!(!result.contains("lalala"), "body leaked: {result}");
+        assert!(!result.contains("long text"), "large_body leaked: {result}");
+        assert!(!result.contains("2 messages"), "summary leaked: {result}");
+        assert!(
+            !result.contains("Family Chat"),
+            "conversation_title leaked: {result}"
+        );
+        assert!(!result.contains("MQ"), "letter tile text leaked: {result}");
+    }
+
+    #[test]
+    fn preserves_large_body_field_name_boundary() {
+        // `\b` must not let the `body` alternative match inside `large_body`;
+        // `large_body` is covered by its own alternative, but a bare
+        // `large_body: None` (no quoted value) must be left untouched.
+        let input = r#"large_body: None, body: Some("hi")"#;
+        let result = redact(input);
+        assert!(
+            result.contains("large_body: None"),
+            "over-redacted: {result}"
+        );
+        assert!(!result.contains("hi"), "body not redacted: {result}");
+    }
+
+    #[test]
     fn redacts_hostname_line() {
         let input = "Hostname: Alices-MacBook-Pro.local";
         let result = redact(input);
@@ -435,5 +636,66 @@ mod tests {
             "message not redacted: {result}"
         );
         assert!(!result.contains("32, 145"), "key not redacted: {result}");
+    }
+
+    #[test]
+    fn redacts_short_form_node_keys() {
+        let input = "gossip; me=fa30b1af97 conn; peer=0a753b78eb";
+        let result = redact(input);
+        assert!(!result.contains("fa30b1af97"), "me key leaked: {result}");
+        assert!(!result.contains("0a753b78eb"), "peer key leaked: {result}");
+    }
+
+    #[test]
+    fn preserves_short_hex_contact_code() {
+        // The short-form key rule must stay anchored to `me=`/`peer=` and not
+        // touch other short hex like contact codes.
+        let input = "code=abcdef12";
+        assert_eq!(redact(input), "code=abcdef12");
+    }
+
+    #[test]
+    fn redacts_mailbox_id() {
+        let input = "polling mailbox 2wgdUYYgohPKdhkjbgmBjlZgfh-hZBHVpi6GkXkRYxc";
+        let result = redact(input);
+        assert!(
+            !result.contains("2wgdUYYgohPKdhkjbgmBjlZgfh"),
+            "mailbox id leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn redacts_mailbox_id_key_value_form() {
+        let input = "mailbox=2wgdUYYgohPKdhkjbgmBjlZgfh-hZBHVpi6GkXkRYxc sync error";
+        let result = redact(input);
+        assert!(
+            !result.contains("2wgdUYYgohPKdhkjbgmBjlZgfh"),
+            "mailbox id leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_mailbox_module_path() {
+        let input = "mailboxes_manager::manager crates/mailboxes-manager/src/manager.rs:719";
+        assert_eq!(redact(input), input);
+    }
+
+    #[test]
+    fn redacts_device_container_uuid() {
+        let input = "data path: 1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA/0.13";
+        let result = redact(input);
+        assert!(
+            !result.contains("1A2B3C4D-F4CD-4E51-B851-69CF2F22D0AA"),
+            "uuid leaked: {result}"
+        );
+    }
+
+    #[test]
+    fn preserves_bare_uuid_debug_id() {
+        // Sentry's `debug_id` is a bare UUID leaf that must stay parseable when
+        // the event is re-serialized; the container-UUID rule must only fire in
+        // path context, never on a standalone UUID.
+        let input = "84a04d24-0e60-3810-a8c0-90d5b4f8e4a3";
+        assert_eq!(redact(input), input);
     }
 }

@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import ImageInput from '$lib/components/ImageInput.svelte';
-	import { compressImage } from '$lib/utils/compress';
+	import ScreenshotsInput from '$lib/components/ScreenshotsInput.svelte';
 	import { sendFeedback, type FeedbackReason } from '$lib/utils/error-report';
 	import { showToast } from '$lib/utils/toasts';
 	import {
+		Block,
 		BlockTitle,
 		Checkbox,
+		Link,
 		List,
 		ListInput,
 		ListItem,
@@ -18,50 +19,66 @@
 		useTheme,
 	} from 'konsta/svelte';
 	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
+	import { isIos } from '$lib/utils/environment';
 
 	const theme = $derived(useTheme());
 
 	// Without SENTRY_DSN there is nowhere for a submission to go.
 	const canSend = import.meta.env.VITE_SENTRY_ENABLED;
+	const MAX_SCREENSHOTS = 5;
+	const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
 
 	let message = $state('');
 	let reason = $state<FeedbackReason | undefined>();
 	let includeDebugLog = $state(true);
-	let screenshot = $state<File | null>(null);
-
-	const reasonLabels: Record<string, () => string> = {
-		bug: () => m.reasonBugReport(),
-		feature: () => m.reasonFeatureRequest(),
-		question: () => m.reasonQuestion(),
-		feedback: () => m.reasonGeneralFeedback(),
-		other: () => m.reasonOther(),
-	};
+	let screenshots = $state<File[]>([]);
+	let attachingScreenshots = $state(false);
+	let sending = $state(false);
+	const sendDisabled = $derived(
+		!message || !reason || !canSend || sending || attachingScreenshots,
+	);
 
 	async function handleSubmit() {
-		if (!reason) return;
+		if (!reason || sendDisabled) return;
+		sending = true;
 		try {
-			await sendFeedback({
+			const outcome = await sendFeedback({
 				reason,
 				message,
-				screenshot: screenshot ? await compressImage(screenshot) : undefined,
+				screenshots,
 				includeLogs: includeDebugLog,
 			});
-			showToast(m.reportSent());
-			goto('/settings/help');
+			showToast(outcome === 'queued' ? m.reportQueued() : m.reportSent());
+			// The user may have already left during a slow send.
+			if (page.url.pathname === '/settings/help/contact-us') history.back();
 		} catch (e) {
 			console.error('Error sending feedback', e);
 			showToast(m.errorUnexpected(), 'unexpected', e);
+			sending = false;
 		}
 	}
 </script>
 
 <Page>
-	<Navbar title={m.contactUs()} titleClass="opacity1" transparent={true}>
+	<Navbar
+		title={m.contactUs()}
+		titleClass="opacity1"
+		transparent={true}
+		rightClass={sendDisabled ? 'ios-right-disabled' : ''}
+	>
 		{#snippet left()}
 			<NavbarBackLink
-				onClick={() => goto('/settings/help')}
+				onClick={() => history.back()}
 				data-testid="contact-us-back"
 			/>
+		{/snippet}
+
+		{#snippet right()}
+			{#if isIos}
+				<Link onClick={handleSubmit} data-testid="contact-us-send-btn">
+					{m.send()}
+				</Link>
+			{/if}
 		{/snippet}
 	</Navbar>
 
@@ -78,18 +95,14 @@
 					bind:value={reason}
 					data-testid="contact-us-reason-select"
 				>
-					{#snippet input()}
-						<select bind:value={reason}>
-							<option value={undefined} disabled>
-								{m.pleaseSelectAnOption()}
-							</option>
-							<option value="bug">{m.reasonBugReport()}</option>
-							<option value="feature">{m.reasonFeatureRequest()}</option>
-							<option value="question">{m.reasonQuestion()}</option>
-							<option value="feedback">{m.reasonGeneralFeedback()}</option>
-							<option value="other">{m.reasonOther()}</option>
-						</select>
-					{/snippet}
+					<option value={undefined} disabled>
+						{m.pleaseSelectAnOption()}
+					</option>
+					<option value="bug">{m.reasonBugReport()}</option>
+					<option value="feature">{m.reasonFeatureRequest()}</option>
+					<option value="question">{m.reasonQuestion()}</option>
+					<option value="feedback">{m.reasonGeneralFeedback()}</option>
+					<option value="other">{m.reasonOther()}</option>
 				</ListInput>
 			</List>
 
@@ -109,14 +122,24 @@
 				/>
 			</List>
 
-			<BlockTitle>{m.attachScreenshot()}</BlockTitle>
-			<List
+			<BlockTitle id="contact-us-screenshots-title"
+				>{m.attachScreenshots()}</BlockTitle
+			>
+			<Block
 				strongIos
 				inset={isWideScreen.value || theme === 'ios'}
 				class="!mb-0"
 			>
-				<ImageInput bind:value={screenshot} />
-			</List>
+				<ScreenshotsInput
+					bind:value={screenshots}
+					bind:attaching={attachingScreenshots}
+					max={MAX_SCREENSHOTS}
+					maxBytes={MAX_SCREENSHOT_BYTES}
+					disabled={sending}
+					labelledBy="contact-us-screenshots-title"
+					testId="contact-us-screenshots"
+				/>
+			</Block>
 
 			<List
 				strongIos
@@ -144,11 +167,14 @@
 		</div>
 	</div>
 
-	<FixedActionButton
-		onClick={handleSubmit}
-		disabled={!message || !reason || !canSend}
-		testId="contact-us-send-btn"
-	>
-		{m.send()}
-	</FixedActionButton>
+	{#if !isIos}
+		<FixedActionButton
+			onClick={handleSubmit}
+			disabled={sendDisabled}
+			loading={sending}
+			testId="contact-us-send-btn"
+		>
+			{m.send()}
+		</FixedActionButton>
+	{/if}
 </Page>

@@ -2,11 +2,7 @@ import { goto } from '$app/navigation';
 import { m } from '$lib/paraglide/messages.js';
 import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 import { showToast } from '$lib/utils/toasts';
-import {
-	type AddContactError,
-	type ContactsStore,
-	pendingChatKey,
-} from 'dash-chat-stores';
+import { type AddContactError, type ContactsStore } from 'dash-chat-stores';
 
 import { buildHttpsDeepLinkUrl, extractDeepLinkParams } from './helpers';
 
@@ -47,12 +43,8 @@ export async function addContactFromCode(
 	inFlightCode = code;
 	addContactPending.value = true;
 	try {
-		const devicePubkey = await contactsStore.client.addContact(code);
-
-		const knownAgent = await contactsStore.client.agentForDevice(devicePubkey);
-		await goto(`/direct-chats/${knownAgent ?? pendingChatKey(devicePubkey)}`);
-
-		showToast(m.contactRequestSent());
+		const result = await contactsStore.client.addContact(code);
+		await goto(`/direct-chats/${result.chatId}`);
 	} catch (e) {
 		console.error(e);
 		const error = e as AddContactError;
@@ -85,6 +77,6 @@ export async function addContactFromCode(
 export function handle(
 	{ code }: Record<string, string>,
 	contactsStore: ContactsStore,
-) {
-	void addContactFromCode(contactsStore, code);
+): Promise<void> {
+	return addContactFromCode(contactsStore, code);
 }

@@ -3,8 +3,10 @@
  * message, sent, and rendered on both ends, and that the 16 MiB size cap is
  * enforced.
  */
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { tid } from '../helpers/selectors';
+import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Media attachments', () => {
@@ -16,9 +18,8 @@ describe('Media attachments', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Media');
-		await agent2.createProfilePage.createProfile('Bob', 'Media');
-		await exchangeContacts(agent1, agent2);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('opens the desktop attach dropdown and renders the Photos and File items', async function () {
@@ -34,11 +35,39 @@ describe('Media attachments', () => {
 		await composer.closeAttachMenu();
 	});
 
+	it('shows the camera button only on mobile with an empty composer', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.messageInput.waitForExist({ timeout: SYNC_TIMEOUT });
+		if (agent1.platform === 'desktop') {
+			expect(await composer.cameraButton.isExisting()).toBe(false);
+			return;
+		}
+		await composer.cameraButton.waitForDisplayed();
+		await composer.type('hiding the camera');
+		// The composer collapses the button's width instead of unmounting it.
+		await composer.cameraButton.waitForDisplayed({ reverse: true });
+		await composer.type('');
+		await composer.cameraButton.waitForDisplayed();
+	});
+
 	it('sends a single photo from Alice and renders on both ends', async () => {
 		await agent1.directChatPage.composer.attachPhotos('single');
 		await agent1.directChatPage.composer.send();
 		await agent1.directChatPage.messages.waitForPhotoMessage('single');
 		await agent2.directChatPage.messages.waitForPhotoMessage('single');
+	});
+
+	it('sizes a lone photo from its sender-measured dimensions', async () => {
+		await agent1.directChatPage.composer.attachNoisePhoto(
+			'measured',
+			1600,
+			1200,
+		);
+		await agent1.directChatPage.composer.send();
+		await agent2.directChatPage.messages.waitForPhotoMessage('measured');
+		expect(
+			await agent2.directChatPage.messages.photoBoxStyle('measured'),
+		).toEqual({ width: '300px', height: '225px' });
 	});
 
 	it('sends multiple photos with a caption', async () => {
@@ -147,6 +176,38 @@ describe('Media attachments', () => {
 		await composer.removeDraft();
 	});
 
+	it('drops a damaged photo when staging, keeping the valid ones', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['broken'], ['survivor']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
+		);
+		await composer.expectStagedPhotoCount(1);
+		await composer.send();
+		await agent1.directChatPage.messages.waitForPhotoMessage('survivor');
+	});
+
+	it('counts every damaged photo in the toast', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['broken-1', 'broken-2'], ['kept']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 2 }),
+		);
+		await composer.expectStagedPhotoCount(1);
+		await composer.removeDraft();
+	});
+
+	it('stages nothing when the only photo is damaged', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteDamagedPhotos(['alone']);
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUndecodablePhotos', { count: 1 }),
+		);
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg: 'Staged media UI stayed up after the only photo was dropped',
+		});
+	});
+
 	it('stages dropped images, appending to the draft', async () => {
 		const composer = agent1.directChatPage.composer;
 		await composer.dropPhotos('dropped');
@@ -173,6 +234,28 @@ describe('Media attachments', () => {
 		await composer.clearAll();
 		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
 			timeoutMsg: 'Preview still present after clear all',
+		});
+	});
+
+	it('drops a photo whose file can no longer be read', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteUnreadablePhoto('withdrawn');
+		await agent1.toast.expectMessage(
+			await agent1.tr('errorUnreadablePhotos', { count: 1 }),
+		);
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg:
+				'Staged media UI stayed up after the unreadable photo was dropped',
+		});
+	});
+
+	it('drops a file that can no longer be read', async () => {
+		const composer = agent1.directChatPage.composer;
+		await composer.pasteUnreadableFile('withdrawn.txt');
+		await agent1.toast.expectMessage(await agent1.tr('errorUnreadableFile'));
+		await agent1.waitUntil(async () => !(await composer.hasMediaPreview()), {
+			timeoutMsg:
+				'Staged media UI stayed up after the unreadable file was dropped',
 		});
 	});
 
@@ -205,5 +288,17 @@ describe('Media attachments', () => {
 
 		await retry.click();
 		await agent2.directChatPage.messages.waitForPhotoMessage('retry-blob');
+	});
+
+	it('does not offer Copy on a photo-only message', async () => {
+		await agent1.directChatPage.composer.attachPhotos('copyless');
+		await agent1.directChatPage.composer.send();
+		await agent1.directChatPage.messages.waitForPhotoMessage('copyless');
+		const message =
+			await agent1.directChatPage.messages.messageWithPhoto('copyless');
+		if (!message) throw new Error('Photo message "copyless" not found');
+		await message.openActions();
+		expect(await message.copyAction.isExisting()).toBe(false);
+		expect(await message.deleteAction.isExisting()).toBe(true);
 	});
 });

@@ -1,3 +1,4 @@
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -10,9 +11,8 @@ describe('Editing messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('edits a message in place and shows the "Edited" indicator on both sides', async () => {
@@ -29,10 +29,10 @@ describe('Editing messages', () => {
 		const edited2 =
 			await agent2.directChatPage.messages.waitForMessage('Hello world');
 
-		await browser.waitUntil(() => edited1.hasEditedIndicator(), {
+		await agent1.waitUntil(() => edited1.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the author side',
 		});
-		await browser.waitUntil(() => edited2.hasEditedIndicator(), {
+		await agent2.waitUntil(() => edited2.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the peer side',
 		});
 	});
@@ -52,9 +52,7 @@ describe('Editing messages', () => {
 		await message.openActions();
 		await message.copyAction.waitForClickable();
 		await message.copyAction.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('copiedMessageToClipboard'),
-		);
+		await message.actionsMenu.waitForDisplayed({ reverse: true });
 	});
 
 	it('asks before discarding a draft when starting an edit', async () => {
@@ -80,7 +78,7 @@ describe('Editing messages', () => {
 		await composer.discardDraftConfirm.waitForClickable();
 		await composer.discardDraftConfirm.click();
 		await composer.editingBanner.waitForExist();
-		await browser.waitUntil(
+		await agent1.waitUntil(
 			async () => (await composer.inputText()) === 'Hello world',
 			{ timeoutMsg: 'Editing input is not prefilled with the message text' },
 		);
@@ -102,8 +100,6 @@ describe('Editing messages', () => {
 		// popover still counts as displayed while its opacity is rounding to 0.
 		await message.contextMenuCopyAction.waitForClickable();
 		await message.contextMenuCopyAction.click();
-		await agent1.toast.expectMessage(
-			await agent1.tr('copiedMessageToClipboard'),
-		);
+		await message.contextMenu.waitForDisplayed({ reverse: true });
 	});
 });

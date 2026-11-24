@@ -1,33 +1,38 @@
 import type { Agent } from '../../setup/setup-agents';
+import { backToHome } from './back-to-home';
+import { createProfiles } from './create-profiles';
 import { exchangeContacts } from './exchange-contacts';
 
 /**
- * Bootstraps two fresh agents into a shared group chat owned by agent1:
- * creates profiles, exchanges contacts, then walks agent1 through the
- * new-group flow with agent2 added as a member. Leaves agent1 on the
- * group-chat page and agent2 on the home page.
+ * Bootstraps fresh agents into a shared group chat owned by the first listed:
+ * creates profiles named after their keys, exchanges contacts between the owner
+ * and each other agent, then walks the owner through the new-group flow with
+ * all of them added as members. Leaves the owner on the group-chat page and
+ * the members on the home page.
  */
 export async function exchangeContactsAndCreateGroup(
-	agent1: Agent,
-	agent2: Agent,
+	profiles: Record<string, Agent>,
 ): Promise<void> {
-	await agent1.enablePreviewFeatures();
-	await agent2.enablePreviewFeatures();
-	await agent1.createProfilePage.createProfile('Alice', 'Test');
-	await agent2.createProfilePage.createProfile('Bob', 'Test');
-	await exchangeContacts(agent1, agent2);
-	await agent1.directChatPage.back.click();
-	await agent2.directChatPage.back.click();
-	await agent1.homePage.ready();
-	await agent2.homePage.ready();
+	await createProfiles(profiles);
+	const [[, owner], ...members] = Object.entries(profiles);
+	for (const [, member] of members) {
+		await exchangeContacts([owner, member]);
+		await backToHome([owner, member]);
+	}
 
-	await createGroup(agent1, 'mygroup', 'Bob');
+	await createGroup(
+		owner,
+		'mygroup',
+		members.map(([name]) => name),
+	);
 }
 
+/** Walk `agent` from the home page through the new-group flow, picking each
+ *  of `members` by contact name, and leave it on the new group's chat page. */
 export async function createGroup(
 	agent: Agent,
 	groupName: string,
-	addContactName: string | null = null,
+	members: string[],
 ): Promise<void> {
 	await agent.homePage.ready();
 	await agent.homePage.newMessageButton.click();
@@ -35,8 +40,8 @@ export async function createGroup(
 	await agent.newMessagePage.newGroup.click();
 
 	await agent.newGroupPage.addMembersStep.ready();
-	if (addContactName) {
-		await agent.newGroupPage.addMembersStep.addContactByName(addContactName);
+	for (const member of members) {
+		await agent.newGroupPage.addMembersStep.addContactByName(member);
 	}
 	await agent.newGroupPage.addMembersStep.nextButton.click();
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PhotoAttachment } from 'dash-chat-stores';
 	import BlobImage from '$lib/components/BlobImage.svelte';
+	import { timelineImageBox } from '$lib/utils/media';
 
 	interface Props {
 		photos: PhotoAttachment[];
@@ -21,6 +22,10 @@
 	// own thumbnail.
 	const isOverflowCell = (index: number) => index === 4 && photos.length > 5;
 
+	const loneBox = $derived(
+		photos.length === 1 ? timelineImageBox(photos[0]) : null,
+	);
+
 	function onCellClick(index: number, event: MouseEvent) {
 		if (!isOverflowCell(index) && blobImages[index]?.retryIfErrored()) return;
 		onPhotoClick(index, event);
@@ -32,6 +37,9 @@
 		<button
 			type="button"
 			class="photo-cell"
+			style={loneBox !== null
+				? `width: ${loneBox.width}px; height: ${loneBox.height}px;`
+				: ''}
 			aria-label={photo.name}
 			onclick={e => onCellClick(i, e)}
 		>
@@ -58,43 +66,21 @@
 	/*
 		One markup path for any photo count; the whole layout is picked purely
 		in CSS from the number of cells (no JS). A `:has()` quantity query
-		matches each case: a lone image keeps its own aspect ratio, while 2+
-		images form Signal's collages in a 300px-wide grid. The 5+ rule also
+		matches each case: a lone image gets a fixed box from its sender-measured
+		dimensions, while 2+ images form Signal's collages in a 300px-wide grid. The 5+ rule also
 		hides the 6th-and-later cells and reveals the +N scrim on the 5th.
 	*/
 
-	/* 1 → lone image: container shrinks to it; the image keeps its own aspect
-	 * ratio within Signal's timeline bounds (width 200–300px, height 50–450px),
-	 * the browser scaling the unconstrained dimension to preserve the ratio. */
+	/* 1 → lone image: the cell carries its fixed box (from timelineImageBox)
+	 * inline, so it is right before the blob loads and never changes when it
+	 * arrives. The image is absolutely positioned to cover the box without
+	 * contributing its natural size to the bubble width. */
 	.attachment-photos:has(.photo-cell:only-child) {
 		width: fit-content;
 	}
 	.photo-cell:only-child :global(img) {
-		width: auto;
-		height: auto;
-		min-width: 200px;
-		max-width: 300px;
-		min-height: 50px;
-		max-height: 450px;
-		object-fit: contain;
-	}
-
-	/* Floor the cell's size before the img exists (loading/error), so the overlay/retry box doesn't collapse. */
-	.attachment-photos:has(.photo-cell:only-child) .photo-cell {
-		min-width: 200px;
-		min-height: 150px;
-	}
-
-	/* On error there's no <img> to size the container, so fit-content floors it
-	 * to 200px. When a wider caption stretches the bubble, that leaves a white
-	 * strip beside the grey placeholder — let it fill the bubble width instead.
-	 * The cell is a <button>, which shrinks to content, so it needs width:100%
-	 * to fill the stretched container too. */
-	.attachment-photos:has(.photo-cell:only-child):not(:has(img)) {
-		width: auto;
-	}
-	.attachment-photos:has(.photo-cell:only-child):not(:has(img)) .photo-cell {
-		width: 100%;
+		position: absolute;
+		inset: 0;
 	}
 
 	/* 2+ → a 300px-wide collage grid */

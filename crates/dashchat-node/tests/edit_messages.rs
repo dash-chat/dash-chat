@@ -4,7 +4,7 @@
 #![cfg(test)]
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::mem::MemMailbox;
+use mailbox_client::backends::mem::MemMailbox;
 
 fn setup() {
     dashchat_node::testing::setup_tracing(&["dashchat=info"], true);
@@ -28,8 +28,8 @@ async fn two_friends(mailbox: &MemMailbox<MailboxOperation>) -> (TestNode, TestN
         .await
         .unwrap();
 
-    let chat_id = alice.direct_chat_topic(bobbi.agent_id());
-    assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
+    let chat_id = alice.direct_chat_with(&bobbi);
+    assert_eq!(chat_id, bobbi.direct_chat_with(&alice));
     (alice, bobbi, chat_id)
 }
 

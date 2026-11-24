@@ -22,44 +22,69 @@ export type FeedbackReason =
 interface Feedback {
 	reason: FeedbackReason;
 	message: string;
-	screenshot?: File;
+	screenshots: File[];
 	includeLogs: boolean;
 }
 
-export async function sendErrorReport(report: ErrorReport): Promise<void> {
+/** Whether a report reached Sentry or is waiting on disk for a connection. */
+export type SendOutcome = 'sent' | 'queued';
+
+export async function sendErrorReport(
+	report: ErrorReport,
+): Promise<SendOutcome> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_error_report', {
 		message: report.message,
 		error: report.error,
 	});
 }
 
-export async function sendFeedback(feedback: Feedback): Promise<void> {
+/** Mirrors `Screenshot` in the plugin's feedback.rs. */
+interface Screenshot {
+	contentType: string;
+	base64: string;
+}
+
+export async function sendFeedback(feedback: Feedback): Promise<SendOutcome> {
+	const screenshots: Screenshot[] = [];
+	for (const file of feedback.screenshots) {
+		screenshots.push(await describeScreenshot(file));
+	}
 	return invokeAfterSetup('plugin:sentry-reporting|send_feedback', {
 		feedback: {
 			reason: feedback.reason,
 			message: feedback.message,
-			screenshot: feedback.screenshot
-				? await describeScreenshot(feedback.screenshot)
-				: undefined,
+			screenshots,
 			includeLogs: feedback.includeLogs,
 		},
 	});
 }
 
-/** Bytes rather than a path, so the image never has to be staged to disk. */
-async function describeScreenshot(file: File) {
+/** Bytes rather than a path, so the image never has to be staged to disk; no
+ * name, since the plugin numbers the attachments so none leaves the device. */
+async function describeScreenshot(file: File): Promise<Screenshot> {
 	return {
-		name: file.name,
 		contentType: file.type,
-		bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+		base64: await base64Of(file),
 	};
+}
+
+function base64Of(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			const dataUrl = reader.result as string;
+			resolve(dataUrl.slice(dataUrl.indexOf(',') + 1));
+		};
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(file);
+	});
 }
 
 export async function hasPendingCrashReport(): Promise<boolean> {
 	return invokeAfterSetup('plugin:sentry-reporting|pending_crash_report');
 }
 
-export async function sendPendingCrashReport(): Promise<void> {
+export async function sendPendingCrashReport(): Promise<SendOutcome> {
 	return invokeAfterSetup('plugin:sentry-reporting|send_pending_crash_report');
 }
 

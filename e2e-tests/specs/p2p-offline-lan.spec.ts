@@ -1,0 +1,104 @@
+/**
+ * Peer-to-peer sync on a LAN with no internet from the first launch: both
+ * phones join an E2E_WIFI_NETWORKS access point with no upstream before their
+ * apps start, and the cloud mailbox is down, so neither the relay nor a
+ * mailbox can carry anything. Contact exchange, text messages and media can
+ * only cross over a direct connection to a peer discovered over mDNS. The chat
+ * home page chip reads "p2p" while they are online.
+ *
+ * Needs two physical phones without mobile data, and a network in
+ * E2E_WIFI_NETWORKS other than the one the phones are on; skips otherwise:
+ *   PHONES=android,android just e2e run p2p-offline-lan
+ *   PHONES=ios,ios just e2e run p2p-offline-lan
+ */
+import { backToHome } from '../helpers/flows/back-to-home';
+import { createProfiles } from '../helpers/flows/create-profiles';
+import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { UI_TIMEOUT } from '../helpers/timeouts';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
+import { type Agent, setupAgents } from '../setup/setup-agents';
+import { type WifiNetwork, wifiNetworks } from '../setup/test-env';
+
+/** Move the phone onto `network`, close the app, and relaunch it there wiped
+ *  back to first launch, so its node knows nothing from a network with
+ *  internet. The join goes through the app, so it comes before the close. */
+async function relaunchOn(agent: Agent, network: WifiNetwork): Promise<void> {
+	await agent.joinWifi(network.ssid, network.passphrase);
+	await agent.stopApp();
+	// On iOS this brings the app up on the old account to ask from its
+	// webview, so the wipe below is what actually leaves it at first launch.
+	if (await agent.hasInternet()) {
+		throw new Error(
+			`"${network.ssid}" reaches the internet; this spec needs a network with no upstream`,
+		);
+	}
+	await agent.clearAppData();
+	await agent.startApp();
+}
+
+describe('P2P sync on a LAN with no internet', () => {
+	let alice: Agent;
+	let bob: Agent;
+
+	before(async function () {
+		if (isRemoteMailbox()) this.skip();
+		[alice, bob] = await setupAgents(this, [
+			{ platform: 'phone' },
+			{ platform: 'phone' },
+		]);
+		// A positive control for the probe `relaunchOn` leans on. It only throws
+		// on a `true`, so a probe that can never say yes — a retired endpoint, a
+		// CORS policy change, a webview that runs the script but cannot fetch —
+		// would let this whole spec pass on a network with full internet,
+		// proving nothing about mDNS. The phones start on their own network,
+		// which has upstream, so the probe has to say so here.
+		if (!(await alice.hasInternet())) {
+			throw new Error(
+				"the internet probe says the phones' own network has no upstream, " +
+					'so it cannot tell an offline network from a broken probe. This ' +
+					'spec needs to start on a network with internet.',
+			);
+		}
+		const [network] = wifiNetworks();
+		if (network === undefined) this.skip();
+		await killMailbox();
+		await Promise.all([alice, bob].map(agent => relaunchOn(agent, network)));
+		await createProfiles({ Alice: alice, Bob: bob });
+		await exchangeContacts([alice, bob]);
+	});
+
+	it('both chips read p2p', async () => {
+		await backToHome([alice, bob]);
+		for (const agent of [alice, bob]) {
+			await agent.homePage.connectionStatusIndicator.waitForStatus(
+				'p2p',
+				UI_TIMEOUT,
+				'the chip did not read p2p on a LAN with no internet',
+			);
+		}
+		await alice.homePage.openChat('Bob');
+		await bob.homePage.openChat('Alice');
+	});
+
+	it('syncs a text message Alice → Bob', async () => {
+		await alice.directChatPage.composer.sendMessage('hello with no internet');
+		await bob.directChatPage.messages.waitForMessage('hello with no internet');
+	});
+
+	it('syncs a reply Bob → Alice', async () => {
+		await bob.directChatPage.composer.sendMessage('reply with no internet');
+		await alice.directChatPage.messages.waitForMessage(
+			'reply with no internet',
+		);
+	});
+
+	it('syncs a photo message', async () => {
+		const { composer } = alice.directChatPage;
+		await composer.attachPhotos('lanphoto');
+		await composer.type('photo with no internet');
+		await composer.send();
+		await alice.directChatPage.messages.waitForPhotoMessage('lanphoto');
+		await bob.directChatPage.messages.waitForMessage('photo with no internet');
+		await bob.directChatPage.messages.waitForPhotoMessage('lanphoto');
+	});
+});

@@ -10,7 +10,7 @@ describe('Receiving a group message while the actions menu is open', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 		await agent1.groupChatPage.ready();
 
 		await agent2.homePage.chatListItem('mygroup').waitForExist();

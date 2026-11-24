@@ -8,7 +8,7 @@ pub fn hash(n: u8) -> Hash {
     Hash::from_bytes([n; 32])
 }
 
-pub fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
+pub fn message(author: DeviceId, timestamp: u64, seq_num: SeqNum) -> ChatOp {
     ChatOp {
         author,
         timestamp,
@@ -17,7 +17,7 @@ pub fn message(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
     }
 }
 
-pub fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> ChatOp {
+pub fn edit(author: DeviceId, timestamp: u64, seq_num: SeqNum, target: Hash) -> ChatOp {
     ChatOp {
         author,
         timestamp,
@@ -26,7 +26,7 @@ pub fn edit(author: DeviceId, timestamp: u64, seq_num: u64, target: Hash) -> Cha
     }
 }
 
-pub fn delete(author: DeviceId, timestamp: u64, seq_num: u64, hashes: BTreeSet<Hash>) -> ChatOp {
+pub fn delete(author: DeviceId, timestamp: u64, seq_num: SeqNum, hashes: BTreeSet<Hash>) -> ChatOp {
     ChatOp {
         author,
         timestamp,
@@ -35,7 +35,7 @@ pub fn delete(author: DeviceId, timestamp: u64, seq_num: u64, hashes: BTreeSet<H
     }
 }
 
-pub fn other(author: DeviceId, timestamp: u64, seq_num: u64) -> ChatOp {
+pub fn other(author: DeviceId, timestamp: u64, seq_num: SeqNum) -> ChatOp {
     ChatOp {
         author,
         timestamp,

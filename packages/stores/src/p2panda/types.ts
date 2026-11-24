@@ -60,6 +60,8 @@ export interface Lifetime {
 export type DeviceId = VerifyingKey;
 export type AgentId = VerifyingKey;
 
+export type FakeAgentId = VerifyingKey & { readonly __tag: unique symbol };
+
 export type PreKey = [VerifyingKey, Lifetime];
 
 export type XSignature = string; // TODO: check this is correct

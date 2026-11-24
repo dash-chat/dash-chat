@@ -19,6 +19,16 @@ import type {
 	PhotoAttachment,
 } from 'dash-chat-stores';
 
+/**
+ * Draft voice note held in the composer before sending.
+ */
+export interface DraftVoiceNote {
+	bytes: Uint8Array;
+	mimeType: string;
+	durationMs: number;
+	waveform: Uint8Array;
+}
+
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
 export class AttachmentTooLargeError extends Error {
@@ -32,29 +42,52 @@ export class AttachmentTooLargeError extends Error {
 	}
 }
 
+// No file name in the message: it would reach an error report unredacted.
+export class UndecodablePhotoError extends Error {
+	constructor() {
+		super('could not decode photo');
+		this.name = 'UndecodablePhotoError';
+	}
+}
+
+export class UnreadableFileError extends Error {
+	constructor() {
+		super('could not read file');
+		this.name = 'UnreadableFileError';
+	}
+}
+
 /**
- * Draft media held in the composer before sending — raw `File` refs. Previews
- * derive their object URL via the `objectUrl` action on the `<img>`, so the
- * draft carries no URLs that need revoking.
+ * Draft media held in the composer before sending. Photos are staged already
+ * compressed and measured, so one that can't be decoded is never in a draft.
+ * Previews derive their object URL via the `objectUrl` action on the
+ * `<img>`, so the draft carries no URLs that need revoking.
  */
 export type DraftMedia =
-	| { kind: 'photos'; items: File[] }
-	| { kind: 'file'; file: File };
+	| { kind: 'photos'; items: OutgoingPhoto[] }
+	| { kind: 'file'; file: File }
+	| { kind: 'voice_note'; voice: DraftVoiceNote };
 
 export const MAX_STAGED_PHOTOS = 32;
 
-export type IngestError = 'tooMany' | 'filesWithPhotos' | 'oneFileAtATime';
+export type StagingError =
+	| 'tooMany'
+	| 'filesWithPhotos'
+	| 'oneFileAtATime'
+	| 'unreadableFile';
 
-export interface IngestResult {
-	media: DraftMedia | undefined;
-	error?: IngestError;
+/** What a batch of picked files may add to a draft. */
+export interface StagingPlan {
+	photos: File[];
+	file?: File;
+	error?: StagingError;
 }
 
 // Only raster types that decode in every supported webview may enter the
 // photo path; anything else (videos until <video> rendering exists, and
 // formats with patchy decoder support like HEIC/AVIF/TIFF) stages and
 // sends as a file attachment instead of producing a broken <img> on the
-// recipient.
+// recipient. The contact form reuses the set for what Sentry can preview.
 const PHOTO_TYPES = new Set([
 	'image/jpeg',
 	'image/png',
@@ -71,18 +104,20 @@ export const PHOTO_ACCEPT = [...PHOTO_TYPES].join(',');
  * (PHPickerViewController) or the document browser directly; a web `<input
  * type=file>` would instead show a Photo Library / Take Photo / Choose File
  * action sheet. Everywhere else the web input already opens the right picker, so
- * it keeps using it. Resolves with the chosen files, or `null` if dismissed.
+ * it keeps using it. Resolves with at most `limit` of the chosen files, or
+ * `null` if dismissed.
  */
 export async function pickMedia(
 	mode: 'image' | 'document',
 	multiple: boolean,
+	limit = Infinity,
 ): Promise<File[] | null> {
 	if (isIos && isTauriEnv()) {
-		return pickNativeFiles({ mode, multiple });
+		return pickNativeFiles({ mode, multiple, limit });
 	}
 	const accept = mode === 'image' ? PHOTO_ACCEPT : undefined;
 	const list = await pickFiles({ accept, multiple });
-	return list ? Array.from(list) : null;
+	return list ? Array.from(list).slice(0, limit) : null;
 }
 
 /**
@@ -94,53 +129,53 @@ export async function capturePhoto(): Promise<File | null> {
 	return list?.[0] ?? null;
 }
 
-function isVisualFile(file: File): boolean {
+export function isVisualFile(file: File): boolean {
 	return PHOTO_TYPES.has(file.type);
 }
 
 /**
- * Add `files` to the current draft following Signal's mixing rules: photos
- * append (up to `MAX_STAGED_PHOTOS`, accepting a partial batch), a
- * non-image file can only be staged alone, and nothing can be added once
- * a file is staged. On a rule violation the current draft is returned
- * unchanged alongside the error.
+ * Decide what `files` may add to the current draft following Signal's mixing
+ * rules: photos append (up to `MAX_STAGED_PHOTOS`, accepting a partial
+ * batch), a non-image file can only be staged alone, and nothing can be added
+ * once a file is staged. On a rule violation nothing is added.
  */
-export function ingestFiles(
+export function planStaging(
 	current: DraftMedia | undefined,
 	files: File[],
-): IngestResult {
-	if (files.length === 0) return { media: current };
+): StagingPlan {
+	if (files.length === 0) return { photos: [] };
 	if (current?.kind === 'file') {
-		return { media: current, error: 'oneFileAtATime' };
+		return { photos: [], error: 'oneFileAtATime' };
 	}
 	const visual = files.filter(isVisualFile);
 	const nonVisual = files.filter(f => !isVisualFile(f));
 	if (nonVisual.length > 0) {
 		if (current || visual.length > 0) {
-			return { media: current, error: 'filesWithPhotos' };
+			return { photos: [], error: 'filesWithPhotos' };
 		}
 		if (nonVisual.length > 1) {
-			return { media: current, error: 'oneFileAtATime' };
+			return { photos: [], error: 'oneFileAtATime' };
 		}
-		return { media: { kind: 'file', file: nonVisual[0] } };
+		return { photos: [], file: nonVisual[0] };
 	}
-	const existing = current?.kind === 'photos' ? current.items : [];
-	const room = MAX_STAGED_PHOTOS - existing.length;
-	if (room <= 0) return { media: current, error: 'tooMany' };
-	const accepted = visual.slice(0, room);
-	const items = [...existing, ...accepted];
+	const staged = current?.kind === 'photos' ? current.items.length : 0;
+	const room = MAX_STAGED_PHOTOS - staged;
+	if (room <= 0) return { photos: [], error: 'tooMany' };
 	return {
-		media: { kind: 'photos', items },
+		photos: visual.slice(0, room),
 		error: visual.length > room ? 'tooMany' : undefined,
 	};
 }
 
 /**
- * Convert composer-side draft to the wire-format `Media` for sending.
- * Compresses images first, then enforces a total-size cap; throws
- * `AttachmentTooLargeError` if the post-compression payload still exceeds it.
+ * Convert composer-side draft to the wire-format `Media` for sending,
+ * enforcing a total-size cap; throws `AttachmentTooLargeError` if the payload
+ * exceeds it.
  */
 export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
+	if (draft.kind === 'file' && draft.file.size > MAX_MESSAGE_BYTES) {
+		throw new AttachmentTooLargeError(draft.file.size);
+	}
 	const media = await buildMedia(draft);
 	const total = totalMediaBytes(media);
 	if (total > MAX_MESSAGE_BYTES) {
@@ -149,19 +184,48 @@ export async function draftToMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	return media;
 }
 
+/** Compress and measure a picked photo. Rejects with `UnreadableFileError`
+ * when it can't be read and `UndecodablePhotoError` when it can't be decoded. */
+export async function prepareOutgoingPhoto(file: File): Promise<OutgoingPhoto> {
+	const compressed = await compressImage(await inMemoryCopy(file));
+	const { width, height } = await imageDimensions(compressed);
+	return {
+		data: new Uint8Array(await compressed.arrayBuffer()),
+		name: compressed.name,
+		mime_type: compressed.type || 'application/octet-stream',
+		width,
+		height,
+	};
+}
+
+/** Rejects with `UnreadableFileError` when `file` can't be read. */
+// A picked file is a reference its provider can withdraw between reads (seen
+// on Android), so it is read once and used from that copy.
+export async function inMemoryCopy(file: File): Promise<File> {
+	try {
+		return new File([await file.arrayBuffer()], file.name, {
+			type: file.type,
+		});
+	} catch (e) {
+		if (e instanceof DOMException) throw new UnreadableFileError();
+		throw e;
+	}
+}
+
 async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 	if (draft.kind === 'photos') {
-		const photos: OutgoingPhoto[] = await Promise.all(
-			draft.items.map(async file => {
-				const compressed = await compressImage(file);
-				return {
-					data: new Uint8Array(await compressed.arrayBuffer()),
-					name: compressed.name,
-					mime_type: compressed.type || 'application/octet-stream',
-				};
-			}),
-		);
-		return { kind: 'photos', photos };
+		return { kind: 'photos', photos: draft.items };
+	}
+	if (draft.kind === 'voice_note') {
+		return {
+			kind: 'voice_note',
+			voice_note: {
+				data: draft.voice.bytes,
+				mime_type: draft.voice.mimeType,
+				duration_ms: draft.voice.durationMs,
+				waveform: draft.voice.waveform,
+			},
+		};
 	}
 	const file: OutgoingFile = {
 		data: new Uint8Array(await draft.file.arrayBuffer()),
@@ -169,6 +233,39 @@ async function buildMedia(draft: DraftMedia): Promise<OutgoingMedia> {
 		mime_type: draft.file.type || 'application/octet-stream',
 	};
 	return { kind: 'file', file };
+}
+
+async function imageDimensions(
+	file: File,
+): Promise<{ width: number; height: number }> {
+	try {
+		const bitmap = await createImageBitmap(file);
+		const dimensions = { width: bitmap.width, height: bitmap.height };
+		bitmap.close();
+		return dimensions;
+	} catch {
+		// The Android webview's createImageBitmap rejects encodings the <img>
+		// decoder reads fine — greyscale+alpha PNGs, for one. An image neither
+		// can decode is one the recipient could not render either, so let that
+		// throw rather than send a photo with no measurable size.
+		return await imgDimensions(file);
+	}
+}
+
+function imgDimensions(file: File): Promise<{ width: number; height: number }> {
+	const url = URL.createObjectURL(file);
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve({ width: img.naturalWidth, height: img.naturalHeight });
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			reject(new UndecodablePhotoError());
+		};
+		img.src = url;
+	});
 }
 
 function totalMediaBytes(media: OutgoingMedia): number {
@@ -179,6 +276,26 @@ function totalMediaBytes(media: OutgoingMedia): number {
 		return media.voice_note.data.byteLength;
 	}
 	return media.file.data.byteLength;
+}
+
+/**
+ * Display box for a lone photo in the message timeline, from its
+ * sender-measured pixel dimensions: natural width clamped to 200–300px,
+ * height derived from the aspect ratio and clamped to 50–450px (the image
+ * covers the box, cropping when the height clamp bites). Mirrors
+ * Signal-Desktop's `getImageDimensionsForTimeline`.
+ */
+export function timelineImageBox(photo: PhotoAttachment): {
+	width: number;
+	height: number;
+} {
+	if (photo.width <= 0 || photo.height <= 0) return { width: 200, height: 50 };
+	const width = Math.max(Math.min(300, photo.width), 200);
+	const height = Math.max(
+		Math.min(450, Math.round((width * photo.height) / photo.width)),
+		50,
+	);
+	return { width, height };
 }
 
 /** Uppercase extension for a filename, max 4 chars; '' when there is none. */
@@ -248,6 +365,12 @@ async function saveToDisk(
  * bytes from. The handler reads the blob from the node's local store. */
 export function blobUrl(hash: Hash): string {
 	return convertFileSrc(hash, 'irohblob');
+}
+
+/** Like `blobUrl`, but asks the handler to decode the Ogg/Opus voice note to
+ * WAV so a webview `<audio>` element can play it natively. */
+export function voiceAudioUrl(hash: Hash): string {
+	return `${blobUrl(hash)}?decode=wav`;
 }
 
 /**

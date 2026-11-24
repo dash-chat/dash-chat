@@ -17,19 +17,11 @@
 		alt: string;
 		/** Forwarded to the inner <img> (e.g. object-fit / sizing classes). */
 		imgClass?: string;
-		/** Forwarded to the inner <img> (e.g. zoom transform-origin). */
-		imgStyle?: string;
 		/** Defer loading until near the viewport (grid cells); the lightbox loads eagerly. */
 		lazy?: boolean;
 	}
 
-	let {
-		item,
-		alt,
-		imgClass = '',
-		imgStyle = '',
-		lazy = false,
-	}: Props = $props();
+	let { item, alt, imgClass = '', lazy = false }: Props = $props();
 
 	// Load status is this element's own — each <img> fetches independently, so a
 	// failure here never blanks another surface of the same blob. Only the
@@ -90,7 +82,6 @@
 {#if status === 'error'}
 	<span
 		class="absolute inset-0 flex cursor-pointer items-center justify-center border-none p-0 text-black/50 dark:text-white/60 {imgClass}"
-		style={imgStyle}
 		title={m.imageLoadFailedRetry()}
 		data-testid="blob-image-retry"
 	>
@@ -103,7 +94,6 @@
 		{src}
 		{alt}
 		class={imgClass}
-		style={imgStyle}
 		loading={lazy ? 'lazy' : 'eager'}
 		data-testid="blob-image"
 		onload={() => (status = 'loaded')}

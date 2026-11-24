@@ -40,7 +40,7 @@ describe('Compat setup — create data with old version', () => {
 	});
 
 	it('exchanges contact codes between agents', async () => {
-		await exchangeContacts(agent1, agent2);
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('sends a message from Alice to Bob', async () => {

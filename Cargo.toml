@@ -1,6 +1,7 @@
 [profile.release]
 opt-level = 3
-panic = "abort"
+# Why not "abort": see crates/panic-policy/src/lib.rs.
+panic = "unwind"
 lto = "fat"
 codegen-units = 1
 # inherits = "release"
@@ -16,63 +17,106 @@ anyhow = "1"
 async-trait = "0.1"
 bytes = "1.11"
 ciborium = "0.2.2"
+dashmap = "6"
 ed25519-dalek = "2.2"
 derive_more = { version = "2.1.1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "2.0"
 tracing = "0.1"
 
 dashchat-compat = { path = "crates/dashchat-compat" }
 dashchat-utils = { path = "crates/dashchat-utils" }
+sqlite-gate = { path = "crates/sqlite-gate" }
+panic-policy = { path = "crates/panic-policy" }
+network-watch = { path = "crates/network-watch" }
+netwatch-http-client = { path = "crates/netwatch-http-client" }
 mailbox-client = { path = "crates/mailbox-client" }
+mailboxes-manager = { path = "crates/mailboxes-manager" }
+opus-transcode = { path = "crates/opus-transcode" }
 tauri-plugin-sentry-reporting = { path = "crates/tauri-plugin-sentry-reporting" }
 mailbox-server = { path = "crates/mailbox-server" }
 mailbox-local-server = { path = "crates/mailbox-local-server" }
+local-hub-discovery = { path = "crates/local-hub-discovery" }
+lan-multicast-probe = { path = "crates/lan-multicast-probe" }
 reporting = { path = "crates/reporting" }
 
-p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
-  "processor",
+# p2panda 0.7.1 with the offline-node backport and the groups extension API,
+# merged with `dashchat-named-stream-cursors`, which adds:
+# - SQLite transactions begin with BEGIN IMMEDIATE, so the app and the iOS push
+#   extension sharing one database file stop refusing each other's writes with
+#   "database is locked".
+# - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
+# On top, the `dashchat-071-lan-priority` sync patches: nodes found over mDNS
+# are discovered right away, and sync forgets ended sessions, skips duplicate
+# ones, backs off from nodes whose sessions keep failing, lets go of a session
+# once its protocol finishes, and starts and ends sync only on a topic's own
+# neighbour changes. It also moves p2panda-net to iroh-gossip 0.102.
+# The `dashchat-071` branch holds all of it, plus: a group change the orderer
+# held back for a missing dependency keeps its groups args when it is released,
+# so it gets applied.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0", features = [
+  "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0", features = [
   "sqlite",
 ] }
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat", features = [
-  "test_utils",
-] }
+# Do NOT enable `test_utils` here: it chains through p2panda-auth to
+# p2panda-core, whose `test_utils` swaps `Timestamp::now()` for a frozen
+# mock_instant clock — in normal builds, not just tests. Every operation then
+# carries the same timestamp and timestamp-ordered validation (replies, edits,
+# deletes) collapses.
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
 
 # iroh imports must match p2panda iroh dep version
-iroh = { version = "1.0.0", default-features = false, features = [
+iroh = { version = "1.4.1", default-features = false, features = [
   "tls-ring",
 ] }
-iroh-blobs = "0.103.0"
+iroh-blobs = "0.104.0"
+iroh-relay = "1.4.1"
 
 [patch.crates-io]
-iroh-blobs = { git = "https://github.com/maackle/iroh-blobs", branch = "main" }
-# Fork of iroh 1.0.3 (dash-chat/iroh) with the iroh#4390 fix
-iroh = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
-iroh-base = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
-iroh-dns = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
-iroh-relay = { git = "https://github.com/dash-chat/iroh", rev = "f8c4b70268f37dcba44a008303372517cb4511d2" }
+# tao 0.37.1 + tauri-apps/tao#1376: forwards the URL that cold-launches the iOS
+# app, which tao drops on the scene lifecycle (dash-chat/tao branch dashchat)
+tao = { git = "https://github.com/dash-chat/tao", rev = "69ae7dba9271dc05e5746e2e7fff8997bd5c77b9" }
+# tauri-plugin-sharekit 0.4.0-rc.8 + presenting the iOS share sheet from its own
+# window on iPhone: iOS 26 lays the sheet out broken when tao's window presents
+# it (dash-chat/tauri-plugin-sharekit branch dashchat)
+tauri-plugin-sharekit = { git = "https://github.com/dash-chat/tauri-plugin-sharekit", rev = "c382e55b6a033f8b62b814dab74758c7f5cacb0c" }
 # tauri-plugin-background-service depends on tauri-plugin-notification from
 # crates-io; redirect it to the fork rev so it doesn't clash with our direct
 # fork dep on the `links = "tauri-plugin-notification"` native-library key.
-tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "a0547306130d83a8c0afad96d5fce79d1a056f14" }
+tauri-plugin-notification = { git = "https://github.com/guillemcordoba/plugins-workspace", rev = "c31c614fa0dc9cf2f9df205de841ff180fe450c1" }
+# ndk-context 0.1.1 + rust-mobile/ndk-context PRs #6 and #8 (RwLock-held context,
+# try_* functions) + a second initialize_android_context keeping the first context
+# instead of panicking (dash-chat/ndk-context branch dashchat). android_init.rs
+# installs the context from JNI_OnLoad and tao 0.37 installs it again when the
+# activity is created.
+ndk-context = { git = "https://github.com/dash-chat/ndk-context", rev = "4ed51f9e864f4b380fb4a495637543a785a9d115" }
+# swarm-discovery 0.6.4 + a guardian that rebinds a receiver's socket when it
+# fails instead of stopping discovery for good: iOS tears down every socket of
+# a suspended app once the phone may idle-sleep. Used by iroh's mDNS lookup and
+# local-hub-discovery (dash-chat/swarm-discovery branch
+# dashchat-rebind-defunct-sockets).
+swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "b6cbbc61445132fbc326ec4b9181576fdd884843" }
 
 # Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
 # slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
 # task can't poison the store and abort the process. See the iOS push-extension /
 # shared-DB crash investigation.
 # [patch."https://github.com/p2panda/p2panda"]
-# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
-# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat" }
+# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }

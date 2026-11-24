@@ -23,17 +23,26 @@ pub fn handle<R: Runtime>(
     } else {
         path.to_string()
     };
+    // Voice notes are stored as Ogg/Opus, which some webviews can't play in
+    // `<audio>`; `?decode=wav` asks us to decode them to WAV on the way out.
+    let wants_wav = uri
+        .query()
+        .map(|q| q.contains("decode=wav"))
+        .unwrap_or(false);
 
     tauri::async_runtime::spawn(async move {
         let response = match load(&app, &hash).await {
-            Ok(bytes) => tauri::http::Response::builder()
-                .status(tauri::http::StatusCode::OK)
-                // The webview's `fetch()` (save path) reads these cross-origin.
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Cache-Control", "public, max-age=31536000, immutable")
-                .header("Content-Type", sniff_content_type(&bytes))
-                .body(bytes)
-                .expect("valid response"),
+            Ok(bytes) => {
+                let (bytes, content_type) = maybe_decode_to_wav(bytes, wants_wav).await;
+                tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::OK)
+                    // The webview's `fetch()` (save path) reads these cross-origin.
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Cache-Control", "public, max-age=31536000, immutable")
+                    .header("Content-Type", content_type)
+                    .body(bytes)
+                    .expect("valid response")
+            }
             Err(err) => {
                 log::error!("failed to load blob {hash:?}: {err:?}");
                 tauri::http::Response::builder()
@@ -46,6 +55,28 @@ pub fn handle<R: Runtime>(
         };
         responder.respond(response);
     });
+}
+
+/// Decode an Ogg/Opus blob to WAV when the caller asked for it, so `<audio>`
+/// can play it. Falls back to the original bytes if decoding fails or the blob
+/// isn't Opus.
+async fn maybe_decode_to_wav(bytes: Vec<u8>, wants_wav: bool) -> (Vec<u8>, &'static str) {
+    if wants_wav && bytes.starts_with(b"OggS") {
+        // Decoding a long note is CPU-bound; keep it off the async runtime workers.
+        let (result, bytes) = tokio::task::spawn_blocking(move || {
+            (opus_transcode::decode_opus_to_wav(&bytes), bytes)
+        })
+        .await
+        .expect("decode task not to panic");
+        match result {
+            Ok(wav) => return (wav, "audio/wav"),
+            Err(err) => log::error!("failed to decode voice note to WAV: {err:?}"),
+        }
+        let content_type = sniff_content_type(&bytes);
+        return (bytes, content_type);
+    }
+    let content_type = sniff_content_type(&bytes);
+    (bytes, content_type)
 }
 
 /// Best-effort MIME type from a blob’s magic bytes, falling back to a generic
@@ -70,13 +101,31 @@ fn sniff_content_type(bytes: &[u8]) -> &'static str {
     "application/octet-stream"
 }
 
+/// How long a blob request waits for a node that is not up yet (startup) or is
+/// being rebuilt (iOS resume). Commands get this from the frontend's
+/// `invokeAfterSetup` retries; an `<img>` cannot retry, and a failed one shows
+/// its reload placeholder until the user taps it, so the wait happens here.
+const NODE_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const NODE_READY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
 async fn load<R: Runtime>(app: &tauri::AppHandle<R>, hash: &str) -> anyhow::Result<Vec<u8>> {
-    let node = app
-        .try_state::<AppNodeManager>()
-        .ok_or_else(|| anyhow::anyhow!("node not yet initialized"))?
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let node = wait_for_node(app).await?;
     node.load_blob(hash, Some(std::time::Duration::from_secs(30)))
         .await
+}
+
+async fn wait_for_node<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> anyhow::Result<dashchat_node::Node> {
+    let deadline = std::time::Instant::now() + NODE_READY_TIMEOUT;
+    loop {
+        let node = match app.try_state::<AppNodeManager>() {
+            Some(manager) => manager.get().await.map_err(|e| anyhow::anyhow!(e)),
+            None => Err(anyhow::anyhow!("node not yet initialized")),
+        };
+        if node.is_ok() || std::time::Instant::now() >= deadline {
+            return node;
+        }
+        tokio::time::sleep(NODE_READY_POLL).await;
+    }
 }

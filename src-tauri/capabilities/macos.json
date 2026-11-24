@@ -1,0 +1,11 @@
+{
+	"identifier": "macos-capability",
+	"platforms": ["macOS"],
+	"windows": ["main"],
+	"permissions": [
+		{
+			"identifier": "opener:allow-open-url",
+			"allow": [{ "url": "x-apple.systempreferences:*" }]
+		}
+	]
+}

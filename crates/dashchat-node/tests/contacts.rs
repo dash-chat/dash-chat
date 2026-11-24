@@ -150,7 +150,7 @@ async fn test_reject_multiple_contact_requests() {
 }
 
 /// Two-way inbox flow: when the scanner sends a contact request, the inbox
-/// owner replies over the same inbox with a `ContactRequestAck` carrying its
+/// owner replies over the same inbox with a `ContactRequestAccept` carrying its
 /// profile, and the scanner receives it on the inbox it scanned.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_inbox_two_way_flow() {
@@ -200,7 +200,7 @@ async fn test_inbox_two_way_flow() {
         .lock()
         .await
         .watch_mapped(Duration::from_secs(30), |n: &Notification| {
-            let Some(Payload::Inbox(InboxPayload::ContactRequestAck { profile, .. })) =
+            let Some(Payload::Inbox(InboxPayload::ContactRequestAccept { profile, .. })) =
                 n.op()?.payload.as_ref()
             else {
                 return None;
@@ -208,7 +208,7 @@ async fn test_inbox_two_way_flow() {
             Some(profile.clone())
         })
         .await
-        .expect("Bobbi should receive Alice's contact request ack");
+        .expect("Bobbi should receive Alice's contact request acceptance");
 
     assert_eq!(acked_profile.name, "alice");
 }
@@ -224,4 +224,83 @@ async fn test_cannot_add_self_as_contact() {
     let result = alice.add_contact(qr).await;
 
     assert!(matches!(result, Err(AddContactError::CannotAddSelf)));
+}
+
+/// Every code we scan is recorded as an outgoing request to its owner, with
+/// the name it carries; being scanned records none.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_outgoing_contact_request() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+    let carol = TestNode::new(NodeConfig::testing(), "carol").await;
+
+    let alice_qr = alice.create_add_contact_qr_code().await.unwrap();
+    let carol_qr = carol.create_add_contact_qr_code().await.unwrap();
+    let alice_name = alice_qr.profile_name.clone();
+    let carol_name = carol_qr.profile_name.clone();
+    bobbi.add_contact(alice_qr).await.unwrap();
+    bobbi.add_contact(carol_qr).await.unwrap();
+
+    let to_alice = bobbi
+        .outgoing_contact_request(alice.device_id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (to_alice.device_pubkey, to_alice.profile_name),
+        (alice.device_id(), alice_name)
+    );
+    let to_carol = bobbi
+        .outgoing_contact_request(carol.device_id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (to_carol.device_pubkey, to_carol.profile_name),
+        (carol.device_id(), carol_name)
+    );
+    assert_eq!(
+        alice
+            .outgoing_contact_request(bobbi.device_id())
+            .await
+            .unwrap(),
+        None
+    );
+}
+
+/// Adding the same contact a second time returns AlreadyRequested.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_duplicate_contact_request_is_idempotent() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let alice = TestNode::new(NodeConfig::testing(), "alice").await;
+    let bobbi = TestNode::new(NodeConfig::testing(), "bobbi").await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+
+    let first = bobbi.add_contact(qr.clone()).await.unwrap();
+    let second = bobbi.add_contact(qr).await.unwrap();
+
+    assert!(
+        matches!(first, AddContactResult::NewRequest(_)),
+        "first request should be NewRequest, got {:?}",
+        first
+    );
+    assert!(
+        matches!(second, AddContactResult::AlreadyRequested(_)),
+        "second request should be AlreadyRequested, got {:?}",
+        second
+    );
+
+    let first_chat_id = match first {
+        AddContactResult::NewRequest(chat_id) => chat_id,
+        _ => unreachable!(),
+    };
+    let second_chat_id = match second {
+        AddContactResult::AlreadyRequested(chat_id) => chat_id,
+        _ => unreachable!(),
+    };
+    assert_eq!(first_chat_id, second_chat_id);
 }

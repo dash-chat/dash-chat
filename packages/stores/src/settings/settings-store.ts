@@ -4,6 +4,7 @@ import {
 	reactive,
 	relay,
 } from 'signalium';
+import { subscribe } from 'tauri-plugin-subscriptions';
 
 import type {
 	ColorScheme,
@@ -46,9 +47,21 @@ export class SettingsStore {
 		return settings.local_mailbox_enabled;
 	});
 
+	localHubBlocked: ReactiveFn<ReactivePromise<boolean>, []> = reactive(
+		async () => {
+			if (!(await this.localMailboxEnabled())) return false;
+			return await subscribe<boolean>('subscribe_to_lan_multicast_blocked');
+		},
+	);
+
 	notificationsEnabled = reactive(async () => {
 		const settings = await this.settings();
 		return settings.notifications_enabled;
+	});
+
+	backgroundModeEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.background_mode_enabled;
 	});
 
 	developerModeEnabled = reactive(async () => {
@@ -62,6 +75,10 @@ export class SettingsStore {
 
 	async setQrColor(color: string): Promise<void> {
 		await this.client.setSetting('qr_color', color);
+	}
+
+	async setBackgroundModeEnabled(enabled: boolean): Promise<void> {
+		await this.client.setBackgroundModeEnabled(enabled);
 	}
 
 	async setLocalMailboxEnabled(enabled: boolean): Promise<void> {

@@ -1,6 +1,13 @@
 @import 'tailwindcss';
 /* import Konsta UI theme */
 @import 'konsta/svelte/theme.css';
+/* Konsta's Material theme font, bundled so it renders offline */
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/400-italic.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/500-italic.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto/700-italic.css';
 
 @theme {
 	--color-brand-primary: #6e7bff;
@@ -8,7 +15,9 @@
 	--color-brand-green: #00ff00;
 
 	--color-desktop-sidebar-bg: #f5f4f7;
+	--color-desktop-nav-strip-active-bg: #e6e6e6;
 	--color-desktop-main-bg: #ffffff;
+	--color-incoming-surface: #e7ebf3;
 	--color-page-surface: var(--color-md-light-surface);
 	--background-color: var(--color-md-light-surface);
 
@@ -19,12 +28,22 @@
 :root.dark {
 	--background-color: var(--color-md-dark-surface);
 	--color-desktop-sidebar-bg: var(--color-md-dark-surface-2);
+	--color-desktop-nav-strip-active-bg: #313131;
 	--color-desktop-main-bg: var(--color-md-dark-surface);
 	--color-page-surface: var(--color-md-dark-surface);
 }
 
+.dark {
+	--color-incoming-surface: #303133;
+}
+
 .k-ios {
 	--color-page-surface: var(--color-ios-light-surface);
+}
+
+/* Grey bubbles blend into iOS's grey page surface. */
+:root:not(.dark):not(.wide-layout) .k-ios {
+	--color-incoming-surface: #fff;
 }
 
 :root.dark .k-ios {
@@ -37,6 +56,23 @@
 
 :root.wide-layout .k-ios {
 	--color-page-surface: var(--color-desktop-main-bg);
+}
+
+/* Messages scroll under the iOS composer to the screen's edge, as in Signal. */
+.k-ios .chat-page {
+	bottom: calc(-1 * var(--k-safe-area-bottom));
+}
+
+/* Messages fade out under the iOS composer, as chats do under the tab bar. */
+.k-ios .chat-bottom-bar::before {
+	content: '';
+	position: absolute;
+	inset-inline: 0;
+	bottom: 0;
+	height: calc(100% + 16px);
+	background: linear-gradient(to top, var(--color-page-surface), transparent);
+	pointer-events: none;
+	z-index: -1;
 }
 
 .wide-layout {
@@ -52,6 +88,31 @@ html {
 body {
 	display: flex;
 	background-color: transparent !important;
+}
+
+/* This is an app shell, not a document. iOS answers a long press on anything
+   selectable with its selection loupe and callout menu, which fights our own
+   press-and-hold gestures — holding the mic and sliding away would start
+   selecting whatever the finger landed on. Text fields opt back in below. */
+html {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+input,
+textarea {
+	-webkit-touch-callout: default;
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+/* WebAwesome's native styles give fields a transitioning focus outline, but
+   Konsta only hides it while focused, so it flashes blue on blur. */
+input,
+textarea,
+select {
+	outline: none;
 }
 
 .column {
@@ -76,8 +137,12 @@ body {
 	}
 }
 
+/* WebAwesome's canvas floors the host at 1.25em × 1em, which overrides the
+   smaller width/height components give their icons. */
 wa-icon {
 	font-size: 24px;
+	min-width: 0;
+	min-height: 0;
 }
 
 wa-icon[slot='start'] {
@@ -141,10 +206,6 @@ wa-icon[slot='end'] {
 	--sender-color-11: #98a8b8;
 }
 
-.dark-quiet {
-	color: var(--wa-color-neutral-80);
-}
-
 li > label {
 	width: 100%;
 }
@@ -161,7 +222,7 @@ li.plain span {
 }
 
 .qr-card > div {
-	/* Padding for the copy button below the QR code in add-contact */
+	/* Padding for the label below the QR code in add-contact */
 	padding-bottom: 8px;
 }
 .k-card.no-padding > div {
@@ -212,9 +273,13 @@ li.plain span {
 	margin: 0;
 	min-width: 0;
 	overflow-wrap: anywhere;
+	border-radius: 18px;
+	--message-padding-y: 7px;
+	--text-sm--line-height: 1.3125rem;
 }
 .wide-layout .message {
 	font-weight: 500;
+	--text-sm--line-height: 1.25rem;
 }
 
 /* Bubbles I sent hang on the end side, incoming ones on the start side. Both
@@ -232,6 +297,9 @@ li.plain span {
 .outgoing-message.last-message {
 	border-start-end-radius: 4px;
 }
+.incoming-message:not(.quiet) {
+	background-color: var(--color-incoming-surface);
+}
 .incoming-message.first-message {
 	border-end-start-radius: 4px;
 }
@@ -241,15 +309,6 @@ li.plain span {
 }
 .incoming-message.last-message {
 	border-start-start-radius: 4px;
-}
-
-/* A message still waiting to reach the cloud mailbox while we are offline. */
-.offline-message {
-	border: 3px dashed rgb(255, 182, 193);
-	background-clip: padding-box;
-}
-.offline-message > div {
-	padding: calc(0.5rem - 2px) !important;
 }
 
 .icon-only-card {

@@ -206,7 +206,6 @@ for REF in "${REFS[@]}"; do
 
     echo "--- Phase 1: Creating data with $REF_LABEL ---"
     chmod +x "$REF_BINARY_DIR/dash-chat"
-    chmod +x "$E2E_DIR/compat/scripts/"*.sh
 
     PHASE1_OK=true
     COMPAT_BINARY="$REF_BINARY_DIR/dash-chat" \

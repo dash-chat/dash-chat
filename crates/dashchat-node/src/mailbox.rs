@@ -3,14 +3,15 @@ use p2panda::operation::{Header, Operation};
 use p2panda_core::Body;
 use serde::{Deserialize, Serialize};
 
-use crate::{AsBody, DeviceId, TopicId};
+use crate::{AsBody, DeviceId, SeqNum, TopicId};
 use mailbox_client::MailboxItem;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct MailboxOperation {
-    // @TODO: topic is only represented on an operation in it's hashed form. We can't derive it
+    // @TODO: topic is only represented on an operation in its hashed form. We can't derive it
     // from the header so we add it here as an own field on mailbox operation.
     pub topic: TopicId,
+    #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub body: Option<Body>,
 }
@@ -28,7 +29,7 @@ impl MailboxItem for MailboxOperation {
         self.header.verifying_key.into()
     }
 
-    fn seq_num(&self) -> u64 {
+    fn seq_num(&self) -> SeqNum {
         self.header.seq_num
     }
 
@@ -112,25 +113,12 @@ mod tests {
     use mailbox_client::MailboxItem as _;
 
     fn make_header(topic: TopicId) -> p2panda::operation::Header {
-        use p2panda::operation::{Extensions, LogId};
-        use p2panda_core::PruneFlag;
+        use p2panda::operation::{Extensions, Header, LogId};
         let signing_key = p2panda::SigningKey::from_bytes(&[0u8; 32]);
-        p2panda::operation::Header {
-            version: 1,
-            verifying_key: signing_key.verifying_key(),
-            signature: None,
-            payload_size: 0,
-            payload_hash: None,
-            timestamp: p2panda_core::Timestamp::new(0),
-            seq_num: 0,
-            backlink: None,
-            extensions: Extensions {
-                log_id: LogId::from_topic(topic),
-                prune_flag: PruneFlag::default(),
-                groups_args: None,
-                version: 1,
-            },
-        }
+        Header::builder().build(
+            &signing_key,
+            Extensions::builder(LogId::from_topic(topic)).build(),
+        )
     }
 
     #[test]
@@ -144,9 +132,12 @@ mod tests {
                 name: "photo.jpg".into(),
                 mime_type: "image/jpeg".into(),
                 size: 1024,
+                width: 640,
+                height: 480,
                 hash: media_hash,
             }]),
             None,
+            0,
         );
         let payload = Payload::Chat(ChatPayload::Message(content));
         let body = payload.try_into_body().unwrap();
@@ -182,6 +173,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=debug",
+                "mailboxes_manager=debug",
                 "p2panda_stream=warn",
                 "p2panda_auth=warn",
                 "p2panda_spaces=warn",
@@ -198,7 +190,7 @@ mod tests {
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-        let chat = alice.direct_chat_topic(bobbi.agent_id());
+        let chat = alice.direct_chat_with(&bobbi);
         alice.register_topic(chat).await.unwrap();
 
         alice.send_message_raw(chat, "Hello".into()).await.unwrap();
@@ -221,6 +213,39 @@ mod tests {
         .unwrap();
     }
 
+    /// A node may publish into a topic before registering it — the startup
+    /// message-ack writer races topic initialization this way — and the topic
+    /// must still sync from the mailbox once registered.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn topic_published_before_registration_syncs_from_mailbox() {
+        let mb = TestMailbox::from_env();
+        let config = NodeConfig::testing().no_p2p();
+        let poll = PollConfig::default();
+
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config.clone(), "bobbi").await;
+        alice.add_mailbox(&mb).await;
+        bobbi.add_mailbox(&mb).await;
+
+        let chat = alice.direct_chat_with(&bobbi);
+        bobbi.send_message_raw(chat, "Early".into()).await.unwrap();
+        bobbi.register_topic(chat).await.unwrap();
+
+        alice.register_topic(chat).await.unwrap();
+        alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+
+        poll.wait_for(|| async {
+            let messages = bobbi.get_messages(chat).await.unwrap();
+            if messages.iter().any(|m| m.content.message() == "Hello") {
+                Ok(())
+            } else {
+                Err("alice's message has not reached bobbi through the mailbox")
+            }
+        })
+        .await
+        .unwrap();
+    }
+
     /// After a successful sync round, both nodes should record a sync
     /// watermark indicating the mailbox holds at least the sent operation.
     #[tokio::test(flavor = "multi_thread")]
@@ -229,6 +254,7 @@ mod tests {
             &[
                 "dashchat=info",
                 "mailbox_client=info",
+                "mailboxes_manager=info",
                 "p2panda_stream=warn",
             ],
             true,
@@ -241,7 +267,7 @@ mod tests {
         let alice = TestNode::new(config.clone(), "alice").await;
         let bobbi = TestNode::new(config.clone(), "bobbi").await;
 
-        let chat_id = alice.direct_chat_topic(bobbi.agent_id());
+        let chat_id = alice.direct_chat_with(&bobbi);
         alice.register_topic(chat_id).await.unwrap();
 
         alice.add_mailbox(&mb).await;
@@ -269,13 +295,13 @@ mod tests {
         // The mailbox should have recorded alice's seq 0 from both sides.
         let alice_sync = alice
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("alice sync state missing");
         let bobbi_sync = bobbi
             .mailboxes
-            .sync_tracker()
+            .operation_tracker()
             .sync_state(&mailbox_id)
             .await
             .expect("bobbi sync state missing");

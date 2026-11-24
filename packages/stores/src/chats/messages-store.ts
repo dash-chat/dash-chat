@@ -1,13 +1,16 @@
-import { type ReactiveFn, reactive } from 'signalium';
+import { ReactivePromise, reactive } from 'signalium';
 
+import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
 import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { DeviceId, Hash } from '../p2panda/types';
+import { AgentId, DeviceId, Hash } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
 	ChatReaction,
+	MessageDeliveryStatus,
 	MessageDisplay,
 	MessageVersion,
 	OutgoingMedia,
@@ -17,7 +20,9 @@ import {
 	isMessage,
 	mediaBundleToAttachment,
 } from '../types';
+import { orderEventsAscending } from '../utils/group-events-in-days';
 import { type IMessagesClient } from './messages-client';
+import { dropOpsAuthoredWhileNotAMember } from './op-visibility';
 import { type MessageReply } from './replies';
 
 /** The window during which a message may be edited, measured from the original
@@ -38,14 +43,20 @@ export interface Message {
 	 * `'deleted-for-everyone'` once deleted. */
 	content: MessageDisplay;
 	timestamp: number;
+	/** See `MessageContentV1.lamport`; `0` when the payload carries none or is
+	 * gone (tombstoned). */
+	lamport: number;
 	author: DeviceId;
 	seqNum: number;
 	replyQuote?: MessageReply;
+	/** Set only on the viewer's own messages */
+	deliveryStatus?: MessageDeliveryStatus;
 }
 
 export type Bodyless = {
 	hash: string;
 	timestamp: number;
+	lamport: number;
 	author: DeviceId;
 	seqNum: number;
 };
@@ -57,39 +68,154 @@ export class MessagesStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
-		/** Resolves to '' while a pending direct chat has no topic yet. */
-		public chatId: ReactiveFn<Promise<ChatId>, []>,
+		protected messageAckStore: MessageAckStore,
+		public chatId: ChatId,
 		public client: IMessagesClient,
+		public readOnly: () => ReactivePromise<boolean>,
 	) {}
 
-	messages = reactive(async () => {
-		const chatId = await this.chatId();
-		if (chatId === '') return {} as Record<Hash, Message>;
-		const logs = await this.logsStore.logsForAllAuthors(chatId);
-
-		const opsOrdered = Object.values(logs)
+	opsByTimestamp = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		return Object.values(logs)
 			.flat()
 			.sort(
 				(a, b) =>
 					a.header.timestamp - b.header.timestamp ||
 					a.hash.localeCompare(b.hash),
 			);
-		const tombstones = await this.tombstoneStore.tombstones(chatId);
-		const messages = logsToMessages(opsOrdered, tombstones);
+	});
+
+	opsAuthoredWhileAMember = reactive(async () =>
+		dropOpsAuthoredWhileNotAMember(
+			await this.opsByTimestamp(),
+			await this.contactsStore.myDeviceId(),
+		),
+	);
+
+	/** The chat's visible ops, each after the ops it references. Reactions sit at
+	 * the end, so this is an order to apply them in, not to display them in. */
+	causalOps = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		return opsInCausalOrder(
+			await this.dropOpsAuthoredWhileBlocked(
+				await this.opsAuthoredWhileAMember(),
+				deviceAgents,
+			),
+		);
+	});
+
+	messages = reactive(async () => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const causalOps = await this.causalOps();
+		const tombstones = await this.tombstoneStore.tombstones(this.chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const deviceNames = await this.deviceNames();
+		const myDeviceId = await this.contactsStore.myDeviceId();
+		const messages = logsToMessages(
+			causalOps,
+			tombstones,
+			deviceAgents,
+			deviceNames,
+		);
+		for (const message of Object.values(messages)) {
+			if (message.author !== myDeviceId) continue;
+			message.deliveryStatus = await this.messageAckStore.deliveryStatus(
+				this.chatId,
+				message.author,
+				message.seqNum,
+			);
+		}
 		return messages;
 	});
 
-	lastMessage = reactive(async () => {
-		const messages = await this.messages();
-
-		const sortedMessages = Object.values(messages).sort(
-			(m1, m2) => m2.timestamp - m1.timestamp,
+	/** Drops chat ops authored while their author's agent was blocked. The
+	 * backend rejects these at processing time, but sync still writes them to
+	 * the raw op store, so a cold fetch would otherwise resurface them.
+	 * Group-info updates stay visible, mirroring the backend's blocklist
+	 * allowlist.
+	 *
+	 * TODO: remove once the backend implements proper blocking (dropping the
+	 * rejected op's body from the op store instead of only skipping its
+	 * notification). */
+	private async dropOpsAuthoredWhileBlocked(
+		ops: SimplifiedOperation<Payload>[],
+		deviceAgents: Record<DeviceId, AgentId>,
+	): Promise<SimplifiedOperation<Payload>[]> {
+		const agentIds = Array.from(new Set(Object.values(deviceAgents)));
+		const entries = await Promise.all(
+			agentIds.map(async agentId => {
+				const history = Object.values(
+					await this.contactsStore.blockHistory(agentId),
+				);
+				return [
+					agentId,
+					history.sort((a, b) => a.timestamp - b.timestamp),
+				] as const;
+			}),
 		);
-		return sortedMessages.length > 0 ? sortedMessages[0] : undefined;
+		const histories: Record<AgentId, BlockHistoryEvent[]> = Object.fromEntries(
+			entries.filter(([, history]) => history.length > 0),
+		);
+		if (Object.keys(histories).length === 0) return ops;
+
+		return ops.filter(op => {
+			if (op.body?.type !== 'Chat' || op.body.payload.type === 'GroupInfo')
+				return true;
+			const agentId = deviceAgents[op.header.verifying_key];
+			const history = agentId === undefined ? undefined : histories[agentId];
+			if (history === undefined) return true;
+			return !blockedAt(history, op.header.timestamp);
+		});
+	}
+
+	/** Profile name of each device that has authored in this chat, for the
+	 * devices whose author's profile is known. */
+	deviceNames = reactive(async (): Promise<Record<DeviceId, string>> => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		const profiles = await this.contactsStore.profilesForAgents(
+			new Set(Object.values(deviceAgents)),
+		);
+		const deviceNames: Record<DeviceId, string> = {};
+		for (const [deviceId, agentId] of Object.entries(deviceAgents)) {
+			const profile = profiles[agentId];
+			if (profile) deviceNames[deviceId] = fullName(profile);
+		}
+		return deviceNames;
+	});
+
+	members = reactive(async (): Promise<Array<AgentId>> => {
+		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const deviceAgents = await this.contactsStore.agentsForDevices(
+			new Set(Object.keys(logs)),
+		);
+		return Array.from(new Set(Object.values(deviceAgents)));
+	});
+
+	membersProfiles = reactive(async () => {
+		const members = await this.members();
+		return await this.contactsStore.profilesForAgents(new Set(members));
+	});
+
+	orderedMessages = reactive(async () =>
+		orderEventsAscending(await this.messages()),
+	);
+
+	lastMessage = reactive(async () => {
+		const orderedMessages = await this.orderedMessages();
+		return orderedMessages.length > 0
+			? orderedMessages[orderedMessages.length - 1][1]
+			: undefined;
 	});
 
 	readMessageHashes = reactive(async () => {
-		const chatId = await this.chatId();
 		const myDeviceGroupTopic =
 			await this.contactsStore.devicesStore.myDeviceGroupTopic();
 		const readHashes: Set<Hash> = new Set();
@@ -98,7 +224,7 @@ export class MessagesStore {
 			for (const op of ops) {
 				if (
 					op.body?.payload?.type === 'ReadMessages' &&
-					op.body.payload.payload.chat_id === chatId
+					op.body.payload.payload.chat_id === this.chatId
 				) {
 					for (const hash of op.body.payload.payload.message_hashes) {
 						readHashes.add(hash);
@@ -133,8 +259,6 @@ export class MessagesStore {
 		media: OutgoingMedia | null;
 		replyTo?: Message | null;
 	}): Promise<Hash> {
-		const chatId = await this.chatId();
-
 		// A reply targets the latest known edit of the message, like edits and
 		// deletes do. Same staleness concern as `editMessage`: re-resolve from
 		// the current map rather than the caller's snapshot.
@@ -144,62 +268,113 @@ export class MessagesStore {
 				(await this.messages())[input.replyTo.hash] ?? input.replyTo;
 			reply = currentVersion(fresh).hash;
 		}
-		return this.client.sendMessage(chatId, input.message, input.media, reply);
+		return this.client.sendMessage(
+			this.chatId,
+			input.message,
+			input.media,
+			reply,
+		);
 	}
 
 	async markAsRead(messageHashes: Hash[]): Promise<void> {
-		const chatId = await this.chatId();
-		await this.client.markMessagesRead(chatId, messageHashes);
+		await this.client.markMessagesRead(this.chatId, messageHashes);
 	}
 
 	async sendReaction(reaction: ChatReaction) {
-		const chatId = await this.chatId();
-		await this.client.sendReaction(chatId, reaction);
+		await this.client.sendReaction(this.chatId, reaction);
+	}
+
+	async toggleReaction(message: Message, emoji: string) {
+		if (!hasBody(message.content)) return;
+		const myAgentId = await this.contactsStore.myAgentId();
+		const newEmoji =
+			message.content.reactions[myAgentId] === emoji ? null : emoji;
+		await this.sendReaction({ target: message.hash, emoji: newEmoji });
 	}
 
 	async editMessage(message: Message, newText: string): Promise<Hash> {
-		const chatId = await this.chatId();
-
 		// Callers hold a snapshot captured when editing began; re-resolve so an
 		// edit that arrived mid-compose is chained from, not forked off.
 		const fresh = (await this.messages())[message.hash] ?? message;
 		const current = currentVersion(fresh);
-		return this.client.editMessage(chatId, current.hash, newText);
+		return this.client.editMessage(this.chatId, current.hash, newText);
 	}
 
 	async deleteMessageForEveryone(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
 		// Same staleness concern as `editMessage`: the caller's snapshot may
 		// predate an edit that arrived since.
 		const fresh = (await this.messages())[message.hash] ?? message;
 		const current = currentVersion(fresh);
-		return this.client.deleteMessageForEveryone(chatId, current.hash);
+		return this.client.deleteMessageForEveryone(this.chatId, current.hash);
 	}
 
 	async deleteMessageForMe(message: Message): Promise<Hash> {
-		const chatId = await this.chatId();
 		// The whole message is deleted regardless of which version is shown, so
 		// target the original op; the backend tombstones its edit chain.
-		return this.client.deleteMessageForMe(chatId, message.hash);
+		return this.client.deleteMessageForMe(this.chatId, message.hash);
 	}
 }
 
 // Apply each log item to the set of messages incrementally.
 //
-// `opsOrdered` is the interleaved list of all operations from all authors in the chat topic.
+// `causalOps` is the interleaved list of all operations from all authors in the chat topic.
 // It must be ordered so that any partial ordering constraints are upheld, i.e. items
 // which reference prior items must appear after them.
 //
 // It is also assumed that all operations are valid.
-function logsToMessages(
-	opsOrdered: SimplifiedOperation<Payload>[],
+type BlockHistoryEvent = { blocked: boolean; timestamp: number };
+
+/** Whether the latest block/unblock event at or before `timestamp` left the
+ * agent blocked. `history` must be sorted by ascending timestamp. */
+function blockedAt(history: BlockHistoryEvent[], timestamp: number): boolean {
+	let blocked = false;
+	for (const event of history) {
+		if (event.timestamp > timestamp) break;
+		blocked = event.blocked;
+	}
+	return blocked;
+}
+
+/** Reactions go last because they carry no lamport to place them after their
+ * target when the authors' clocks disagree. */
+export function opsInCausalOrder(
+	ops: SimplifiedOperation<Payload>[],
+): SimplifiedOperation<Payload>[] {
+	const isReaction = (op: SimplifiedOperation<Payload>) =>
+		op.body?.type === 'Chat' && op.body.payload.type === 'Reaction';
+	const orderable = Object.fromEntries(
+		ops
+			.filter(op => !isReaction(op))
+			.map(op => [
+				op.hash,
+				{
+					op,
+					timestamp: op.header.timestamp,
+					lamport:
+						op.body?.type === 'Chat' && op.body.payload.type === 'Message'
+							? (op.body.payload.payload.lamport ?? 0)
+							: 0,
+					author: op.header.verifying_key,
+				},
+			]),
+	);
+	return [
+		...orderEventsAscending(orderable).map(([, { op }]) => op),
+		...ops.filter(isReaction),
+	];
+}
+
+export function logsToMessages(
+	causalOps: SimplifiedOperation<Payload>[],
 	tombstones: Tombstones,
+	deviceAgents: Record<DeviceId, AgentId>,
+	deviceNames: Record<DeviceId, string>,
 ): Record<Hash, Message> {
 	const messages: Record<Hash, Message | Bodyless> = {};
 	// Map of EditMessage -> the target they reference
 	const editTargets: Record<Hash, Hash> = {};
 
-	for (const op of opsOrdered) {
+	for (const op of causalOps) {
 		const author = op.header.verifying_key;
 		const body = op.body;
 
@@ -213,6 +388,7 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
+				lamport: 0,
 			};
 			continue;
 		}
@@ -231,12 +407,13 @@ function logsToMessages(
 					hasBody(replyTarget.content)
 				) {
 					// It's intended that the quoted text is the version of the message at the time of the reply.
-					// This works as is only because messages are ordered by timestamp and we set this quote while
+					// This works as is only because messages are ordered by lamport and we set this quote while
 					// traversing the partial conversation. If replies were resolved during a second pass over the
 					// conversation, we might pick up the current edited text instead, so be careful.
 					replyQuote = {
 						kind: 'content',
 						author: replyTarget.author,
+						authorName: deviceNames[replyTarget.author],
 						text: replyTarget.content.message,
 						media: mediaBundleToAttachment(replyTarget.content.media),
 						scrollTarget: quoteHash,
@@ -249,6 +426,9 @@ function logsToMessages(
 					replyQuote = {
 						kind: 'deleted',
 						author: replyTarget?.author,
+						authorName: replyTarget
+							? deviceNames[replyTarget.author]
+							: undefined,
 						scrollTarget: replyTarget ? quoteHash : undefined,
 					};
 				} else {
@@ -267,19 +447,22 @@ function logsToMessages(
 				author,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
+				lamport: body.payload.payload.lamport ?? 0,
 				replyQuote: replyQuote,
 			};
 		} else if (body.payload.type === 'Reaction') {
 			const { target, emoji } = body.payload.payload;
+			const agent = deviceAgents[author];
 			if (
+				agent !== undefined &&
 				messages[target] &&
 				isMessage(messages[target]) &&
 				hasBody(messages[target].content)
 			) {
 				if (emoji) {
-					messages[target].content.reactions[author] = emoji;
+					messages[target].content.reactions[agent] = emoji;
 				} else {
-					delete messages[target].content.reactions[author];
+					delete messages[target].content.reactions[agent];
 				}
 			}
 		} else if (body.payload.type === 'EditMessage') {
@@ -360,6 +543,7 @@ function placeholderFor(message: Bodyless): Message {
 		author: message.author,
 		seqNum: message.seqNum,
 		timestamp: message.timestamp,
+		lamport: message.lamport,
 	};
 }
 

@@ -4,10 +4,11 @@
  * the cost of a chat that keeps growing shows up.
  *
  * Skips itself unless E2E_STRESS=1. Run it with:
- *   PLATFORMS=android,android-emulator just e2e run media-stress
+ *   PHONES=android,android-emulator just e2e run media-stress
  */
 import { statSync } from 'node:fs';
 
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { SYNC_TIMEOUT } from '../helpers/timeouts';
 import { isRemoteMailbox, mailboxBlobs } from '../setup/mailbox-control';
@@ -81,9 +82,11 @@ describe('Media stress', function () {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await sender.createProfilePage.createProfile(senderName, 'Stress');
-		await receiver.createProfilePage.createProfile(receiverName, 'Stress');
-		await exchangeContacts(sender, receiver);
+		await createProfiles({
+			[senderName]: sender,
+			[receiverName]: receiver,
+		});
+		await exchangeContacts([sender, receiver]);
 		// The composer only mounts once the chat leaves its pending state, which
 		// needs the peer's profile — so the receiver has to still be up for it.
 		await sender.directChatPage.composer.messageInput.waitForExist({

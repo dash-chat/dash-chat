@@ -27,7 +27,7 @@ async fn media_blob_syncs_between_nodes() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -35,6 +35,8 @@ async fn media_blob_syncs_between_nodes() {
             data: photo_bytes.clone(),
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
 
@@ -97,13 +99,17 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
 
     let poll = PollConfig::default();
     let config = NodeConfig::testing();
+    // Every download attempt times out, so Bobbi's first run leaves the blob
+    // undownloaded at shutdown.
+    let mut never_fetches = config.clone();
+    never_fetches.blob_fetch.attempt_timeout = std::time::Duration::from_millis(1);
 
     let mailbox = TestMailbox::from_env();
     let alice = TestNode::new(config.clone(), "alice")
         .await
         .add_mailbox(&mailbox)
         .await;
-    let bobbi = TestNode::new(config.clone(), "bobbi")
+    let bobbi = TestNode::new(never_fetches, "bobbi")
         .await
         .add_mailbox(&mailbox)
         .await;
@@ -114,8 +120,7 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
-    let chat_topic: TopicId = chat.into();
+    let chat = alice.direct_chat_with(&bobbi);
 
     let photo_bytes = rand::random::<[u8; 8192]>().to_vec();
     let media = OutgoingMedia::Photos {
@@ -123,6 +128,8 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
             data: photo_bytes,
             name: "pic.png".into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     };
     alice
@@ -153,14 +160,26 @@ async fn blob_fetch_pool_hydrates_stored_media_on_restart() {
         .expect("media metadata present on bobbi's copy of the message");
     let hash = meta.first().expect("at least one media item").hash();
 
-    // Restart Bobbi from the same store. The media op is already persisted and
-    // is not re-delivered, so only startup hydration can re-queue its blob.
+    assert!(
+        !bobbi.blobs().has(hash).await.unwrap(),
+        "bobbi's first run must not have downloaded the blob",
+    );
+
+    // Restart Bobbi from the same store, now able to download. The media op is
+    // already persisted and is not re-delivered, so the blob only arrives if
+    // startup hydration re-queued it.
     let bobbi_dir = bobbi.shutdown().await;
     let bobbi = TestNode::new_at_path(config.clone(), "bobbi", bobbi_dir).await;
 
-    let topics = bobbi.blob_fetch_pool_topics_for(hash).await;
-    assert!(
-        topics.contains(&chat_topic),
-        "restarted node should re-queue the stored media blob for its chat topic, got {topics:?}",
-    );
+    poll.wait_for(|| async {
+        bobbi
+            .blobs()
+            .has(hash)
+            .await
+            .unwrap()
+            .then_some(())
+            .ok_or("restarted node has not re-queued and downloaded the stored media blob")
+    })
+    .await
+    .unwrap();
 }

@@ -1,3 +1,4 @@
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -10,9 +11,8 @@ describe('Links in messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('linkifies urls with and without a scheme, for both sender and receiver', async () => {
@@ -29,17 +29,35 @@ describe('Links in messages', () => {
 	});
 
 	it('hands a tapped link to the OS without leaving the chat', async function () {
-		// The url only lands somewhere observable on desktop, where the harness
-		// puts an `xdg-open` stub on the app's PATH. On a phone the tap would
-		// hand the app's foreground to the system browser, so it stays skipped.
+		// The url only lands somewhere observable on a Linux desktop, where the
+		// harness puts an `xdg-open` stub on the app's PATH; on macOS the app
+		// runs /usr/bin/open by its absolute path, Windows has no such stub, and
+		// on a phone the tap would hand the app's foreground to the system browser,
+		// so it stays skipped.
 		const agent = [agent1, agent2].find(a => a.platform === 'desktop');
-		if (!agent) this.skip();
+		if (!agent || process.platform !== 'linux') this.skip();
 		const message =
 			await agent.directChatPage.messages.waitForMessage('https://my.thing');
 		await message.tapLink('https://my.thing');
 		// The OS gets the anchor's resolved form.
 		expect(await agent.waitForOpenedUrls()).toEqual(['https://my.thing/']);
 		await expect(agent.directChatPage.page).toBeDisplayed();
+	});
+
+	it('opens a tapped contact link in the app itself', async () => {
+		// iOS is where the OS won't route the app's own universal link back to
+		// it, so tap there when an iPhone is in the run.
+		const tapper = [agent1, agent2].find(a => a.platform === 'ios') ?? agent2;
+		const sender = tapper === agent1 ? agent2 : agent1;
+		// Short enough to fit on one line, so the tap lands on the anchor.
+		const link = 'https://dashchat.org/add-contact/x';
+		await sender.directChatPage.composer.sendMessage(link);
+		const message = await tapper.directChatPage.messages.waitForMessage(link);
+		await message.tapLink(link);
+		await tapper.toast.expectMessage(
+			await tapper.tr('errorAddContactInvalidLink'),
+		);
+		await expect(tapper.directChatPage.page).toBeDisplayed();
 	});
 
 	it('excludes trailing punctuation from the link', async () => {

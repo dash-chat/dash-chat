@@ -17,6 +17,12 @@ impl Node {
         // Construct a node actor command.
         let payload: Payload = payload.into();
 
+        // A read-only node (the push extension) must never land here: what it
+        // publishes under the shared key the running app never processes.
+        if self.config.read_only {
+            tracing::warn!(topic = ?topic.aliased(), payload = ?payload.aliased(), "read-only node publishing an operation");
+        }
+
         debug!(topic = ?topic.aliased(), payload = ?payload.aliased(), "publish operation");
 
         let command = Command::Publish {
@@ -38,10 +44,8 @@ impl Node {
         // Now we await the operation being published and processed on the system layer.
         let event = warn_if_slow("awaiting process_fut", process_fut).await?;
 
-        // Immediately sync the published operation
-        self.mailboxes.request_sync().await;
         // Re-announce any still-unfetched blobs now that we've published.
-        self.notify_unfetched_blob_followup();
+        self.notify_blobs_changed();
 
         Ok(event.header().to_owned())
     }

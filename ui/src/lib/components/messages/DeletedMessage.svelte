@@ -27,7 +27,7 @@
 
 <Card
 	outline
-	contentWrapPadding="p-2"
+	contentWrapPadding="px-2 py-(--message-padding-y)"
 	colors={{
 		bgIos: 'bg-transparent',
 		bgMaterial: 'bg-transparent',

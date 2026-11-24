@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
-	import { offlineMode } from '$lib/stores/offline-mode.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
@@ -69,21 +68,7 @@
 					title={m.contactUs()}
 					data-testid="help-contact-us"
 				/>
-				<!-- Disabling the background service for now -->
-				{#if false}
-					<ListItem
-						title={m.startOfflineMode()}
-						data-testid="help-start-offline-mode"
-					>
-						{#snippet after()}
-							<Toggle
-								checked={offlineMode.enabled}
-								onChange={() => offlineMode.toggle()}
-								data-testid="help-start-offline-mode-switch"
-							/>
-						{/snippet}
-					</ListItem>
-				{/if}
+
 				{#await versionPromise then version}
 					<ListItem
 						title={m.version()}

@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { Card } from 'konsta/svelte';
 	import {
-		type ChatId,
 		type DeviceId,
 		type Hash,
-		type MailboxTrackerStore,
 		type Message,
 		type MessagesStore,
 		hasBody,
@@ -19,11 +17,11 @@
 	import MessageActionsOverlay from './MessageActionsOverlay.svelte';
 	import MessageContextMenu from './MessageContextMenu.svelte';
 	import MessageHoverToolbar from './MessageHoverToolbar.svelte';
-	import ReplyQuote from './ReplyQuote.svelte';
+	import SwipeToReply from './SwipeToReply.svelte';
 	import MessageStatusIndicator from '$lib/components/messages/MessageStatusIndicator.svelte';
 	import { isMobile } from '$lib/utils/environment';
+	import { isWideScreen } from '$lib/stores/screen.svelte';
 	import { m } from '$lib/paraglide/messages.js';
-	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { getContext } from 'svelte';
 	import { longpress } from '$lib/actions/longpress';
 	import { toggleReaction } from '$lib/utils/reactions';
@@ -33,21 +31,22 @@
 		position,
 		myDeviceId,
 		searchQuery,
-		chatId,
+		showDeliveryStatus = false,
+		readOnly,
 		onEdit,
 		onReply,
-		replyAuthorName,
 		onNavigateToMessage,
 	}: {
 		message: Message;
 		position: MessagePosition;
 		myDeviceId: DeviceId;
-		chatId: ChatId;
 		searchQuery: string;
+		/** Whether to render the message's delivery status indicator — see
+		 * `endsDeliveryStatusRun`. */
+		showDeliveryStatus?: boolean;
+		readOnly: boolean;
 		onEdit?: () => void;
 		onReply?: () => void;
-		/** Display name of the author quoted by this message's reply. */
-		replyAuthorName?: string;
 		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
@@ -64,58 +63,49 @@
 	const store: MessagesStore = getContext('messages-store');
 
 	let reactionsOpened = $state(false);
+	// Most of each row's DOM, so only mounted once the bubble is pressed; a
+	// finger resting on it mounts it early, so the long-press opens it animated.
+	let actionsMounted = $state(false);
 	let messageEl = $state<HTMLElement>();
 	let contextMenuPoint = $state<{ x: number; y: number }>();
 
 	function onLongPress(e: MouseEvent | TouchEvent) {
+		actionsMounted = true;
 		if (isMobile) {
 			reactionsOpened = true;
 		} else if (e instanceof MouseEvent) {
 			contextMenuPoint = { x: e.clientX, y: e.clientY };
 		}
 	}
-
-	const mailboxTrackerStore: MailboxTrackerStore = getContext(
-		'mailbox-tracker-store',
-	);
-
-	const syncStatus = $derived(
-		useReactiveValue(
-			mailboxTrackerStore.syncStatusForOp,
-			chatId,
-			message.author,
-			message.seqNum,
-		),
-	);
-	const connectionStatus = useReactiveValue(
-		mailboxTrackerStore.connectionStatus,
-	);
-
-	const isOfflineMessage = $derived(
-		$syncStatus !== undefined &&
-			$connectionStatus !== undefined &&
-			!$syncStatus.syncedWithCloudMailbox &&
-			!$connectionStatus.connectedToCloudMailboxServer,
-	);
 </script>
 
 {#snippet metadata()}
-	{#if editHistory.length > 0}
-		<EditedIndicator class="dark-quiet" />
-	{/if}
-	{#if isLast}
-		<MessageTimestamp timestamp={message.timestamp} class="dark-quiet" />
-
-		<MessageStatusIndicator
-			{chatId}
-			author={message.author}
-			seq={message.seqNum}
-		/>
-	{/if}
+	<span class="flex items-center gap-1 opacity-80">
+		{#if editHistory.length > 0}
+			<EditedIndicator />
+		{/if}
+		{#if isLast}
+			<MessageTimestamp timestamp={message.timestamp} />
+		{/if}
+		{#if showDeliveryStatus && message.deliveryStatus}
+			<MessageStatusIndicator
+				status={message.deliveryStatus}
+				timestamp={message.timestamp}
+			/>
+		{/if}
+	</span>
 {/snippet}
 
 {#snippet bubble()}
-	<div bind:this={messageEl} class="relative max-w-[85%]">
+	<div
+		bind:this={messageEl}
+		class={[
+			'relative',
+			isMobile && !isWideScreen.value
+				? 'max-w-[calc(100%-2rem)]'
+				: 'max-w-[85%]',
+		]}
+	>
 		{#if !isMobile && hasBody(message.content)}
 			<MessageHoverToolbar {message} {myDeviceId} {onEdit} {onReply} reverse />
 		{/if}
@@ -123,70 +113,77 @@
 			<DeletedMessage {message} {position} {myDeviceId} />
 		{:else}
 			<Card
-				raised
-				contentWrapPadding="p-2"
+				contentWrapPadding="px-2 py-(--message-padding-y)"
 				colors={{
 					bgIos: 'bg-brand-primary',
 					bgMaterial: 'bg-brand-primary',
 					textIos: 'text-white',
 					textMaterial: 'text-white',
 				}}
-				class={`message outgoing-message ${position}-message ${isOfflineMessage ? 'offline-message' : ''}`}
+				class={`message outgoing-message ${position}-message`}
 			>
-				<div class="flex flex-col gap-1">
-					{#if message.replyQuote}
-						<ReplyQuote
-							reply={message.replyQuote}
-							authorName={replyAuthorName}
-							{myDeviceId}
-							mine
-							onNavigate={onNavigateToMessage}
-						/>
-					{/if}
-					<MessageContent
-						{message}
-						{searchQuery}
-						senderName={m.you()}
-						metadata={isLast || editHistory.length > 0 ? metadata : undefined}
-					/>
-				</div>
+				<MessageContent
+					{message}
+					{searchQuery}
+					senderName={m.you()}
+					mine
+					{onNavigateToMessage}
+					metadata={isLast || editHistory.length > 0 || showDeliveryStatus
+						? metadata
+						: undefined}
+				/>
 			</Card>
 		{/if}
 		{#if Object.keys(reactions).length > 0}
 			<div class="relative z-10 flex -mt-1.5 mb-0.5 px-1">
 				<Reactions
 					{reactions}
-					{myDeviceId}
-					onToggleReaction={emoji =>
-						toggleReaction(store, message, myDeviceId, emoji)}
+					onToggleReaction={emoji => toggleReaction(store, message, emoji)}
+					onSheetOpen={() => (reactionsOpened = false)}
 				/>
 			</div>
 		{/if}
 	</div>
 {/snippet}
 
-{#if deleted}
-	<div class="group flex justify-end">{@render bubble()}</div>
-{:else}
-	<div class="group flex justify-end" use:longpress={{ onLongPress }}>
+{#snippet row()}
+	<div
+		class="group flex justify-end"
+		use:longpress={{
+			onLongPress,
+			onPressStart: () => (actionsMounted = true),
+		}}
+	>
 		{@render bubble()}
 	</div>
-{/if}
-{#if isMobile}
-	<MessageActionsOverlay
-		{message}
-		{myDeviceId}
-		{onEdit}
-		{onReply}
-		bind:opened={reactionsOpened}
-		target={messageEl}
-	/>
+{/snippet}
+
+{#if deleted}
+	<div class="group flex justify-end">{@render bubble()}</div>
+{:else if isMobile}
+	<SwipeToReply {readOnly} {onReply} target={messageEl}
+		>{@render row()}</SwipeToReply
+	>
 {:else}
-	<MessageContextMenu
-		{message}
-		{myDeviceId}
-		{onEdit}
-		{onReply}
-		bind:point={contextMenuPoint}
-	/>
+	{@render row()}
+{/if}
+{#if actionsMounted}
+	{#if isMobile}
+		<MessageActionsOverlay
+			{message}
+			{myDeviceId}
+			{onEdit}
+			{onReply}
+			bind:opened={reactionsOpened}
+			target={messageEl}
+		/>
+	{:else}
+		<MessageContextMenu
+			{message}
+			{myDeviceId}
+			{onEdit}
+			{onReply}
+			bind:point={contextMenuPoint}
+		/>
+	{/if}
 {/if}

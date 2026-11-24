@@ -15,7 +15,7 @@ describe('Group media attachments', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 
 		// The flow leaves agent2 on the home page; open the group so it can
 		// receive the media sent below. The group arrives over p2p sync.

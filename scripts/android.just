@@ -16,6 +16,11 @@ check TARGET='aarch64-linux-android':
 build TARGETS='aarch64 armv7 i686 x86_64':
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --debug --apk -t {{TARGETS}}"
 
+# build and install a debug build for a connected arm64 device
+build-install:
+    nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build --debug --apk -t aarch64"
+    nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
+
 # install a debug build via adb
 install:
     nix develop git+file:.#androidDev --command bash -c "adb install src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk"
@@ -33,7 +38,7 @@ bundle:
     nix develop git+file:.#androidDev --command bash -c "pnpm tauri android build"
 
 # boot a headless Android emulator (keeps running in the background); it then
-# counts as a connected device, e.g. for `PLATFORMS=android-emulator just e2e`
+# counts as a connected device, e.g. for `PHONES=android-emulator just e2e`
 boot-emulator:
     nix run .#boot-emulator
 

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use dashchat_node::{mailbox::MailboxOperation, testing::*, *};
-use mailbox_client::toy::ToyMailboxClient;
+use mailbox_client::backends::toy::ToyMailboxClient;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn mailbox_late_join() {
@@ -44,7 +44,7 @@ async fn mailbox_late_join() {
     //     .await
     //     .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     alice.send_message_raw(chat, "Hello".into()).await.unwrap();
 
     // Introduce delay to let the first message be stored and force missing synchronization with the second one
@@ -107,6 +107,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi
@@ -115,12 +116,13 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
     alice.behavior().accept_next_contact().await.unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     alice
         .send_message_raw(chat, "Hello 1".into())
@@ -158,6 +160,7 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            alice.mailboxes.upload_tracker(),
         ))
         .await;
     bobbi
@@ -166,12 +169,13 @@ async fn test_mailbox_restart_relay() {
             &url,
             dummy_key(),
             std::sync::Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+            bobbi.mailboxes.upload_tracker(),
         ))
         .await;
 
     // === Phase 3: Post-restart — send more messages and verify all are received ===
 
-    let chat = alice.direct_chat_topic(bobbi_agent_id);
+    let chat = alice.direct_chat_with(&bobbi);
 
     alice
         .send_message_raw(chat, "Hello 3".into())
@@ -240,4 +244,76 @@ async fn test_multiple_mailboxes_group_pivot() {
         .unwrap();
 
     todo!("this test is only really meaningful when we have groups");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn own_operations_reach_the_mailbox_without_waiting_for_a_poll() {
+    dashchat_node::testing::setup_tracing(
+        &[
+            "dashchat=info",
+            "mailbox_server=info",
+            "p2panda_stream=warn",
+            "p2panda_auth=warn",
+            "p2panda_spaces=warn",
+            "aliased=warn",
+        ],
+        true,
+    );
+
+    let mut config = NodeConfig::testing();
+    config.mailboxes_config.active_interval = Duration::from_secs(60);
+
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config, "alice").await;
+    let chat = alice
+        .create_group(std::collections::BTreeMap::new())
+        .await
+        .unwrap();
+
+    alice.add_mailbox(&mailbox).await;
+    let mailbox_id = alice
+        .mailboxes
+        .active_mailbox_ids()
+        .borrow()
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    let tracked = alice.mailboxes.tracked_mailbox(&mailbox_id).await.unwrap();
+    PollConfig::default()
+        .wait_for(|| async {
+            tracked
+                .health()
+                .borrow()
+                .last_success_at
+                .is_some()
+                .then_some(())
+                .ok_or("registration poll hasn't completed")
+        })
+        .await
+        .unwrap();
+
+    let synced_before_send = alice
+        .mailboxes
+        .operation_tracker()
+        .get_synced(&mailbox_id, &chat, &alice.device_id())
+        .await
+        .unwrap();
+
+    alice.send_message_raw(chat, "Hello".into()).await.unwrap();
+
+    PollConfig::seconds(5)
+        .wait_for(|| async {
+            let synced = alice
+                .mailboxes
+                .operation_tracker()
+                .get_synced(&mailbox_id, &chat, &alice.device_id())
+                .await
+                .unwrap();
+            (synced > synced_before_send)
+                .then_some(())
+                .ok_or(format!("mailbox still at {synced:?}"))
+        })
+        .await
+        .unwrap();
 }

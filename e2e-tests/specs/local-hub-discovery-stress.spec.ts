@@ -1,0 +1,83 @@
+/**
+ * Hub discovery under random network life: local hubs start, stop, die and
+ * move between real Wi-Fi networks while phones walk in and out of them,
+ * background, restart and sit still — with the cloud mailbox killed, so
+ * the connection chip is what says which hubs a phone sees. After every
+ * move, each phone that should have noticed is checked for exactly the hubs
+ * on its LAN.
+ *
+ * Skips itself unless E2E_STRESS=1 and E2E_WIFI_NETWORKS names at least one
+ * network (see e2e-tests/.env.example). Run it with:
+ *   PHONES=android,android just e2e run local-hub-discovery-stress
+ *
+ * Tunables: E2E_STRESS_ATTEMPTS (sequences to try, default 20),
+ * E2E_STRESS_COMMANDS (moves per sequence, default 15), E2E_STRESS_SEED
+ * (default random; the run logs it — re-run with the same seed to reproduce
+ * a failure).
+ */
+import { Fuzzer } from '../helpers/fuzz/fuzzer';
+import { deviceMoves } from '../helpers/fuzz/moves/device';
+import { hubMoves } from '../helpers/fuzz/moves/hub';
+import { MDNS_RECORD_TTL_S, networkMoves } from '../helpers/fuzz/moves/network';
+import { sleepMove } from '../helpers/fuzz/moves/sleep';
+import { envInt } from '../helpers/utils';
+import { isRemoteMailbox, killMailbox } from '../setup/mailbox-control';
+import { type Agent, setupAgents } from '../setup/setup-agents';
+import { wifiNetworks } from '../setup/test-env';
+
+/** Preparation walks two phones through Settings several times and pairs
+ *  them up, which runs past mocha's 5-minute default. */
+const PREPARE_TIMEOUT_MS = 20 * 60 * 1_000;
+
+// wdio arms its per-hook abort timer from the mocha timeout at invocation time,
+// so this has to be set suite-wide rather than inside the hook body; the tests
+// themselves get theirs from Fuzzer.prepare.
+describe('Local hub stress', function () {
+	this.timeout(PREPARE_TIMEOUT_MS);
+
+	let agent1: Agent;
+	let agent2: Agent;
+	let fuzzer: Fuzzer;
+
+	before(async function () {
+		if (process.env.E2E_STRESS !== '1') this.skip();
+		if (wifiNetworks().length === 0) this.skip();
+		// The mailbox must be killable, which a remote environment's is not.
+		if (isRemoteMailbox()) this.skip();
+		// Down before anything syncs, and so the chip reads hubs, not the cloud.
+		// Killed, not suspended: a network change wakes every mailbox poller,
+		// and a suspended cloud then counts as connected until its polls time
+		// out again, and the chip reads cloud over any hub found meanwhile.
+		await killMailbox();
+		// Only a physical phone can change network without losing its driver
+		// session, and an emulator is NAT'd off the host besides.
+		[agent1, agent2] = await setupAgents(this, [
+			{ platform: 'phone' },
+			{ platform: 'phone' },
+		]);
+		const agents = { Alice: agent1, Bob: agent2 };
+		fuzzer = await Fuzzer.prepare(this, {
+			agents,
+			networks: wifiNetworks(),
+		});
+	});
+
+	it('phones show exactly the hubs on their LAN through every move', async () => {
+		const attempts = envInt('E2E_STRESS_ATTEMPTS', 20);
+		const length = envInt('E2E_STRESS_COMMANDS', 15);
+		const seed = envInt('E2E_STRESS_SEED', Math.floor(Math.random() * 2 ** 31));
+		await fuzzer.search({
+			moves: [
+				...hubMoves,
+				...networkMoves,
+				...deviceMoves,
+				// Past the record TTL, so a hub whose records stop being refreshed
+				// drops off the chip while nothing else is happening.
+				sleepMove(1, MDNS_RECORD_TTL_S + 10),
+			],
+			attempts,
+			length,
+			seed,
+		});
+	});
+});

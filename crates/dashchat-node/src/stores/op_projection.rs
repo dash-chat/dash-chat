@@ -1,19 +1,21 @@
 use aliased::Aliasing;
+use dashchat_utils::SeqNum;
 use derive_more::derive::{Deref, From};
 use p2panda::Hash;
+use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::streams::ProcessedOperation;
 use p2panda_auth::group::GroupAction;
-use p2panda_auth::processor::GroupsArgs;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::{
-    AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
+    AckedOp, AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload,
+    Topic,
 };
 use crate::{
-    AnnouncementsPayload, ChatId, ChatPayload, DeviceGroupPayload, InboxPayload, Payload, Topic,
+    AgentId, DeleteCandidate, DeviceId, Profile, SystemNotification, TopicId, forward_edit_closure,
 };
 
 // TODO: rework this not as migrations, but as a single schema that, when changed,
@@ -44,7 +46,28 @@ const MIGRATIONS: &[&str] = &[
         reason TEXT NOT NULL,
         PRIMARY KEY (topic_id, op_hash)
     )",
+    "CREATE TABLE IF NOT EXISTS chat_log_heads (
+        topic_id BLOB NOT NULL,
+        author_device_id BLOB NOT NULL,
+        seq_num INTEGER NOT NULL,
+        op_hash BLOB NOT NULL,
+        PRIMARY KEY (topic_id, author_device_id)
+    )",
+    "CREATE TABLE IF NOT EXISTS message_acks (
+        topic_id BLOB NOT NULL,
+        acker_device_id BLOB NOT NULL,
+        author_device_id BLOB NOT NULL,
+        seq_num INTEGER NOT NULL,
+        op_hash BLOB NOT NULL,
+        PRIMARY KEY (topic_id, acker_device_id, author_device_id)
+    )",
+    "CREATE TABLE IF NOT EXISTS chat_lamports (
+        topic_id BLOB NOT NULL PRIMARY KEY,
+        lamport INTEGER NOT NULL
+    )",
 ];
+
+const MAX_LAMPORT: u64 = (1 << 53) - 1;
 
 /// Why an operation was tombstoned.
 //
@@ -95,7 +118,7 @@ pub struct OpProjection {
 impl OpProjection {
     pub async fn new(pool: SqlitePool) -> anyhow::Result<Self> {
         for sql in MIGRATIONS {
-            sqlx::query(sql).execute(&pool).await?;
+            sqlx::query(*sql).execute(&pool).await?;
         }
 
         let projection = Self { pool };
@@ -163,17 +186,19 @@ impl OpProjection {
         if device_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let placeholders = std::iter::repeat("?")
-            .take(device_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql =
-            format!("SELECT device_id, agent_id FROM devices WHERE device_id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (DeviceId, AgentId)>(&sql);
+        let mut q = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+            "SELECT device_id, agent_id FROM devices WHERE device_id IN (",
+        );
+        let mut ids = q.separated(", ");
         for id in device_ids {
-            q = q.bind(*id);
+            ids.push_bind(*id);
         }
-        Ok(q.fetch_all(&self.pool).await?.into_iter().collect())
+        q.push(")");
+        Ok(q.build_query_as::<(DeviceId, AgentId)>()
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .collect())
     }
 
     pub async fn is_author_blocked(&self, device_id: &DeviceId) -> anyhow::Result<bool> {
@@ -207,6 +232,99 @@ impl OpProjection {
         rows.into_iter()
             .map(|(id,)| Topic::<crate::topic::kind::Chat>::from_topic_id(crate::TopicId::from(id)))
             .collect()
+    }
+
+    /// Per author of `topic`, the highest operation acked by any device of a
+    /// *different* agent (devices with an unknown agent mapping count as
+    /// different). This is what drives the "delivered" message status.
+    pub async fn delivered_acks(
+        &self,
+        topic: TopicId,
+    ) -> anyhow::Result<BTreeMap<DeviceId, AckedOp>> {
+        let rows: Vec<(DeviceId, i64, Vec<u8>)> = sqlx::query_as(
+            "
+            SELECT ma.author_device_id, ma.seq_num, ma.op_hash
+            FROM message_acks ma
+            LEFT JOIN devices acker ON acker.device_id = ma.acker_device_id
+            LEFT JOIN devices author ON author.device_id = ma.author_device_id
+            WHERE ma.topic_id = ?
+              AND (acker.agent_id IS NULL
+                   OR author.agent_id IS NULL
+                   OR acker.agent_id != author.agent_id)
+            ",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut acks: BTreeMap<DeviceId, AckedOp> = BTreeMap::new();
+        for (author, seq, hash) in rows {
+            let acked = AckedOp {
+                hash: hash_from_db(hash)?,
+                seq: SeqNum::try_from(seq)?,
+            };
+            match acks.entry(author) {
+                std::collections::btree_map::Entry::Vacant(e) => {
+                    e.insert(acked);
+                }
+                std::collections::btree_map::Entry::Occupied(mut e) => {
+                    if acked.seq > e.get().seq {
+                        e.insert(acked);
+                    }
+                }
+            }
+        }
+        Ok(acks)
+    }
+
+    /// The entries a new [`ChatPayload::MessageAck`] authored by `me` should
+    /// contain: per author (excluding `me`), the latest processed non-ack chat
+    /// operation, but only where it is newer than what `me` has already acked.
+    pub async fn ack_delta(
+        &self,
+        topic: TopicId,
+        me: DeviceId,
+    ) -> anyhow::Result<BTreeMap<DeviceId, AckedOp>> {
+        let rows: Vec<(DeviceId, i64, Vec<u8>)> = sqlx::query_as(
+            "
+            SELECT h.author_device_id, h.seq_num, h.op_hash
+            FROM chat_log_heads h
+            LEFT JOIN message_acks ma
+              ON ma.topic_id = h.topic_id
+              AND ma.author_device_id = h.author_device_id
+              AND ma.acker_device_id = ?
+            WHERE h.topic_id = ?
+              AND h.author_device_id != ?
+              AND (ma.seq_num IS NULL OR h.seq_num > ma.seq_num)
+            ",
+        )
+        .bind(me)
+        .bind(topic.as_bytes().to_vec())
+        .bind(me)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter()
+            .map(|(author, seq, hash)| {
+                Ok((
+                    author,
+                    AckedOp {
+                        hash: hash_from_db(hash)?,
+                        seq: SeqNum::try_from(seq)?,
+                    },
+                ))
+            })
+            .collect()
+    }
+
+    /// Every topic that has recorded chat log heads, i.e. every chat topic that
+    /// may need a [`ChatPayload::MessageAck`] published.
+    pub async fn ack_topic_ids(&self) -> anyhow::Result<Vec<TopicId>> {
+        let rows: Vec<(Topic<crate::topic::kind::Untyped>,)> =
+            sqlx::query_as("SELECT DISTINCT topic_id FROM chat_log_heads")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows.into_iter().map(|(id,)| TopicId::from(id)).collect())
     }
 
     pub async fn is_tombstoned(&self, topic: TopicId, op_hash: Hash) -> anyhow::Result<bool> {
@@ -287,17 +405,41 @@ impl OpProjection {
         let topic = operation.topic();
 
         self.enforce_blocklist(operation).await?;
+        Self::enforce_lamport_bound(operation.message())?;
 
         let event = match &payload {
+            Payload::Chat(ChatPayload::MessageAck { acks }) => {
+                let mut delivered = BTreeMap::new();
+                for (acked_author, acked) in acks {
+                    self.record_message_ack(topic, author, *acked_author, *acked)
+                        .await?;
+                    // Announced even when the store already held it; only an ack
+                    // behind the recorded one is skipped.
+                    let current = self
+                        .recorded_message_ack(topic, author, *acked_author)
+                        .await?
+                        == Some(acked.seq);
+                    if current && self.ack_counts_as_delivered(author, *acked_author).await? {
+                        delivered.insert(*acked_author, *acked);
+                    }
+                }
+                (!delivered.is_empty()).then_some(SystemNotification::MessageAcks {
+                    topic,
+                    acks: delivered,
+                })
+            }
+
             Payload::Chat(ChatPayload::IntroduceAgents { agents }) => {
                 for (device_id, agent_id) in agents {
                     self.save_agent_mapping(*device_id, *agent_id).await?;
                 }
-                None
+                Some(SystemNotification::AgentsIntroduced {
+                    agents: agents.clone(),
+                })
             }
 
             Payload::Chat(ChatPayload::DeleteMessage { hashes }) => {
-                self.validate_delete(topic, operation.event.operation.header(), hashes, node)
+                self.validate_delete(topic, &operation.event.operation.header, hashes, node)
                     .await?;
                 for hash in hashes {
                     self.add_tombstone(topic.into(), *hash, TombstoneReason::DeletedForEveryone)
@@ -318,7 +460,7 @@ impl OpProjection {
                 // late edits from lingering too. Edits of live messages are
                 // validated later in `process_app`.
                 if let Some(reason) = self.tombstone_reason(topic.into(), *edit_hash).await? {
-                    let self_hash = operation.event.operation.header().hash();
+                    let self_hash = operation.event.operation.header.hash();
                     self.add_tombstone(topic.into(), self_hash, reason).await?;
                     Some(SystemNotification::Tombstones {
                         topic: topic.into(),
@@ -344,7 +486,7 @@ impl OpProjection {
             }
 
             Payload::DeviceGroup(p) => match p {
-                DeviceGroupPayload::AddContact { agent_id } => {
+                DeviceGroupPayload::AddContact { agent_id, .. } => {
                     self.save_agent_mapping(author, *agent_id).await?;
                     None
                 }
@@ -374,10 +516,12 @@ impl OpProjection {
             Payload::Inbox(InboxPayload::ContactRequest {
                 agent_id, profile, ..
             })
-            | Payload::Inbox(InboxPayload::ContactRequestAck { agent_id, profile }) => {
+            | Payload::Inbox(InboxPayload::ContactRequestAccept { agent_id, profile }) => {
                 self.save_agent_mapping(author, *agent_id).await?;
                 self.save_profile(*agent_id, profile.clone()).await?;
-                None
+                Some(SystemNotification::AgentsIntroduced {
+                    agents: BTreeMap::from([(author, *agent_id)]),
+                })
             }
 
             // We define group chats as topics which contain a CreateGroup that makes at least
@@ -388,19 +532,21 @@ impl OpProjection {
             //
             // TODO: this needs to be much more clearly defined, see https://hackmd.io/1S2xtZfXTo6N5WinzCnqWw
             Payload::GroupControl(GroupsArgs { action, .. }) => {
+                let chat_id = ChatId::from_topic_id(topic)?;
                 match action {
                     GroupAction::Create { initial_members } => {
-                        for (_, access) in initial_members {
-                            if *access == p2panda_auth::Access::manage() {
-                                self.mark_group_as_group_chat(ChatId::from_topic_id(topic)?)
-                                    .await?;
-                                break;
-                            }
+                        let has_admin = initial_members
+                            .iter()
+                            .any(|(_, access)| *access == p2panda_auth::Access::manage());
+                        if has_admin {
+                            self.mark_group_as_group_chat(chat_id).await?;
+                            Some(SystemNotification::GroupChatAdded { chat_id })
+                        } else {
+                            None
                         }
                     }
-                    _ => (),
-                };
-                None
+                    _ => Some(SystemNotification::GroupMembersChanged { chat_id }),
+                }
             }
 
             _ => {
@@ -408,6 +554,17 @@ impl OpProjection {
                 None
             }
         };
+
+        if let Payload::Chat(chat_payload) = &payload {
+            if let ChatPayload::Message(message) = chat_payload {
+                self.record_chat_lamport(topic, message.lamport).await?;
+            }
+            if !matches!(chat_payload, ChatPayload::MessageAck { .. }) {
+                let header = &operation.event.operation.header;
+                self.record_chat_log_head(topic, author, header.seq_num, header.hash())
+                    .await?;
+            }
+        }
 
         Ok(event)
     }
@@ -435,6 +592,18 @@ impl OpProjection {
                 )));
             }
         };
+        Ok(())
+    }
+
+    fn enforce_lamport_bound(payload: &Payload) -> Result<(), ProjectionError> {
+        if let Payload::Chat(ChatPayload::Message(message)) = payload
+            && message.lamport >= MAX_LAMPORT
+        {
+            return Err(ProjectionError::invalid(format!(
+                "lamport {} is not below {MAX_LAMPORT}",
+                message.lamport
+            )));
+        }
         Ok(())
     }
 
@@ -493,7 +662,7 @@ impl OpProjection {
 
         let chat_id = ChatId::from_topic_id(topic)?;
         let valid_ops = node.valid_chat_ops(chat_id).await?;
-        let delete_ts: u64 = header.timestamp.into();
+        let delete_ts: u64 = header.extensions.timestamp().into();
         if let Err(err) = (DeleteCandidate {
             hashes: payload.clone(),
             deleter: author,
@@ -591,6 +760,125 @@ impl OpProjection {
         Ok(hashes)
     }
 
+    /// Record the latest processed non-ack chat operation per (topic, author).
+    /// Monotonic upsert: an existing row is only replaced by a higher seq_num,
+    /// so replays are idempotent.
+    async fn record_chat_log_head(
+        &self,
+        topic: TopicId,
+        author: DeviceId,
+        seq_num: SeqNum,
+        op_hash: Hash,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO chat_log_heads (topic_id, author_device_id, seq_num, op_hash)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (topic_id, author_device_id) DO UPDATE SET
+                 seq_num = excluded.seq_num,
+                 op_hash = excluded.op_hash
+             WHERE excluded.seq_num > chat_log_heads.seq_num",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(author)
+        .bind(seq_num as i64)
+        .bind(op_hash.as_bytes().to_vec())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Record a processed message's lamport counter into the per-topic
+    /// maximum. Monotonic upsert like [`Self::record_chat_log_head`], so
+    /// replays are idempotent.
+    async fn record_chat_lamport(&self, topic: TopicId, lamport: u64) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO chat_lamports (topic_id, lamport)
+             VALUES (?, ?)
+             ON CONFLICT (topic_id) DO UPDATE SET
+                 lamport = excluded.lamport
+             WHERE excluded.lamport > chat_lamports.lamport",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(i64::try_from(lamport)?)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The highest message lamport processed in this topic, or 0 when none
+    /// carried one (see `ChatMessageContent::lamport`).
+    pub async fn max_chat_lamport(&self, topic: TopicId) -> anyhow::Result<u64> {
+        let lamport: Option<i64> =
+            sqlx::query_scalar("SELECT lamport FROM chat_lamports WHERE topic_id = ?")
+                .bind(topic.as_bytes().to_vec())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(lamport.map(u64::try_from).transpose()?.unwrap_or(0))
+    }
+
+    /// Whether an ack by `acker` counts toward "delivered" for ops authored by
+    /// `author`: the two devices must not belong to the same agent, with
+    /// unknown mappings counting as different — mirroring
+    /// [`Self::delivered_acks`].
+    async fn ack_counts_as_delivered(
+        &self,
+        acker: DeviceId,
+        author: DeviceId,
+    ) -> anyhow::Result<bool> {
+        let acker_agent = self.lookup_contact_by_device_id(acker).await?;
+        let author_agent = self.lookup_contact_by_device_id(author).await?;
+        Ok(match (acker_agent, author_agent) {
+            (Some(acker_agent), Some(author_agent)) => acker_agent != author_agent,
+            _ => true,
+        })
+    }
+
+    /// Fold one [`ChatPayload::MessageAck`] entry into the per-acker ack map.
+    /// Monotonic upsert like [`Self::record_chat_log_head`].
+    async fn record_message_ack(
+        &self,
+        topic: TopicId,
+        acker: DeviceId,
+        author: DeviceId,
+        acked: AckedOp,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO message_acks (topic_id, acker_device_id, author_device_id, seq_num, op_hash)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (topic_id, acker_device_id, author_device_id) DO UPDATE SET
+                 seq_num = excluded.seq_num,
+                 op_hash = excluded.op_hash
+             WHERE excluded.seq_num > message_acks.seq_num",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(acker)
+        .bind(author)
+        .bind(acked.seq as i64)
+        .bind(acked.hash.as_bytes().to_vec())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// The seq `acker` has acknowledged of `author`'s log, if any.
+    async fn recorded_message_ack(
+        &self,
+        topic: TopicId,
+        acker: DeviceId,
+        author: DeviceId,
+    ) -> anyhow::Result<Option<SeqNum>> {
+        let seq: Option<i64> = sqlx::query_scalar(
+            "SELECT seq_num FROM message_acks
+             WHERE topic_id = ? AND acker_device_id = ? AND author_device_id = ?",
+        )
+        .bind(topic.as_bytes().to_vec())
+        .bind(acker)
+        .bind(author)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(seq.map(|seq| SeqNum::try_from(seq)).transpose()?)
+    }
+
     /// Record an operation hash in the per-topic tombstone set with the reason
     /// it was tombstoned.
     ///
@@ -620,6 +908,13 @@ impl OpProjection {
         .await?;
         Ok(())
     }
+}
+
+fn hash_from_db(bytes: Vec<u8>) -> anyhow::Result<Hash> {
+    let arr: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("op_hash is not 32 bytes"))?;
+    Ok(Hash::from_bytes(arr))
 }
 
 #[derive(Debug)]
@@ -663,9 +958,14 @@ mod tests {
 
     async fn projection() -> OpProjection {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("op_projection.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("op_projection.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         // Keep the tempdir alive for the duration of the pool by leaking it; the
         // OS reclaims it when the test process exits.
         std::mem::forget(dir);
@@ -751,12 +1051,185 @@ mod tests {
         );
     }
 
+    /// Chat log heads only ever move forward: a replayed (older) operation
+    /// never overwrites a newer head.
+    #[tokio::test]
+    async fn test_chat_log_heads_monotonic() {
+        let db = projection().await;
+        let topic = *Topic::<kind::Untyped>::new([1; 32]);
+        let author = device(10);
+
+        let h3 = Hash::digest(b"op3");
+        let h5 = Hash::digest(b"op5");
+
+        db.record_chat_log_head(topic, author, 3, h3).await.unwrap();
+        // Replay of an older op is ignored.
+        db.record_chat_log_head(topic, author, 1, Hash::digest(b"op1"))
+            .await
+            .unwrap();
+        let delta = db.ack_delta(topic, device(99)).await.unwrap();
+        assert_eq!(delta.get(&author), Some(&AckedOp { hash: h3, seq: 3 }));
+
+        db.record_chat_log_head(topic, author, 5, h5).await.unwrap();
+        let delta = db.ack_delta(topic, device(99)).await.unwrap();
+        assert_eq!(delta.get(&author), Some(&AckedOp { hash: h5, seq: 5 }));
+
+        assert_eq!(db.ack_topic_ids().await.unwrap(), vec![topic]);
+    }
+
+    /// The per-topic lamport maximum only ever moves forward: a replayed
+    /// (lower) counter never overwrites a higher one, topics are independent,
+    /// and an unseen topic reads as 0.
+    #[tokio::test]
+    async fn test_chat_lamports_monotonic() {
+        let db = projection().await;
+        let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
+        let topic_b = *Topic::<kind::Untyped>::new([2; 32]);
+
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 0);
+
+        db.record_chat_lamport(topic_a, 3).await.unwrap();
+        // Replay of an older message is ignored.
+        db.record_chat_lamport(topic_a, 1).await.unwrap();
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 3);
+
+        db.record_chat_lamport(topic_a, 5).await.unwrap();
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 5);
+
+        db.record_chat_lamport(topic_b, 2).await.unwrap();
+        assert_eq!(db.max_chat_lamport(topic_b).await.unwrap(), 2);
+        assert_eq!(db.max_chat_lamport(topic_a).await.unwrap(), 5);
+    }
+
+    /// `record_message_ack` folds monotonically per (acker, author);
+    /// `recorded_message_ack` reads the fold.
+    #[tokio::test]
+    async fn test_record_message_ack_change_detection() {
+        let db = projection().await;
+        let topic = *Topic::<kind::Untyped>::new([1; 32]);
+        let (acker, author) = (device(10), device(20));
+        let recorded = || db.recorded_message_ack(topic, acker, author);
+        let ack = |label: &[u8], seq: SeqNum| AckedOp {
+            hash: Hash::digest(label),
+            seq,
+        };
+
+        assert_eq!(recorded().await.unwrap(), None);
+        db.record_message_ack(topic, acker, author, ack(b"a", 2))
+            .await
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(2));
+        // Replay of the same ack: the fold stays.
+        db.record_message_ack(topic, acker, author, ack(b"a", 2))
+            .await
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(2));
+        // An older ack never regresses the fold.
+        db.record_message_ack(topic, acker, author, ack(b"old", 1))
+            .await
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(2));
+        // A newer one advances it.
+        db.record_message_ack(topic, acker, author, ack(b"new", 7))
+            .await
+            .unwrap();
+        assert_eq!(recorded().await.unwrap(), Some(7));
+    }
+
+    /// `ack_delta` is the per-author gap between the latest processed non-ack
+    /// op and what `me` has already acked; `delivered_acks` folds every other
+    /// acker, skipping devices of the author's own agent.
+    #[tokio::test]
+    async fn test_ack_delta_and_delivered_acks() {
+        let db = projection().await;
+        let topic = *Topic::<kind::Untyped>::new([1; 32]);
+
+        let me = device(1);
+        // Author with two devices under one agent, plus an unrelated author.
+        let agent_a = agent(2);
+        let (author_a, sibling_a) = (device(20), device(21));
+        let author_b = device(30);
+        db.save_agent_mapping(author_a, agent_a).await.unwrap();
+        db.save_agent_mapping(sibling_a, agent_a).await.unwrap();
+        db.save_agent_mapping(author_b, agent(3)).await.unwrap();
+
+        let head_a = AckedOp {
+            hash: Hash::digest(b"a4"),
+            seq: 4,
+        };
+        let head_b = AckedOp {
+            hash: Hash::digest(b"b2"),
+            seq: 2,
+        };
+        db.record_chat_log_head(topic, author_a, head_a.seq, head_a.hash)
+            .await
+            .unwrap();
+        db.record_chat_log_head(topic, author_b, head_b.seq, head_b.hash)
+            .await
+            .unwrap();
+        // My own head must never appear in my delta.
+        db.record_chat_log_head(topic, me, 9, Hash::digest(b"mine"))
+            .await
+            .unwrap();
+
+        let delta = db.ack_delta(topic, me).await.unwrap();
+        assert_eq!(
+            delta,
+            maplit::btreemap![author_a => head_a, author_b => head_b]
+        );
+
+        // Once I've acked author_a, only author_b remains in the delta.
+        db.record_message_ack(topic, me, author_a, head_a)
+            .await
+            .unwrap();
+        let delta = db.ack_delta(topic, me).await.unwrap();
+        assert_eq!(delta, maplit::btreemap![author_b => head_b]);
+
+        // Delivered: my ack of author_a counts (different agent)...
+        let delivered = db.delivered_acks(topic).await.unwrap();
+        assert_eq!(delivered, maplit::btreemap![author_a => head_a]);
+
+        // ...but an ack from the author's own sibling device does not.
+        let newer_a = AckedOp {
+            hash: Hash::digest(b"a6"),
+            seq: 6,
+        };
+        db.record_message_ack(topic, sibling_a, author_a, newer_a)
+            .await
+            .unwrap();
+        let delivered = db.delivered_acks(topic).await.unwrap();
+        assert_eq!(delivered, maplit::btreemap![author_a => head_a]);
+
+        // An acker with no agent mapping counts as another agent, and the
+        // fold takes the max seq per author across ackers.
+        let newest_a = AckedOp {
+            hash: Hash::digest(b"a8"),
+            seq: 8,
+        };
+        db.record_message_ack(topic, device(99), author_a, newest_a)
+            .await
+            .unwrap();
+        db.record_message_ack(topic, device(99), author_b, head_b)
+            .await
+            .unwrap();
+        let delivered = db.delivered_acks(topic).await.unwrap();
+        assert_eq!(
+            delivered,
+            maplit::btreemap![author_a => newest_a, author_b => head_b]
+        );
+    }
+
     #[tokio::test]
     async fn test_tombstones_per_topic() {
         let dir = tempfile::tempdir().unwrap();
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_tombstones.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let db = OpProjection::new(pool.clone()).await.unwrap();
 
         let topic_a = *Topic::<kind::Untyped>::new([1; 32]);
@@ -826,9 +1299,14 @@ mod tests {
         drop(db);
         pool.close().await;
 
-        let pool = create_sqlite_pool(dir.path().join("test_tombstones.db"))
-            .await
-            .unwrap();
+        let pool = create_sqlite_pool(
+            dir.path().join("test_tombstones.db"),
+            &sqlite_gate::SqliteGate::default(),
+        )
+        .await
+        .unwrap()
+        .pool()
+        .clone();
         let db = OpProjection::new(pool).await.unwrap();
         assert!(db.is_tombstoned(topic_a, hash1).await.unwrap());
         assert_eq!(

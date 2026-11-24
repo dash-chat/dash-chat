@@ -10,7 +10,6 @@ export class AddContactPage extends TestHelper {
 	codeTab = this.el(tid('add-contact-link-tab'));
 	scanTab = this.el(tid('add-contact-scan-tab'));
 	qrCode = this.el('wa-qr-code');
-	copyButton = this.el(tid('add-contact-copy-btn'));
 	copyLinkBox = this.el(tid('add-contact-copy-link-box'));
 	copyLinkButton = this.el(tid('add-contact-copy-link-btn'));
 	linkButton = this.el(tid('add-contact-link-btn'));
@@ -26,7 +25,7 @@ export class AddContactPage extends TestHelper {
 	colorButton = this.el(tid('add-contact-color-btn'));
 
 	async ready() {
-		await this.copyButton.waitForExist();
+		await this.qrCode.waitForExist();
 	}
 
 	/** True if the link sheet is open (not the slide-out dismissed state). */

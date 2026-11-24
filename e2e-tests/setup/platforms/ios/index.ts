@@ -1,0 +1,801 @@
+import {
+	type ChildProcess,
+	execFileSync,
+	execSync,
+	spawn,
+} from 'node:child_process';
+import {
+	appendFileSync,
+	existsSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
+
+import { syncXcodeEnv } from '../../../../scripts/sync-xcode-env';
+import { ASYNC_SCRIPT_TIMEOUT } from '../../../helpers/timeouts';
+import { echoLinesWithPrefix } from '../../agent-logger';
+import {
+	SLOT_PORT_STRIDE,
+	allocatePinnedPort,
+	allocatePinnedPortFrom,
+} from '../../allocate-port';
+import { SKIP_FRONTEND_BUILD, runBuild } from '../../app-build';
+import {
+	type Want,
+	claimAllWhenFreeSync,
+	describeHeld,
+	release,
+} from '../../claims';
+import { deviceHasBuild, recordInstalled } from '../../device-installs';
+import { envWithoutWdioLoader } from '../../harness-env';
+import { E2E_NETWORK_ID } from '../../network-id';
+import { E2E_RELAY_URL } from '../../relay';
+import {
+	deviceUdid,
+	isOnWebview,
+	returnToWebviewOnNextUse,
+	switchToWebview,
+	waitForTestUtils,
+} from '../../webview';
+import {
+	type AgentPlatform,
+	type PrepareContext,
+	lanBakedEnv,
+	remoteBakedEnv,
+} from '../platform';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const E2E_DIR = path.resolve(__dirname, '..', '..', '..');
+
+export const APP_BUNDLE_ID = 'studio.darksoil.dashchat';
+/** What a reachability probe gets before the network counts as having no
+ *  upstream. A captive portal answers fast or not at all. */
+const INTERNET_PROBE_TIMEOUT = 5_000;
+
+type InternetProbe = { url: string; headers: Record<string, string> };
+
+/** Two origins, neither able to answer for the other: a network that blocks
+ *  DNS-over-HTTPS — which is what a policy-managed AP blocks first — fails the
+ *  resolver every time, and that failure is indistinguishable from having no
+ *  upstream at all. Both are served with `access-control-allow-origin: *`, so
+ *  a cross-origin read of either one succeeds. */
+const INTERNET_PROBES: InternetProbe[] = [
+	{
+		url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A',
+		headers: { accept: 'application/dns-json' },
+	},
+	{ url: 'https://api.github.com/zen', headers: {} },
+];
+
+/** Times round the list before a network counts as having no upstream. A
+ *  `false` is what lets a spec run, so it is the answer worth asking twice
+ *  for. */
+const INTERNET_PROBE_ROUNDS = 2;
+
+/** Between probes, so a retry outlasts whatever made the last one fail. */
+const INTERNET_PROBE_GAP = 2_000;
+
+// Fixed home for the .ipa the sessions install, copied here by
+// scripts/export-session-ipa.ts after `tauri ios build`. The capabilities
+// `appium:app` reads are resolved when wdio.conf.ts loads — before onPrepare
+// builds anything — so it can't name a path under the build dir,
+// whose layout the tauri build rearranges (it exports the .ipa to the build
+// dir, then moves it into an arch subdir).
+const SESSION_IPA = path.join(E2E_DIR, '.cache', 'dash-chat-e2e.ipa');
+
+// The app project signs with Automatic signing under this team (see
+// src-tauri/gen/apple/dash-chat.xcodeproj); WebDriverAgent reuses it so Appium
+// can build and install WDA on the physical device.
+const DEV_TEAM = '4XN3VLHC68';
+const WDA_BUNDLE_ID = 'studio.darksoil.dashchat.WebDriverAgentRunner';
+
+function assertIosToolsAvailable() {
+	for (const tool of ['idevice_id', 'xcrun']) {
+		try {
+			execSync(`command -v ${tool}`, { stdio: 'ignore' });
+		} catch {
+			throw new Error(
+				`${tool} not found — iOS agents run in the plain shell and need ` +
+					'system Xcode plus libimobiledevice (brew install libimobiledevice)',
+			);
+		}
+	}
+}
+
+function connectedDevices(): string[] {
+	return execSync('idevice_id -l', { encoding: 'utf8' })
+		.split('\n')
+		.map(line => line.trim())
+		.filter(Boolean);
+}
+
+// Claim one connected iPhone per slot
+function claimDevices(slots: number[]): Map<number, string> {
+	const pinnedOf = (slot: number) =>
+		process.env[`_WDIO_IOS_UDID${slot}`] ?? process.env[`IOS_UDID${slot}`];
+	const pinned = new Set(slots.map(pinnedOf).filter(u => u !== undefined));
+	const connected = connectedDevices();
+	// Slots wanting the same thing — a pinned device, or any iPhone — claim
+	// it as one group, so a run holds all it needs or nothing.
+	const groups = new Map<string, { slots: number[]; want: Want }>();
+	for (const slot of slots) {
+		const key = pinnedOf(slot) ?? 'any';
+		const group = groups.get(key) ?? {
+			slots: [],
+			want: {
+				candidates:
+					key === 'any' ? connected.filter(d => !pinned.has(d)) : [key],
+				needed: 0,
+			},
+		};
+		group.slots.push(slot);
+		group.want.needed += 1;
+		groups.set(key, group);
+	}
+	for (const { slots: wanting, want } of groups.values()) {
+		if (want.candidates.length >= want.needed) continue;
+		const slot = wanting[want.candidates.length];
+		throw new Error(
+			`Not enough iPhones for agent${slot} ` +
+				`(${describeHeld(connected)}). Connect a ` +
+				`trusted device, or set IOS_UDID${slot}.`,
+		);
+	}
+	const wants = [...groups.values()].map(g => g.want);
+	// The launcher claims, waiting for devices another run is driving; the
+	// workers inherit its claims through the pinned env.
+	const taken =
+		process.env.WDIO_WORKER_ID === undefined
+			? claimAllWhenFreeSync(wants)
+			: wants.map(w => w.candidates.slice(0, w.needed));
+	const udids = new Map<number, string>();
+	[...groups.values()].forEach(({ slots: wanting }, i) => {
+		wanting.forEach((slot, j) => {
+			process.env[`_WDIO_IOS_UDID${slot}`] = taken[i][j];
+			udids.set(slot, taken[i][j]);
+		});
+	});
+	return udids;
+}
+
+/** `mobile: queryAppState` value for "the app is not running". */
+export const APP_STATE_NOT_RUNNING = 1;
+/** `mobile: queryAppState` value for "the app is on screen". */
+export const APP_STATE_FOREGROUND = 4;
+
+/** SIGKILL the phone's push extension process, so the next push starts a
+ *  fresh one — with a node built from the app's current data — instead of
+ *  waking an old process still holding a node from before. */
+export function killIosPushExtension(udid: string): void {
+	const listing = path.join(
+		tmpdir(),
+		`dashchat-processes-${udid}-${process.pid}.json`,
+	);
+	execSync(
+		`xcrun devicectl device info processes --device ${udid} --json-output "${listing}"`,
+		{ stdio: 'ignore' },
+	);
+	const { result } = JSON.parse(readFileSync(listing, 'utf8')) as {
+		result: {
+			runningProcesses: { executable?: string; processIdentifier: number }[];
+		};
+	};
+	rmSync(listing, { force: true });
+	for (const p of result.runningProcesses) {
+		if (p.executable?.endsWith('/PushNotificationsExtension') !== true)
+			continue;
+		execSync(
+			`xcrun devicectl device process signal --device ${udid} --pid ${p.processIdentifier} --signal SIGKILL`,
+			{ stdio: 'ignore' },
+		);
+	}
+}
+
+/** How many times [`pocketIosDevice`] locks the phone before giving up on
+ *  iOS reclaiming its sockets. Each costs up to a minute (the reclaim wait and
+ *  a runner restart), which spec timeouts have to leave room for. */
+const RECLAIM_ATTEMPTS = 3;
+/** What the lock gets before the runner goes: iOS holds the phone awake for
+ *  about a second around it. */
+const LOCK_TRANSITION_MS = 1_500;
+/** What each home-button press gets to land before the next. */
+const UNLOCK_PRESS_MS = 1_000;
+/** What iOS gets to suspend the app once nothing holds the phone awake. */
+const RECLAIM_TIMEOUT_MS = 20_000;
+/** What runningboardd logs when iOS reclaims the suspended app's sockets:
+ *  the reclaim of every app suspended so far, once nothing holds the phone
+ *  awake any more, or the app being suspended with all of them ("ALL") rather
+ *  than only its AF_UNIX ones ("SVC"). iOS 26 only ever logs the former. */
+const SOCKETS_RECLAIMED = new RegExp(
+	`Shutdown sockets for all suspended processes|: \\[app<${APP_BUNDLE_ID.replace(/\./g, '\\.')}\\(.*?\\)>:\\d+\\] Shutdown sockets \\(ALL\\)`,
+);
+
+/** Press the home button, returning once iOS no longer reports the app in the
+ *  foreground, so whatever follows sees it backgrounded. */
+export async function backgroundIosApp(b: WebdriverIO.Browser): Promise<void> {
+	// `terminateApp` is not a substitute: XCUITest's terminate reads to iOS as
+	// a user force-quit.
+	await b.execute('mobile: backgroundApp');
+	await b.waitUntil(
+		async () =>
+			Number(await b.queryAppState(APP_BUNDLE_ID)) !== APP_STATE_FOREGROUND,
+		{ timeoutMsg: 'the app stayed in the foreground after a home press' },
+	);
+}
+
+/** Lock the phone as one put away does, with nothing holding it awake, so iOS
+ *  suspends the app, on screen or in the background, and reclaims every socket
+ *  it holds. The phone is unlocked again afterwards with the app where it was,
+ *  and the session is back for whatever the caller does next.
+ *
+ *  The XCUITest runner holds the phone awake for as long as the host's
+ *  xcodebuild is attached, and an app suspended while it is held awake keeps
+ *  its sockets: the runner goes for the suspension. This checks runningboardd
+ *  said iOS reclaimed them, and tries again until it does. */
+export async function pocketIosDevice(b: WebdriverIO.Browser): Promise<void> {
+	const udid = deviceUdid(b);
+	const wasForeground = await isIosAppForeground(b);
+	// The new session starts out native; a caller driving the webview carries on
+	// in it once the app is back on screen.
+	const onWebview = await isOnWebview(b);
+	for (let attempt = 1; attempt <= RECLAIM_ATTEMPTS; attempt++) {
+		// Not waited on to attach: the reclaim comes after the runner is killed,
+		// well over a second later.
+		const reclaim = watchRunningboardd(udid, SOCKETS_RECLAIMED);
+		let reclaimed: string | null;
+		try {
+			await b.execute('mobile: lock');
+			await b.pause(LOCK_TRANSITION_MS);
+			// Killed rather than ending the session: ending it terminates the app
+			// (`appium:shouldTerminateApp`).
+			killWebDriverAgentHost(udid);
+			reclaimed = await reclaim.seen(RECLAIM_TIMEOUT_MS);
+		} finally {
+			reclaim.stop();
+		}
+		await reattachIosSession(b);
+		if (reclaimed !== null) {
+			console.log(
+				`[ios] ${udid}: iOS reclaimed the app's sockets: ${reclaimed}`,
+			);
+			// The unlock presses home blind, and one press too many sends the app
+			// off screen.
+			if (wasForeground && !(await isIosAppForeground(b))) {
+				await b.activateApp(APP_BUNDLE_ID);
+			}
+			if (onWebview) returnToWebviewOnNextUse(b);
+			return;
+		}
+		console.log(
+			`[ios] ${udid}: iOS kept the app's sockets (attempt ${attempt}), pocketing again`,
+		);
+		// Woken so that iOS suspends it afresh on the next lock.
+		await b.activateApp(APP_BUNDLE_ID);
+		if (!wasForeground) await backgroundIosApp(b);
+	}
+	throw new Error(
+		`iOS never reclaimed the app's sockets on ${udid} in ${RECLAIM_ATTEMPTS} attempts`,
+	);
+}
+
+async function isIosAppForeground(b: WebdriverIO.Browser): Promise<boolean> {
+	return Number(await b.queryAppState(APP_BUNDLE_ID)) === APP_STATE_FOREGROUND;
+}
+
+/** End the host's xcodebuild for the phone's runner, which holds the phone
+ *  awake for as long as it is attached. */
+function killWebDriverAgentHost(udid: string): void {
+	try {
+		execSync(`pkill -f 'xcodebuild .*-destination id=${udid}'`);
+	} catch {
+		console.warn(`[ios] ${udid}: no WebDriverAgent xcodebuild to end`);
+	}
+}
+
+/** A new session on the phone whose runner was killed, leaving the app where
+ *  it is, and the phone unlocked. */
+async function reattachIosSession(b: WebdriverIO.Browser): Promise<void> {
+	// Neither reset, launch nor attach to the app: the first two restart it,
+	// and attaching brings it to the foreground.
+	await b.reloadSession({
+		...b.requestedCapabilities,
+		'appium:noReset': true,
+		'appium:autoLaunch': false,
+		'appium:autoWebview': false,
+	});
+	// A new runner always takes the phone for unlocked, so `mobile: unlock`
+	// does nothing: the first press wakes the lock screen, the second unlocks
+	// it (the test phones have no passcode).
+	for (let press = 0; press < 2; press++) {
+		await b.execute('mobile: pressButton', { name: 'home' });
+		await b.pause(UNLOCK_PRESS_MS);
+	}
+}
+
+/** Follow runningboardd's log on the phone until a line matches `pattern`,
+ *  keeping what it read in .dbs/e2e for when it never does. */
+function watchRunningboardd(
+	udid: string,
+	pattern: RegExp,
+): {
+	/** The matching line, or null when none came within `timeoutMs`. */
+	seen(timeoutMs: number): Promise<string | null>;
+	stop(): void;
+} {
+	const proc = spawn('idevicesyslog', ['-u', udid, '-p', 'runningboardd'], {
+		stdio: ['ignore', 'pipe', 'ignore'],
+	});
+	// A watcher that cannot start just never sees the line.
+	proc.on('error', () => {});
+	const log = path.join(
+		E2E_DIR,
+		'..',
+		'.dbs',
+		'e2e',
+		`runningboardd-${udid}.log`,
+	);
+	const matched = new Promise<string>(resolve => {
+		createInterface({ input: proc.stdout }).on('line', line => {
+			try {
+				appendFileSync(log, `${line}\n`);
+			} catch {
+				// A full disk loses the copy, not the watch.
+			}
+			const match = pattern.exec(line);
+			if (match !== null) resolve(match[0]);
+		});
+	});
+	return {
+		async seen(timeoutMs) {
+			let timer: NodeJS.Timeout | undefined;
+			const seen = await Promise.race([
+				matched,
+				new Promise<null>(resolve => {
+					timer = setTimeout(() => resolve(null), timeoutMs);
+				}),
+			]);
+			clearTimeout(timer);
+			return seen;
+		},
+		stop() {
+			proc.kill();
+		},
+	};
+}
+
+/** Reset an iOS agent to first-launch state without reinstalling the app.
+ *
+ *  iOS has no adb-style data clear, and reinstalling the ~135MB .ipa per spec
+ *  is what made device runs slow — so the reset is the app's own
+ *  delete_account (the Settings → Account → Delete account code path), which
+ *  wipes the data dir and exits the process. Relaunch, and the spec starts
+ *  from the same state a fresh install would. */
+export async function resetIosAppState(b: WebdriverIO.Browser): Promise<void> {
+	await wipeIosAppData(b);
+	await attachToIosApp(b);
+}
+
+/** Leave the app installed with no data and not running: the iOS answer to
+ *  android's `mobile: clearApp`. The wipe is the app's own delete_account, so
+ *  the app is brought up to run it and exits on its own afterwards.
+ *
+ *  Also what a spec file is left in once it is done. The next spec's reset
+ *  runs only after the app is up with the old data, and in a new run that app
+ *  uploads its whole history to the fresh mailbox, which pushes every message
+ *  back to this phone: banners over the navbar the spec is about to tap. */
+export async function clearIosAppData(b: WebdriverIO.Browser): Promise<void> {
+	await attachToIosApp(b);
+	await wipeIosAppData(b);
+}
+
+/** Whether the phone can reach the internet, asked of the app's own webview:
+ *  iOS has no adb-style shell to run a probe in, and the answer has to come
+ *  from the phone, not from the host, which is on a different network.
+ *
+ *  The probe reads a cross-origin response rather than just seeing a request
+ *  leave, so a captive portal answering in the internet's place cannot pass
+ *  for it: over HTTPS a portal cannot produce a response for someone else's
+ *  origin at all, and its own page comes back without the CORS header the
+ *  browser needs to hand it to us.
+ *
+ *  Asked of both origins, twice each, before answering no. The callers turn a
+ *  `true` into a hard failure, so a false positive is loud, but a false
+ *  negative — a slow AP, a blocked endpoint, a webview that is not ready —
+ *  reads as "no upstream" and lets a spec run on a network that has one,
+ *  proving nothing.
+ *
+ *  Brings the app to the foreground to ask, and leaves it there — every caller
+ *  wipes and relaunches it next, so what it comes up on does not matter. The
+ *  script timeout is raised and left raised: the driver's default is no state
+ *  worth restoring, and lowering what another caller raised would be worse. */
+export async function iosHasInternet(b: WebdriverIO.Browser): Promise<boolean> {
+	await attachToIosApp(b);
+	await b.setTimeout({ script: ASYNC_SCRIPT_TIMEOUT });
+	const probes = Array.from(
+		{ length: INTERNET_PROBE_ROUNDS },
+		() => INTERNET_PROBES,
+	).flat();
+	for (const [i, probe] of probes.entries()) {
+		// Spaced, or attempts that fail fast — a DNS error rather than a
+		// timeout — all land inside the same moment and say nothing new.
+		if (i > 0) await b.pause(INTERNET_PROBE_GAP);
+		if (await probeInternet(b, probe)) return true;
+	}
+	return false;
+}
+
+/** Whether the endpoint answered. Any answer counts, whatever its status: it
+ *  is an HTTPS response the browser was willing to read cross-origin, which
+ *  only the real origin can produce — a rate-limited 403 proves upstream as
+ *  well as a 200 does. */
+function probeInternet(
+	b: WebdriverIO.Browser,
+	probe: InternetProbe,
+): Promise<boolean> {
+	return b.executeAsync(
+		(target: InternetProbe, ms: number, done: (reachable: boolean) => void) => {
+			const timer = setTimeout(() => done(false), ms);
+			const settle = (reachable: boolean) => {
+				clearTimeout(timer);
+				done(reachable);
+			};
+			fetch(target.url, { headers: target.headers, cache: 'no-store' }).then(
+				() => settle(true),
+				() => settle(false),
+			);
+		},
+		probe,
+		INTERNET_PROBE_TIMEOUT,
+	);
+}
+
+/** Run the app's own delete_account, which wipes the data dir and exits, and
+ *  end the push extension, whose node would otherwise outlive the data it was
+ *  built from and serve the next account's pushes from the old one. */
+async function wipeIosAppData(b: WebdriverIO.Browser): Promise<void> {
+	await b.execute(() => window.__test.resetToFirstLaunch());
+	// The command exits the app; leave the webview before it dies under us.
+	await b.switchContext('NATIVE_APP');
+	await b.waitUntil(
+		async () =>
+			Number(
+				await b.execute('mobile: queryAppState', { bundleId: APP_BUNDLE_ID }),
+			) <= APP_STATE_NOT_RUNNING,
+		{ timeoutMsg: 'the app never exited after delete_account' },
+	);
+	killIosPushExtension(deviceUdid(b));
+}
+
+/** Bring the app to the foreground and attach to its webview. */
+export async function attachToIosApp(b: WebdriverIO.Browser): Promise<void> {
+	await b.activateApp(APP_BUNDLE_ID);
+	await switchToWebview(b, 'ios');
+	await waitForTestUtils(b);
+}
+
+/** Where the device says our app's bundle sits right now. Each install puts it
+ *  in a container of its own, so this changes whenever anything replaces the
+ *  build we installed — a release or TestFlight build carries the same version
+ *  and bundle id as ours, and pointed at the cloud mailbox instead of the
+ *  run's, it fails every cross-device wait in the suite. `undefined` when the
+ *  app is absent or the device can't be asked, which reinstalls. */
+function installedBundlePath(udid: string): string | undefined {
+	const listing = path.join(
+		tmpdir(),
+		`dashchat-apps-${udid}-${process.pid}.json`,
+	);
+	try {
+		execSync(
+			`xcrun devicectl device info apps --device ${udid} ` +
+				`--bundle-id ${APP_BUNDLE_ID} --json-output "${listing}"`,
+			{ stdio: 'ignore' },
+		);
+		const { result } = JSON.parse(readFileSync(listing, 'utf8')) as {
+			result: { apps: { url?: string }[] };
+		};
+		return result.apps[0]?.url;
+	} catch {
+		return undefined;
+	} finally {
+		rmSync(listing, { force: true });
+	}
+}
+
+/** Put a device back to a freshly-installed app, retrying the install: CoreDevice
+ * intermittently fails with a transient "unable to create bookmark data" /
+ * "No such file" error even though the .ipa exists. Best-effort — a device left
+ * without the app falls back to the session's own `appium:app` install.
+ * Returns whether the devicectl install actually succeeded. */
+async function reinstallApp(udid: string): Promise<boolean> {
+	try {
+		execSync(
+			`xcrun devicectl device uninstall app --device ${udid} ${APP_BUNDLE_ID}`,
+			{ stdio: 'ignore' },
+		);
+	} catch {
+		/* not installed */
+	}
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		try {
+			execSync(
+				`xcrun devicectl device install app --device ${udid} "${SESSION_IPA}"`,
+				{ stdio: 'inherit' },
+			);
+			return true;
+		} catch (err) {
+			if (attempt === 3) {
+				console.warn(
+					`[ios] devicectl install failed for ${udid} after ${attempt} ` +
+						`attempts; falling back to the session's appium:app install: ${err}`,
+				);
+				return false;
+			}
+			await new Promise(resolve => setTimeout(resolve, 2000));
+		}
+	}
+	return false;
+}
+
+/** Kill any tail still attached to `udid`.
+ *
+ *  Each spec runs in its own worker, so `afterSession`'s kill only ever reaches
+ *  that worker's own tails and a worker that exits early leaves its own behind.
+ *  A surviving tail of the app's processes has made every later one connect to
+ *  a stream that stays empty — which is silent, and looks exactly like an app
+ *  that logged nothing. A tail of other processes alongside it (the
+ *  runningboardd watcher of [`pocketIosDevice`]) has not. */
+function killStaleSyslogLoggers(udid: string): void {
+	try {
+		execSync(`pkill -f "idevicesyslog -u ${udid}"`, { stdio: 'ignore' });
+	} catch {
+		/* nothing was attached */
+	}
+}
+
+/** Processes whose output the run cares about, in idevicesyslog's `a|b` form.
+ *  The push extension is a separate process, so filtering to the app alone
+ *  leaves every push failure undiagnosable. */
+const LOGGED_PROCESSES = 'Dash Chat|PushNotificationsExtension';
+
+// Tail the app's device console and echo it with an agent prefix
+function startSyslogLogger(agent: string, udid: string): ChildProcess | null {
+	killStaleSyslogLoggers(udid);
+	try {
+		const proc = spawn(
+			'idevicesyslog',
+			['-u', udid, '--process', LOGGED_PROCESSES],
+			{ stdio: ['ignore', 'pipe', 'ignore'] },
+		);
+		proc.on('error', () => {});
+		if (proc.stdout) echoLinesWithPrefix(agent, proc.stdout);
+		return proc;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Agents running the e2e app on physical iPhones through Appium (XCUITest)
+ * sessions that land directly in the app's WKWebView context, so specs and page
+ * objects work exactly as on desktop and Android.
+ */
+/** What iOS says when it will not launch a developer-signed app because it
+ *  cannot check the developer certificate online. */
+const UNTRUSTED_CERTIFICATE = 'Developer App Certificate is not trusted';
+
+/** Whether a WebDriverAgent launch on `slot` since `since` was refused for
+ *  an untrusted developer certificate, as its Xcode test results record. */
+function wdaRefusedCertificate(slot: number, since: number): boolean {
+	const results = path.join(E2E_DIR, '.cache', `wda-${slot}`, 'Logs', 'Test');
+	if (!existsSync(results)) return false;
+	return readdirSync(results)
+		.filter(name => name.endsWith('.xcresult'))
+		.map(name => path.join(results, name))
+		.filter(result => statSync(result).mtimeMs >= since)
+		.some(result => xcresultMentions(result, UNTRUSTED_CERTIFICATE));
+}
+
+function xcresultMentions(result: string, text: string): boolean {
+	try {
+		return execFileSync(
+			'xcrun',
+			[
+				'xcresulttool',
+				'get',
+				'object',
+				'--legacy',
+				'--format',
+				'json',
+				'--path',
+				result,
+			],
+			{
+				encoding: 'utf8',
+				maxBuffer: 64 * 1024 * 1024,
+				// A bundle still being written fails to read; that is no answer.
+				stdio: ['ignore', 'pipe', 'ignore'],
+			},
+		).includes(text);
+	} catch {
+		return false;
+	}
+}
+
+export class IosPlatform implements AgentPlatform {
+	readonly slots: number[];
+	readonly appiumPort: number;
+	private udids: Map<number, string>;
+	private loggers = new Map<number, ChildProcess>();
+	private readonly startedAt = Date.now();
+
+	constructor(slots: number[]) {
+		assertIosToolsAvailable();
+		this.slots = slots;
+		// Same pinned var as AndroidPlatform: a mixed run shares one Appium
+		// server hosting both drivers.
+		this.appiumPort = allocatePinnedPort('_WDIO_APPIUM_PORT');
+		// Workers reload this module; device provisioning belongs to the
+		// launcher, which claims before any worker starts.
+		this.udids = claimDevices(slots);
+	}
+
+	remoteOptions(slot: number) {
+		const udid = this.udids.get(slot)!;
+		return {
+			port: this.appiumPort,
+			capabilities: {
+				platformName: 'iOS',
+				'appium:automationName': 'XCUITest',
+				'appium:udid': udid,
+				'appium:app': SESSION_IPA,
+				'appium:bundleId': APP_BUNDLE_ID,
+				// onPrepare already installed this exact build through devicectl;
+				// without this the driver installs it again every session
+				// (`enforceAppInstall` defaults to reinstall-every-session), which is
+				// the usbmux traffic that breaks session creation. Left as `false`
+				// rather than dropping `appium:app`, so a device the devicectl install
+				// failed on is still recovered by the session.
+				'appium:enforceAppInstall': false,
+				'appium:autoWebview': true,
+				'appium:autoWebviewTimeout': 30_000,
+				'appium:webviewConnectTimeout': 30_000,
+				// Real native taps for webview clicks: JS-synthesized clicks don't
+				// reliably fire tap handlers on Konsta list items in WKWebView, so
+				// navigations silently no-op without this.
+				'appium:nativeWebTap': true,
+				// Auto-accept native permission dialogs (e.g. the notifications
+				// prompt) so they don't sit over the webview and block interaction —
+				// the iOS analog of android's autoGrantPermissions.
+				'appium:autoAcceptAlerts': true,
+				// WDA build + signing under the app's team.
+				'appium:xcodeOrgId': DEV_TEAM,
+				'appium:xcodeSigningId': 'Apple Development',
+				// Let xcodebuild register a not-yet-provisioned device on the dev
+				// portal during the WDA build, instead of failing with 'provisioning
+				// profile … doesn't include the currently selected device' — a freshly
+				// connected iPhone isn't in the team profile yet.
+				'appium:allowProvisioningDeviceRegistration': true,
+				'appium:updatedWDABundleId': WDA_BUNDLE_ID,
+				// Per-slot DerivedData: a two-device run (PHONES=ios,ios) starts both
+				// sessions at once, and two xcodebuilds sharing one DerivedData collide
+				// (WDA "xcodebuild failed with code 65"). Same reason as the per-slot
+				// ports above.
+				'appium:derivedDataPath': path.join(E2E_DIR, '.cache', `wda-${slot}`),
+				'appium:wdaLocalPort': allocatePinnedPortFrom(
+					`_WDIO_WDA_PORT${slot}`,
+					8100 + slot * SLOT_PORT_STRIDE,
+				),
+				'appium:mjpegServerPort': allocatePinnedPortFrom(
+					`_WDIO_MJPEG_PORT${slot}`,
+					9100 + slot * SLOT_PORT_STRIDE,
+				),
+				'appium:wdaLaunchTimeout': 120_000,
+				// 0 disables idle expiry: specs like review-checks park one agent
+				// for the whole spec after setup, far beyond any sane timeout.
+				'appium:newCommandTimeout': 0,
+				// Surface the WDA xcodebuild output so signing/config failures are
+				// diagnosable instead of a bare "xcodebuild failed with code 65".
+				'appium:showXcodeLog': true,
+			} as WebdriverIO.Capabilities,
+		};
+	}
+
+	async onPrepare(ctx: PrepareContext) {
+		// The app reaches its mailbox and push server at whatever this bakes in.
+		// Against a local mailbox that is the host's LAN address; against a
+		// remote deployment it is that deployment's own mailbox and push server —
+		// they must match, since the mailbox notifies its own push server and the
+		// device registers its token with the one it was built for.
+		// The network id and relay are the run's whichever mailbox it is, as on
+		// android and desktop: they decide who the app can find, not where the
+		// mailbox is. Both are `MANAGED` in sync-xcode-env, so leaving them out
+		// of the remote branch would also strip what a local run wrote.
+		const bakedEnv = {
+			E2E_NETWORK_ID,
+			E2E_RELAY_URL,
+			...(ctx.mailboxPort === null
+				? remoteBakedEnv()
+				: lanBakedEnv(ctx.mailboxPort, ctx.pushPort)),
+		};
+		// `ENV` and the `SENTRY_*` vars are `MANAGED` too: pass the shell's through
+		// so a run doesn't strip what `just ios build` wrote for the dSYM upload.
+		syncXcodeEnv({
+			...bakedEnv,
+			ENV: process.env.ENV,
+			SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN,
+			SENTRY_ORG: process.env.SENTRY_ORG,
+			SENTRY_PROJECT: process.env.SENTRY_PROJECT,
+		});
+		runBuild(
+			`pnpm tauri ios build --debug --features e2e-tests ${SKIP_FRONTEND_BUILD} && node scripts/export-session-ipa.ts`,
+			envWithoutWdioLoader({
+				...bakedEnv,
+				IPHONEOS_DEPLOYMENT_TARGET: '17.0',
+				// Drop debuginfo (a full-debug iOS build is >10GB and fills the disk;
+				// this is compile-time, so it can't break signing). Unlike android,
+				// do NOT also STRIP symbols post-build — that leaves the disk/temp
+				// churn that made the .ipa export's codesign fail.
+				CARGO_PROFILE_DEV_DEBUG: '0',
+			}),
+		);
+
+		// Install once per run (not per spec — specs reset state through the
+		// app's own delete_account instead), and only on devices that don't
+		// already hold this exact build from a previous run.
+		for (const udid of this.udids.values()) {
+			if (deviceHasBuild(udid, SESSION_IPA, () => installedBundlePath(udid))) {
+				console.log(
+					`[ios] ${udid} already has the current e2e build — skipping install`,
+				);
+				continue;
+			}
+			if (await reinstallApp(udid)) {
+				recordInstalled(udid, SESSION_IPA, installedBundlePath(udid));
+			}
+		}
+	}
+
+	async beforeSession() {
+		for (const logger of this.loggers.values()) logger.kill();
+		this.loggers.clear();
+		// No reinstall here: onPrepare installed the build once for the whole
+		// run, and each spec resets to first-launch state through the app's own
+		// delete_account (see resetIosAppState above) — far faster than pushing
+		// the ~135MB .ipa over usbmux for every spec.
+		for (const [slot, udid] of this.udids) {
+			const logger = startSyslogLogger(`agent-${slot}`, udid);
+			if (logger) this.loggers.set(slot, logger);
+		}
+	}
+
+	async afterSession() {
+		for (const logger of this.loggers.values()) logger.kill();
+		this.loggers.clear();
+	}
+
+	async onComplete() {
+		for (const logger of this.loggers.values()) logger.kill();
+		// The launcher never owned the workers' tails, so kill them by device or
+		// the run leaves one attached per spec, blocking the next run's logging.
+		for (const udid of this.udids.values()) {
+			killStaleSyslogLoggers(udid);
+			release(udid);
+		}
+		for (const [slot, udid] of this.udids) {
+			if (!wdaRefusedCertificate(slot, this.startedAt)) continue;
+			console.error(
+				`[ios] ${udid} would not launch WebDriverAgent: ${UNTRUSTED_CERTIFICATE}. ` +
+					'iOS checks it online, so the phone is likely on a Wi-Fi network ' +
+					'with no internet, such as a test network an interrupted run left ' +
+					'it on. Put it back on your Wi-Fi by hand, and trust the developer ' +
+					'in Settings > General > VPN & Device Management if it asks.',
+			);
+		}
+	}
+}

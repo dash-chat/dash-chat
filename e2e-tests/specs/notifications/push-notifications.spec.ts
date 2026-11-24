@@ -2,26 +2,45 @@ import {
 	type NotificationHelper,
 	notificationHelperFor,
 } from '../../helpers/components/notifications';
-import { exchangeContacts } from '../../helpers/flows/exchange-contacts';
+import { blockAgent } from '../../helpers/flows/block-agent';
+import { deleteAccount } from '../../helpers/flows/delete-account';
+import { navigateToAddContact } from '../../helpers/flows/exchange-contacts';
+import { createGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { noisePngBytes } from '../../helpers/images';
 import { pushTestingEnabled } from '../../setup/push-server';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
 
+// Two avatars this size make an Android tap intent small enough to post but,
+// if it carries their bytes, too large for Android to deliver.
+const AVATAR_PX = 200;
+
 /**
- * Real-device, end-to-end push test: a message sent by one agent must arrive on
- * a backgrounded device receiver as an actual notification whose body carries
- * the message text — exercising the full pipeline (send → local mailbox →
- * local push-server → FCM → APNs/Android → NSE/OS → notification).
+ * Real-device, end-to-end push tests: operations produced by one agent must
+ * arrive on a backgrounded or quit receiver device as actual OS notifications
+ * whose content carries the payload (contact-request name, message text) and
+ * whose tap navigates to the chat the operation belongs to — exercising the
+ * full pipeline (send → local mailbox → local push-server → FCM →
+ * APNs/Android → NSE/OS → notification → tap route).
  *
  * Asserting the notification *content* (not just that some notification
  * appeared) is what catches the failure mode where the op can't be fetched in
- * time and the receiver falls back to a generic "You have a new message".
+ * time and the receiver falls back to a generic "You have a new message":
+ * waiting for the expected content instead would make that fallback
+ * indistinguishable from no push arriving — both just time out.
  *
- * Runs on either an iOS or an Android receiver. Only runs when `E2E_PUSH=1`
+ * Tap-to-navigate assertions need the receiver device unlocked for the whole
+ * run.
+ *
+ * Runs on either an iOS or an Android receiver. Only runs when a Firebase
+ * service-account key is present (see `e2e-tests/.env.example`).
  */
 describe('Push notifications (real device, end-to-end)', () => {
 	let receiver: Agent;
 	let sender: Agent;
 	let notifications: NotificationHelper;
+	let receiverLink: string;
+	// In the receiver's language: its notifications are what gets read.
+	let newContactRequest: string;
 
 	before(async function () {
 		if (!pushTestingEnabled()) this.skip();
@@ -34,56 +53,325 @@ describe('Push notifications (real device, end-to-end)', () => {
 		notifications = notificationHelperFor(receiver);
 	});
 
-	it('creates profiles and exchanges contacts', async () => {
+	it('creates profiles; the receiver shares its contact link', async () => {
 		await receiver.createProfilePage.createProfile('Rex', 'Test');
 		await sender.createProfilePage.createProfile('Sam', 'Test');
-		await exchangeContacts(receiver, sender);
+		newContactRequest = await receiver.tr('newContactRequest');
+
+		await navigateToAddContact(receiver);
+		receiverLink = await receiver.addContactPage.getAddContactLink();
+		await receiver.addContactPage.back.click();
+		await receiver.newMessagePage.back.click();
+		await receiver.homePage.ready();
 	});
 
-	it('delivers a push to a backgrounded app, carrying the message content', async () => {
+	it('delivers a contact-request push whose tap opens the request', async () => {
+		await receiver.pause(1_000);
+		await receiver.backgroundApp();
+
+		await navigateToAddContact(sender);
+		await sender.addContactPage.enterAddContactLink(receiverLink);
+		await sender.directChatPage.ready();
+
+		await expect(notifications).toHaveDelivered({
+			title: newContactRequest,
+			body: 'Sam',
+		});
+
+		// A requester can write into the direct chat before the receiver accepts
+		// them, and until it does nothing of theirs may reach the shade. The
+		// request notification is already posted, so the re-read returns the
+		// current set right away; the pause is what gives a message push time to
+		// arrive and fail this.
+		const preAcceptMessage = `hi PUSH_PREACCEPT_${Date.now()}`;
+		await sender.directChatPage.composer.sendMessage(preAcceptMessage);
+		await receiver.pause(15_000);
+		await expect(notifications).not.toHaveDelivered({ body: preAcceptMessage });
+
+		// Tap by the title: OEM shades (MIUI) render only the title while the
+		// notification is collapsed, so the body text is not a tappable anchor.
+		await notifications.tapNotification(newContactRequest);
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await expect(receiver.directChatPage.peerName).toHaveText(
+			expect.stringContaining('Sam'),
+		);
+		await receiver.directChatPage.acceptContactRequest();
+		// The message was delivered all along — only its notification was held
+		// back — so it is in the chat once the request is accepted.
+		await receiver.directChatPage.messages.waitForMessage(preAcceptMessage);
+	});
+
+	it('a second contact-request push taps through to its own chat', async () => {
+		await receiver.pause(1_000);
+		await receiver.backgroundApp();
+
+		// A second request needs a fresh identity: recreating the sender's
+		// account gives it a new device key and thus a new direct-chat topic.
+		await sender.directChatPage.back.click();
+		await sender.homePage.ready();
+		await deleteAccount(sender);
+		await sender.createProfilePage.createProfile('Zoe', 'Test');
+
+		await navigateToAddContact(sender);
+		await sender.addContactPage.enterAddContactLink(receiverLink);
+		await sender.directChatPage.ready();
+
+		await expect(notifications).toHaveDelivered({
+			title: newContactRequest,
+			body: 'Zoe',
+		});
+
+		// The receiver was backgrounded while sitting on Sam's chat — staying
+		// there instead of switching to Zoe's chat is the regression this
+		// assertion guards against.
+		await notifications.tapNotification(newContactRequest);
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await expect(receiver.directChatPage.peerName).toHaveText(
+			expect.stringContaining('Zoe'),
+		);
+		await receiver.directChatPage.acceptContactRequest();
+	});
+
+	it('delivers a message push to a backgrounded app whose tap opens the chat', async () => {
 		const marker = `PUSH_BG_${Date.now()}`;
 		const message = `hi ${marker}`;
 
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
 		await receiver.pause(1_000);
 		await receiver.backgroundApp();
 
 		await sender.directChatPage.composer.sendMessage(message);
 
-		// Wait for *any* notification of ours, then check its content. Waiting
-		// for one that already contains the marker would make the generic
-		// fallback ("You have a new message") indistinguishable from no push
-		// arriving — both just time out — whereas this fails with the actual body
-		// in the message.
-		const text = await notifications.waitForAppNotification();
-		expect(text).toContain(marker);
+		await expect(notifications).toHaveDelivered({
+			title: 'Zoe',
+			body: message,
+		});
 
-		// Tap-to-navigate needs an unlocked device; best-effort, so the content
-		// assertion above is the pass criterion.
-		try {
-			await notifications.tapNotification(message);
-			await notifications.returnToApp();
-			await receiver.directChatPage.ready();
-			await receiver.directChatPage.messages.waitForMessage(message);
-		} catch (err) {
-			console.warn(`push tap-to-navigate skipped: ${err}`);
-		}
+		await notifications.tapNotification('Zoe');
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await expect(receiver.directChatPage.peerName).toHaveText(
+			expect.stringContaining('Zoe'),
+		);
+		await receiver.directChatPage.messages.waitForMessage(message);
 	});
 
-	it('delivers a push to a force-quit app, carrying the message content', async () => {
+	it('shows a group created while the app was in the background', async () => {
+		const groupName = `Group ${Date.now()}`;
+		const message = `hi PUSH_GROUP_${Date.now()}`;
+
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(1_000);
+		await receiver.backgroundApp();
+
+		await sender.directChatPage.back.click();
+		await sender.homePage.ready();
+		await createGroup(sender, groupName, ['Rex']);
+		await sender.groupChatPage.composer.sendMessage(message);
+		await expect(notifications).toHaveDelivered({
+			title: 'Zoe',
+			body: message,
+			conversation: groupName,
+		});
+
+		// Switching back, not tapping: on iOS the extension joined the group in
+		// the shared store, and the still-running app has to catch up on it.
+		await receiver.startApp();
+		await receiver.homePage.chatListItem(groupName).waitForExist();
+		await receiver.homePage.chatListItem(groupName).click();
+		await receiver.groupChatPage.ready();
+		await receiver.groupChatPage.messages.waitForMessage(message);
+
+		// The group's notification would match the later taps on 'Zoe'.
+		await notifications.clear();
+		await receiver.groupChatPage.back.click();
+		await receiver.homePage.ready();
+		await sender.groupChatPage.back.click();
+		await sender.homePage.ready();
+		await sender.homePage.chatListItem('Rex').click();
+		await sender.directChatPage.ready();
+	});
+
+	it('delivers a message push to a force-quit app whose tap cold-starts into the chat', async () => {
 		const marker = `PUSH_QUIT_${Date.now()}`;
 		const message = `hi ${marker}`;
 
-		// Bring the app back so it can be quit properly, then terminate it — what
-		// a user swiping it away in the app switcher does
-		await receiver.startApp();
-		await receiver.goto('/');
+		// Quit from the home page — what a user swiping the app away in the app
+		// switcher does.
+		if (await receiver.directChatPage.back.isDisplayed()) {
+			await receiver.directChatPage.back.click();
+		}
 		await receiver.homePage.ready();
 		await receiver.pause(5_000);
 		await receiver.stopApp();
 
 		await sender.directChatPage.composer.sendMessage(message);
 
-		const text = await notifications.waitForAppNotification();
-		expect(text).toContain(marker);
+		await expect(notifications).toHaveDelivered({
+			title: 'Zoe',
+			body: message,
+		});
+
+		await notifications.tapNotification('Zoe');
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await expect(receiver.directChatPage.peerName).toHaveText(
+			expect.stringContaining('Zoe'),
+		);
+		await receiver.directChatPage.messages.waitForMessage(message);
+	});
+
+	// Shared between the two tests below: the message parked in the shade of
+	// the killed app before Ben's contact request launches it.
+	const shadeMarker = `PUSH_SHADE_${Date.now()}`;
+	const shadeMessage = `hi ${shadeMarker}`;
+
+	it('delivers a contact-request push to a killed app whose tap cold-starts into the request', async () => {
+		// Park a message notification from Zoe in the shade of the killed app
+		// first — the next test taps it after Ben's request has launched the
+		// app.
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(5_000);
+		await receiver.stopApp();
+
+		await sender.directChatPage.composer.sendMessage(shadeMessage);
+		await expect(notifications).toHaveDelivered({ body: shadeMessage });
+
+		// A contact request from a fresh identity must reach the killed app as
+		// a push: the inbox topic has to be FCM-subscribed like any chat topic,
+		// or requests silently wait until the app is next opened by hand.
+		await sender.directChatPage.back.click();
+		await sender.homePage.ready();
+		await deleteAccount(sender);
+		await sender.createProfilePage.createProfile('Ben', 'Test');
+		// The group test below needs a photo for Ben as well as for the group.
+		await sender.mainTabbar.settingsTab.click();
+		await sender.settingsPage.ready();
+		await sender.settingsPage.profileLink.click();
+		await sender.profilePage.ready();
+		await sender.profilePage.editPhoto.click();
+		await sender.editPhotoPage.ready();
+		await sender.editPhotoPage.setPhoto({
+			name: 'ben.png',
+			mimeType: 'image/png',
+			bytes: noisePngBytes(AVATAR_PX, 1),
+		});
+		await sender.editPhotoPage.save();
+		await sender.profilePage.ready();
+		await sender.profilePage.back.click();
+		await sender.mainTabbar.chatsTab.click();
+		await navigateToAddContact(sender);
+		await sender.addContactPage.enterAddContactLink(receiverLink);
+		await sender.directChatPage.ready();
+
+		await expect(notifications).toHaveDelivered({
+			title: newContactRequest,
+			body: 'Ben',
+		});
+		await notifications.tapNotification(newContactRequest);
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await expect(receiver.directChatPage.peerName).toHaveText(
+			expect.stringContaining('Ben'),
+		);
+	});
+
+	it('a notification already in the shade taps through after the app was launched by a different one', async () => {
+		// The app is now open *because* Ben's request cold-started it, with his
+		// route in the launch intent — the state where the launch route can
+		// shadow the tapped notification's route. Zoe's parked notification
+		// must still switch to her chat.
+		await expect(notifications).toHaveDelivered({ body: shadeMessage });
+		await notifications.tapNotification('Zoe');
+		await notifications.returnToApp();
+		await receiver.directChatPage.ready();
+		await expect(receiver.directChatPage.peerName).toHaveText(
+			expect.stringContaining('Zoe'),
+		);
+		await receiver.directChatPage.messages.waitForMessage(shadeMessage);
+	});
+
+	it('announces a group the killed app was added to, and a message in it whose tap opens the group', async () => {
+		const added = await receiver.tr('someoneAddedYouToTheGroup', {
+			name: 'Ben',
+		});
+
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.homePage.openChat('Ben');
+		await receiver.directChatPage.ready();
+		await receiver.directChatPage.acceptContactRequest();
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(5_000);
+		await receiver.stopApp();
+
+		await sender.directChatPage.back.click();
+		await createGroup(sender, 'Group while killed', ['Rex']);
+		await expect(notifications).toHaveDelivered({
+			title: 'Ben',
+			body: added,
+			conversation: 'Group while killed',
+		});
+
+		await sender.groupChatPage.infoLink.click();
+		await sender.groupInfoPage.ready();
+		await sender.groupInfoPage.editLink.click();
+		await sender.groupInfoEditPage.ready();
+		await sender.groupInfoEditPage.editPhotoButton.click();
+		await sender.editPhotoPage.ready();
+		await sender.editPhotoPage.setPhoto({
+			name: 'group.png',
+			mimeType: 'image/png',
+			bytes: noisePngBytes(AVATAR_PX, 2),
+		});
+		await sender.editPhotoPage.save();
+		await sender.groupInfoEditPage.ready();
+		await sender.groupInfoEditPage.save();
+		await sender.groupInfoPage.ready();
+		await sender.groupInfoPage.back.click();
+		await sender.groupChatPage.ready();
+
+		const message = `hi PUSH_GROUP_${Date.now()}`;
+		await sender.groupChatPage.composer.sendMessage(message);
+		await expect(notifications).toHaveDelivered({
+			title: 'Ben',
+			body: message,
+			conversation: 'Group while killed',
+		});
+
+		await notifications.tapNotification('Ben');
+		await notifications.returnToApp();
+		await receiver.groupChatPage.ready();
+		await receiver.groupChatPage.messages.waitForMessage(message);
+	});
+
+	it('announces nothing for a group a blocked contact adds the killed app to', async () => {
+		await receiver.groupChatPage.back.click();
+		await receiver.homePage.ready();
+		const newMessage = await receiver.tr('youHaveANewMessage');
+		await receiver.homePage.openChat('Ben');
+		await receiver.directChatPage.ready();
+		await blockAgent(receiver);
+		await receiver.directChatPage.back.click();
+		await receiver.homePage.ready();
+		await receiver.pause(5_000);
+		await receiver.stopApp();
+
+		await sender.groupChatPage.back.click();
+		await createGroup(sender, 'Group while blocked', ['Rex']);
+		// The block keeps the operation adding Rex from ever arriving, so the
+		// push handler is left waiting for it: the pause outlives its budget,
+		// and what the device holds afterwards is its final answer.
+		await receiver.pause(30_000);
+		await expect(notifications).not.toHaveDelivered({
+			conversation: 'Group while blocked',
+		});
+		await expect(notifications).not.toHaveDelivered({ title: newMessage });
 	});
 });

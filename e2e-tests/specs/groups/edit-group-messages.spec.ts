@@ -10,7 +10,7 @@ describe('Editing group messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 		await agent1.groupChatPage.ready();
 
 		await agent2.homePage.chatListItem('mygroup').waitForExist();
@@ -31,10 +31,10 @@ describe('Editing group messages', () => {
 		const edited2 =
 			await agent2.groupChatPage.messages.waitForMessage('Hello group');
 
-		await browser.waitUntil(() => edited1.hasEditedIndicator(), {
+		await agent1.waitUntil(() => edited1.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the author side',
 		});
-		await browser.waitUntil(() => edited2.hasEditedIndicator(), {
+		await agent2.waitUntil(() => edited2.hasEditedIndicator(), {
 			timeoutMsg: 'No "Edited" indicator on the peer side',
 		});
 	});

@@ -49,6 +49,19 @@ impl NodeRole {
     }
 }
 
+/// The p2p network e2e agents live on. An e2e build is given the run's
+/// `E2E_NETWORK_ID` (64 hex characters), so test runs sharing a LAN, each
+/// built with its own id, refuse each other's peers; a build without one gets
+/// the id every such build shares.
+fn e2e_network_id() -> [u8; 32] {
+    match option_env!("E2E_NETWORK_ID") {
+        Some(id) => {
+            <[u8; 32] as hex::FromHex>::from_hex(id).expect("E2E_NETWORK_ID is 64 hex characters")
+        }
+        None => *b"dashchat end-to-end test network",
+    }
+}
+
 /// The capabilities and wiring with which a Node is built.
 ///
 /// A `NodeContext` describes what a Node is allowed to do and which external
@@ -61,25 +74,30 @@ pub struct NodeContext {
     /// Channel for forwarding node notifications to the app (webview + system
     /// notifications). None when running outside the main app process.
     pub notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
-    /// Channel for tracking topic subscriptions for push notifications. None when
-    /// push setup is not available in this context.
-    pub topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
-    /// The Tauri app handle, available only when the Node is built for the main
-    /// app process (used to spawn app-lifetime tasks like local-mailbox mDNS
-    /// discovery).
+    /// The Tauri app handle; `None` in a push process, which runs without the
+    /// app. Used to spawn app-lifetime tasks like local-mailbox mDNS discovery
+    /// and to read the app's settings.
     pub app_handle: Option<AppHandle>,
+    /// Only the app ever suspends it.
+    pub sqlite_gate: sqlite_gate::SqliteGate,
+    /// Carried into the node config so the push-authorization loop sees the
+    /// same local-hub registry the app's mailbox server registers into.
+    pub local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
 }
 
 impl NodeContext {
     /// Context used when handling push-notifications in a limited time window with the app closed:
     /// no P2P, no blob sync, and no app-lifetime channels.
     #[cfg_attr(not(mobile), allow(dead_code))]
-    pub fn for_push_notifications() -> Self {
+    pub fn for_push_notifications(
+        notification_tx: Option<mpsc::Sender<dashchat_node::Notification>>,
+    ) -> Self {
         Self {
             role: NodeRole::PushNotification,
-            notification_tx: None,
-            topic_subscribed_tx: None,
+            notification_tx,
             app_handle: None,
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -87,12 +105,13 @@ impl NodeContext {
     /// without the main app running: no P2P, no blob sync, and no app-lifetime
     /// channels.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-    pub fn for_background_task() -> Self {
+    pub fn for_background_task(app: &AppHandle) -> Self {
         Self {
             role: NodeRole::BackgroundTask,
             notification_tx: None,
-            topic_subscribed_tx: None,
-            app_handle: None,
+            app_handle: Some(app.clone()),
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
         }
     }
 
@@ -101,13 +120,15 @@ impl NodeContext {
     pub fn for_app(
         app: &AppHandle,
         notification_tx: mpsc::Sender<dashchat_node::Notification>,
-        topic_subscribed_tx: Option<mpsc::Sender<dashchat_node::topic::TopicId>>,
+        sqlite_gate: sqlite_gate::SqliteGate,
+        local_hub_registry: dashchat_utils::local_hub::LocalHubRegistry,
     ) -> Self {
         Self {
             role: NodeRole::App,
             notification_tx: Some(notification_tx),
-            topic_subscribed_tx,
             app_handle: Some(app.clone()),
+            sqlite_gate,
+            local_hub_registry,
         }
     }
 
@@ -130,30 +151,73 @@ impl NodeContext {
         self.role.can_be_used_for(requested.role)
     }
 
+    /// Whether a Node built in this context takes part in peer-to-peer
+    /// connectivity: never for the push and background roles; for the app,
+    /// whatever the persisted `p2p_enabled` setting says.
+    fn p2p_enabled(&self) -> bool {
+        self.role.p2p_enabled()
+            && self
+                .app_handle
+                .as_ref()
+                .is_none_or(crate::settings::load_p2p_enabled)
+    }
+
     /// Build a [`dashchat_node::NodeConfig`] from this context.
     pub fn node_config(&self) -> dashchat_node::NodeConfig {
         let mut config = if cfg!(feature = "e2e-tests") {
             let mut config = dashchat_node::NodeConfig::default();
-            config.mdns_mode = p2panda::network::MdnsDiscoveryMode::Disabled;
+            // Distinct network id so e2e agents with mDNS discovery active can't
+            // cross-talk with production/dev instances on the same LAN: every
+            // ALPN is hashed with the network id, so foreign connections are
+            // rejected at protocol negotiation.
+            config.network_id = e2e_network_id();
             config
         } else {
             dashchat_node::NodeConfig::default()
         };
 
-        if !self.role.p2p_enabled() || std::env::var_os("DASHCHAT_NO_P2P").is_some() {
-            config = config.no_p2p();
+        // The push extension's short-lived background node only reads
+        // operations to build notifications; it must not author any. Both
+        // processes sign with the app's key, but an operation the extension
+        // publishes into a topic the app already follows never passes through
+        // the running app's processor — the store is shared, the streams are
+        // not — so authoring is left to the app, which re-processes the
+        // operations the extension recorded and performs the publishes itself.
+        config.enable_message_acks = self.role == NodeRole::App;
+        config.read_only = self.role == NodeRole::PushNotification;
+        config.sqlite_gate = self.sqlite_gate.clone();
+        config.local_hub_registry = self.local_hub_registry.clone();
 
-            if self.role.p2p_enabled() {
-                // Dev/testing escape hatch: force all communication through mailbox
-                // servers so peers can't sync directly over p2p. Keeps blob sync so
-                // media still flows over the mailbox.
-                log::warn!("DASHCHAT_NO_P2P set: disabling peer-to-peer connectivity");
-            }
+        // The push extension shares the app's database. On p2panda's default
+        // per-topic cursor, whichever process fetches an operation first stops
+        // the other from ever seeing it, so an invite processed by the extension
+        // never subscribes the running app to the new topic. A private cursor
+        // prefix keeps the extension's cursors per-topic yet distinct from the
+        // app's default cursors, so the app independently processes every
+        // operation.
+        if self.role == NodeRole::PushNotification {
+            config.stream_cursor_prefix = Some("nse".to_string());
+        }
+        // Only on iOS do the extension and the app run at the same time over
+        // one store, so only there can the extension store an operation the
+        // running app then never gets; elsewhere a background node runs only
+        // while the app does not, and the app's replay at startup covers it.
+        let shares_store_with_running_app = cfg!(target_os = "ios");
+        config.record_processed_operations =
+            self.role == NodeRole::PushNotification && shares_store_with_running_app;
+        config.import_recorded_operations =
+            self.role == NodeRole::App && shares_store_with_running_app;
+
+        if !self.p2p_enabled() {
+            config = config.no_p2p();
         }
 
         if !self.role.blob_sync_enabled() {
             config = config.no_blob_sync();
         }
+
+        // The main app builds the node in Tauri setup; defer backlog replay to keep launch responsive.
+        config.defer_stored_topics_initialization = self.role == NodeRole::App;
 
         config
     }
@@ -161,7 +225,39 @@ impl NodeContext {
 
 #[cfg(test)]
 mod tests {
-    use super::NodeRole;
+    use super::{NodeContext, NodeRole};
+
+    fn app_context() -> NodeContext {
+        NodeContext {
+            role: NodeRole::App,
+            notification_tx: None,
+            app_handle: None,
+            sqlite_gate: Default::default(),
+            local_hub_registry: Default::default(),
+        }
+    }
+
+    // With p2p and blob sync both off, nothing needs the iroh endpoint and
+    // p2panda is spawned without one. The iOS push extension must not open a
+    // second endpoint under the app's key: it takes over the app's relay
+    // session and kills the running app's networking actors.
+    #[test]
+    fn the_push_extension_needs_no_iroh_endpoint() {
+        let config = NodeContext::for_push_notifications(None).node_config();
+        assert!(!config.enable_p2p);
+        assert!(!config.enable_blob_sync);
+        assert!(app_context().node_config().enable_blob_sync);
+    }
+
+    #[test]
+    fn p2p_follows_the_role() {
+        assert!(app_context().node_config().enable_p2p);
+        assert!(
+            !NodeContext::for_push_notifications(None)
+                .node_config()
+                .enable_p2p
+        );
+    }
 
     // Underpins the removal of the startup `node_slot::clear()`: because a
     // push-role node cannot satisfy an App request, `get_or_build_node(App)`

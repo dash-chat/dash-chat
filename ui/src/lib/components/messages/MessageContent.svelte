@@ -1,11 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { type Message, hasBody } from 'dash-chat-stores';
+	import { type Hash, type Message, hasBody } from 'dash-chat-stores';
 	import { senderColor } from './message-helpers';
 	import { shrinkToWidestLine } from '$lib/actions/shrink-to-widest-line';
+	import { timelineImageBox } from '$lib/utils/media';
 	import PhotosAttachment from './attachments/PhotosAttachment.svelte';
 	import FileAttachment from './attachments/FileAttachment.svelte';
+	import VoiceNoteAttachment from './attachments/voice-notes/VoiceNoteAttachment.svelte';
 	import MessageText from './MessageText.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
 
 	let {
 		message,
@@ -13,6 +16,8 @@
 		metadata,
 		senderName = '',
 		showSenderName = false,
+		mine = false,
+		onNavigateToMessage,
 	}: {
 		message: Message;
 		searchQuery: string;
@@ -21,17 +26,35 @@
 		 * as the lightbox title. */
 		senderName?: string;
 		showSenderName?: boolean;
+		/** Whether the enclosing bubble is my own message. */
+		mine?: boolean;
+		onNavigateToMessage?: (hash: Hash) => void;
 	} = $props();
 
 	const body = $derived(hasBody(message.content) ? message.content : null);
 	const media = $derived(body?.media ?? null);
+	const voiceNote = $derived(media?.find(m => m.kind === 'VoiceNote'));
 	const file = $derived(media?.find(m => m.kind === 'File'));
 	const photos = $derived(
 		file ? [] : (media?.filter(m => m.kind === 'Photo') ?? []),
 	);
 	const hasText = $derived(!!body?.message);
-	const isPhotoOnly = $derived(photos.length > 0 && !hasText);
-	const isFileOnly = $derived(!!file && !hasText);
+	const isMediaOnly = $derived(
+		!hasText && (photos.length > 0 || !!file || !!voiceNote),
+	);
+
+	// Photo messages fix the bubble width to the media box (Signal model:
+	// captions, quotes and sender names wrap at the image width, so the image
+	// is never narrower than the bubble). Collages are 300px wide. The media
+	// bleeds into the bubble's padding, so a sibling capped at the media's own
+	// width would widen the bubble past the image; the cap drops that padding.
+	const mediaCapStyle = $derived(
+		photos.length === 1
+			? `max-width: calc(${timelineImageBox(photos[0]).width}px - 1rem);`
+			: photos.length > 1
+				? 'max-width: calc(300px - 1rem);'
+				: '',
+	);
 
 	let metadataWidth = $state(0);
 </script>
@@ -39,66 +62,85 @@
 {#if showSenderName}
 	<div
 		class="sender-name"
-		style="color: {senderColor(message.author)}"
+		style="color: {senderColor(message.author)}; {mediaCapStyle}"
 		data-testid="group-message-sender-name"
 	>
 		{senderName}
 	</div>
 {/if}
-{#if photos.length > 0}
-	<div class="media photos">
-		<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
-		{#if isPhotoOnly && metadata}
-			<div
-				class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
-			>
-				{@render metadata()}
-			</div>
-		{/if}
-	</div>
-{:else if file}
-	<div class="media file">
-		<FileAttachment {file} metadata={isFileOnly ? metadata : undefined} />
-	</div>
-{/if}
-{#if hasText || (metadata && !isPhotoOnly && !isFileOnly)}
-	<div class="caption relative px-1">
-		{#if metadata}
-			<div
-				class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
-				bind:clientWidth={metadataWidth}
-			>
-				{@render metadata()}
-			</div>
-		{/if}
-		<div class="max-w-full" use:shrinkToWidestLine>
-			<MessageText text={body?.message ?? ''} {searchQuery} />
-			<!-- Reserves the metadata's space in the bottom-end corner, since
-			     wrapped text cannot be made to avoid an absolute box via CSS. -->
-			{#if metadata}
-				<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
-				></span>
+<div class="content flex flex-col gap-1">
+	{#if message.replyQuote}
+		<div class="quote" style={mediaCapStyle}>
+			<ReplyQuote
+				reply={message.replyQuote}
+				{mine}
+				onNavigate={onNavigateToMessage}
+			/>
+		</div>
+	{/if}
+	{#if photos.length > 0}
+		<div class="media photos">
+			<PhotosAttachment {photos} {senderName} timestamp={message.timestamp} />
+			{#if isMediaOnly && metadata}
+				<div
+					class="photo-meta pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 px-2 pt-4 pb-1"
+				>
+					{@render metadata()}
+				</div>
 			{/if}
 		</div>
-	</div>
-{/if}
+	{:else if file}
+		<div class="media file">
+			<FileAttachment {file} metadata={isMediaOnly ? metadata : undefined} />
+		</div>
+	{:else if voiceNote}
+		<div class="media voice">
+			<VoiceNoteAttachment
+				voice={voiceNote}
+				metadata={isMediaOnly ? metadata : undefined}
+			/>
+		</div>
+	{/if}
+	{#if hasText || (metadata && !isMediaOnly)}
+		<div class="caption relative px-1" style={mediaCapStyle}>
+			{#if metadata}
+				<div
+					class="absolute bottom-0 end-0 flex items-center gap-1 whitespace-nowrap select-none"
+					bind:clientWidth={metadataWidth}
+				>
+					{@render metadata()}
+				</div>
+			{/if}
+			<div class="relative top-px max-w-full" use:shrinkToWidestLine>
+				<MessageText text={body?.message ?? ''} {searchQuery} />
+				<!-- Reserves the metadata's space in the bottom-end corner, since
+			     wrapped text cannot be made to avoid an absolute box via CSS. -->
+				{#if metadata}
+					<span class="ms-2.5 inline-block" style="width: {metadataWidth}px"
+					></span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+</div>
 
 <style>
 	.sender-name {
-		margin-inline: 0.25rem;
-		margin-bottom: 0.125rem;
+		padding-block: 1px;
+		padding-inline: 0.25rem;
 		font-size: 0.875rem;
+		line-height: 1.0625rem;
 		font-weight: 600;
 		text-align: start;
 	}
 
-	/* Photos bleed past the bubble's 0.5rem padding to sit edge-to-edge; the
-	 * Card's overflow clip rounds the corners to match the bubble. */
+	/* Photos bleed past the bubble's padding to sit edge-to-edge; the Card's
+	 * overflow clip rounds the corners to match the bubble. */
 	.media {
 		position: relative;
 	}
 	.media.photos {
-		margin: -0.5rem;
+		margin: calc(-1 * var(--message-padding-y)) -0.5rem;
 		max-width: calc(100% + 1rem);
 	}
 	/* Hairline border so near-white images don't bleed into the bubble. */
@@ -109,21 +151,35 @@
 		box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 		pointer-events: none;
 	}
-	/* Don't bleed up into the sender-name header above the media. */
-	.sender-name + .media.photos {
+	/* Don't bleed up into the sender-name header or reply quote above the media. */
+	.media.photos:not(:first-child) {
 		margin-top: 0;
+	}
+	.sender-name + .content > .media.photos:first-child,
+	.sender-name + .content > .quote:first-child {
+		margin-top: 2px;
 	}
 	/* Leave a gap before a caption below the media instead of bleeding down. */
 	.media.photos:has(+ .caption) {
 		margin-bottom: 4px;
 	}
-	/* Leave a gap before a caption below the file. */
-	.media.file:has(+ .caption) {
+	/* Leave a gap before a caption below the file/voice row. */
+	.media.file:has(+ .caption),
+	.media.voice:has(+ .caption) {
 		margin-bottom: 4px;
 	}
-	/* Space the file row away from the sender-name header above it in groups. */
-	.sender-name + .media.file {
-		margin-top: 6px;
+	/* Space the file/voice row away from the sender-name header in groups. */
+	.sender-name + .content > .media.file:first-child {
+		margin-top: 2px;
+	}
+	.media.voice:first-child {
+		padding-top: 7px;
+	}
+	.quote + .media.voice {
+		padding-top: 9px;
+	}
+	.sender-name + .content > .media.voice:first-child {
+		padding-top: 3px;
 	}
 
 	/* Image-only bubbles bleed to the bottom edge with the timestamp overlaid
@@ -133,8 +189,7 @@
 		background: linear-gradient(to top, rgba(0, 0, 0, 0.45), transparent);
 	}
 
-	.photo-meta :global(.quiet),
-	.photo-meta :global(.dark-quiet) {
+	.photo-meta :global(.quiet) {
 		color: rgba(255, 255, 255, 0.95);
 	}
 </style>

@@ -1,4 +1,4 @@
-import type { DeviceId } from 'dash-chat-stores';
+import type { AgentId } from 'dash-chat-stores';
 
 export const QUICK_EMOJIS = ['❤️', '👍', '👎', '😂', '😮', '😢'];
 
@@ -9,19 +9,19 @@ export interface CondensedReaction {
 }
 
 export function condenseReactions(
-	reactions: Record<DeviceId, string>,
-	ownDeviceId: DeviceId,
+	reactions: Record<AgentId, string>,
+	ownAgentId: AgentId,
 ): Array<CondensedReaction> {
 	const mapping = new Map<string, CondensedReaction>();
-	Object.entries(reactions).forEach(([device, emoji]) => {
+	Object.entries(reactions).forEach(([agent, emoji]) => {
 		let entry = mapping.get(emoji);
 		if (entry) {
 			entry.count = entry.count + 1;
-			entry.own = device === ownDeviceId ? true : entry.own;
+			entry.own = agent === ownAgentId ? true : entry.own;
 		} else {
 			mapping.set(emoji, {
 				emoji: emoji,
-				own: device === ownDeviceId,
+				own: agent === ownAgentId,
 				count: 1,
 			});
 		}

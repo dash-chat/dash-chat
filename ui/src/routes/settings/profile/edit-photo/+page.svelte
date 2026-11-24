@@ -7,9 +7,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { Page } from 'konsta/svelte';
 	import { showToast } from '$lib/utils/toasts';
-	import { isIos } from '$lib/utils/environment';
 	import AvatarPicker from '$lib/components/profiles/AvatarPicker.svelte';
-	import FixedActionButton from '$lib/components/FixedActionButton.svelte';
 
 	const contactsStore: ContactsStore = getContext('contacts-store');
 	let avatar = $state<string | undefined>(undefined);
@@ -56,28 +54,15 @@
 	}
 
 	const hasChanges = $derived(avatar !== originalAvatar);
-	let inModalState = $state(false);
 </script>
 
 <Page>
 	<AvatarPicker
 		loading={$myProfile === undefined}
 		bind:avatar
-		bind:inModalState
 		onClose={() => goto('/settings/profile')}
 		onSave={save}
 		saveLabel={m.save()}
 		saveDisabled={!hasChanges}
 	/>
-
-	{#if !inModalState && !isIos}
-		<FixedActionButton
-			tonal
-			disabled={!hasChanges}
-			onClick={save}
-			testId="edit-photo-save-btn"
-		>
-			{m.save()}
-		</FixedActionButton>
-	{/if}
 </Page>

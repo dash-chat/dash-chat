@@ -22,5 +22,6 @@
     "code": "Kodi",
     "scan": "Skano",
     "scanQrCodeOfYourContact": "Stanotte QR kodin nga kontakti i aparatit",
-    "contactRequest": "Kerkesa e kontaktit."
+    "contactRequest": "Kerkesa e kontaktit.",
+    "localMessageServer": "Qendra Lokale e Mesazheve"
 }

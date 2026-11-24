@@ -1,12 +1,13 @@
+import { Avatar } from '../../components/avatar';
 import { Composer } from '../../components/composer';
-import { ConnectionStatusIndicator } from '../../components/connection-status-indicator';
-import { Messages } from '../../components/messages';
+import { type MessageStatus, Messages } from '../../components/messages';
+import { Navbar } from '../../components/navbar';
 import { ReverseScrollPage } from '../../components/reverse-scroll-page';
 import { tid } from '../../selectors';
 import { SYNC_TIMEOUT } from '../../timeouts';
 import { TestHelper } from '../test-helper';
 
-export type MessageStatus = 'sending' | 'local' | 'cloud';
+export type { MessageStatus } from '../../components/messages';
 export type { ConnectionStatus } from '../../components/connection-status-indicator';
 
 export class DirectChatPage extends TestHelper {
@@ -21,6 +22,8 @@ export class DirectChatPage extends TestHelper {
 	peerAvatar = this.el(tid('direct-chat-peer-avatar'));
 	nameNotVerifiedPill = this.el(tid('direct-chat-name-not-verified'));
 	acceptButton = this.el(tid('direct-chat-accept-btn'));
+	requestMessages = this.el(tid('direct-chat-request-messages'));
+	requestMessagesToggle = this.el(tid('direct-chat-request-messages-toggle'));
 	acceptConfirm = this.el(tid('direct-chat-accept-confirm'));
 	blockButton = this.el(tid('direct-chat-block-btn'));
 	reportButton = this.el(tid('direct-chat-report-btn'));
@@ -33,6 +36,7 @@ export class DirectChatPage extends TestHelper {
 	reportMessage = this.el(tid('direct-chat-report-message'));
 	messageStatus = this.el(tid('message-status'));
 	readMore = this.el(tid('message-read-more'));
+	navbar = new Navbar(this.agent, tid('direct-chat-page'));
 	composer = new Composer(this.agent);
 	messages = new Messages(
 		this.agent,
@@ -40,7 +44,7 @@ export class DirectChatPage extends TestHelper {
 		'direct-chat-unread-divider',
 		this.composer,
 	);
-	connectionStatusIndicator = new ConnectionStatusIndicator(this.agent);
+	activeOverP2p = this.el(tid('direct-chat-active-over-p2p'));
 	scroll = new ReverseScrollPage(this.agent, 'direct-chat-scroll');
 
 	async ready() {
@@ -53,43 +57,18 @@ export class DirectChatPage extends TestHelper {
 	}
 
 	/** Read the data-status of the most recent message-status indicator. */
-	async lastMessageStatus(): Promise<MessageStatus | null> {
-		return this.agent.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLElement | null;
-			const status = el?.dataset.status;
-			if (status === 'sending' || status === 'local' || status === 'cloud') {
-				return status;
-			}
-			return null;
-		}, tid('message-status'));
+	lastMessageStatus(): Promise<MessageStatus | null> {
+		return this.messages.lastMessageStatus();
 	}
 
-	/** Read the data-status of the status indicator inside the bubble whose text contains `text`. */
-	async messageStatusFor(text: string): Promise<MessageStatus | null> {
-		return this.agent.execute(
-			(messagesSel: string, statusSel: string, t: string) => {
-				const wrappers = document.querySelectorAll<HTMLElement>(
-					`${messagesSel} [data-message-hash]`,
-				);
-				for (const wrapper of wrappers) {
-					if (!wrapper.textContent?.includes(t)) continue;
-					const el = wrapper.querySelector(statusSel) as HTMLElement | null;
-					const status = el?.dataset.status;
-					if (
-						status === 'sending' ||
-						status === 'local' ||
-						status === 'cloud'
-					) {
-						return status;
-					}
-					return null;
-				}
-				return null;
-			},
-			tid('direct-chat-messages'),
-			tid('message-status'),
-			text,
-		);
+	/** Read the data-status of the status indicator for the message whose text
+	 * contains `text`. `forGroup` selects which indicator is read, as in
+	 * `Messages.messageStatusFor`. */
+	messageStatusFor(
+		text: string,
+		forGroup?: boolean,
+	): Promise<MessageStatus | null> {
+		return this.messages.messageStatusFor(text, forGroup);
 	}
 
 	/** How many report bubbles the chat currently shows. */
@@ -126,15 +105,20 @@ export class DirectChatPage extends TestHelper {
 	/** Whether the peer-header avatar is the profile placeholder (person icon,
 	 * shown while the full profile is still syncing) rather than a real one. */
 	peerAvatarIsPlaceholder(): Promise<boolean> {
-		return this.agent.execute(
-			(sel: string) =>
-				document.querySelector(sel)?.getAttribute('data-waiting') === 'true',
+		return new Avatar(
+			this.agent,
 			tid('direct-chat-peer-avatar'),
-		);
+		).showsFallbackIcon();
 	}
 
 	isContactRequestBannerVisible(): Promise<boolean> {
 		return this.acceptButton.isExisting();
+	}
+
+	/** Expand or collapse the hidden request messages (DOM click for the same
+	 * iOS Konsta-button reason as acceptContactRequest). */
+	async toggleRequestMessages(): Promise<void> {
+		await this.domClick(tid('direct-chat-request-messages-toggle'));
 	}
 
 	/** Accept an incoming contact request (open the confirm dialog, confirm).
@@ -143,35 +127,5 @@ export class DirectChatPage extends TestHelper {
 	async acceptContactRequest(): Promise<void> {
 		await this.domClick(tid('direct-chat-accept-btn'));
 		await this.domClick(tid('direct-chat-accept-confirm'));
-	}
-
-	/** Returns descriptions of any direct-chat navbar overflow issues. */
-	checkNavbarOverflow(): Promise<string[]> {
-		return this.agent.execute(() => {
-			const navbar = document.querySelector('.k-navbar');
-			if (!navbar) return ['Navbar element not found'];
-			const issues: string[] = [];
-			if (navbar.scrollWidth > navbar.clientWidth + 2) {
-				issues.push('Navbar has horizontal overflow');
-			}
-			navbar.querySelectorAll('*').forEach(el => {
-				const style = window.getComputedStyle(el);
-				const clipped =
-					style.overflowX === 'hidden' ||
-					style.overflowX === 'clip' ||
-					style.overflow === 'hidden' ||
-					style.overflow === 'clip' ||
-					style.textOverflow === 'ellipsis';
-				if (clipped) return;
-				if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
-					const text = el.textContent?.substring(0, 60).trim();
-					if (text)
-						issues.push(
-							`Overflow in navbar <${el.tagName.toLowerCase()}>: "${text}"`,
-						);
-				}
-			});
-			return issues.slice(0, 10);
-		});
 	}
 }

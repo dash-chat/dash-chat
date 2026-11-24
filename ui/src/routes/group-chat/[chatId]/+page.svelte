@@ -10,7 +10,6 @@
 	import { goto } from '$app/navigation';
 	import {
 		fullName,
-		replyAuthor,
 		type ChatsStore,
 		type ContactsStore,
 		type DeviceId,
@@ -22,11 +21,13 @@
 	import { Navbar, NavbarBackLink, Link, useTheme } from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { isMobile } from '$lib/utils/environment';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiAccountGroup } from '@mdi/js';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
-	import ConnectionStatusIndicator from '$lib/components/connection/ConnectionStatusIndicator.svelte';
+	import GroupAvatar from '$lib/components/profiles/GroupAvatar.svelte';
+	import ConnectedPeersCount from '$lib/components/connection/ConnectedPeersCount.svelte';
 	import DayTag from '$lib/components/DayTag.svelte';
+	import ErrorPlaceholder from '$lib/components/ErrorPlaceholder.svelte';
 	import MessageFromMe from '$lib/components/messages/MessageFromMe.svelte';
 	import MessageFromOthers from '$lib/components/messages/MessageFromOthers.svelte';
 	import SystemMessage from '$lib/components/messages/SystemMessage.svelte';
@@ -34,9 +35,13 @@
 	import ReverseScrollPage from '$lib/components/ReverseScrollPage.svelte';
 	import ScrollToBottomButton from '$lib/components/messages/ScrollToBottomButton.svelte';
 	import {
+		endsDeliveryStatusRun,
+		groupedEvents,
 		messagePosition,
 		scrollToMessage,
 	} from '$lib/components/messages/message-helpers';
+	import { createUnreadDividerTracker } from '$lib/actions/unread-divider';
+	import { useDeviceId } from '$lib/stores/my-device-id';
 	import { m } from '$lib/paraglide/messages';
 
 	let chatId = page.params.chatId!;
@@ -47,7 +52,7 @@
 	const store = chatsStore.groupChats(chatId);
 	setContext('messages-store', store.messages);
 
-	const readTracker = createReadMessagesTracker(store.messages);
+	const readTracker = createReadMessagesTracker(store.messages, useDeviceId());
 	const readMessageOnObserve = readTracker.observe;
 
 	const info = useReactivePromise(store.info);
@@ -64,6 +69,7 @@
 		contactsStore.myDeviceId(),
 		store.groupedEvents(),
 		store.allMembers(),
+		store.messages.readOnly(),
 	]);
 	const composerData = useReactivePromises(() => [store.me(), store.info()]);
 
@@ -74,8 +80,7 @@
 	let reverseScrollPage: ReturnType<typeof ReverseScrollPage> | undefined =
 		$state();
 
-	let capturedUnreadHash: Hash | null = null;
-	let unreadDividerCaptured = false;
+	const unreadDividerTracker = createUnreadDividerTracker();
 
 	let composer: ReturnType<typeof MessageComposer> | undefined = $state();
 
@@ -97,61 +102,10 @@
 		} else {
 			justSentMessageHash = messageHash;
 		}
-		capturedUnreadHash = null;
-		unreadDividerCaptured = false;
+		unreadDividerTracker.reset();
 	}
 
 	const theme = $derived(useTheme());
-
-	function getUnreadDividerInfo(
-		messageGroupsInDays: Awaited<ReturnType<typeof store.groupedEvents>>,
-		readHashes: Set<Hash> | undefined,
-		deviceId: DeviceId | undefined,
-	): { hash: Hash | null; count: number } {
-		if (!messageGroupsInDays || !readHashes || !deviceId) {
-			return { hash: null, count: 0 };
-		}
-
-		if (
-			capturedUnreadHash === null &&
-			(!unreadDividerCaptured || !isAtBottom)
-		) {
-			for (const day of messageGroupsInDays) {
-				for (const messageGroup of day.eventsGroups) {
-					for (const [hash, item] of messageGroup) {
-						if (item.kind !== 'message') continue;
-						if (item.message.author !== deviceId && !readHashes.has(hash)) {
-							capturedUnreadHash = hash;
-							break;
-						}
-					}
-					if (capturedUnreadHash) break;
-				}
-				if (capturedUnreadHash) break;
-			}
-		}
-		unreadDividerCaptured = true;
-
-		if (!capturedUnreadHash) return { hash: null, count: 0 };
-
-		let count = 0;
-		let found = false;
-		for (const day of messageGroupsInDays) {
-			for (const messageGroup of day.eventsGroups) {
-				for (const [hash, item] of messageGroup) {
-					if (hash === capturedUnreadHash) found = true;
-					if (
-						found &&
-						item.kind === 'message' &&
-						item.message.author !== deviceId
-					)
-						count++;
-				}
-			}
-		}
-
-		return { hash: capturedUnreadHash, count };
-	}
 
 	function navigateToMessage(hash: Hash) {
 		scrollToMessage(messagesEl, hash);
@@ -168,21 +122,9 @@
 		);
 		return member?.profile ? fullName(member.profile) : m.unknownSender();
 	}
-
-	/** Display name of the author quoted by `message`'s reply, if that author is
-	 * known — a quote of a message this peer never received has none. */
-	function quotedAuthorName(
-		message: Message,
-		myDeviceId: DeviceId,
-		members: Record<string, GroupMemberWithProfile>,
-	): string | undefined {
-		const author = replyAuthor(message.replyQuote);
-		if (author === undefined) return undefined;
-		return deviceDisplayName(author, myDeviceId, members);
-	}
 </script>
 
-<div class="absolute inset-0" data-testid="group-chat-page">
+<div class="chat-page absolute inset-0" data-testid="group-chat-page">
 	<ReverseScrollPage
 		bind:this={reverseScrollPage}
 		bind:isAtBottom
@@ -191,8 +133,11 @@
 		{#snippet navbar()}
 			<Navbar
 				transparent={true}
+				bgClass={theme === 'ios' ? 'bg-page-surface' : ''}
 				titleClass="opacity1 min-w-0 flex-1"
-				leftClass="shrink-0"
+				leftClass={theme === 'ios' && !isWideScreen.value
+					? 'shrink-0 me-4'
+					: 'shrink-0'}
 				centerTitle={false}
 			>
 				{#snippet left()}
@@ -208,22 +153,18 @@
 						<Link
 							href={`/group-chat/${chatId}/info`}
 							data-testid="group-chat-info-link"
-							class="gap-2"
-							style="display: flex; justify-content: start; align-items: center;"
+							class="flex w-full min-w-0 items-center justify-start gap-4 ps-0"
 						>
-							<Avatar
-								image={info.image}
-								initials={info.name.slice(0, 2)}
-								size="2.5rem"
-							/>
-							<span>{info.name}</span>
+							<span class="shrink-0">
+								<GroupAvatar image={info.image} size="2.25rem" />
+							</span>
+							<span class="flex flex-1 min-w-0 flex-col">
+								<span class="truncate">{info.name}</span>
+								<ConnectedPeersCount {chatId} />
+							</span>
 						</Link>
 					{/await}
 				{/snippet}
-
-				<div class={`shrink-0 ${theme === 'material' ? 'pe-2' : ''}`}>
-					<ConnectionStatusIndicator />
-				</div>
 			</Navbar>
 		{/snippet}
 
@@ -232,17 +173,13 @@
 				{#await $headerData then [info, members]}
 					<div class="column items-center">
 						<div
-							class="outline-card"
+							class="outline-card max-w-full"
 							style="border-radius: 2rem; min-width: 250px"
 						>
 							<div class="column items-center gap-3 px-8 pb-6 -mt-10">
-								<Avatar
-									image={info.image}
-									initials={info.name.slice(0, 2)}
-									size={80}
-								/>
+								<GroupAvatar image={info.image} size={80} />
 								<span
-									class="text-2xl font-semibold break-words text-center"
+									class="text-2xl font-semibold break-words text-center max-w-full"
 									data-testid="group-chat-header-name"
 								>
 									{info.name}
@@ -264,24 +201,35 @@
 
 			<div
 				bind:this={messagesEl}
-				class="column m-2 gap-1"
+				class="swipe-clip-boundary column my-2 gap-1 ps-3 pe-4"
 				data-testid="group-chat-messages"
 			>
 				{#await $readMessageHashes then readHashes}
-					{#await $messageListData then [myDeviceId, messageGroupsInDays, members]}
-						{@const unreadDivider = getUnreadDividerInfo(
+					{#await $messageListData then [myDeviceId, messageGroupsInDays, members, readOnly]}
+						{@const unreadDivider = unreadDividerTracker.compute(
 							messageGroupsInDays,
 							readHashes,
 							myDeviceId,
+							isAtBottom,
 						)}
-						{#each messageGroupsInDays as messageGroupsInDay}
+						{#each messageGroupsInDays as messageGroupsInDay (messageGroupsInDay.day.valueOf())}
 							<div class="self-center z-10">
 								<DayTag class="quiet" day={messageGroupsInDay.day} />
 							</div>
 
-							{#each messageGroupsInDay.eventsGroups as messageGroup}
-								<div class="column" style="gap: 1px">
-									{#each messageGroup as [hash, item], i (hash)}
+							<div class="column">
+								{#each groupedEvents(messageGroupsInDay.eventsGroups) as { hash, item, group: messageGroup, indexInGroup: i } (hash)}
+									<div
+										class="column"
+										class:pt-[1.5px]={i > 0 && isMobile}
+										class:pt-px={i > 0 && !isMobile}
+										class:pt-3={i === 0 &&
+											messageGroup !== messageGroupsInDay.eventsGroups[0]}
+										class:pb-[3px]={i === messageGroup.length - 1 &&
+											item.kind !== 'control' &&
+											item.message.author !== myDeviceId}
+										data-message-group={messageGroup[0][0]}
+									>
 										{#if unreadDivider.hash === hash}
 											<div
 												class="unread-divider"
@@ -308,7 +256,11 @@
 														{message}
 														{position}
 														{myDeviceId}
-														{chatId}
+														{readOnly}
+														showDeliveryStatus={endsDeliveryStatusRun(
+															messageGroup,
+															i,
+														)}
 														searchQuery=""
 														onEdit={() => composer?.editMessage(message)}
 														onReply={() =>
@@ -320,11 +272,6 @@
 																	members,
 																),
 															)}
-														replyAuthorName={quotedAuthorName(
-															message,
-															myDeviceId,
-															members,
-														)}
 														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
@@ -343,7 +290,7 @@
 														{message}
 														{position}
 														{myDeviceId}
-														{chatId}
+														{readOnly}
 														searchQuery=""
 														sender={author?.profile}
 														showSenderName={position === 'first' ||
@@ -358,21 +305,20 @@
 																	members,
 																),
 															)}
-														replyAuthorName={quotedAuthorName(
-															message,
-															myDeviceId,
-															members,
-														)}
 														onNavigateToMessage={navigateToMessage}
 													/>
 												</div>
 											{/if}
 										{/if}
-									{/each}
-								</div>
-							{/each}
+									</div>
+								{/each}
+							</div>
 						{/each}
+					{:catch error}
+						<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 					{/await}
+				{:catch error}
+					<ErrorPlaceholder message={m.errorUnexpected()} {error} />
 				{/await}
 			</div>
 		</div>
@@ -390,21 +336,25 @@
 	{/if}
 
 	<div
-		class="absolute bottom-0 inset-x-0 z-30"
+		class="chat-bottom-bar absolute bottom-0 inset-x-0 z-30"
 		class:bg-page-surface={theme === 'material'}
 	>
 		<div bind:clientHeight={bottomBarHeight}>
 			{#await $composerData then [me, info]}
 				{#if me.member}
-					<MessageComposer
-						bind:this={composer}
-						store={store.messages}
-						destinationName={info.name}
-						onSent={onMessageSent}
-					/>
+					<div class={theme === 'ios' ? 'pb-safe' : ''}>
+						<MessageComposer
+							bind:this={composer}
+							store={store.messages}
+							destinationName={info.name}
+							onSent={onMessageSent}
+						/>
+					</div>
 				{:else}
 					<div
-						class="quiet px-6 py-4 text-center text-sm"
+						class="quiet px-6 py-4 text-center text-sm {theme === 'ios'
+							? 'bg-page-surface pb-safe-4'
+							: ''}"
 						data-testid="group-chat-not-member"
 					>
 						{m.youAreNoLongerAMember()}

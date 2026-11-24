@@ -1,4 +1,4 @@
-set dotenv-filename := x'.env.${ENV:-development}'
+set dotenv-filename := x'.env.${ENV:-}'
 
 # start two dash chat instances connected to a local mailbox server
 mod dev 'scripts/dev.just'
@@ -10,7 +10,7 @@ mod android 'scripts/android.just'
 mod test 'scripts/test.just'
 
 # running e2e tests
-mod e2e 'scripts/e2e.just'
+mod e2e 'e2e-tests'
 
 # mailbox server
 mod mailbox 'scripts/mailbox.just'
@@ -21,11 +21,8 @@ mod push 'scripts/push.just'
 # ios development
 mod ios 'scripts/ios.just'
 
-# build digital ocean droplet images and create droplets
-mod droplet 'scripts/droplet.just'
-
-# build docker images for the mailbox, LAN mailbox and push notifications servers
-mod docker 'scripts/docker.just'
+# build server docker images and create the droplets that run them
+mod infra 'scripts/infra.just'
 
 # Show available recipes.
 _default:

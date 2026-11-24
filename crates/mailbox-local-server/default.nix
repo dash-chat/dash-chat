@@ -49,8 +49,8 @@
           config = {
             Entrypoint = [
               "${self'.packages.mailbox-local-server}/bin/mailbox-local-server"
-              "--addr"
-              "[::]:3000"
+              "--port"
+              "3000"
               "--db-path"
               "/var/lib/local-message-server/mailbox.redb"
             ];

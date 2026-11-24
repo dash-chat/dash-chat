@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn a_report_carries_the_event_and_the_logs_on_its_trace() {
         let dir = tempfile::tempdir().unwrap();
-        let (state, _) = plugin(dir.path());
+        let state = plugin(dir.path());
 
         let envelope = build_envelope(&state, Event::default(), vec![log_saying("connecting")])
             .expect("before_send dropped the event");

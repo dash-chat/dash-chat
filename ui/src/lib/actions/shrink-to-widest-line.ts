@@ -1,5 +1,18 @@
 import type { Action } from 'svelte/action';
 
+/** How much `node` is scaled horizontally where it is rendered: client rects
+ * are in rendered pixels, while a `width` is set in layout pixels. */
+function renderedScaleX(node: HTMLElement): number {
+	return (
+		node.getBoundingClientRect().width /
+		parseFloat(getComputedStyle(node).width)
+	);
+}
+
+// Dividing by a scale leaves float noise far below the 1/64px layout grid; left
+// in, it rounds a whole-pixel line up by one.
+const SCALE_NOISE_PX = 0.001;
+
 /**
  * Shrinks a wrapped text block to its widest rendered line. When text wraps,
  * `fit-content` resolves to the max-width cap even though every line ends
@@ -18,9 +31,12 @@ export const shrinkToWidestLine: Action<HTMLElement> = node => {
 		const rects = Array.from(range.getClientRects()).filter(r => r.width > 0);
 		if (rects.length === 0) return;
 		const width = Math.ceil(
-			Math.max(...rects.map(r => r.right)) -
-				Math.min(...rects.map(r => r.left)),
+			(Math.max(...rects.map(r => r.right)) -
+				Math.min(...rects.map(r => r.left))) /
+				renderedScaleX(node) -
+				SCALE_NOISE_PX,
 		);
+		if (!Number.isFinite(width) || width <= 0) return;
 		node.style.width = `${width}px`;
 		const rect = node.getBoundingClientRect();
 		appliedW = Math.round(rect.width);

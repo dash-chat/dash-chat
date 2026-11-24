@@ -1,4 +1,4 @@
-use mailbox_server::{test_utils::create_test_server, GetBlipsResponse};
+use mailbox_server::{test_utils::create_test_server, GetBlipsResponse, StoreBlipsResponse};
 use serde_json::json;
 
 #[tokio::test]
@@ -251,4 +251,39 @@ async fn test_watermark_independent_per_log() {
     // log-b: watermark is 1 (gap at 2), client has 5, missing 2, 3, 4, 5
     let missing_log_b = &topic_response.missing["log-b"];
     assert_eq!(missing_log_b, &vec![2, 3, 4]);
+}
+
+#[tokio::test]
+async fn store_response_echoes_resulting_watermarks() {
+    let (server, _temp_file) = create_test_server().await;
+
+    let b64 = |b: &[u8]| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b);
+    let response = server
+        .post("/blips/store")
+        .json(&serde_json::json!({
+            "blips": {
+                "test-topic": {
+                    "log-x": { "0": b64(b"m0"), "1": b64(b"m1") },
+                    "log-y": { "5": b64(b"m5") }
+                }
+            }
+        }))
+        .await;
+    response.assert_status(axum::http::StatusCode::CREATED);
+    let body: StoreBlipsResponse = response.json();
+    assert_eq!(body.watermarks["test-topic"]["log-x"], Some(1));
+    assert_eq!(body.watermarks["test-topic"]["log-y"], None);
+
+    let response = server
+        .post("/blips/store")
+        .json(&serde_json::json!({
+            "blips": {
+                "test-topic": {
+                    "log-x": { "2": b64(b"m2") }
+                }
+            }
+        }))
+        .await;
+    let body: StoreBlipsResponse = response.json();
+    assert_eq!(body.watermarks["test-topic"]["log-x"], Some(2));
 }

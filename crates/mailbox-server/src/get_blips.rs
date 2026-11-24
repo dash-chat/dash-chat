@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    AppState, Author, Blip, BlipsKey, BlipsKeyPrefix, SequenceNumber, TopicId, WatermarksKey,
-    BLIPS_TABLE, WATERMARKS_TABLE,
+    AppState, Author, Blip, BlipsKey, BlipsKeyPrefix, SeqNum, TopicId, WatermarksKey, BLIPS_TABLE,
+    WATERMARKS_TABLE,
 };
 
 // Per-request, per-author cap on the missing-sequence range we
@@ -13,19 +13,19 @@ use crate::{
 // so without this a single cheap request forces an arbitrarily large server-side
 // allocation. The client re-requests the next batch on its next sync, so capping
 // is functionally transparent. Raise if logs legitimately outpace this per sync.
-const MAX_MISSING_PER_AUTHOR: SequenceNumber = 10_000;
+const MAX_MISSING_PER_AUTHOR: SeqNum = 10_000;
 
 #[derive(Serialize, Deserialize)]
 pub struct GetBlipsRequest {
-    pub topics: BTreeMap<TopicId, BTreeMap<Author, SequenceNumber>>,
+    pub topics: BTreeMap<TopicId, BTreeMap<Author, SeqNum>>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct GetBlipsForTopicResponse {
     // The blips that the client does not have
-    pub blips: BTreeMap<Author, BTreeMap<SequenceNumber, Blip>>,
+    pub blips: BTreeMap<Author, BTreeMap<SeqNum, Blip>>,
     // The blips that the server is missing from the client's request
-    pub missing: BTreeMap<Author, Vec<SequenceNumber>>,
+    pub missing: BTreeMap<Author, Vec<SeqNum>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -79,11 +79,10 @@ fn get_blips_for_topics_inner(
         .map_err(|e| format!("Failed to open watermarks table: {}", e))?;
 
     for (topic_id, requested_authors) in &request.topics {
-        let mut topic_authors: BTreeMap<Author, BTreeMap<SequenceNumber, Blip>> = BTreeMap::new();
+        let mut topic_authors: BTreeMap<Author, BTreeMap<SeqNum, Blip>> = BTreeMap::new();
         // Track which sequences we have stored for each requested author
         // (used to avoid reporting as missing sequences we actually have)
-        let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SequenceNumber>> =
-            BTreeMap::new();
+        let mut stored_seqs_per_author: BTreeMap<Author, BTreeSet<SeqNum>> = BTreeMap::new();
 
         // Use prefix-based range query to only iterate over blips for this topic
         let prefix = BlipsKeyPrefix::Topic(topic_id.clone());
@@ -127,7 +126,7 @@ fn get_blips_for_topics_inner(
         }
 
         // Calculate missing blips using watermarks and stored sequences
-        let mut missing: BTreeMap<Author, Vec<SequenceNumber>> = BTreeMap::new();
+        let mut missing: BTreeMap<Author, Vec<SeqNum>> = BTreeMap::new();
         for (author, client_max_seq) in requested_authors {
             let watermarks_key =
                 WatermarksKey::new(topic_id.clone(), author.clone()).map_err(|e| e.to_string())?;
@@ -145,7 +144,7 @@ fn get_blips_for_topics_inner(
             // Compute missing sequences:
             // - Everything 0..=watermark is NOT missing (we had it at some point)
             // - For sequences above watermark
-            let missing_seq_nums: Vec<SequenceNumber> = match server_watermark {
+            let missing_seq_nums: Vec<SeqNum> = match server_watermark {
                 // Server has contiguous sequences 0..=watermark
                 Some(watermark) if *client_max_seq > watermark => {
                     let start = watermark.saturating_add(1);
@@ -163,7 +162,7 @@ fn get_blips_for_topics_inner(
             };
 
             // Only include in missing if we don't have this sequence stored
-            let missing_seq_nums: Vec<SequenceNumber> = missing_seq_nums
+            let missing_seq_nums: Vec<SeqNum> = missing_seq_nums
                 .into_iter()
                 .filter(|seq| !stored_seqs.contains(seq))
                 .collect();

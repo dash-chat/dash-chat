@@ -1,4 +1,5 @@
 set working-directory := '..'
+set dotenv-filename := x'.env.${ENV:-development}'
 
 # start two dash chat instances connected to a local mailbox server
 [default]

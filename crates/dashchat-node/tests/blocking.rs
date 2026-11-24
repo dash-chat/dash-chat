@@ -12,6 +12,8 @@ fn photo(bytes: Vec<u8>, name: &str) -> OutgoingMedia {
             data: bytes,
             name: name.into(),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     }
 }
@@ -77,7 +79,7 @@ async fn test_block_and_unblock_contact() {
         .await
         .unwrap();
 
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
     let chat_topic: TopicId = chat.into();
 
     // Baseline: Bob's message reaches Alice and notifies her.

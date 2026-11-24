@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages.js';
 	import { getContext } from 'svelte';
 	import {
 		type Message,
@@ -7,13 +6,13 @@
 		type MessagesStore,
 		hasBody,
 	} from 'dash-chat-stores';
+	import { useReactivePromise } from '$lib/stores/use-signal';
 	import SpotlightOverlay from '$lib/components/SpotlightOverlay.svelte';
 	import QuickReactionBar from './QuickReactionBar.svelte';
 	import MessageActionsMenu from './MessageActionsMenu.svelte';
 	import ExpandedReactionsSheet from './ExpandedReactionsSheet.svelte';
 	import { toggleReaction } from '$lib/utils/reactions';
 	import { writeText } from '$lib/utils/clipboard';
-	import { showToast } from '$lib/utils/toasts';
 
 	interface Props {
 		message: Message;
@@ -35,20 +34,24 @@
 	}: Props = $props();
 
 	const store: MessagesStore = getContext('messages-store');
+	const readOnly = useReactivePromise(store.readOnly);
 
 	let expanded = $state(false);
 
-	// Reset the picker state once the actions UI is closed.
-	$effect(() => {
-		if (!opened) expanded = false;
-	});
-
 	function close() {
+		opened = false;
+		expanded = false;
+	}
+
+	// The spotlighted message is pinned inside the message list, which the
+	// keyboard glide transforms, so it would drift as the search keyboard comes
+	// and goes. Put it back and leave the sheet on its own, as in Signal.
+	function releaseSpotlight() {
 		opened = false;
 	}
 
 	function react(emoji: string) {
-		toggleReaction(store, message, myDeviceId, emoji);
+		toggleReaction(store, message, emoji);
 		close();
 	}
 
@@ -66,36 +69,45 @@
 		close();
 		if (!hasBody(message.content)) return;
 		await writeText(message.content.message);
-		showToast(m.copiedMessageToClipboard());
 	}
 </script>
 
-<SpotlightOverlay {opened} {target} onClose={close} contentHidden={expanded}>
-	{#snippet above()}
-		<QuickReactionBar
-			{message}
-			{myDeviceId}
-			onReact={react}
-			onExpand={() => (expanded = true)}
-		/>
-	{/snippet}
-	{#snippet below()}
-		<MessageActionsMenu
-			{message}
-			{myDeviceId}
-			onEdit={edit}
-			onReply={onReply ? reply : undefined}
-			onCopy={copy}
-			onDelete={close}
-		/>
-	{/snippet}
-</SpotlightOverlay>
+{#snippet reactionBar()}
+	<QuickReactionBar
+		{message}
+		onReact={react}
+		onExpand={() => (expanded = true)}
+	/>
+{/snippet}
 
-{#if opened}
+{#await $readOnly then readOnly}
+	<SpotlightOverlay
+		{opened}
+		{target}
+		onClose={close}
+		contentHidden={expanded}
+		above={readOnly ? undefined : reactionBar}
+	>
+		{#snippet below()}
+			<MessageActionsMenu
+				{message}
+				{myDeviceId}
+				onEdit={edit}
+				onReply={onReply ? reply : undefined}
+				onCopy={copy}
+				onDelete={close}
+			/>
+		{/snippet}
+	</SpotlightOverlay>
+{/await}
+
+{#if opened || expanded}
 	<ExpandedReactionsSheet
 		{message}
-		{myDeviceId}
 		opened={expanded}
 		onReact={react}
+		onClose={close}
+		backdrop={!opened}
+		onSearchFocus={releaseSpotlight}
 	/>
 {/if}

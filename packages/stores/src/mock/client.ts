@@ -19,6 +19,10 @@ export function hash<T>(obj: T): Hash {
 	return blake2bHex(JSON.stringify(obj));
 }
 
+export function chatIdForDevices(deviceA: string, deviceB: string): string {
+	return `mock-chat:${[deviceA, deviceB].sort().join(':')}`;
+}
+
 export class LocalStorageLogsClient implements LogsClient<any> {
 	emitter = new Emittery();
 

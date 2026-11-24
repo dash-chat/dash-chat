@@ -23,6 +23,7 @@
 			small
 			inline
 			class="ms-2 normal-case feedback-btn"
+			data-testid="test-banner-feedback"
 			colors={{
 				fillBgIos: 'bg-white active:bg-gray-100',
 				fillBgMaterial: 'bg-white',

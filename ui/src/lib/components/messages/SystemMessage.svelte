@@ -2,6 +2,7 @@
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 	import {
+		mdiAccountArrowRightOutline,
 		mdiAccountCheckOutline,
 		mdiAccountMinusOutline,
 		mdiAccountMultipleOutline,
@@ -25,6 +26,8 @@
 				return mdiAccountPlusOutline;
 			case 'group_member_removed':
 				return mdiAccountMinusOutline;
+			case 'group_member_left':
+				return mdiAccountArrowRightOutline;
 			case 'group_member_promoted':
 			case 'group_member_demoted':
 				return mdiShieldAccountOutline;

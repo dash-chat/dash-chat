@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { VerifyingKey } from 'dash-chat-stores';
+	import type { ContactWithProfile, VerifyingKey } from 'dash-chat-stores';
 	import { Chip } from 'konsta/svelte';
 
 	let {
@@ -7,7 +7,7 @@
 		onRemove,
 		maxNameLength = 16,
 	}: {
-		contacts: [VerifyingKey, { name: string }][];
+		contacts: ContactWithProfile[];
 		onRemove: (key: VerifyingKey) => void;
 		maxNameLength?: number;
 	} = $props();
@@ -21,8 +21,8 @@
 
 {#if contacts.length > 0}
 	<div class="flex flex-wrap gap-2">
-		{#each contacts as [key, profile]}
-			<Chip deleteButton onDelete={() => onRemove(key)}
+		{#each contacts as { contact, profile }}
+			<Chip deleteButton onDelete={() => onRemove(contact.agentId)}
 				>{truncateName(profile.name)}</Chip
 			>
 		{/each}

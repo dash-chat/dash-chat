@@ -13,7 +13,8 @@
 			"webdriverio",
 			"expect-webdriverio"
 		],
-		"noEmit": true
+		"noEmit": true,
+		"allowImportingTsExtensions": true
 	},
 	"include": [
 		"specs/**/*.ts",

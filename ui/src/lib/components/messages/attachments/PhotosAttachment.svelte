@@ -20,7 +20,10 @@
 	let lightboxTrigger: HTMLElement | undefined;
 
 	function openLightbox(index: number, event: MouseEvent) {
-		lightboxTrigger = event.currentTarget as HTMLElement;
+		const cell = event.currentTarget as HTMLElement;
+		// WebKit never focuses a tapped button, and focusing it from script then
+		// draws a focus ring, so only restore focus the cell actually had.
+		lightboxTrigger = document.activeElement === cell ? cell : undefined;
 		lightboxIndex = index;
 		// Open behind a pushed history entry so the Android system back button
 		// (and the browser back button) closes the lightbox instead of leaving

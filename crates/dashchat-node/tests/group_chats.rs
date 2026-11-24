@@ -7,6 +7,7 @@ use dashchat_node::{testing::*, *};
 
 use maplit::{btreemap, btreeset};
 use p2panda_auth::Access;
+use p2panda_auth::group::{GroupAction, GroupMember};
 use std::collections::BTreeSet;
 
 fn format_members(members: &BTreeSet<(DeviceId, Access)>, labels: &[(&DeviceId, &str)]) -> String {
@@ -104,8 +105,8 @@ async fn test_direct_chat() {
         .await
         .unwrap();
 
-    let chat_id = alice.direct_chat_topic(bobbi.agent_id());
-    assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
+    let chat_id = alice.direct_chat_with(&bobbi);
+    assert_eq!(chat_id, bobbi.direct_chat_with(&alice));
 
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
@@ -162,8 +163,8 @@ async fn test_p2p_direct_chat() {
         .await
         .unwrap();
 
-    let chat_id = alice.direct_chat_topic(bobbi.agent_id());
-    assert_eq!(chat_id, bobbi.direct_chat_topic(alice.agent_id()));
+    let chat_id = alice.direct_chat_with(&bobbi);
+    assert_eq!(chat_id, bobbi.direct_chat_with(&alice));
 
     assert!(alice.subscribed_topics().await.contains(&chat_id));
     assert!(bobbi.subscribed_topics().await.contains(&chat_id));
@@ -645,6 +646,394 @@ async fn test_non_admin_cannot_remove_admin() {
             (alice.device_id(), Access::manage()),
             (andi.device_id(), Access::manage()),
             (bobbi.device_id(), Access::write()),
+        ],
+    )
+    .await;
+}
+
+/// Joining a group announces it, and a membership change announces that: the
+/// group list and member list in the UI refresh from these alone.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_events() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&cammy)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    let added = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::GroupChatAdded { chat_id }) => {
+                    Some(*chat_id)
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is told the group chat was added");
+    assert_eq!(added, chat_id);
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    alice
+        .add_group_member(chat_id, *cammy.device_id(), Access::write())
+        .await
+        .unwrap();
+
+    let changed = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::GroupMembersChanged { chat_id }) => {
+                    Some(*chat_id)
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is told the members changed");
+    assert_eq!(changed, chat_id);
+
+    let introduced = bobbi
+        .watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n {
+                Notification::System(SystemNotification::AgentsIntroduced { agents }) => {
+                    agents.get(&(*cammy.device_id()).into()).copied()
+                }
+                _ => None,
+            },
+        )
+        .await
+        .expect("bobbi is told which agent the added device belongs to");
+    assert_eq!(introduced, cammy.agent_id());
+}
+
+async fn next_invitation(node: &TestNode) -> (ChatId, p2panda::Hash) {
+    node.watcher
+        .lock()
+        .await
+        .watch_mapped(
+            std::time::Duration::from_secs(30),
+            |n: &Notification| match n.op()?.payload.as_ref()? {
+                Payload::Chat(ChatPayload::JoinGroup {
+                    chat_id,
+                    add_member_operation_hash,
+                }) => Some((*chat_id, *add_member_operation_hash)),
+                _ => None,
+            },
+        )
+        .await
+        .expect("an invitation arrives")
+}
+
+async fn adds_member(node: &TestNode, operation: p2panda::Hash, member: DeviceId) -> bool {
+    let operation = node
+        .op_store
+        .get_operation(&operation)
+        .await
+        .unwrap()
+        .unwrap();
+    let is_member = |m: &GroupMember<p2panda::VerifyingKey>| matches!(m, GroupMember::Individual(pk) if DeviceId::from(*pk) == member);
+    let args = operation.header.extensions.group_args().unwrap();
+    match &args.action {
+        GroupAction::Create { initial_members } => {
+            initial_members.iter().any(|(m, _)| is_member(m))
+        }
+        GroupAction::Add { member, .. } => is_member(member),
+        _ => false,
+    }
+}
+
+/// After a removal the invitee still holds the operation that added it the
+/// first time, so an invitation names the one it is about.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_invitation_names_the_operation_adding_the_invitee() {
+    setup();
+
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+        })
+        .await
+        .unwrap();
+    let (invited_to, create) = next_invitation(&bobbi).await;
+    assert_eq!(invited_to, chat_id);
+    assert!(adds_member(&alice, create, bobbi.device_id()).await);
+
+    alice
+        .remove_group_member(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+    alice
+        .add_group_member(chat_id, *bobbi.device_id(), Access::write())
+        .await
+        .unwrap();
+    let (invited_to, re_add) = next_invitation(&bobbi).await;
+    assert_eq!(invited_to, chat_id);
+    assert_ne!(re_add, create);
+    assert!(adds_member(&alice, re_add, bobbi.device_id()).await);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_admin_promotes_member_to_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    alice
+        .promote_group_member_to_admin(chat_id, *bobbi.device_id())
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::manage()),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_non_admin_cannot_promote_member_to_admin() {
+    setup();
+
+    let poll = PollConfig::default();
+    let mailbox = TestMailbox::from_env();
+    let alice = make_node(&mailbox, "alice").await;
+    let bobbi = make_node(&mailbox, "bobbi").await;
+    let cammy = make_node(&mailbox, "cammy").await;
+
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&cammy)
+        .await
+        .unwrap();
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => p2panda_auth::Access::write(),
+            *cammy.device_id() => p2panda_auth::Access::write(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+
+    bobbi
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+    cammy
+        .behavior()
+        .accept_next_group_invitation()
+        .await
+        .unwrap();
+
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let result = bobbi
+        .promote_group_member_to_admin(chat_id, *cammy.device_id())
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected the promote call to be refused for a non-admin"
+    );
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&bobbi, "bobbi"), (&cammy, "cammy")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (bobbi.device_id(), Access::write()),
+            (cammy.device_id(), Access::write()),
+        ],
+    )
+    .await;
+}
+
+/// Catching up from the mailbox, a node is handed each author's log whole. When
+/// two admins took turns, whichever log comes first holds a change that depends
+/// on one in the other, so the orderer has to hold it back and release it later.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_member_removed_while_offline_after_admins_took_turns() {
+    setup();
+
+    let poll = PollConfig::default();
+    let config = NodeConfig::testing().no_p2p();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let cammy = TestNode::new(config.clone(), "cammy")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let danny = TestNode::new(config.clone(), "danny")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    for other in [&bobbi, &cammy, &danny] {
+        alice
+            .behavior()
+            .initiate_and_establish_contact(other)
+            .await
+            .unwrap();
+    }
+
+    let chat_id = alice
+        .create_group(btreemap! {
+            *bobbi.device_id() => Access::write(),
+            *cammy.device_id() => Access::manage(),
+        })
+        .await
+        .unwrap()
+        .alias_named("groupchat");
+    for member in [&bobbi, &cammy] {
+        member
+            .behavior()
+            .accept_next_group_invitation()
+            .await
+            .unwrap();
+    }
+    poll.consistency([&alice, &bobbi, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let bobbi_device_id = bobbi.device_id();
+    let bobbi_store_dir = bobbi.shutdown().await;
+
+    alice
+        .add_group_member(chat_id, *danny.device_id(), Access::write())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+    cammy
+        .remove_group_member(chat_id, *danny.device_id())
+        .await
+        .unwrap();
+    poll.consistency([&alice, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+    alice
+        .remove_group_member(chat_id, *bobbi_device_id)
+        .await
+        .unwrap();
+    poll.consistency([&alice, &cammy], &[chat_id.into()])
+        .await
+        .unwrap();
+
+    let bobbi = TestNode::new_at_path(config, "bobbi", bobbi_store_dir)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    assert_group_members(
+        &poll,
+        &[(&alice, "alice"), (&cammy, "cammy"), (&bobbi, "bobbi")],
+        chat_id,
+        btreeset![
+            (alice.device_id(), Access::manage()),
+            (cammy.device_id(), Access::manage()),
         ],
     )
     .await;

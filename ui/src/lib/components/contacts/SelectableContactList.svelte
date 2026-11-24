@@ -1,11 +1,11 @@
 <script lang="ts">
-	import type { Profile, VerifyingKey } from 'dash-chat-stores';
-	import Avatar from '$lib/components/profiles/Avatar.svelte';
+	import type { ContactWithProfile, VerifyingKey } from 'dash-chat-stores';
+	import PeerAvatar from '$lib/components/profiles/PeerAvatar.svelte';
 	import { List, ListItem, Checkbox, Preloader, useTheme } from 'konsta/svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
 
 	interface Props {
-		contacts: [VerifyingKey, Profile][];
+		contacts: ContactWithProfile[];
 		selectedContacts: VerifyingKey[];
 		loading?: boolean;
 		noDataMessage?: string;
@@ -30,7 +30,8 @@
 		</div>
 	{:else}
 		<List strongIos inset={isWideScreen.value || theme === 'ios'}>
-			{#each contacts as [verifyingKey, profile]}
+			{#each contacts as { contact, profile }}
+				{@const verifyingKey = contact.agentId}
 				<ListItem
 					label
 					title={profile.name}
@@ -38,10 +39,7 @@
 					data-contact-name={profile.name}
 				>
 					{#snippet media()}
-						<Avatar
-							image={profile.avatar}
-							initials={profile.name.slice(0, 2)}
-						/>
+						<PeerAvatar {profile} />
 					{/snippet}
 
 					{#snippet after()}

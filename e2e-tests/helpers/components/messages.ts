@@ -5,14 +5,23 @@ import {
 	MEDIA_SYNC_TIMEOUT,
 	RENDER_SETTLE_WINDOW,
 	SYNC_TIMEOUT,
+	UI_TIMEOUT,
 } from '../timeouts';
+import { Avatar } from './avatar';
 import { Composer } from './composer';
 import { Lightbox } from './lightbox';
+
+/** Long-presses to try before letting the menu's own wait report the failure.
+ *  Each costs a settle window, so this stays small. */
+const OPEN_ACTIONS_ATTEMPTS = 3;
+
+export type MessageStatus = 'unsent' | 'sending' | 'mailbox' | 'delivered';
 
 export type SystemMessageKind =
 	| 'group_created'
 	| 'group_member_added'
 	| 'group_member_removed'
+	| 'group_member_left'
 	| 'group_member_promoted'
 	| 'group_member_demoted'
 	| 'contact_blocked'
@@ -20,6 +29,23 @@ export type SystemMessageKind =
 
 // Driver for a chat's rendered message list — the messages themselves plus the
 // scroll-to-bottom button and unread affordances around them.
+/** What identifies one rendered message: its body text, its media names or
+ * voice duration, or that it is the deleted placeholder. */
+export interface RenderedMessage {
+	/** Whether the agent reading the chat is the one who sent it. */
+	mine: boolean;
+	/** The name the bubble is attributed to, which only group chats render;
+	 * null in a direct chat, where the sender is the viewer or the peer. */
+	sender: string | null;
+	text: string | null;
+	photoAlts: string[];
+	photosLoaded: boolean;
+	fileName: string | null;
+	voiceDuration: string | null;
+	deleted: boolean;
+	reactions: string[];
+}
+
 export class Messages extends TestHelper {
 	constructor(
 		agent: WebdriverIO.Browser,
@@ -32,12 +58,19 @@ export class Messages extends TestHelper {
 		this.dividerSelector = tid(unreadDividerTestId);
 		this.root = this.el(this.messagesSelector);
 		this.unreadDivider = this.el(this.dividerSelector);
+		this.photoRetry = this.el(
+			`${this.messagesSelector} ${tid('message-attachment-photos')} ${tid('blob-image-retry')}`,
+		);
 	}
+
+	/** The reload affordance a chat photo shows once its blob failed to load. */
+	readonly photoRetry;
 
 	readonly messagesSelector: string;
 	readonly dividerSelector: string;
 	readonly root;
 	readonly unreadDivider;
+	voicePlayButton = this.el(tid('voice-play-button'));
 	scrollBottom = this.el(tid('chat-scroll-bottom'));
 	unreadBadge = this.el(tid('chat-unread-badge'));
 	/** The photo viewer opened by clicking a photo in this message list. */
@@ -46,6 +79,108 @@ export class Messages extends TestHelper {
 	/** The system message of `kind` rendered in this message list. */
 	systemMessage(kind: SystemMessageKind) {
 		return this.el(`${this.messagesSelector} ${tid(`system-message-${kind}`)}`);
+	}
+
+	/** Read the data-status of the most recent message-status indicator. */
+	async lastMessageStatus(): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string) => {
+				const els = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} ${statusSel}`,
+				);
+				const status = els[els.length - 1]?.dataset.status;
+				if (
+					status === 'unsent' ||
+					status === 'sending' ||
+					status === 'mailbox' ||
+					status === 'delivered'
+				) {
+					return status;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-status'),
+		);
+	}
+
+	/** Read the data-status of the status indicator for the message whose text
+	 * contains `text`. Only the last message of a run of equal statuses renders
+	 * an indicator inside its bubble; with `forGroup`, read the indicator
+	 * governing that message — the first one at or after it in its group —
+	 * rather than only the one inside the message's own bubble. */
+	async messageStatusFor(
+		text: string,
+		forGroup?: boolean,
+	): Promise<MessageStatus | null> {
+		return this.agent.execute(
+			(messagesSel: string, statusSel: string, t: string, group: boolean) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				for (const wrapper of wrappers) {
+					if (!wrapper.textContent?.includes(t)) continue;
+					let el: HTMLElement | null = null;
+					if (group) {
+						const groupId = wrapper
+							.closest<HTMLElement>('[data-message-group]')
+							?.getAttribute('data-message-group');
+						const els = groupId
+							? Array.from(
+									document.querySelectorAll<HTMLElement>(
+										`${messagesSel} [data-message-group="${groupId}"] ${statusSel}`,
+									),
+								)
+							: [];
+						el =
+							els.find(
+								e =>
+									wrapper.contains(e) ||
+									(wrapper.compareDocumentPosition(e) &
+										Node.DOCUMENT_POSITION_FOLLOWING) !==
+										0,
+							) ?? null;
+					} else {
+						el = wrapper.querySelector(statusSel) as HTMLElement | null;
+					}
+					const status = el?.dataset.status;
+					if (
+						status === 'unsent' ||
+						status === 'sending' ||
+						status === 'mailbox' ||
+						status === 'delivered'
+					) {
+						return status;
+					}
+					return null;
+				}
+				return null;
+			},
+			this.messagesSelector,
+			tid('message-status'),
+			text,
+			forGroup ?? false,
+		);
+	}
+
+	/** Wait until the message containing `text` reports one of `statuses`.
+	 * `forGroup` selects which indicator is read, as in `messageStatusFor`. */
+	async waitForMessageStatus(
+		text: string,
+		statuses: MessageStatus[],
+		timeout = SYNC_TIMEOUT,
+		forGroup?: boolean,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const status = await this.messageStatusFor(text, forGroup);
+				return status !== null && statuses.includes(status);
+			},
+			{
+				timeout,
+				timeoutMsg: `Message "${text}" did not reach status ${statuses.join('/')}`,
+			},
+		);
 	}
 
 	/** The rendered message whose text contains `text`, as a `Message` helper
@@ -71,6 +206,52 @@ export class Messages extends TestHelper {
 			: new Message(this.agent, this, hash, this.composer);
 	}
 
+	/** The rendered message holding a photo whose alt contains `label`, as a
+	 * `Message` helper scoped to it (by its message hash), or null if none is
+	 * rendered. */
+	async messageWithPhoto(label: string): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				const wrapper = Array.from(wrappers).find(w =>
+					Array.from(w.querySelectorAll(`${photosSel} img`)).some(img =>
+						(img as HTMLImageElement).alt.includes(name),
+					),
+				);
+				return wrapper?.getAttribute('data-message-hash') ?? null;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
+	/** The last rendered message holding a voice note, as a `Message` helper
+	 * scoped to it (by its message hash), or null if none is rendered. */
+	async lastVoiceMessage(): Promise<Message | null> {
+		const hash = await this.agent.execute(
+			(messagesSel: string, voiceSel: string) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				const wrapper = Array.from(wrappers)
+					.reverse()
+					.find(w => w.querySelector(voiceSel) !== null);
+				return wrapper?.getAttribute('data-message-hash') ?? null;
+			},
+			this.messagesSelector,
+			tid('message-attachment-voice'),
+		);
+		return hash === null
+			? null
+			: new Message(this.agent, this, hash, this.composer);
+	}
+
 	/** Wait until a message whose text contains `text` renders, and return its
 	 * `Message` helper. */
 	async waitForMessage(text: string, timeout = SYNC_TIMEOUT): Promise<Message> {
@@ -89,6 +270,18 @@ export class Messages extends TestHelper {
 		if (!(await this.unreadBadge.isExisting())) return null;
 		const text = (await this.unreadBadge.getText()).trim();
 		return text === '' ? null : text;
+	}
+
+	/** Trimmed text of the unread divider, or null when none is rendered. Read
+	 * from the DOM rather than with `getText()`: entering a chat with a long
+	 * backlog leaves the divider above the viewport, where the rendered-text
+	 * algorithm returns "". */
+	async unreadDividerText(): Promise<string | null> {
+		const text = await this.agent.execute(
+			(sel: string) => document.querySelector(sel)?.textContent ?? null,
+			this.dividerSelector,
+		);
+		return text === null ? null : text.trim();
 	}
 
 	/** Whether the rendered message list currently contains `text`. */
@@ -150,31 +343,96 @@ export class Messages extends TestHelper {
 		label: string,
 		timeout = MEDIA_SYNC_TIMEOUT,
 	): Promise<void> {
-		await this.agent.waitUntil(
-			async () =>
-				this.agent.execute(
-					(messagesSel: string, photosSel: string, name: string) => {
-						const imgs =
-							document
-								.querySelector(messagesSel)
-								?.querySelectorAll(`${photosSel} img`) ?? [];
-						const img = Array.from(imgs).find(el =>
-							(el as HTMLImageElement).alt.includes(name),
-						) as HTMLImageElement | undefined;
-						if (img === undefined) return false;
-						if (img.complete && img.naturalWidth > 0) return true;
-						// Attachments render with loading="lazy", so one that is
-						// scrolled out of view never decodes and naturalWidth stays 0.
-						// Only scroll when it still needs decoding — scrolling on
-						// every poll forces a layout over the whole message list.
-						img.scrollIntoView({ block: 'center' });
-						return false;
-					},
-					this.messagesSelector,
-					tid('message-attachment-photos'),
-					label,
-				),
-			{ timeout, timeoutMsg: `Photo message "${label}" not found` },
+		await this.agent.waitUntil(() => this.isPhotoLoaded(label), {
+			timeout,
+			timeoutMsg: `Photo message "${label}" not found`,
+		});
+	}
+
+	/** Whether the photo attachment whose filename contains `label` has loaded. */
+	isPhotoLoaded(label: string): Promise<boolean> {
+		return this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				) as HTMLImageElement | undefined;
+				if (img === undefined) return false;
+				if (img.complete && img.naturalWidth > 0) return true;
+				// Attachments render with loading="lazy", so one that is
+				// scrolled out of view never decodes and naturalWidth stays 0.
+				// Only scroll when it still needs decoding — scrolling on
+				// every poll forces a layout over the whole message list.
+				img.scrollIntoView({ block: 'center' });
+				return false;
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
+		);
+	}
+
+	/** Start recording every moment the photo whose filename contains `label`
+	 * goes on or off screen. Returns the recording's token, to be handed back to
+	 * [`photoHiddenPeriods`]. */
+	recordPhotoVisibility(label: string): Promise<string> {
+		return this.agent.execute(
+			(l: string) => window.__test.recordPhotoVisibility(l),
+			label,
+		);
+	}
+
+	/** How long, in ms, each stretch lasted in which the recorded photo was off
+	 * screen after it had been shown; a stretch still ongoing runs to now.
+	 * Throws if the webview reloaded in between, which would otherwise look like
+	 * a photo that never went away. */
+	async photoHiddenPeriods(token: string): Promise<number[]> {
+		const history = await this.agent.execute(() =>
+			window.__test.photoVisibilityHistory(),
+		);
+		if (history.token !== token) {
+			throw new Error(
+				`photo-visibility recording was lost (expected token ${token}, got ${history.token}) — the webview reloaded, so what the photo did in between was not observed`,
+			);
+		}
+		const firstShown = history.samples.findIndex(s => s.shown);
+		if (firstShown === -1) return [];
+		const periods: number[] = [];
+		for (const [i, sample] of history.samples.entries()) {
+			if (i <= firstShown || sample.shown) continue;
+			const back = history.samples[i + 1]?.at ?? Date.now();
+			periods.push(back - sample.at);
+		}
+		return periods;
+	}
+
+	/** Inline width/height styles of the cell of the photo whose filename
+	 * contains `label` — the box `PhotoAttachmentGallery` derives from the
+	 * sender-measured pixel dimensions, applied before the blob loads. */
+	async photoBoxStyle(
+		label: string,
+	): Promise<{ width: string; height: string }> {
+		return this.agent.execute(
+			(messagesSel: string, photosSel: string, name: string) => {
+				const imgs =
+					document
+						.querySelector(messagesSel)
+						?.querySelectorAll(`${photosSel} img`) ?? [];
+				const img = Array.from(imgs).find(el =>
+					(el as HTMLImageElement).alt.includes(name),
+				) as HTMLImageElement | undefined;
+				const cell = img?.closest('button');
+				return {
+					width: cell?.style.width ?? '',
+					height: cell?.style.height ?? '',
+				};
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			label,
 		);
 	}
 
@@ -248,7 +506,123 @@ export class Messages extends TestHelper {
 
 	/** Clickable photo cell at the given index (0-based) across photo messages in the list. */
 	photoCellButton(index: number) {
-		return this.root.$$(`${tid('message-attachment-photos')} button`)[index];
+		return this.agent.$(
+			`(//*[@data-testid="message-attachment-photos"]//button)[${index + 1}]`,
+		);
+	}
+
+	/** One entry per rendered message. A photo scrolled out of view never
+	 * decodes (loading="lazy"), so an unloaded one is scrolled into view for the
+	 * next call. */
+	async renderedMessages(): Promise<RenderedMessage[]> {
+		return this.agent.execute(
+			(
+				messagesSel: string,
+				photosSel: string,
+				fileSel: string,
+				voiceSel: string,
+				deletedSel: string,
+				quoteSel: string,
+				senderSel: string,
+				chipPrefix: string,
+			) => {
+				const wrappers = document.querySelectorAll<HTMLElement>(
+					`${messagesSel} [data-message-hash]`,
+				);
+				return Array.from(wrappers).map(w => {
+					const imgs = Array.from(
+						w.querySelectorAll<HTMLImageElement>(`${photosSel} img`),
+					);
+					const loaded = (img: HTMLImageElement) =>
+						img.complete && img.naturalWidth > 0;
+					for (const img of imgs) {
+						if (!loaded(img)) img.scrollIntoView({ block: 'center' });
+					}
+					const body = Array.from(
+						w.querySelectorAll<HTMLElement>('[data-message-text]'),
+					).find(el => el.closest(quoteSel) === null);
+					const chips = w.querySelectorAll<HTMLElement>(
+						`[data-testid^="${chipPrefix}"]`,
+					);
+					return {
+						mine: w.querySelector('.outgoing-message') !== null,
+						sender:
+							w.querySelector<HTMLElement>(senderSel)?.textContent?.trim() ??
+							null,
+						text: body?.textContent ?? null,
+						photoAlts: imgs.map(img => img.alt),
+						photosLoaded: imgs.every(loaded),
+						fileName: w.querySelector(fileSel)?.textContent ?? null,
+						voiceDuration:
+							w.querySelector(voiceSel)?.textContent?.trim() ?? null,
+						deleted: w.querySelector(deletedSel) !== null,
+						reactions: Array.from(chips).map(
+							el => el.dataset.testid?.slice(chipPrefix.length) ?? '',
+						),
+					};
+				});
+			},
+			this.messagesSelector,
+			tid('message-attachment-photos'),
+			tid('message-attachment-file'),
+			tid('voice-duration'),
+			tid('message-deleted-placeholder'),
+			tid('reply-quote'),
+			tid('group-message-sender-name'),
+			'reaction-chip-',
+		);
+	}
+
+	/** Wait until a voice message showing `duration` (as `m:ss`) renders. */
+	async waitForVoiceMessageOf(
+		duration: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				(await this.renderedMessages()).some(r => r.voiceDuration === duration),
+			{ timeout, timeoutMsg: `Voice message of ${duration} not found` },
+		);
+	}
+
+	async waitForVoiceMessage(timeout = SYNC_TIMEOUT): Promise<void> {
+		await this.agent.waitUntil(
+			async () =>
+				this.agent.execute(
+					(messagesSel: string, voiceSel: string) =>
+						(document.querySelector(messagesSel)?.querySelectorAll(voiceSel)
+							.length ?? 0) > 0,
+					this.messagesSelector,
+					tid('message-attachment-voice'),
+				),
+			{ timeout, timeoutMsg: 'Voice message not found' },
+		);
+	}
+
+	async voiceProgress(): Promise<number> {
+		return this.agent.execute(() => window.__test.voiceProgress());
+	}
+
+	/** Seeks to `fraction` of the real audio length, resolving to that fraction
+	 * (or -1 if the audio isn’t loaded). */
+	async voiceSeekFraction(fraction: number): Promise<number> {
+		return this.agent.execute(
+			(f: number) => window.__test.voiceSeekFraction(f),
+			fraction,
+		);
+	}
+
+	/** Fails the next byte-load after `delayMs`, so the spinner stays observable
+	 * before the error toast. */
+	async failNextVoiceLoad(delayMs = 0): Promise<void> {
+		await this.agent.execute(
+			(ms: number) => window.__test.failNextVoiceLoad(ms),
+			delayMs,
+		);
+	}
+
+	async voicePlayLoading(): Promise<boolean> {
+		return (await this.voicePlayButton.getAttribute('aria-busy')) === 'true';
 	}
 }
 
@@ -292,8 +666,8 @@ export class Message extends TestHelper {
 	/** The message's wrapper element in the list. */
 	readonly wrapper;
 
-	/** Every message mounts its own (closed) actions popover, so the menu and
-	 * its actions must be resolved scoped to this message's wrapper. */
+	/** Each message hosts its own actions menu, so the menu and its actions
+	 * must be resolved scoped to this message's wrapper. */
 	get actionsMenu() {
 		return this.wrapper.$(tid('message-actions-menu'));
 	}
@@ -347,14 +721,53 @@ export class Message extends TestHelper {
 
 	/** Open this message's actions menu with the gesture its platform uses — a
 	 * long-press on mobile, which opens the spotlight overlay, or the hover
-	 * toolbar's ⋯ button on desktop — and wait for it to actually open. */
+	 * toolbar's ⋯ button on desktop — and wait for it to actually open. The
+	 * message is scrolled to the middle before each attempt: a menu anchored to
+	 * a message at the very top opens past the viewport's edge. */
 	async openActions() {
-		if (await this.isMobileBuild()) {
-			await this.longPressBubble();
-		} else {
+		if (!(await this.isMobileBuild())) {
+			await this.wrapper.scrollIntoView({ block: 'center' });
 			await this.clickHoverButton('message-hover-menu');
+			await this.actionsMenu.waitForDisplayed();
+			return;
 		}
-		await this.actionsMenu.waitForDisplayed();
+		// The app arms the long-press on touchstart and loses it if the bubble's
+		// node is replaced before the hold is up, which any message arriving
+		// meanwhile does. Repeat the gesture rather than spend the whole wait on
+		// one that was cancelled.
+		for (let i = 0; i < OPEN_ACTIONS_ATTEMPTS; i++) {
+			// A press on an open overlay dismisses it, so a menu that opened
+			// just past the settle window must not be pressed again.
+			if (await this.actionsMenu.isDisplayed()) return;
+			// Re-centred every attempt: the burst of arriving messages this loop
+			// exists for also scrolls the list, and a menu anchored to a message
+			// back at the viewport's edge opens past it and reads as not open.
+			await this.wrapper.scrollIntoView({ block: 'center' });
+			// The gesture itself can fail, not just the wait: it dispatches
+			// `touchend` against the selector it pressed 700ms earlier, and the
+			// re-render that cancels the press is free to have taken that node
+			// away. That is this loop's own case, so it costs an attempt rather
+			// than the run.
+			const opened = await this.longPressBubble()
+				.then(() =>
+					this.actionsMenu.waitForDisplayed({
+						timeout: RENDER_SETTLE_WINDOW,
+					}),
+				)
+				.then(
+					() => true,
+					() => false,
+				);
+			if (opened) return;
+		}
+		// The full wait, not another settle window: the retries are there to
+		// cover a cancelled gesture, not to lower what a slow phone is allowed.
+		await this.actionsMenu.waitForDisplayed({
+			timeout: UI_TIMEOUT,
+			timeoutMsg:
+				`The actions menu did not open after ${OPEN_ACTIONS_ATTEMPTS} ` +
+				'long-presses — each one lost, most likely to a re-render',
+		});
 	}
 
 	/** Fail unless this message's actions menu is open now and still open
@@ -472,6 +885,54 @@ export class Message extends TestHelper {
 		);
 	}
 
+	reactionsSheetOpen(): Promise<boolean> {
+		return this.agent.execute((sheetSel: string) => {
+			const sheet = document
+				.querySelector(sheetSel)
+				?.closest('.k-sheet, .k-dialog');
+			if (!sheet) return false;
+			if (sheet.classList.contains('k-sheet')) {
+				return sheet.classList.contains('-translate-y-full');
+			}
+			return !sheet.classList.contains('opacity-0');
+		}, tid('reactions-sheet'));
+	}
+
+	async openReactionsSheet(emoji: string) {
+		await this.wrapper.$(tid(`reaction-chip-${emoji}`)).click();
+		await this.agent.waitUntil(() => this.reactionsSheetOpen(), {
+			timeoutMsg: `Reactions sheet for message ${this.hash} did not open`,
+		});
+	}
+
+	reactionsSheetShowsReactor(name: string): Promise<boolean> {
+		return this.agent.execute((n: string) => {
+			const rows = document.querySelectorAll('[data-testid^="reaction-row"]');
+			return Array.from(rows).some(row => row.textContent?.includes(n));
+		}, name);
+	}
+
+	async clickReactionsTab(tab: string) {
+		await this.agent.$(tid(`reactions-tab-${tab}`)).click();
+	}
+
+	async removeOwnReaction() {
+		await this.agent.$(tid('reaction-row-own')).click();
+	}
+
+	async closeReactionsSheet() {
+		await this.agent.execute((sheetSel: string) => {
+			const root = document
+				.querySelector(sheetSel)
+				?.closest('.k-sheet, .k-dialog');
+			const backdrop = root?.previousElementSibling;
+			if (backdrop instanceof HTMLElement) backdrop.click();
+		}, tid('reactions-sheet'));
+		await this.agent.waitUntil(async () => !(await this.reactionsSheetOpen()), {
+			timeoutMsg: `Reactions sheet did not close`,
+		});
+	}
+
 	async waitForReaction(emoji: string, timeout = SYNC_TIMEOUT) {
 		await this.agent.waitUntil(() => this.hasReaction(emoji), {
 			timeout,
@@ -487,14 +948,7 @@ export class Message extends TestHelper {
 	}
 
 	authorInitials(): Promise<string | null> {
-		return this.agent.execute((wrapperSel: string) => {
-			const avatar = document
-				.querySelector(wrapperSel)
-				?.querySelector('wa-avatar') as
-				| (Element & { initials?: string })
-				| null;
-			return avatar?.initials || null;
-		}, this.wrapperSelector);
+		return new Avatar(this.agent, this.wrapperSelector).initials();
 	}
 
 	/** True if the unread divider precedes this message in DOM order. */
@@ -557,12 +1011,23 @@ export class Message extends TestHelper {
 			{ timeoutMsg: 'Editing input is not prefilled with the original text' },
 		);
 		await this.composer.type(newText);
-		await this.composer.send();
+		await this.composer.sendAndWaitForClear(newText);
 	}
 
 	/** The hover toolbar's Reply shortcut, which sits alongside React on desktop. */
 	get hoverReplyButton() {
 		return this.wrapper.$(tid('message-hover-reply'));
+	}
+
+	/** The hover toolbar's add-reaction button. */
+	get hoverReactButton() {
+		return this.wrapper.$(tid('message-hover-react'));
+	}
+
+	/** This message's quick-reaction bar (in the mobile spotlight overlay or
+	 * the desktop hover popover). */
+	get quickReactionBar() {
+		return this.wrapper.$(tid('quick-reaction-bar'));
 	}
 
 	/** Open the actions menu, tap Reply, type `replyText`, and send it. */
@@ -571,6 +1036,84 @@ export class Message extends TestHelper {
 		await this.replyAction.waitForClickable();
 		await this.replyAction.click();
 		await this.composeReply(replyText);
+	}
+
+	/** Reply by swiping the message row toward the end edge, the gesture mobile
+	 * offers alongside the actions menu. Driven through `window.__test` because
+	 * a drag is not expressible as a click. */
+	async replyBySwipe(replyText: string): Promise<void> {
+		await this.agent.execute(
+			(hash: string) => window.__test.swipeToReply(hash),
+			this.hash,
+		);
+		await this.composeReply(replyText);
+	}
+
+	/** Tap the bubble's position with a real finger, landing on whatever is on
+	 * top of it. `.click()` refuses an element that something else covers. */
+	async tapByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x, y })
+			.down()
+			.up()
+			.perform();
+	}
+
+	/** Drag a real finger across the bubble's position toward the end edge,
+	 * landing on whatever is on top of it. `replyBySwipe` dispatches straight
+	 * to the row instead. */
+	async swipeByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x: x - 75, y })
+			.down()
+			.move({ x: x + 75, y, duration: 200 })
+			.up()
+			.perform();
+	}
+
+	/** Long-press the bubble and, without lifting the finger, drag it toward the
+	 * end edge, so the whole gesture belongs to the touch that opened the
+	 * spotlight. */
+	async holdThenDragByTouch(): Promise<void> {
+		const { x, y } = await this.bubbleCentre();
+		await this.agent
+			.action('pointer', { parameters: { pointerType: 'touch' } })
+			.move({ x: x - 75, y })
+			.down()
+			// A move in place, not a pause: XCUITest interpolates a move from the
+			// press, so a pause before it turns the hold into one slow drag.
+			.move({ x: x - 75, y, duration: 800 })
+			.move({ x: x + 75, y, duration: 200 })
+			.up()
+			.perform();
+	}
+
+	/** Whether this message's first photo accepts focus, which is what a
+	 * keyboard or a screen reader needs to activate it. */
+	photoTakesFocus(): Promise<boolean> {
+		return this.agent.execute(
+			(cellSel: string) => {
+				const cell = document.querySelector<HTMLElement>(cellSel);
+				if (cell === null) throw new Error('Photo cell not found');
+				cell.focus();
+				return document.activeElement === cell;
+			},
+			`${this.wrapperSelector} ${tid('message-attachment-photos')} button`,
+		);
+	}
+
+	private async bubbleCentre(): Promise<{ x: number; y: number }> {
+		const bubble = this.wrapper.$('.message');
+		const { x, y } = await bubble.getLocation();
+		const { width, height } = await bubble.getSize();
+		return {
+			x: Math.round(x + width / 2),
+			y: Math.round(y + height / 2),
+		};
 	}
 
 	/** Reply via the hover toolbar's Reply shortcut rather than the actions
@@ -584,7 +1127,7 @@ export class Message extends TestHelper {
 	private async composeReply(replyText: string): Promise<void> {
 		await this.composer.replyBanner.waitForExist();
 		await this.composer.type(replyText);
-		await this.composer.send();
+		await this.composer.sendAndWaitForClear(replyText);
 	}
 
 	/** Trimmed text of this message's reply quote, or null when it has none.
@@ -612,6 +1155,29 @@ export class Message extends TestHelper {
 				return text !== null && text.includes(quotedText);
 			},
 			{ timeout, timeoutMsg: `Reply quote "${quotedText}" not found` },
+		);
+	}
+
+	/** Wait until this message's reply quote names `authorName` as the quoted
+	 * author. Read from the DOM for the same reason as `replyQuoteText`. */
+	async waitForReplyQuoteAuthor(
+		authorName: string,
+		timeout = SYNC_TIMEOUT,
+	): Promise<void> {
+		await this.agent.waitUntil(
+			async () => {
+				const author = await this.agent.execute(
+					(wrapperSel: string, authorSel: string) =>
+						document
+							.querySelector(wrapperSel)
+							?.querySelector(authorSel)
+							?.textContent?.trim() ?? null,
+					this.wrapperSelector,
+					tid('reply-quote-author'),
+				);
+				return author === authorName;
+			},
+			{ timeout, timeoutMsg: `Reply quote author "${authorName}" not found` },
 		);
 	}
 

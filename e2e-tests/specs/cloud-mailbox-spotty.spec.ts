@@ -1,0 +1,142 @@
+/**
+ * The cloud mailbox on a spotty link: the server keeps running while the
+ * link to it turns slow, hangs, or refuses connections, the way a mailbox
+ * behind a struggling connection does. The chip may only read cloud while
+ * the mailbox actually answers, and a message the mailbox cannot take stays
+ * pending until it can, and a phone that loses its network says so at once.
+ * One agent in a solo group, read from the home page, where the chip is.
+ */
+import { createGroup } from '../helpers/flows/exchange-contacts-and-create-group';
+import {
+	MAILBOX_HEALED_AFTER_BACKOFF_MS,
+	MAILBOX_HEALED_MS,
+	MAILBOX_HUNG_MS,
+	MAILBOX_UNANSWERED_MS,
+	UI_TIMEOUT,
+} from '../helpers/timeouts';
+import {
+	cutMailboxLink,
+	hangMailboxLink,
+	healMailboxLink,
+	isRemoteMailbox,
+	slowMailboxLink,
+} from '../setup/mailbox-control';
+import { type Agent, setupAgents } from '../setup/setup-agents';
+
+/** Long enough for a poll to have gone through the slow link. */
+const SLOW_SETTLE_MS = 5_000;
+/** Long enough for a message to have reached a healthy mailbox. */
+const HELD_BACK_MS = 10_000;
+
+describe('Cloud mailbox on a spotty link', function () {
+	this.timeout(300_000);
+
+	let agent: Agent;
+
+	const chip = () => agent.homePage.connectionStatusIndicator;
+	const messages = () => agent.groupChatPage.messages;
+
+	async function expectConnected(after: string, within: number): Promise<void> {
+		await chip().waitForStatus(
+			'cloud',
+			within,
+			`the chip did not read cloud within ${within / 1_000}s after ${after}`,
+		);
+	}
+
+	async function expectDisconnected(
+		after: string,
+		within: number,
+	): Promise<void> {
+		await chip().waitForStatus(
+			'disconnected',
+			within,
+			`the chip did not read disconnected within ${within / 1_000}s after ${after}`,
+		);
+	}
+
+	async function openGroup(): Promise<void> {
+		await agent.homePage.chatListItem('Solo Group').click();
+		await agent.groupChatPage.ready();
+	}
+
+	async function backToChip(): Promise<void> {
+		await agent.groupChatPage.back.click();
+		await agent.homePage.ready();
+	}
+
+	/** Send `text` and check the mailbox does not get to hold it. */
+	async function sendHeldBack(text: string): Promise<void> {
+		await openGroup();
+		await agent.groupChatPage.composer.sendMessage(text);
+		await agent.pause(HELD_BACK_MS);
+		expect(await messages().messageStatusFor(text)).not.toBe('mailbox');
+		await backToChip();
+	}
+
+	async function expectHandedOver(text: string): Promise<void> {
+		await openGroup();
+		await messages().waitForMessageStatus(text, ['mailbox']);
+		await backToChip();
+	}
+
+	before(async function () {
+		if (isRemoteMailbox()) this.skip();
+		[agent] = await setupAgents(this, [{ platform: 'any' }]);
+		await agent.createProfilePage.createProfile('Alice', 'Spotty');
+		await createGroup(agent, 'Solo Group', []);
+		await backToChip();
+		await expectConnected('the app settled', UI_TIMEOUT);
+	});
+
+	it('stays connected and hands over a message over a slow link', async () => {
+		await slowMailboxLink();
+		await agent.pause(SLOW_SETTLE_MS);
+		expect(await chip().status()).toBe('cloud');
+		await openGroup();
+		await agent.groupChatPage.composer.sendMessage('slowly does it');
+		await messages().waitForMessageStatus('slowly does it', ['mailbox']);
+		await backToChip();
+	});
+
+	it('reads disconnected while the link hangs, holds the message back, and hands it over once the link heals', async () => {
+		await hangMailboxLink();
+		await expectDisconnected('the link hung', MAILBOX_HUNG_MS);
+		await sendHeldBack('while you were hanging');
+		await healMailboxLink();
+		await expectConnected('the link healed', MAILBOX_HEALED_MS);
+		await expectHandedOver('while you were hanging');
+	});
+
+	it('reads disconnected while connections are refused, holds the message back, and hands it over once they are accepted again', async () => {
+		await cutMailboxLink();
+		await expectDisconnected('the link was cut', MAILBOX_UNANSWERED_MS);
+		await sendHeldBack('while you were refusing');
+		await healMailboxLink();
+		// Failing fast, the polls of the outage back the mailbox off to degraded.
+		await expectConnected('the link healed', MAILBOX_HEALED_AFTER_BACKOFF_MS);
+		await expectHandedOver('while you were refusing');
+	});
+
+	it('reads disconnected as soon as the phone loses its network, and connected again once it is back', async function () {
+		// A desktop cannot leave its network, and an emulator has no radio to
+		// turn off.
+		if (agent.platform !== 'ios' && agent.platform !== 'android') this.skip();
+		await agent.disableWifi();
+		try {
+			await expectDisconnected('Wi-Fi went off', MAILBOX_UNANSWERED_MS);
+		} catch (err) {
+			// Checked only on failure: the probes take seconds the chip is
+			// being timed against.
+			if (await agent.hasInternet()) {
+				throw new Error(
+					'the phone still reaches the internet with Wi-Fi off; this case needs a phone with no other connection',
+				);
+			}
+			throw err;
+		} finally {
+			await agent.enableWifi();
+		}
+		await expectConnected('Wi-Fi came back', MAILBOX_HEALED_AFTER_BACKOFF_MS);
+	});
+});

@@ -7,9 +7,19 @@
  *
  * Single-purpose DOM queries belong in `e2e-tests/helpers/pages/*`.
  */
+import { appCacheDir, join } from '@tauri-apps/api/path';
+import { mkdir, writeFile } from '@tauri-apps/plugin-fs';
 import { invokeAfterSetup } from 'dash-chat-stores';
+import * as wifi from 'tauri-plugin-wifi-api';
 
+import {
+	CONNECTION_STATUS_TAGS,
+	type ConnectionStatusTag,
+} from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
+import { discardPendingCrashReport } from '../src/lib/utils/error-report';
+
+const requestJoinOutcomes = new Map<string, string>();
 
 type Messages = typeof m;
 
@@ -27,7 +37,15 @@ type MessageParams<K extends MessageKey> = Parameters<Messages[K]>[0];
 
 /** Trigger UpdaterBanner into a specific state via custom event. */
 function simulateUpdate(
-	state: 'available' | 'downloading' | 'ready' | 'error' | 'hidden',
+	state:
+		| 'available'
+		| 'misplaced'
+		| 'moving'
+		| 'moveError'
+		| 'downloading'
+		| 'ready'
+		| 'error'
+		| 'hidden',
 ) {
 	window.dispatchEvent(
 		new CustomEvent('test-simulate-update', { detail: state }),
@@ -44,6 +62,169 @@ function forceBlobError(alt: string) {
 /** True if the first element matching `selector` contains `text`. */
 function hasText(selector: string, text: string): boolean {
 	return document.querySelector(selector)?.textContent?.includes(text) ?? false;
+}
+
+export interface ConnectionStatusSample {
+	/** Null while the chip is not mounted. */
+	status: ConnectionStatusTag | null;
+	/** Epoch ms on the device, so samples can be ordered against each other
+	 * without comparing against the test runner's clock on another machine. */
+	at: number;
+	/** Whether the page was on screen when this was rendered. A status the app
+	 * painted while hidden was never shown to anyone; only what survives to the
+	 * next `visible` moment is a bug the user can see. */
+	visibility: DocumentVisibilityState;
+	/** True for the sample taken at a visibility transition rather than at a
+	 * DOM mutation — what was on screen at the instant the page became visible,
+	 * which no mutation reports because nothing changed. */
+	onVisibilityChange: boolean;
+}
+
+const connectionStatuses: ConnectionStatusSample[] = [];
+let connectionStatusObserver: MutationObserver | undefined;
+let connectionStatusToken: string | undefined;
+
+function isConnectionStatusTag(
+	status: string | undefined,
+): status is ConnectionStatusTag {
+	return (CONNECTION_STATUS_TAGS as readonly (string | undefined)[]).includes(
+		status,
+	);
+}
+
+/** The status the connection chip renders, or null while it is not mounted. */
+function connectionStatus(): ConnectionStatusTag | null {
+	const chip = document.querySelector<HTMLElement>(
+		'[data-testid="connection-status"]',
+	);
+	if (!chip) return null;
+	const status = chip.dataset.status;
+	if (!isConnectionStatusTag(status))
+		throw new Error(`connectionStatus: unexpected data-status="${status}"`);
+	return status;
+}
+
+/** Start recording every connection status the indicator renders, returning a
+ * token identifying this recording. A MutationObserver rather than polling: its
+ * callback runs as a microtask on the mutation itself, so a status held for a
+ * single frame is still recorded. That is the case worth catching — a stale
+ * "disconnected" painted on resume and replaced milliseconds later by the
+ * backend's re-measurement is invisible to any sampler, but the user sees it. */
+function sampleConnectionStatus(onVisibilityChange: boolean) {
+	const status = connectionStatus();
+	const previous = connectionStatuses[connectionStatuses.length - 1];
+	// A visibility transition is always recorded: what was on screen the moment
+	// the page came back is the whole question, and it produces no mutation
+	// because the DOM did not change.
+	if (!onVisibilityChange && previous?.status === status) return;
+	connectionStatuses.push({
+		status,
+		at: Date.now(),
+		visibility: document.visibilityState,
+		onVisibilityChange,
+	});
+}
+
+function recordConnectionStatus(): string {
+	connectionStatuses.length = 0;
+	connectionStatusToken = `${Date.now()}-${Math.random()}`;
+	sampleConnectionStatus(false);
+	if (connectionStatusObserver === undefined) {
+		connectionStatusObserver = new MutationObserver(() =>
+			sampleConnectionStatus(false),
+		);
+		connectionStatusObserver.observe(document.body, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['data-status'],
+		});
+		document.addEventListener('visibilitychange', () =>
+			sampleConnectionStatus(true),
+		);
+	}
+	return connectionStatusToken;
+}
+
+/** The distinct connection statuses rendered since [`recordConnectionStatus`],
+ * in order, with the token of the recording they came from. A caller that gets
+ * back a different token than it started is looking at a fresh page — the
+ * webview reloaded and the history it wanted was lost, which must not read as
+ * "nothing was ever shown". */
+function connectionStatusHistory(): {
+	token: string | null;
+	statuses: ConnectionStatusSample[];
+} {
+	return {
+		token: connectionStatusToken ?? null,
+		statuses: [...connectionStatuses],
+	};
+}
+
+export interface PhotoVisibilitySample {
+	shown: boolean;
+	at: number;
+}
+
+let photoVisibilityLabel: string | undefined;
+let photoVisibilityToken: string | undefined;
+const photoVisibility: PhotoVisibilitySample[] = [];
+let photoVisibilityObserver: MutationObserver | undefined;
+
+/** Whether a decoded photo whose alt contains `label` is on screen: an `<img>`
+ * that finished loading, not its spinner or its reload placeholder. */
+function photoShown(label: string): boolean {
+	return Array.from(
+		document.querySelectorAll<HTMLImageElement>('[data-testid="blob-image"]'),
+	).some(
+		img =>
+			img.alt.includes(label) &&
+			img.complete &&
+			img.naturalWidth > 0 &&
+			img.parentElement?.querySelector('[data-testid="blob-image-loading"]') ===
+				null,
+	);
+}
+
+function samplePhotoVisibility() {
+	if (photoVisibilityLabel === undefined) return;
+	const shown = photoShown(photoVisibilityLabel);
+	if (photoVisibility[photoVisibility.length - 1]?.shown === shown) return;
+	photoVisibility.push({ shown, at: Date.now() });
+}
+
+/** Start recording every change in whether the photo whose alt contains
+ * `label` is on screen. Mutations catch a swap that lasts a single frame; the
+ * poll catches an `<img>` finishing its decode, which mutates nothing. */
+function recordPhotoVisibility(label: string): string {
+	photoVisibilityLabel = label;
+	photoVisibility.length = 0;
+	photoVisibilityToken = `${Date.now()}-${Math.random()}`;
+	samplePhotoVisibility();
+	if (photoVisibilityObserver === undefined) {
+		photoVisibilityObserver = new MutationObserver(samplePhotoVisibility);
+		photoVisibilityObserver.observe(document.body, {
+			subtree: true,
+			childList: true,
+			attributes: true,
+			attributeFilter: ['src'],
+		});
+		setInterval(samplePhotoVisibility, 25);
+	}
+	return photoVisibilityToken;
+}
+
+/** The shown/hidden transitions of the photo since [`recordPhotoVisibility`],
+ * with the token of the recording they came from, so a caller can tell a
+ * reloaded page from a photo that never changed. */
+function photoVisibilityHistory(): {
+	token: string | null;
+	samples: PhotoVisibilitySample[];
+} {
+	return {
+		token: photoVisibilityToken ?? null,
+		samples: [...photoVisibility],
+	};
 }
 
 const mediaDownloads = new Map<string, number>();
@@ -65,6 +246,47 @@ function recordMediaDownloads() {
 		}
 	});
 	mediaObserver.observe({ type: 'resource', buffered: true });
+	recordBlobImageLoads();
+}
+
+/** WebKit keeps no resource timing for a custom scheme, so where blobs are served
+ * from `irohblob://` a photo's download is timed from its `<img>` appearing to its
+ * `load` event. */
+function recordBlobImageLoads() {
+	const appearedAt = new Map<string, number>();
+	const noteAppeared = (img: HTMLImageElement) => {
+		if (img.src.startsWith('irohblob:') && !appearedAt.has(img.src)) {
+			appearedAt.set(img.src, performance.now());
+		}
+	};
+	new MutationObserver(records => {
+		for (const record of records) {
+			if (record.target instanceof HTMLImageElement) {
+				noteAppeared(record.target);
+			}
+			for (const node of record.addedNodes) {
+				if (!(node instanceof Element)) continue;
+				if (node instanceof HTMLImageElement) noteAppeared(node);
+				node.querySelectorAll('img').forEach(noteAppeared);
+			}
+		}
+	}).observe(document.documentElement, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeFilter: ['src'],
+	});
+	document.addEventListener(
+		'load',
+		e => {
+			if (!(e.target instanceof HTMLImageElement)) return;
+			const appeared = appearedAt.get(e.target.src);
+			if (appeared !== undefined && !mediaDownloads.has(e.target.src)) {
+				mediaDownloads.set(e.target.src, performance.now() - appeared);
+			}
+		},
+		true,
+	);
 }
 
 /** Milliseconds the photo whose alt contains `label` spent downloading — the
@@ -79,15 +301,22 @@ function photoDownloadMs(label: string): number | null {
 	return ms === undefined ? null : Math.round(ms);
 }
 
-/** Close this agent's iroh endpoint so it can no longer sync with peers over
- * p2p. Backed by the `close_iroh_endpoint` command (only registered under the
- * `e2e-tests` feature). One-way — the agent stays p2p-disconnected until it
- * restarts. */
+/** Turn the persisted p2p setting off and rebuild this agent's node without
+ * peer-to-peer connectivity, so it syncs through mailboxes only. Resolves once
+ * the rebuilt node is live. */
 function disableP2p(): Promise<void> {
-	return invokeAfterSetup('close_iroh_endpoint');
+	return invokeAfterSetup('set_p2p_enabled', { enabled: false });
 }
 
-/** Reset the app to first-launch state: clear web storage, then run the real
+/** Take every notification this app has posted off the device. */
+function clearNotifications(): Promise<void> {
+	return invokeAfterSetup('plugin:notification|remove_active');
+}
+
+/** Reset the app to first-launch state: clear web storage, the app's
+ * notifications, which the OS would otherwise keep, and any held crash report,
+ * which lives outside the data dir and would cover every later spec's first
+ * screen with its sheet, then run the real
  * `delete_account` command — the same code path as Settings → Account →
  * Delete account — which shuts the node down, deletes the data dir, and (on
  * mobile) exits the app. The iOS e2e harness calls this before each spec
@@ -97,7 +326,10 @@ function disableP2p(): Promise<void> {
 function resetToFirstLaunch(): void {
 	localStorage.clear();
 	sessionStorage.clear();
-	void invokeAfterSetup('delete_account');
+	void Promise.allSettled([
+		clearNotifications(),
+		discardPendingCrashReport(),
+	]).finally(() => invokeAfterSetup('delete_account'));
 }
 
 /** Summon the Android soft keyboard for the currently focused input. A
@@ -179,12 +411,6 @@ export interface NoisePhotoSpec {
  * photo would resolve from the receiver's blob store and measure nothing.
  */
 async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
-	const canvas = document.createElement('canvas');
-	canvas.width = spec.width;
-	canvas.height = spec.height;
-	const ctx = canvas.getContext('2d');
-	if (!ctx) throw new Error('canvas context failed');
-	const image = ctx.createImageData(spec.width, spec.height);
 	// Seeded by name as well as the clock: on the clock alone, two attaches
 	// landing in the same millisecond encode to identical bytes and collapse into
 	// one blob.
@@ -192,18 +418,64 @@ async function pasteNoisePhoto(spec: NoisePhotoSpec): Promise<number> {
 	for (let i = 0; i < spec.name.length; i++) {
 		seed = (seed * 31 + spec.name.charCodeAt(i)) | 0;
 	}
-	fillPseudoRandom(image.data, seed);
-	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
-	ctx.putImageData(image, 0, 0);
-	const blob = await new Promise<Blob>((resolve, reject) =>
-		canvas.toBlob(
-			b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
-			'image/jpeg',
-			spec.quality ?? 0.9,
-		),
+	const blob = await noiseJpeg(
+		spec.width,
+		spec.height,
+		seed,
+		spec.quality ?? 0.9,
 	);
 	dispatchPaste([new File([blob], spec.name, { type: 'image/jpeg' })]);
 	return blob.size;
+}
+
+function noiseJpeg(
+	width: number,
+	height: number,
+	seed: number,
+	quality: number,
+): Promise<Blob> {
+	const canvas = document.createElement('canvas');
+	canvas.width = width;
+	canvas.height = height;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('canvas context failed');
+	const image = ctx.createImageData(width, height);
+	fillPseudoRandom(image.data, seed);
+	for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+	ctx.putImageData(image, 0, 0);
+	return new Promise<Blob>((resolve, reject) =>
+		canvas.toBlob(
+			b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
+			'image/jpeg',
+			quality,
+		),
+	);
+}
+
+/** `file` as it is once its provider withdraws it: its bytes can no longer
+ * be read. */
+function withdrawn(file: File): File {
+	file.arrayBuffer = () =>
+		Promise.reject(
+			new DOMException(
+				'The requested file could not be read',
+				'NotReadableError',
+			),
+		);
+	return file;
+}
+
+function pasteUnreadableFile(name: string) {
+	dispatchPaste([
+		withdrawn(new File(['unreadable'], name, { type: 'text/plain' })),
+	]);
+}
+
+/** Paste a photo that decodes but whose bytes can no longer be read. */
+async function pasteUnreadablePhoto(name: string): Promise<void> {
+	const blob = await noiseJpeg(64, 64, 1, 0.9);
+	const file = withdrawn(new File([blob], name, { type: 'image/jpeg' }));
+	dispatchPaste([file]);
 }
 
 /**
@@ -227,6 +499,139 @@ function dropFiles(specs: TestFileSpec[]) {
 		Object.defineProperty(event, 'dataTransfer', { value: dt });
 		window.dispatchEvent(event);
 	}
+}
+
+function buildSilentWav(durationMs: number): Uint8Array {
+	const sampleRate = 16000;
+	const numSamples = Math.max(1, Math.floor((sampleRate * durationMs) / 1000));
+	const dataSize = numSamples * 2;
+	const buffer = new ArrayBuffer(44 + dataSize);
+	const view = new DataView(buffer);
+	const writeStr = (offset: number, s: string) => {
+		for (let i = 0; i < s.length; i++)
+			view.setUint8(offset + i, s.charCodeAt(i));
+	};
+	writeStr(0, 'RIFF');
+	view.setUint32(4, 36 + dataSize, true);
+	writeStr(8, 'WAVE');
+	writeStr(12, 'fmt ');
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true); // PCM
+	view.setUint16(22, 1, true); // mono
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true); // byte rate
+	view.setUint16(32, 2, true); // block align
+	view.setUint16(34, 16, true); // bits per sample
+	writeStr(36, 'data');
+	view.setUint32(40, dataSize, true);
+	return new Uint8Array(buffer);
+}
+
+/** Bypasses the native recorder (no microphone in the WebKitGTK harness); the
+ * composer listens for `test-inject-voice-message`. */
+function injectVoiceMessage(durationMs = 3000, audioDurationMs = durationMs) {
+	const wav = buildSilentWav(audioDurationMs);
+	const waveform = Array.from({ length: 48 }, (_, i) => 40 + (i % 5) * 40);
+	window.dispatchEvent(
+		new CustomEvent('test-inject-voice-message', {
+			detail: { bytes: Array.from(wav), durationMs, waveform },
+		}),
+	);
+}
+
+/** Result of injecting a voice message through the real transcode command. */
+export interface RecordedVoiceMessage {
+	isOgg: boolean;
+	opusBytes: number;
+	wavBytes: number;
+	durationMs: number;
+}
+
+/** Unlike `injectVoiceMessage`, this runs a synthesized WAV through the real
+ * `transcode_voice_message` command, so the injected draft is genuine Ogg/Opus
+ * with a Rust-derived duration and waveform — exercising the transcode pipeline
+ * end to end. Returns facts the spec asserts on. */
+async function injectRecordedVoiceMessage(
+	durationMs = 1000,
+): Promise<RecordedVoiceMessage> {
+	const wav = buildSilentWav(durationMs);
+	const cache = await appCacheDir();
+	await mkdir(cache, { recursive: true });
+	const path = await join(cache, `dc-voice-test-${crypto.randomUUID()}.wav`);
+	await writeFile(path, wav);
+
+	const res = await invokeAfterSetup<{
+		opus: number[];
+		durationMs: number;
+		waveform: number[];
+	}>('transcode_voice_message', { path });
+
+	// "OggS" magic marks a valid Ogg stream.
+	const isOgg =
+		res.opus.length >= 4 &&
+		res.opus[0] === 0x4f &&
+		res.opus[1] === 0x67 &&
+		res.opus[2] === 0x67 &&
+		res.opus[3] === 0x53;
+
+	window.dispatchEvent(
+		new CustomEvent('test-inject-voice-message', {
+			detail: {
+				bytes: res.opus,
+				durationMs: res.durationMs,
+				waveform: res.waveform,
+				mimeType: 'audio/ogg',
+			},
+		}),
+	);
+	return {
+		isOgg,
+		opusBytes: res.opus.length,
+		wavBytes: wav.length,
+		durationMs: res.durationMs,
+	};
+}
+
+/** Seeks to `fraction` of the real audio length, so specs can assert the
+ * scrubber follows the audio rather than the recorded metadata. */
+function voiceSeekFraction(fraction: number): number {
+	const audio = document.querySelector<HTMLAudioElement>(
+		'[data-testid="message-attachment-voice"] audio',
+	);
+	if (!audio || !isFinite(audio.duration) || audio.duration <= 0) return -1;
+	audio.pause();
+	audio.currentTime = Math.max(0, Math.min(1, fraction)) * audio.duration;
+	return audio.currentTime / audio.duration;
+}
+
+function voiceProgress(): number {
+	const played = document.querySelector<HTMLElement>(
+		'[data-testid="voice-scrubber-played"]',
+	);
+	if (!played) return 0;
+	return parseFloat(played.style.width) / 100 || 0;
+}
+
+/** Fails the next voice-note byte fetch after `delayMs` so the spinner stays
+ * observable. Only `irohblob` is intercepted, and `fetch` is restored at once. */
+function failNextVoiceLoad(delayMs = 0) {
+	const original = window.fetch;
+	window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+		const url =
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.href
+					: input.url;
+		if (!url.includes('irohblob')) return original(input, init);
+		window.fetch = original;
+		return new Promise<Response>((_, reject) =>
+			setTimeout(
+				() => reject(new Error('test: forced voice load failure')),
+				delayMs,
+			),
+		);
+	};
 }
 
 /** What a file input the app opened was configured to ask the OS for. */
@@ -275,23 +680,89 @@ function collectFilePickers(): FilePickerRequest[] {
 	return filePickerRequests;
 }
 
+/** Drag a message row start-to-end far enough to trigger swipe-to-reply, and
+ * report whether the gesture claimed the drag — observed synchronously through
+ * touchmove's preventDefault. Synthesized as bare events with a `touches`
+ * list: WebKit and Chromium disagree about constructing real `Touch` objects,
+ * and the handler only reads coordinates. */
+function swipeToReply(messageHash: string): boolean {
+	const row = document.querySelector(
+		`[data-message-hash="${messageHash}"] [data-testid="swipe-to-reply"]`,
+	);
+	if (!row) {
+		throw new Error(`No swipeable row for message hash ${messageHash}`);
+	}
+	const sign = getComputedStyle(row).direction === 'rtl' ? -1 : 1;
+	const startX = sign === 1 ? 40 : window.innerWidth - 40;
+	const send = (type: string, x: number) => {
+		const event = new Event(type, { bubbles: true, cancelable: true });
+		Object.defineProperty(event, 'touches', {
+			value: [{ clientX: x, clientY: 100 }],
+		});
+		return row.dispatchEvent(event);
+	};
+	send('touchstart', startX);
+	send('touchmove', startX + sign * 20);
+	const claimed = !send('touchmove', startX + sign * 100);
+	send('touchend', startX + sign * 100);
+	return claimed;
+}
+
 export const testUtils = {
 	simulateUpdate,
 	hasText,
 	disableP2p,
+	clearNotifications,
 	resetToFirstLaunch,
 	showKeyboard,
 	pasteFiles,
 	pasteNoisePhoto,
+	pasteUnreadablePhoto,
+	pasteUnreadableFile,
 	dropFiles,
+	injectVoiceMessage,
+	injectRecordedVoiceMessage,
+	voiceSeekFraction,
+	voiceProgress,
+	failNextVoiceLoad,
 	recordMediaDownloads,
 	photoDownloadMs,
+	connectionStatus,
+	recordConnectionStatus,
+	connectionStatusHistory,
+	recordPhotoVisibility,
+	photoVisibilityHistory,
 	interceptFilePickers,
 	collectFilePickers,
 	/** E2E override for the composer's recent-photos strip; left undefined unless
 	 * a spec injects fake photos (the native library is unavailable in tests). */
 	recentPhotos: undefined as RecentPhotosTestData | undefined,
 	forceBlobError,
+	swipeToReply,
+	myDeviceId: (): Promise<string> => invokeAfterSetup('my_device_id'),
+	/** Wi-Fi control on phones (tauri-plugin-wifi, e2e builds only): the
+	 * networks the app added, and the interface it is on. */
+	wifi: {
+		current: wifi.current,
+		addedSsids: wifi.addedSsids,
+		add: wifi.add,
+		requestJoin: wifi.requestJoin,
+		forget: wifi.forget,
+		/** Start a join request and report on it through `requestJoinOutcome`:
+		 * on iOS the request sits behind a system "join?" alert that blocks the
+		 * webview, so a driver cannot both await it and answer the alert. */
+		startRequestJoin(ssid: string, passphrase: string): void {
+			requestJoinOutcomes.delete(ssid);
+			wifi.requestJoin(ssid, passphrase).then(
+				() => requestJoinOutcomes.set(ssid, 'ok'),
+				e => requestJoinOutcomes.set(ssid, String(e)),
+			);
+		},
+		/** 'ok' once the `startRequestJoin` for `ssid` is on the network, its
+		 * error once it failed, null while it is still going. */
+		requestJoinOutcome: (ssid: string): string | null =>
+			requestJoinOutcomes.get(ssid) ?? null,
+	},
 	/** Resolve a paraglide message in the current locale (set by registerTestUtils). */
 	tr<K extends MessageKey>(key: K, _params?: MessageParams<K>): string {
 		throw new Error(

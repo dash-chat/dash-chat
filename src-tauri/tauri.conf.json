@@ -1,6 +1,6 @@
 {
 	"productName": "Dash Chat",
-	"version": "0.19.18",
+	"version": "0.23.0",
 	"identifier": "studio.darksoil.dashchat",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
@@ -47,6 +47,11 @@
 		"iOS": {
 			"minimumSystemVersion": "17.0"
 		},
+		"linux": {
+			"appimage": {
+				"bundleMediaFramework": true
+			}
+		},
 		"createUpdaterArtifacts": true
 	},
 	"plugins": {
@@ -63,6 +68,10 @@
 					"host": "dashchat.org",
 					"pathPrefix": ["/add-contact"],
 					"appLink": true
+				},
+				{
+					"scheme": ["dash-chat"],
+					"appLink": false
 				}
 			],
 			"desktop": {

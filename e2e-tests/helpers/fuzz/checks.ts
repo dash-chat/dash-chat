@@ -1,0 +1,390 @@
+/**
+ * The only code that compares a screen with the model. `expectView` asserts
+ * one chat on one agent is exactly what the model says that agent knows;
+ * `expectChatList` asserts the unread badges on the way in to it; `settle`
+ * runs after every move and asserts every agent that learnt something;
+ * `expectNotifications` asserts every device whose notifications a run reads;
+ * `expectHubs` and `expectCloud` assert the connection chip.
+ */
+import {
+	type DeliveredNotification,
+	type NotificationContent,
+	describeContent,
+} from '../components/notifications/content';
+import type { ChatRow } from '../pages/home-page';
+import { CLOUD_REGISTRATION_RETRY_MS, MAILBOX_HEALED_MS } from '../timeouts';
+import {
+	type ChatPage,
+	type Real,
+	type StressAgent,
+	backToChatList,
+	byName,
+	log,
+	notificationsOf,
+	openChatRow,
+} from './agents';
+import {
+	type ExpectedChat,
+	type ExpectedModel,
+	type NotificationView,
+} from './model';
+import { expectView, syncTimeoutFor } from './view';
+
+/** What any move gets before its effect has to be on screen — a hub
+ *  appearing or disappearing, every hub named in the dialog. Beyond this a
+ *  user reads the app as slow or broken. */
+export const DISCOVERY_MS = 4_000;
+
+/** What a hub that stopped gets before it has to be off the chip. A clean stop
+ *  now announces a goodbye and is near-instant; this budget is sized for the
+ *  hub that cannot send one — killed, or carried off the LAN — where a phone
+ *  waits for the announcement to age out of its swarm. */
+export const DEPARTURE_MS = 9_000;
+
+/** What a hub that stopped cleanly gets. `stopLocalHub` waits for the process
+ *  to exit, and it announces its goodbye before it stops serving, so a phone
+ *  has had it by then. Tight on purpose: a goodbye that silently stopped
+ *  working would still meet [`DEPARTURE_MS`] on the lapse alone, so only this
+ *  budget can tell the two apart. */
+export const GOODBYE_MS = 3_000;
+
+/** Check every device whose notifications the run reads against the model:
+ *  one notification per chat with messages its app was not on screen for,
+ *  titled by the sender and carrying the latest of them, and nothing else. */
+export async function expectNotifications(
+	m: ExpectedModel,
+	real: Real,
+): Promise<void> {
+	for (const sa of real.agents) {
+		if (sa.notifications === null) continue;
+		await expectShade(m, sa);
+	}
+}
+
+/** Wait until `sa`'s device holds exactly the notifications the model says.
+ *  Both halves are waited on together: a notification that must not be there
+ *  is as often one the app has yet to clear as one it should never have
+ *  posted. */
+async function expectShade(m: ExpectedModel, sa: StressAgent): Promise<void> {
+	m.assertConverged(`the notifications of ${sa.name}`);
+	const helper = notificationsOf(sa);
+	const expected = m.expectedNotifications(sa.name);
+	const generic = sa.notificationTexts?.generic ?? null;
+	const matched = (shown: DeliveredNotification[]) =>
+		matchNotifications(expected, besidesGeneric(shown, generic));
+	let delivered: DeliveredNotification[];
+	try {
+		delivered = await helper.waitForDelivered(shown => {
+			const { missing, extra } = matched(shown);
+			return missing.length === 0 && extra.length === 0;
+		});
+	} catch (err) {
+		throw new Error(
+			`${sa.name}'s notifications could not be read: ${String(err)}`,
+		);
+	}
+	const { missing, extra } = matched(delivered);
+	const problems = [
+		...missing.map(n => `never showed "${describeExpected(n)}"`),
+		...extra.map(d => `shows "${describeContent(d)}", which it cannot know`),
+	];
+	if (problems.length > 0) {
+		// Everything the device holds, generic ones included: matching drops
+		// those, so without them a shade that showed the wrong thing and one
+		// that showed nothing read identically here.
+		const shade =
+			delivered.length === 0
+				? 'nothing'
+				: delivered.map(d => `"${describeContent(d)}"`).join(', ');
+		// What the model was waiting for, even when that is nothing: an empty
+		// list says it credited this agent with no operation at all, which is a
+		// different fault from one whose wording failed to match.
+		const wanted =
+			expected.length === 0
+				? 'nothing'
+				: expected.map(n => `"${describeExpected(n)}"`).join(', ');
+		throw new Error(
+			`${sa.name}'s notifications: ${problems.join('; ')}; ` +
+				`it holds ${shade}, and the model wants ${wanted}`,
+		);
+	}
+	if (helper.readingResumesApp && m.isActive(sa.name)) m.foreground(sa.name);
+	if (expected.length > 0) {
+		log(
+			`${sa.name}: device shows ${expected.map(describeExpected).join(', ')}`,
+		);
+	}
+}
+
+/**
+ * Pair every notification the model says the device has posted with one it is
+ * really holding, showing exactly one of the contents the model allows for
+ * it. Two entries may allow the same content — a group's placeholder title
+ * stands in for any group whose name has yet to arrive — so an entry that took
+ * a notification gives it up when another can only have that one. What is left
+ * over on either side is missing, or is an entry the device must not have: one
+ * already read, or one from a sender who sent nothing.
+ */
+function matchNotifications(
+	expected: NotificationView[],
+	delivered: DeliveredNotification[],
+): { missing: NotificationView[]; extra: DeliveredNotification[] } {
+	const pairedWith: (NotificationView | null)[] = delivered.map(() => null);
+	const pair = (e: NotificationView, tried: Set<number>): boolean =>
+		delivered.some((d, i) => {
+			if (tried.has(i) || !e.oneOf.some(c => shows(d, c))) return false;
+			tried.add(i);
+			const other = pairedWith[i];
+			if (other !== null && !pair(other, tried)) return false;
+			pairedWith[i] = e;
+			return true;
+		});
+	const missing = expected.filter(e => !pair(e, new Set()));
+	const extra = delivered.filter((_, i) => pairedWith[i] === null);
+	return { missing, extra };
+}
+
+function shows(
+	notification: DeliveredNotification,
+	content: NotificationContent,
+): boolean {
+	return (
+		notification.title === content.title &&
+		notification.body === content.body &&
+		(notification.conversation === undefined ||
+			notification.conversation === content.conversation)
+	);
+}
+
+/** What the device holds, less the fallback the app posts when it is woken
+ *  for an operation it cannot then fetch — which is what a degraded link
+ *  produces, and which names no operation, so the model can neither predict
+ *  it nor read it as a stray. */
+function besidesGeneric(
+	delivered: DeliveredNotification[],
+	generic: string | null,
+): DeliveredNotification[] {
+	if (generic === null) return delivered;
+	return delivered.filter(d => d.title !== generic);
+}
+
+function describeExpected(notification: NotificationView): string {
+	return notification.oneOf.map(describeContent).join(' or ');
+}
+
+/** Get `sa` to its chat list, check every badge there, then open `chat` and
+ *  check it, all against the model. */
+export async function openChat(
+	sa: StressAgent,
+	chat: ExpectedChat,
+	model: ExpectedModel,
+): Promise<ChatPage> {
+	await checkChatList(model, sa);
+	const page = await openChatRow(sa, chat, model);
+	await expectView(sa, chat, model, page);
+	return page;
+}
+
+/** Get `sa` to its chat list, by way of checking whatever chat it is sitting
+ *  in, and check every badge there. Also what a move does before it kills the
+ *  app: a badge that reads right is a read the app has written, so nothing the
+ *  model credits the agent with is still pending when the process goes. */
+export async function checkChatList(
+	m: ExpectedModel,
+	sa: StressAgent,
+): Promise<void> {
+	// `backToChatList` drains the chat it leaves.
+	await backToChatList(sa, m);
+	await expectChatList(m, sa);
+}
+
+/**
+ * Wait until every chat `sa` knows carries the unread badge the model says:
+ * the messages that landed in it while its app was elsewhere, and no badge at
+ * all on one it has caught up on. Rows the model cannot name — a contact
+ * request nobody has accepted yet — are left alone, since they belong to no
+ * chat it holds. Assumes the agent is on the chat list.
+ */
+export async function expectChatList(
+	m: ExpectedModel,
+	sa: StressAgent,
+): Promise<void> {
+	m.assertConverged(`${sa.name}'s chat list`);
+	const chats = m.chatsFor(sa.name);
+	const expected = new Map<string, number>();
+	for (const chat of chats) {
+		expected.set(m.chatListName(chat, sa.name), m.unreadCount(sa.name, chat));
+	}
+	let rows: ChatRow[] = [];
+	try {
+		await sa.agent.waitUntil(
+			async () => {
+				rows = await sa.agent.homePage.chatRows();
+				return wrongBadges(expected, rows).length === 0;
+			},
+			// A badge counts operations, not the bytes behind them, but they
+			// travel the same way: anything less than what the views themselves
+			// get would make this the first thing a slow link fails, and report a
+			// wrong number for what is only a sync still in flight.
+			{ timeout: syncTimeoutFor(chats.map(chat => m.view(sa.name, chat))) },
+		);
+	} catch (err) {
+		const problems = wrongBadges(expected, rows);
+		if (problems.length === 0) {
+			throw new Error(
+				`${sa.name}'s chat list could not be read: ${String(err)}`,
+			);
+		}
+		throw new Error(`${sa.name}'s chat list: ${problems.join('; ')}`);
+	}
+}
+
+/** What `rows` gets wrong about the badges `expected` wants, spelled out for
+ *  a report, each with what it is most likely to be: a row short of what the
+ *  model wants is as often an operation that never arrived as a badge that
+ *  never appeared, and one over it is counting something already read. A chat
+ *  with nothing unread and no row yet is nothing to say: the row is the
+ *  business of whoever goes looking for it. */
+function wrongBadges(expected: Map<string, number>, rows: ChatRow[]): string[] {
+	const wrong: string[] = [];
+	for (const [title, unread] of expected) {
+		const row = rows.find(r => r.title === title);
+		if (row === undefined) {
+			if (unread > 0) {
+				wrong.push(`"${title}" has no row to show its ${unread} unread on`);
+			}
+			continue;
+		}
+		if (row.unread === unread) continue;
+		const reads = `"${title}" reads ${row.unread} unread, not ${unread}`;
+		wrong.push(
+			row.unread < unread
+				? `${reads} — ${unread - row.unread} of them either never arrived or were read unopened`
+				: `${reads} — it counts ${row.unread - unread} it has read already`,
+		);
+	}
+	return wrong;
+}
+
+/** Propagate the last move's effects through the model and check every
+ *  agent that learnt something, on each chat whose view changed. */
+export async function settle(model: ExpectedModel, real: Real): Promise<void> {
+	for (const [name, chats] of model.propagate()) {
+		const sa = byName(real, name);
+		for (const chat of chats) {
+			log(`${name}: should now see more in ${model.chatListName(chat, name)}`);
+			await openChat(sa, chat, model);
+		}
+	}
+}
+
+/** Wait until `sa`'s chip shows the hubs the model says its network has.
+ *  Assumes the agent is on its chat list, where the chip is. */
+export async function expectHubs(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+): Promise<void> {
+	const chip = sa.agent.homePage.connectionStatusIndicator;
+	const expected = m.expectedHubs(sa.name);
+	if (expected === 0) {
+		// A hub that left the LAN must drop off the chip within the budget. It
+		// may read 'cloud', 'disconnected' or, while the cloud connection is still
+		// settling after a restart or resume, 'pending' — all mean no local
+		// hub, which is all this asserts.
+		await chip.waitForNotLocal(
+			DEPARTURE_MS,
+			`${sa.name}: the chip still showed a hub ${DEPARTURE_MS / 1_000}s after ${after}`,
+		);
+		return;
+	}
+	await chip.waitForStatus(
+		'local',
+		DISCOVERY_MS,
+		`${sa.name}: the chip did not read local within ${DISCOVERY_MS / 1_000}s after ${after}`,
+	);
+	await chip.waitForLocalHubCount(
+		expected,
+		DISCOVERY_MS,
+		`${sa.name}: the dialog did not name ${expected} hub(s) after ${after}`,
+	);
+}
+
+/** Get `sa` to its chat list and check the chip against the model. */
+export async function checkHubs(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+): Promise<void> {
+	await checkChatList(m, sa);
+	await expectHubs(m, sa, after);
+}
+
+/** Wait until `sa`'s chip shows what the model says of the cloud: cloud
+ *  while its link is usable, and no mailbox otherwise. For runs with no hub
+ *  to show. Assumes the agent is on its chat list, where the chip is. */
+export async function expectCloud(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+	within: number,
+): Promise<void> {
+	const chip = sa.agent.homePage.connectionStatusIndicator;
+	if (m.cloudUsable()) {
+		const budget = m.awaitsCloudRegistration(sa.name)
+			? within + CLOUD_REGISTRATION_RETRY_MS
+			: within;
+		await chip.waitForStatus(
+			'cloud',
+			budget,
+			`${sa.name}: the chip did not read cloud within ${budget / 1_000}s after ${after}`,
+		);
+		m.registeredWithCloud(sa.name);
+		return;
+	}
+	await chip.waitForNoMailbox(
+		within,
+		`${sa.name}: the chip still showed a mailbox ${within / 1_000}s after ${after}`,
+	);
+}
+
+/** Get `sa` to its chat list and check the chip against the model's cloud. */
+export async function checkCloud(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+	within: number,
+): Promise<void> {
+	await checkChatList(m, sa);
+	await expectCloud(m, sa, after, within);
+}
+
+/** Check the connection status the run watches on `sa`'s chat list: the hubs
+ *  on its LAN for a run with networks, the cloud link's state for one with a
+ *  cloud. A run with neither has nothing to check. */
+export async function checkConnection(
+	m: ExpectedModel,
+	sa: StressAgent,
+	after: string,
+): Promise<void> {
+	if (m.hasNetworks()) {
+		await checkHubs(m, sa, after);
+		return;
+	}
+	if (m.hasCloud()) {
+		// Sitting still settles it, so the chip must already read right.
+		await checkCloud(m, sa, after, MAILBOX_HEALED_MS);
+	}
+}
+
+/** Every driveable agent on `network` checks its chip. */
+export async function checkHubsOn(
+	m: ExpectedModel,
+	real: Real,
+	network: string,
+	after: string,
+): Promise<void> {
+	for (const name of m.activeNamesOn(network)) {
+		await checkHubs(m, byName(real, name), after);
+	}
+}

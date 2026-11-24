@@ -1,5 +1,12 @@
 import { exchangeContactsAndCreateGroup } from '../../helpers/flows/exchange-contacts-and-create-group';
+import { SOLID_PNG_BYTES } from '../../helpers/images';
 import { type Agent, setupAgents } from '../../setup/setup-agents';
+
+const PHOTO = {
+	name: 'group-photo.png',
+	mimeType: 'image/png',
+	bytes: SOLID_PNG_BYTES,
+};
 
 describe('Group details spec', () => {
 	let agent1: Agent;
@@ -10,7 +17,7 @@ describe('Group details spec', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('Shows a new name to all members if the admin changes it', async () => {
@@ -37,5 +44,48 @@ describe('Group details spec', () => {
 		await agent2.groupInfoPage.ready();
 
 		await expect(agent2.groupInfoPage.editLink).not.toBeDisplayed();
+	});
+
+	it('Shows "You" instead of your own profile name in the members list', async () => {
+		await agent2.groupInfoPage.memberItem('Bob').waitForExist();
+		expect(await agent2.groupInfoPage.memberItem('Bob').getText()).toContain(
+			'You',
+		);
+		expect(await agent2.groupInfoPage.memberItem('Alice').getText()).toContain(
+			'Alice',
+		);
+	});
+
+	it('Shows the group icon, not initials, for a group without a photo', async () => {
+		expect(await agent2.groupInfoPage.avatar.showsFallbackIcon()).toBe(true);
+		expect(await agent2.groupInfoPage.avatar.initials()).toBe(null);
+	});
+
+	it('Shows a new photo and description to all members if the admin changes them', async () => {
+		await agent1.groupInfoPage.editLink.click();
+		await agent1.groupInfoEditPage.ready();
+		expect(await agent1.groupInfoEditPage.avatar.showsFallbackIcon()).toBe(
+			true,
+		);
+		await agent1.groupInfoEditPage.setDescription('A group about nothing');
+
+		await agent1.groupInfoEditPage.editPhotoButton.click();
+		await agent1.editPhotoPage.ready();
+		await agent1.editPhotoPage.setPhoto(PHOTO);
+		const savedPhoto = await agent1.editPhotoPage.avatar.imageSrc();
+		await agent1.editPhotoPage.save();
+		await agent1.groupInfoEditPage.ready();
+
+		await agent1.groupInfoEditPage.save();
+		await agent1.groupInfoPage.ready();
+		expect(await agent1.groupInfoPage.avatar.imageSrc()).toBe(savedPhoto);
+		expect(await agent1.groupInfoPage.avatar.showsFallbackIcon()).toBe(false);
+
+		await agent2.waitUntil(async () =>
+			(await agent2.groupInfoPage.description.getText()).includes(
+				'A group about nothing',
+			),
+		);
+		expect(await agent2.groupInfoPage.avatar.imageSrc()).toBe(savedPhoto);
 	});
 });

@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import '@awesome.me/webawesome/dist/components/icon/icon.js';
-	import { Sheet, Block } from 'konsta/svelte';
+	import { Preloader } from 'konsta/svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiClose, mdiArrowRight } from '@mdi/js';
-	import { type DraftMedia } from '$lib/utils/media';
+	import type { MediaDraft } from '$lib/components/messages/composer/media-draft.svelte';
 	import { isAndroid, isIos } from '$lib/utils/environment';
 	import { lightSystemBars } from '$lib/actions/light-system-bars';
 	import { keepKeyboardOpen } from '$lib/actions/keep-keyboard-open';
@@ -15,24 +16,26 @@
 	import MessageInput from '$lib/components/messages/composer/MessageInput.svelte';
 	import EmojiButton from '$lib/components/messages/composer/EmojiButton.svelte';
 	import SendButton from '$lib/components/messages/composer/SendButton.svelte';
-	import EmojiPickerWrapper from '$lib/components/messages/EmojiPickerWrapper.svelte';
+	import EmojiPickerSheet from '$lib/components/messages/EmojiPickerSheet.svelte';
 	import { hideKeyboard } from 'tauri-plugin-virtual-keyboard';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 
 	interface Props {
-		media: DraftMedia | undefined;
+		draft: MediaDraft;
 		value?: string;
 		/** Name of the chat the media will be sent to, shown in the header. */
 		destinationName?: string;
+		loadingMedia: boolean;
 		onSend: () => Promise<boolean>;
 		onAddMore: () => void;
 		onClose: () => void;
 	}
 
 	let {
-		media = $bindable(),
+		draft,
 		value = $bindable(''),
 		destinationName,
+		loadingMedia,
 		onSend,
 		onAddMore,
 		onClose,
@@ -41,10 +44,22 @@
 	let index = $state(0);
 	let showEmojiPicker = $state(false);
 
+	const media = $derived(draft.media);
 	const photos = $derived(media?.kind === 'photos' ? media.items : []);
 	const ariaLabel = $derived(
 		media?.kind === 'file' ? media.file.name : (photos[index]?.name ?? ''),
 	);
+
+	// Blur explicitly on top of hideKeyboard(): after an activity round-trip
+	// (camera capture) the plugin's open-state is stale, so hideKeyboard() can
+	// no-op while the composer's input still holds focus — and the OS re-summons
+	// the keyboard for a focused input when the window regains focus.
+	onMount(() => {
+		hideKeyboard();
+		if (document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
+	});
 
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
@@ -102,9 +117,16 @@
 			{/if}
 		</div>
 
-		{#if media?.kind === 'photos'}
-			<StagedPhotosCarousel bind:media bind:index />
-		{:else if media?.kind === 'file'}
+		{#if photos.length > 0}
+			<StagedPhotosCarousel {photos} bind:index />
+		{:else if media?.kind !== 'file'}
+			<div
+				class="flex min-h-0 flex-1 items-center justify-center"
+				data-testid="staged-photo-pending"
+			>
+				<Preloader class="!text-white" />
+			</div>
+		{:else}
 			<div
 				class="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center"
 			>
@@ -121,12 +143,19 @@
 
 	<div
 		class="staged-footer absolute inset-x-0 bottom-0 flex flex-col pb-keyboard-safe"
-		class:bg-black={!isIos}
 		use:renderAboveKeyboard
 		use:keepKeyboardOpen
 	>
-		{#if media?.kind === 'photos'}
-			<StagedPhotosStrip bind:media bind:index {onAddMore} {onClose} />
+		{#if media?.kind !== 'file'}
+			<StagedPhotosStrip
+				{photos}
+				pendingPhotos={draft.pendingPhotos}
+				bind:index
+				onRemove={i => draft.removePhoto(i)}
+				{loadingMedia}
+				{onAddMore}
+				{onClose}
+			/>
 		{/if}
 		<div class="row gap-3 px-4 pt-3 pb-3" style="align-items: center;">
 			<MessageInput
@@ -135,27 +164,18 @@
 				{onSend}
 				before={isIos ? undefined : emojiButton}
 			/>
-			<SendButton {onSend} />
+			<SendButton {onSend} disabled={loadingMedia} />
 		</div>
 	</div>
 
-	<Sheet
-		class="pb-safe text-lg"
+	<EmojiPickerSheet
 		opened={showEmojiPicker}
-		onBackdropClick={() => (showEmojiPicker = false)}
-	>
-		<div class="flex flex-col items-center">
-			<div class="sheet-handle"></div>
-		</div>
-		<Block>
-			<EmojiPickerWrapper
-				onEmojiSelected={emoji => {
-					value += emoji;
-					showEmojiPicker = false;
-				}}
-			></EmojiPickerWrapper>
-		</Block>
-	</Sheet>
+		onClose={() => (showEmojiPicker = false)}
+		onEmojiSelected={emoji => {
+			value += emoji;
+			showEmojiPicker = false;
+		}}
+	/>
 </div>
 
 <style>

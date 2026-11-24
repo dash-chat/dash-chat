@@ -65,6 +65,8 @@ fn photo(seed: u8) -> OutgoingMedia {
             data: vec![seed; 4096],
             name: format!("pic-{seed}.png"),
             mime_type: "image/png".into(),
+            width: 640,
+            height: 480,
         }],
     }
 }
@@ -382,7 +384,7 @@ async fn invalid_deletes_are_rejected() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let msg = alice
         .send_message_raw(chat, "alice's".into())
@@ -469,7 +471,7 @@ async fn mixed_hash_delete_cannot_censor_another_author() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let msg = alice
         .send_message_raw(chat, "alice's".into())
@@ -668,7 +670,7 @@ async fn junk_hash_in_payload_cannot_disable_delete_chain_validation() {
         .initiate_and_establish_contact(&bobbi)
         .await
         .unwrap();
-    let chat = alice.direct_chat_topic(bobbi.agent_id());
+    let chat = alice.direct_chat_with(&bobbi);
 
     let msg = alice
         .send_message_raw(chat, "my password is hunter2".into())

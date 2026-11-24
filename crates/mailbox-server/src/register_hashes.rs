@@ -94,11 +94,23 @@ pub async fn register_hashes(
 /// push bytes here immediately on publish so recipients get them without waiting
 /// for the mailbox to dial back and fetch. It is best-effort from the client's
 /// side: `/blobs/register-hashes` remains the source of truth, so a failed upload simply
-/// falls back to a fetch. The 64MB `DefaultBodyLimit` caps a single upload.
+/// falls back to a fetch. Uploads past the 16 MiB blob cap are rejected — the
+/// same limit the fetch and iroh-push paths enforce.
 pub async fn upload_blob(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<Json<UploadBlobResponse>, (StatusCode, String)> {
+    // An oversized blob is undeliverable receiver-side (`download_capped`
+    // refuses it), so retaining it would only serve an abusive sender.
+    if body.len() as u64 > dashchat_utils::blob_sync::MAX_BLOB_BYTES {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            format!(
+                "blob exceeds the {} byte cap",
+                dashchat_utils::blob_sync::MAX_BLOB_BYTES
+            ),
+        ));
+    }
     let hash = state
         .blob_sync
         .store_pushed_blob(body)
@@ -120,9 +132,14 @@ mod tests {
     async fn absent_blob_without_expected_upload_is_fetchable_at_once() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let h = iroh_blobs::Hash::new([9; 32]);
 
@@ -142,9 +159,14 @@ mod tests {
     async fn expected_upload_defers_the_fetch_by_the_grace_window() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let h = iroh_blobs::Hash::new([9; 32]);
 
@@ -175,9 +197,14 @@ mod tests {
     async fn uploading_a_blob_clears_its_pending_fetch() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
         let source = iroh::SecretKey::from_bytes(&[7; 32]).public();
         let data = bytes::Bytes::from_static(b"raced blob");
         let h = iroh_blobs::Hash::new(&data);
@@ -204,14 +231,37 @@ mod tests {
     async fn pushed_blob_is_stored_under_its_hash() {
         let dir = tempfile::tempdir().unwrap();
         let key = iroh::SecretKey::generate();
-        let blob_sync = crate::BlobSync::new(key, dir.path().to_path_buf(), None)
-            .await
-            .unwrap();
+        let blob_sync = crate::BlobSync::new(
+            key,
+            dir.path().to_path_buf(),
+            None,
+            *dashchat_utils::NETWORK_ID,
+        )
+        .await
+        .unwrap();
 
         let data = bytes::Bytes::from_static(b"pushed blob contents");
         let stored = blob_sync.store_pushed_blob(data.clone()).await.unwrap();
 
         assert_eq!(stored, iroh_blobs::Hash::new(&data));
         assert!(blob_sync.blobs.has(stored).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn upload_at_the_blob_cap_is_stored() {
+        let (server, _tmp) = crate::test_utils::create_test_server().await;
+        let body = vec![7u8; dashchat_utils::blob_sync::MAX_BLOB_BYTES as usize];
+        let expected = iroh_blobs::Hash::new(&body);
+        let response = server.post("/blobs/upload").bytes(body.into()).await;
+        response.assert_status_ok();
+        assert_eq!(response.json::<UploadBlobResponse>().hash, expected);
+    }
+
+    #[tokio::test]
+    async fn upload_over_the_blob_cap_is_rejected() {
+        let (server, _tmp) = crate::test_utils::create_test_server().await;
+        let body = vec![7u8; dashchat_utils::blob_sync::MAX_BLOB_BYTES as usize + 1];
+        let response = server.post("/blobs/upload").bytes(body.into()).await;
+        response.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

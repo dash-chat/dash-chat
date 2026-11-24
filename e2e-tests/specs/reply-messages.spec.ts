@@ -1,3 +1,4 @@
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
@@ -10,9 +11,25 @@ describe('Replying to messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
+	});
+
+	// Must stay the first case: replying through the actions menu loads the
+	// chat's read-only state, which would hide a swipe that needs it loaded.
+	it('replies on the first swipe after opening a chat', async function () {
+		const [swiper, sender] =
+			agent2.platform === 'desktop' ? [agent1, agent2] : [agent2, agent1];
+		if (swiper.platform === 'desktop') this.skip();
+		await sender.directChatPage.composer.sendMessage('Are you up?');
+		const target =
+			await swiper.directChatPage.messages.waitForMessage('Are you up?');
+
+		await target.replyBySwipe('Just about');
+
+		const reply =
+			await sender.directChatPage.messages.waitForMessage('Just about');
+		await reply.waitForReplyQuote('Are you up?');
 	});
 
 	it('replies to a peer message and renders the quote on both sides', async () => {
@@ -29,6 +46,23 @@ describe('Replying to messages', () => {
 		const reply1 =
 			await agent1.directChatPage.messages.waitForMessage('Sure, at noon');
 		await reply1.waitForReplyQuote('Shall we meet tomorrow?');
+	});
+
+	// SwipeToReply only renders on mobile, so this case needs a mobile agent.
+	it('replies to a peer message by swiping the row', async function () {
+		if (agent2.platform === 'desktop') this.skip();
+		await agent1.directChatPage.composer.sendMessage('Did you lock up?');
+		const target =
+			await agent2.directChatPage.messages.waitForMessage('Did you lock up?');
+
+		await target.replyBySwipe('Yes, all set');
+
+		const reply2 =
+			await agent2.directChatPage.messages.waitForMessage('Yes, all set');
+		await reply2.waitForReplyQuote('Did you lock up?');
+		const reply1 =
+			await agent1.directChatPage.messages.waitForMessage('Yes, all set');
+		await reply1.waitForReplyQuote('Did you lock up?');
 	});
 
 	// Desktop's hover toolbar offers Reply as a shortcut next to React, on top
@@ -116,7 +150,7 @@ describe('Replying to messages', () => {
 		// The deleted content never shows anywhere — including inside quotes.
 		const deletedByMe = await agent1.tr('youDeletedThisMessage');
 		const deletedByAlice = await agent2.tr('someoneDeletedThisMessage', {
-			name: 'Alice Test',
+			name: 'Alice',
 		});
 		await agent1.directChatPage.messages.waitForMessageGone('Secret plans');
 		await agent2.directChatPage.messages.waitForDeleted(

@@ -37,6 +37,10 @@ export interface PhotoAttachment {
 	size: number;
 	name: string;
 	mime_type: string;
+	/** Pixel dimensions measured by the sender, for sizing the placeholder
+	 * before the blob loads. */
+	width: number;
+	height: number;
 }
 
 /** A renderable non-image file attachment. See `Photo` — hash + metadata only. */
@@ -80,6 +84,8 @@ export interface OutgoingPhoto {
 	data: Uint8Array;
 	name: string;
 	mime_type: string;
+	width: number;
+	height: number;
 }
 
 export interface OutgoingFile {
@@ -102,7 +108,15 @@ export interface OutgoingVoiceNote {
  * `dashchat_node::MediaMetadata`: each variant carries only what its kind needs.
  */
 export type MediaMetadata =
-	| { kind: 'Photo'; name: string; mime_type: string; size: number; hash: Hash }
+	| {
+			kind: 'Photo';
+			name: string;
+			mime_type: string;
+			size: number;
+			width: number;
+			height: number;
+			hash: Hash;
+	  }
 	| { kind: 'File'; name: string; mime_type: string; size: number; hash: Hash }
 	| {
 			kind: 'VoiceNote';
@@ -156,6 +170,8 @@ export function mediaBundleToAttachment(
 			name: item.name,
 			mime_type: item.mime_type,
 			size: item.size,
+			width: item.width,
+			height: item.height,
 			hash: item.hash,
 		}));
 	return photos.length > 0 ? { kind: 'photos', photos } : null;
@@ -168,13 +184,17 @@ export function mediaBundleToAttachment(
 export type MessageContentV1 = {
 	message: string;
 	/** Stored/wire form: a flat `MediaBundle` (bytes live in the blob store,
-	 * fetched lazily via `irohblob://`). Consumers derive the photos/file
+	 * fetched lazily via `irohblob://`). Consumers derive the photos/file/voice
 	 * grouping from this list at render time. */
 	media: MediaBundle | null;
 	/** Hash of the operation this message replies to (a `Message` or
 	 * `EditMessage` in the same chat, any author's log). Absent on the wire
 	 * for non-replies. */
 	reply?: Hash;
+	/** Lamport counter assigned by the sender's node; the primary display
+	 * ordering criterion (timestamp and author tie-break). Absent on messages
+	 * from clients that predate the field. */
+	lamport?: number;
 };
 export type MessageContent = MessageContentV1;
 
@@ -205,8 +225,36 @@ export type ChatPayload =
 	| { type: 'Reaction'; payload: ChatReaction }
 	| { type: 'EditMessage'; payload: EditMessagePayload }
 	| { type: 'DeleteMessage'; payload: DeleteMessagePayload }
-	| { type: 'JoinGroup'; payload: { chat_id: string } }
-	| { type: 'GroupInfo'; payload: GroupInfo };
+	| {
+			type: 'JoinGroup';
+			payload: { chat_id: string; add_member_operation_hash: Hash };
+	  }
+	| { type: 'GroupInfo'; payload: GroupInfo }
+	| { type: 'MessageAck'; payload: MessageAckPayload }
+	| { type: 'IntroduceAgents'; payload: { agents: Record<DeviceId, AgentId> } };
+
+/** An entry in a `MessageAck` map: the latest operation of one author that the
+ * acker has processed. Covers everything at or below `seq` in that author's
+ * log. */
+export interface AckedOp {
+	hash: Hash;
+	seq: number;
+}
+
+/** Delta-encoded delivery acknowledgement, mirroring the backend
+ * `ChatPayload::MessageAck`: only entries that changed since the acker's
+ * previous ack are present. */
+export interface MessageAckPayload {
+	acks: Record<DeviceId, AckedOp>;
+}
+
+/** Per author of a chat topic, the highest operation acked by any device of a
+ * different agent. Drives the "delivered" message status. */
+export type MessageAcks = Record<DeviceId, AckedOp>;
+
+/** The delivery progression of an outgoing message: not yet sent anywhere,
+ * arrived at a mailbox, or received by a device of another group member. */
+export type MessageDeliveryStatus = 'sending' | 'mailbox' | 'delivered';
 
 export interface ReadMessagesPayload {
 	chat_id: ChatId;
@@ -226,14 +274,27 @@ export interface DeleteForMePayload {
  * message; a delete-for-me vanishes with no trace. */
 export type TombstoneReason = 'DeletedForEveryone' | 'DeletedForMe';
 
-export type SystemEvent = {
-	type: 'Tombstones';
-	payload: {
-		topic: TopicId;
-		hashes: Hash[];
-		reason: TombstoneReason;
-	};
-};
+export type SystemEvent =
+	| { type: 'GroupChatAdded'; payload: { chat_id: ChatId } }
+	| { type: 'GroupMembersChanged'; payload: { chat_id: ChatId } }
+	| { type: 'AgentsIntroduced'; payload: { agents: Record<DeviceId, AgentId> } }
+	| {
+			type: 'Tombstones';
+			payload: {
+				topic: TopicId;
+				hashes: Hash[];
+				reason: TombstoneReason;
+			};
+	  }
+	| {
+			type: 'MessageAcks';
+			payload: {
+				topic: TopicId;
+				/** Only the entries that changed, pre-filtered to ackers of a
+				 * different agent than the author; fold with max seq per author. */
+				acks: Record<DeviceId, AckedOp>;
+			};
+	  };
 
 export interface Tombstone {
 	hash: Hash;
@@ -243,10 +304,17 @@ export interface Tombstone {
 export type Tombstones = Record<Hash, TombstoneReason>;
 
 export type DeviceGroupPayload =
-	| { type: 'AddContact'; payload: { agent_id: AgentId } }
+	| {
+			type: 'AddContact';
+			payload: { agent_id: AgentId; direct_chat_topic_id: ChatId };
+	  }
 	| {
 			type: 'PendingContactRequest';
-			payload: { device_pubkey: DeviceId; profile_name: string };
+			payload: {
+				device_pubkey: DeviceId;
+				profile_name: string;
+				direct_chat_topic_id: ChatId;
+			};
 	  }
 	| { type: 'RejectContactRequest'; payload: AgentId }
 	| { type: 'BlockAgent'; payload: AgentId }
@@ -311,7 +379,14 @@ export type GroupControlEvent =
 			timestamp: number;
 	  }
 	| {
+			kind: 'group_member_left';
+			isMine: boolean;
+			memberName: string | undefined;
+			timestamp: number;
+	  }
+	| {
 			kind: 'group_member_promoted';
+			isMine: boolean;
 			promotedByMe: boolean;
 			memberName: string | undefined;
 			adminName: string | undefined;
@@ -343,7 +418,7 @@ export interface MessageVersion {
 export interface MessageBody {
 	message: string;
 	media: MediaBundle | null;
-	reactions: Record<DeviceId, string>;
+	reactions: Record<AgentId, string>;
 	editHistory: MessageVersion[];
 }
 
@@ -383,6 +458,8 @@ export type ChatSummaryLastEvent =
 export interface ChatSummary {
 	type: 'GroupChat' | 'DirectChat';
 	chatId: TopicId;
+	/** Whether the direct-chat peer is blocked. Absent for group chats. */
+	blocked?: boolean;
 	unreadMessages: number;
 	name: string;
 	avatar: string | undefined;

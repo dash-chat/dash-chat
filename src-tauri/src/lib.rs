@@ -9,11 +9,13 @@ mod device_info;
 mod error;
 mod filesystem;
 mod i18n;
+mod logger;
 mod mailbox;
 #[cfg(desktop)]
 mod media_drop;
 mod node;
 mod notifications;
+mod pending_navigations;
 mod redaction;
 mod sentry;
 mod settings;
@@ -36,6 +38,7 @@ pub(crate) static APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    panic_policy::install_panic_hook();
     crate::utils::install_crypto_provider();
 
     filesystem::init_data_dir();
@@ -48,52 +51,63 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_barcode_scanner::init())
-            .plugin(tauri_plugin_view::init());
+            .plugin(tauri_plugin_view::init())
+            .plugin(tauri_plugin_network_interfaces::init());
+    }
+    #[cfg(all(mobile, feature = "e2e-tests"))]
+    {
+        builder = builder.plugin(tauri_plugin_wifi::init());
     }
     #[cfg(target_os = "android")]
     {
-        // Registered first so it binds the process to the default network before
-        // the iroh endpoint creates its sockets (bindProcessToNetwork only
-        // affects sockets opened after the bind).
         builder = builder.plugin(tauri_plugin_android_fs::init());
         builder = builder.plugin(tauri_plugin_medialibrary::init());
+        builder = builder.plugin(
+            tauri_plugin_lifecycle::Builder::new()
+                .on_pause(|app| async move {
+                    log::info!("[android-lifecycle] on_pause fired (onStop)");
+                    background::lifecycle::on_pause(app).await;
+                })
+                .on_resume(|app| async move {
+                    log::info!("[android-lifecycle] on_resume fired (onStart)");
+                    background::lifecycle::on_resume(app).await;
+                })
+                .build(),
+        );
     }
     #[cfg(target_os = "ios")]
     {
         builder = builder.plugin(tauri_plugin_ios_photos::init());
-        // Quiesce the node (release SQLite locks) on background and rebuild it on
-        // foreground so iOS can suspend the app without a 0xdead10cc kill.
+        // Stop database writes on background so iOS can suspend the app with its
+        // node alive and without a 0xdead10cc kill.
         builder = builder.plugin(
-            tauri_plugin_ios_lifecycle::Builder::new()
+            tauri_plugin_lifecycle::Builder::new()
                 .on_pause(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
                         app_node_manager.pause().await;
                     }
                 })
                 .on_resume(|app| async move {
                     use tauri::Manager;
-                    if let Some(app_node_manager) = app
-                        .try_state::<node::AppNodeManager>()
-                        .map(|s| s.inner().clone())
-                    {
-                        if let Err(err) = app_node_manager.resume(&app).await {
-                            log::error!("Failed to rebuild node on foreground: {err:?}");
-                        }
+                    if let Some(app_node_manager) = app.try_state::<node::AppNodeManager>() {
+                        app_node_manager.resume(&app).await;
                     }
                 })
                 .build(),
         );
     }
-    #[cfg(not(mobile))]
+    // E2E tests run multiple built instances side-by-side; skip single-instance,
+    // updater, and MCP bridge plugins. macOS has no WebDriver for WKWebView, so
+    // the e2e harness drives the app through a W3C server embedded here, on
+    // the port TAURI_WEBDRIVER_PORT names.
+    #[cfg(all(not(mobile), feature = "e2e-tests"))]
     {
-        if cfg!(feature = "e2e-tests") {
-            // E2E tests run multiple built instances side-by-side;
-            // skip single-instance, updater, and MCP bridge plugins.
-        } else if !tauri::is_dev() {
+        builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    }
+    #[cfg(all(not(mobile), not(feature = "e2e-tests")))]
+    {
+        if !tauri::is_dev() {
             // single-instance must be registered before deep-link so it can
             // forward deep link URLs from a second process to this one.
             builder = builder
@@ -108,6 +122,16 @@ pub fn run() {
                         }
                     },
                 ))
+                // After single-instance, so launching a second copy from the
+                // disk image focuses the running app instead of replacing it.
+                .plugin(tauri_plugin_move_to_applications::init(
+                    tauri_plugin_move_to_applications::Prompt {
+                        title: sonix_i18n::t!("moveToApplicationsTitle"),
+                        message: sonix_i18n::t!("moveToApplicationsMessage"),
+                        move_button: sonix_i18n::t!("moveToApplicationsMove"),
+                        cancel_button: sonix_i18n::t!("moveToApplicationsNotNow"),
+                    },
+                ))
                 .plugin(tauri_plugin_autostart::init(
                     tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                     Some(vec!["--minimized"]),
@@ -117,20 +141,23 @@ pub fn run() {
         }
     }
 
-    // MCP bridge for Claude Code to drive the running app, on every platform.
-    // Dev-only: the WebSocket server never starts in production builds. E2E runs
-    // its own multi-instance harness, so skip it there.
+    // MCP bridge for Claude Code to drive the running desktop app. Dev-only:
+    // the WebSocket server never starts in production builds. E2E runs its own
+    // multi-instance harness, so skip it there.
+    #[cfg(desktop)]
     if tauri::is_dev() && !cfg!(feature = "e2e-tests") {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }
 
     builder = builder
+        .plugin(tauri_plugin_subscriptions::init())
         .register_asynchronous_uri_scheme_protocol("irohblob", blob_protocol::handle)
         .invoke_handler(tauri::generate_handler![
             device_info::display::log_webview_info,
             commands::logs::get_log,
             commands::logs::get_authors,
             commands::profile::set_profile,
+            commands::profile::get_profile,
             commands::account::delete_account,
             commands::devices::my_device_group_topic,
             commands::contacts::my_device_id,
@@ -149,12 +176,14 @@ pub fn run() {
             commands::chats::delete_message,
             commands::chats::delete_message_for_me,
             commands::chats::get_tombstones,
+            commands::chats::get_message_acks,
             commands::chats::send_reaction,
             commands::chats::mark_messages_read,
             commands::chats::create_group,
             commands::chats::set_group_info,
             commands::chats::add_group_member,
             commands::chats::remove_group_member,
+            commands::chats::promote_group_member_to_admin,
             commands::chats::leave_group,
             commands::chats::get_group_chats,
             commands::chats::get_group_members,
@@ -162,14 +191,18 @@ pub fn run() {
             commands::settings::set_setting,
             #[cfg(not(mobile))]
             commands::settings::set_local_mailbox_enabled,
+            commands::settings::set_p2p_enabled,
             commands::mailbox_state::mailbox_subscribe_active_ids,
             commands::mailbox_state::mailbox_subscribe_all_ids,
             commands::mailbox_state::mailbox_subscribe_connection_state,
             commands::mailbox_state::mailbox_subscribe_sync_state,
             commands::mailbox_state::mailbox_subscribe_cloud_id,
+            commands::online_peers::subscribe_to_online_peers,
+            #[cfg(not(mobile))]
+            commands::lan_multicast::subscribe_to_lan_multicast_blocked,
             commands::media::save_blob_to_cache,
-            #[cfg(feature = "e2e-tests")]
-            commands::testing::close_iroh_endpoint,
+            commands::voice::transcode_voice_message,
+            pending_navigations::take_pending_navigations,
         ])
         .plugin(tauri_plugin_virtual_keyboard::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -180,6 +213,7 @@ pub fn run() {
         .plugin(tauri_plugin_sharekit::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_audio_recorder::init())
         .plugin(tauri_plugin_opener::init());
 
     #[cfg(target_os = "android")]
@@ -198,6 +232,17 @@ pub fn run() {
             _ => {}
         })
         .setup(move |app| {
+            // The e2e harness runs several instances side by side, driven
+            // through their webviews: a window covered by another stops
+            // animating, and nothing that fades in ever shows there.
+            #[cfg(all(not(mobile), feature = "e2e-tests"))]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_always_on_top(true);
+                }
+            }
+
             #[cfg(any(target_os = "linux", windows))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -205,6 +250,8 @@ pub fn run() {
                     log::error!("Failed to register deep links: {err:?}");
                 }
             }
+
+            pending_navigations::setup(app.handle());
 
             let handle = app.handle().clone();
 

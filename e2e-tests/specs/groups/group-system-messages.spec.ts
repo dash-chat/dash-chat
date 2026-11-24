@@ -11,7 +11,7 @@ describe('Group chat inline system messages', () => {
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await exchangeContactsAndCreateGroup(agent1, agent2);
+		await exchangeContactsAndCreateGroup({ Alice: agent1, Bob: agent2 });
 	});
 
 	it('renders "You created the group." for the creator', async () => {
@@ -39,7 +39,7 @@ describe('Group chat inline system messages', () => {
 			.systemMessage('group_created')
 			.getText();
 		expect(added).toContain(
-			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice Test' }),
+			await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice' }),
 		);
 	});
 

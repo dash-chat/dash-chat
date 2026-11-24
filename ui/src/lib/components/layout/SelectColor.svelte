@@ -84,7 +84,6 @@
 				value={qrCodeValue}
 				color={selectedColor}
 				label={qrCodeLabel}
-				copyButtonTestId="color-picker-copy-btn"
 			/>
 
 			<div

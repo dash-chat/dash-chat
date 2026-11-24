@@ -33,7 +33,7 @@ jobs:
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            webkit2gtk-driver \
+            libasound2-dev \
             xvfb
 
       - name: Setup Node.js
@@ -55,9 +55,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-
-      - name: Install tauri-driver
-        run: cargo install tauri-driver --locked
 
       - name: Run backwards compatibility test (${{ matrix.version }})
         run: bash e2e-tests/compat/run.sh "${{ matrix.version }}"

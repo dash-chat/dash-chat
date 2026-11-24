@@ -12,6 +12,10 @@ pub struct ChatMessageContentV1 {
     /// messages unchanged (and silently drop the reply on newer ones).
     #[serde(default)]
     pub reply: Option<Hash>,
+    /// Lamport timestamp, used to ensure that new messages published after
+    /// existing messages are ordered after them, regardless of wall timestamp.
+    #[serde(default)]
+    pub lamport: u64,
 }
 
 /// A photo attachment. `data` is the raw bytes of the encoded image (JPEG,
@@ -21,6 +25,8 @@ pub struct OutgoingPhoto {
     pub data: Vec<u8>,
     pub name: String,
     pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// A non-image file attachment.
@@ -69,6 +75,8 @@ pub enum MediaMetadata {
         name: String,
         mime_type: String,
         size: u64,
+        width: u32,
+        height: u32,
         // Serialize as a CBOR byte string. `iroh_blobs::Hash`'s own non-human-readable
         // impl encodes a 32-element array, which serde's untagged-enum buffering (used
         // by `dashchat_compat::Compat`) cannot reconstruct from CBOR.
@@ -171,11 +179,13 @@ impl ChatMessageContent {
         message: impl Into<String>,
         media: Option<MediaBundle>,
         reply: Option<Hash>,
+        lamport: u64,
     ) -> Self {
         ChatMessageContentV1 {
             message: message.into(),
             media,
             reply,
+            lamport,
         }
     }
 
@@ -184,6 +194,7 @@ impl ChatMessageContent {
             message: message.into(),
             media: None,
             reply: None,
+            lamport: 0,
         }
     }
 
@@ -242,7 +253,7 @@ pub mod testing {
             Self {
                 content,
                 author: header.verifying_key.into(),
-                timestamp: header.timestamp,
+                timestamp: header.extensions.timestamp(),
             }
         }
     }
@@ -270,7 +281,7 @@ mod tests {
     #[test]
     fn chat_message_v1_reply_roundtrip() {
         let target = Hash::from_bytes([7; 32]);
-        let v1 = ChatMessageContent::new("hello", None, Some(target));
+        let v1 = ChatMessageContent::new("hello", None, Some(target), 0);
         let bytes = encode_cbor(&v1).unwrap();
         let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
         assert_eq!(decoded, v1);
@@ -280,5 +291,25 @@ mod tests {
         // string (matching the `Hash` TS type), not a byte array.
         let json = serde_json::to_value(&v1).unwrap();
         assert_eq!(json["reply"], serde_json::json!(target.to_hex()));
+    }
+
+    /// Wire bytes from clients that predate the `lamport` field must keep
+    /// decoding, with the counter defaulting to 0.
+    #[test]
+    fn chat_message_v1_without_lamport_decodes() {
+        #[derive(serde::Serialize)]
+        struct PreLamportV1 {
+            message: String,
+            media: Option<MediaBundle>,
+        }
+        let bytes = encode_cbor(&PreLamportV1 {
+            message: "old".into(),
+            media: None,
+        })
+        .unwrap();
+        let decoded: ChatMessageContent = decode_cbor(bytes.as_slice()).unwrap();
+        assert_eq!(decoded.message(), "old");
+        assert_eq!(decoded.lamport, 0);
+        assert_eq!(decoded.reply(), None);
     }
 }

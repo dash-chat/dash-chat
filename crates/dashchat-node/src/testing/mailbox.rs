@@ -1,7 +1,7 @@
 use mailbox_client::{
-    FetchRequest, FetchResponse, MailboxClient, MailboxId,
-    mem::{MemMailbox, MemMailboxClient},
-    toy::ToyMailboxClient,
+    FetchRequest, FetchResponse, MailboxClient, MailboxId, PublishResponse,
+    backends::mem::{MemMailbox, MemMailboxClient},
+    backends::toy::ToyMailboxClient,
 };
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -75,8 +75,24 @@ impl TestMailbox {
             let signal = async move {
                 let _ = stop_signal_rx.await;
             };
-            if let Err(e) =
-                mailbox_server::spawn_server(db_path, addr, None, None, None, signal).await
+            let listener = match tokio::net::TcpListener::bind(addr).await {
+                Ok(listener) => listener,
+                Err(e) => {
+                    tracing::error!("Local test mailbox server could not bind: {e:?}");
+                    return;
+                }
+            };
+            if let Err(e) = mailbox_server::spawn_server(
+                db_path,
+                listener,
+                None,
+                None,
+                None,
+                *dashchat_utils::NETWORK_ID,
+                None,
+                signal,
+            )
+            .await
             {
                 tracing::error!("Local test mailbox server failed: {e:?}");
             }
@@ -119,11 +135,26 @@ impl TestMailbox {
             Self::Mem(mb) => node.mailboxes.register(mb.client()).await,
             Self::Cloud { url } => register_served_mailbox(node, url).await,
             Self::Local(local) => {
-                mailbox_client::toy::wait_for_mailbox_health(&local.url).await;
+                wait_for_mailbox_health(&local.url).await;
                 register_served_mailbox(node, &local.url).await;
             }
         }
     }
+}
+
+/// Poll a mailbox server's `/health` endpoint until it responds, confirming the
+/// server is listening before test setup tries to use it.
+pub async fn wait_for_mailbox_health(url: &str) {
+    let health = format!("{url}/health");
+    for _ in 0..100 {
+        if let Ok(resp) = mailbox_client::HTTP_CLIENT.get(&health).send().await {
+            if resp.status().is_success() {
+                return;
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    panic!("mailbox /health never became ready at {health}");
 }
 
 async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
@@ -133,6 +164,7 @@ async fn inspection_client(url: &str) -> ToyMailboxClient<MailboxOperation> {
         url,
         iroh::SecretKey::generate().public(),
         Arc::new(mailbox_client::NoopUnfetchedBlobTracker),
+        mailbox_client::testing::noop_upload_lifecycle(),
     )
 }
 
@@ -148,8 +180,10 @@ async fn register_served_mailbox(node: &crate::Node, url: &str) {
                 url,
                 node.endpoint_id(),
                 node.unfetched_blob_tracker(),
+                node.mailboxes.upload_tracker(),
             )
-            .with_blob_reader(node.blob_reader()),
+            .with_blob_reader(node.blob_reader())
+            .with_blob_pusher(node.blob_pusher().await),
         )
         .await;
     node.register_with_mailbox(url).await.unwrap();
@@ -190,7 +224,10 @@ impl MailboxClient<MailboxOperation> for TestMailboxClient {
         }
     }
 
-    async fn publish(&self, ops: Vec<MailboxOperation>) -> Result<(), anyhow::Error> {
+    async fn publish(
+        &self,
+        ops: Vec<MailboxOperation>,
+    ) -> Result<PublishResponse<MailboxOperation>, anyhow::Error> {
         match self {
             Self::Mem(client) => client.publish(ops).await,
             Self::Toy(client) => client.publish(ops).await,

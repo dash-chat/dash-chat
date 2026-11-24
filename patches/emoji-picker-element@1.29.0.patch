@@ -1,0 +1,17 @@
+diff --git a/picker.js b/picker.js
+index 4baf9a4e4b13345a125640ca7cf14a2ab7fbb02a..532673819329ef290080ebfc6f139656bc3d7b94 100644
+--- a/picker.js
++++ b/picker.js
+@@ -20,7 +20,11 @@ const MIN_SEARCH_TEXT_LENGTH = 2;
+ const NUM_SKIN_TONES = 6;
+ 
+ /* istanbul ignore next */
+-const rIC = typeof requestIdleCallback === 'function' ? requestIdleCallback : setTimeout;
++// Patched: without a timeout, idle callbacks never fire while an animation keeps
++// the main thread busy (e.g. a loading spinner), so typed searches never apply.
++const rIC = typeof requestIdleCallback === 'function'
++  ? cb => requestIdleCallback(cb, { timeout: 50 })
++  : setTimeout;
+ 
+ // check for ZWJ (zero width joiner) character
+ function hasZwj (emoji) {

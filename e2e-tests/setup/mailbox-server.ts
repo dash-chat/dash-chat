@@ -15,44 +15,77 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startAgentLogger } from './agent-logger';
-import { allocatePreferredPort } from './allocate-port';
+import { allocateFreePort, allocatePreferredPort } from './allocate-port';
+import { exe } from './host-process';
+import { mailboxAnswers, startMailboxTls } from './mailbox-tls';
+import { E2E_NETWORK_ID, MAILBOX_PREFERRED_PORT } from './network-id';
+import { E2E_RELAY_URL } from './relay';
+import { Link } from './toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
+
+/** The link the mailbox's public port is, on the run's toxiproxy. */
+export const MAILBOX_LINK = 'cloud-mailbox';
 
 /** Log file the spawned server's stdout/stderr are appended to. */
 export function mailboxLogFile(dbPath: string): string {
 	return path.join(path.dirname(dbPath), 'mailbox.log');
 }
 
-/** Run `cargo build -p mailbox-server`, resolving when the binary is built. */
-export function buildMailboxServer(): Promise<void> {
+/** Run `cargo build -p <package>...`, resolving when the binaries are built.
+ *  The hub binary bakes the run's network id in, and the mailbox the e2e
+ *  relay, like the app does. */
+export function buildCargoPackages(packages: string[]): Promise<void> {
+	const args = ['build', ...packages.flatMap(name => ['-p', name])];
 	return new Promise<void>((resolve, reject) => {
-		const proc = spawn('cargo', ['build', '-p', 'mailbox-server'], {
+		const proc = spawn('cargo', args, {
 			cwd: ROOT,
 			stdio: 'inherit',
+			// The same debug level as the app build, which would otherwise rebuild
+			// what this one built, and the other way around, on every run.
+			env: {
+				...process.env,
+				CARGO_PROFILE_DEV_DEBUG: '0',
+				E2E_NETWORK_ID,
+				E2E_RELAY_URL,
+			},
 		});
 		proc.on('error', reject);
 		proc.on('exit', code => {
 			if (code === 0) resolve();
-			else reject(new Error(`cargo build -p mailbox-server exited ${code}`));
+			else reject(new Error(`cargo ${args.join(' ')} exited ${code}`));
 		});
 	});
 }
 
-/** Spawn the mailbox server in its own process group on the given port + db.
- * When `pushNotificationsUrl` is given, the server forwards blob arrivals to
- * that push-notifications server (real end-to-end push tests). */
+/** Dev flags the mailbox binary takes (see its `--help`). All off by default;
+ *  a spec turns one on through restartMailboxWithFlags. */
+export interface MailboxFlags {
+	/** Reject HTTP blob uploads with 410 Gone, so a run can prove blob
+	 *  delivery went over iroh push. */
+	disableBlobHttpUpload?: boolean;
+	/** Never run the blob fetch loop, so announced blobs are never pulled
+	 *  from their sources — with upload also off, only a client-side iroh
+	 *  push can put a blob on the mailbox. */
+	disableBlobFetch?: boolean;
+}
+
+/** Spawn the mailbox server in its own process group, bound to loopback on
+ * `bindPort` — agents reach it through the link on its public port. When
+ * `pushNotificationsUrl` is given, the server forwards blob arrivals to that
+ * push-notifications server (real end-to-end push tests). */
 export function spawnMailboxServer(
-	port: number,
+	bindPort: number,
 	dbPath: string,
 	pushNotificationsUrl?: string,
+	flags?: MailboxFlags,
 ): ChildProcess {
 	// The prebuilt binary (built by wdio.conf's onPrepare) is spawned
 	// directly: `cargo run` here would rebuild with whatever toolchain is on
 	// PATH, which can mean recompiling the world and blowing the readiness
 	// timeout.
-	const bin = path.join(ROOT, 'target', 'debug', 'mailbox-server');
+	const bin = path.join(ROOT, 'target', 'debug', exe('mailbox-server'));
 	if (!existsSync(bin)) {
 		throw new Error(
 			`${bin} not found — run the suite via 'just e2e' (which builds ` +
@@ -63,9 +96,22 @@ export function spawnMailboxServer(
 	// stdout, and a respawned server (restartMailbox) outlives the spec worker
 	// that spawned it — a pipe with no reader would eventually block its writes.
 	const logFd = openSync(mailboxLogFile(dbPath), 'a');
-	const args = ['--db-path', dbPath, '--addr', `0.0.0.0:${port}`];
+	const args = [
+		'--db-path',
+		dbPath,
+		'--addr',
+		`127.0.0.1:${bindPort}`,
+		'--network-id',
+		E2E_NETWORK_ID,
+	];
 	if (pushNotificationsUrl !== undefined) {
 		args.push('--push-notifications-url', pushNotificationsUrl);
+	}
+	if (flags?.disableBlobHttpUpload === true) {
+		args.push('--disable-blob-http-upload');
+	}
+	if (flags?.disableBlobFetch === true) {
+		args.push('--disable-blob-fetch');
 	}
 	// `detached: true` puts it in its own process group so lifecycle helpers
 	// can signal -pid without touching the test runner.
@@ -79,23 +125,28 @@ export function spawnMailboxServer(
 }
 
 /**
- * Start a local mailbox server on a freshly allocated port: spawn it, echo its
- * log file + lifecycle to the console, wait until it answers /health, expose
- * its URL via process.env.MAILBOX_URL, and persist mailbox-info.json so specs
- * can drive its lifecycle. Shared by the desktop and Android wdio configs.
+ * Start a local mailbox server on a freshly allocated port, behind TLS and a
+ * link a spec can degrade: spawn it, echo its log file + lifecycle to the console,
+ * wait until it answers /health, expose its URL via process.env.MAILBOX_URL,
+ * and persist mailbox-info.json so specs can drive its lifecycle. Shared by
+ * the desktop and Android wdio configs.
  */
 export async function startLocalMailboxServer(
 	pushNotificationsUrl?: string,
+	flags?: MailboxFlags,
 ): Promise<{
 	proc: ChildProcess;
 	logger: ChildProcess;
+	tls: ChildProcess;
+	tlsLogger: ChildProcess;
 	port: number;
 	url: string;
 }> {
-	// A stable port keeps the mailbox URL baked into iOS builds valid across
-	// runs, so turbo's build skip can actually fire (the URL is a hashed input).
-	const port = await allocatePreferredPort(3300);
-	const url = `http://localhost:${port}`;
+	const port = await allocatePreferredPort(MAILBOX_PREFERRED_PORT);
+	const bindPort = await allocateFreePort();
+	const tls = await startMailboxTls(bindPort);
+	await Link.open(MAILBOX_LINK, port, tls.port);
+	const url = `https://localhost:${port}`;
 	const dbPath = path.join(ROOT, '.dbs', 'e2e', 'mailbox-server', 'mailbox.db');
 	mkdirSync(path.dirname(dbPath), { recursive: true });
 
@@ -103,7 +154,12 @@ export async function startLocalMailboxServer(
 	// Tail the server's log file (its tracing output, redirected there by
 	// spawnMailboxServer) and echo it with a prefix, like the agent logs.
 	const logger = startAgentLogger('mailbox-server', mailboxLogFile(dbPath));
-	const proc = spawnMailboxServer(port, dbPath, pushNotificationsUrl);
+	const proc = spawnMailboxServer(
+		bindPort,
+		dbPath,
+		pushNotificationsUrl,
+		flags,
+	);
 	console.log(`[mailbox-server] spawned (pid=${proc.pid})`);
 	proc.on('exit', (code, signal) => {
 		console.error(
@@ -120,10 +176,19 @@ export async function startLocalMailboxServer(
 
 	writeFileSync(
 		path.join(ROOT, '.dbs', 'e2e', 'mailbox-info.json'),
-		JSON.stringify({ pid: proc.pid, port, url, dbPath, pushNotificationsUrl }),
+		JSON.stringify({
+			pid: proc.pid,
+			port,
+			bindPort,
+			url,
+			dbPath,
+			pushNotificationsUrl,
+			disableBlobHttpUpload: flags?.disableBlobHttpUpload,
+			disableBlobFetch: flags?.disableBlobFetch,
+		}),
 	);
 
-	return { proc, logger, port, url };
+	return { proc, logger, tls: tls.proc, tlsLogger: tls.logger, port, url };
 }
 
 /** Poll the server's /health until it answers, or throw after `timeoutMs`. */
@@ -133,13 +198,8 @@ export async function waitForMailboxReady(
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		try {
-			const res = await fetch(`${url}/health`);
-			if (res.ok) return;
-		} catch {
-			/* not up yet */
-		}
+		if (await mailboxAnswers(url, Math.max(1, deadline - Date.now()))) return;
 		await new Promise(r => setTimeout(r, 500));
 	}
-	throw new Error('Mailbox server failed to become ready');
+	throw new Error(`Mailbox server at ${url} failed to become ready`);
 }

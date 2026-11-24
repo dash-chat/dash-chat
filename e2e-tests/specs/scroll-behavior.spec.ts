@@ -5,11 +5,18 @@
  * staying pinned at bottom, the scroll-to-bottom button + unread badge,
  * and the transparent navbar's opacity transitions on scroll.
  */
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
 import { UI_TIMEOUT } from '../helpers/timeouts';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
 describe('Chat scroll behavior', () => {
+	/** The theme the app picked for itself, kept by the one test that overrides
+	 *  it and put back here — after the whole describe — so the override does
+	 *  not leak into the specs that share this agent later in the run. A test
+	 *  appended after that one inside this suite still runs under Material.
+	 *  Read from the app rather than assumed: a phone picks iOS or Material by
+	 *  platform, which is the whole reason that test overrides it. */
 	// Need enough overflow that scrollUp can move past the bottom
 	// threshold (200px) — leave headroom so timing/layout jitter doesn't
 	// drop us below.
@@ -20,14 +27,12 @@ describe('Chat scroll behavior', () => {
 	let agent2: Agent;
 
 	before(async function () {
-		this.timeout(120_000);
 		[agent1, agent2] = await setupAgents(this, [
 			{ platform: 'any' },
 			{ platform: 'any' },
 		]);
-		await agent1.createProfilePage.createProfile('Alice', 'Test');
-		await agent2.createProfilePage.createProfile('Bob', 'Test');
-		await exchangeContacts(agent1, agent2);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
 	it('fills the chat until it overflows enough to scroll', async () => {
@@ -135,6 +140,11 @@ describe('Chat scroll behavior', () => {
 	// under the navbar — and fade out ('0') only once the user scrolls
 	// all the way to the welcome / avatar surface at the top of the chat.
 	it('toggles transparent navbar opacity on scroll', async () => {
+		// The opacity is the Material navbar's. Under the iOS theme
+		// ReverseScrollPage leaves the navbar alone on purpose — its gradient
+		// and blur do the fading — so it writes no opacity to read, and on a
+		// phone that is the theme the app picks.
+		await agent1.setTheme('material');
 		expect(await agent1.directChatPage.scroll.isAtBottom()).toBe(true);
 		await agent1.waitUntil(
 			async () =>

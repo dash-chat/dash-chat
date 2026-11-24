@@ -1,122 +1,72 @@
-use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::sync::Arc;
 
 use sentry::protocol::Envelope;
-use sentry::transports::ReqwestHttpTransportOptions;
 use sentry::{Transport, TransportFactory, TransportOptions};
 
-#[derive(Default)]
-pub(crate) struct UserInitiatedTransport {
-    pub(crate) inner: OnceLock<Arc<dyn Transport>>,
-}
-
-impl UserInitiatedTransport {
-    /// Actually send the envelope to sentry
-    pub(crate) fn send(&self, envelope: Envelope) {
-        if let Some(inner) = self.inner.get() {
-            inner.send_envelope(envelope);
-        }
-    }
-}
+/// The SDK captures freely; nothing it hands this transport is ever sent. Real
+/// delivery goes through the outbox, which the user's Send button feeds.
+struct UserInitiatedTransport;
 
 impl Transport for UserInitiatedTransport {
     /// Drops it: whatever reached here, the SDK sent of its own accord.
     fn send_envelope(&self, _envelope: Envelope) {}
-
-    fn flush(&self, timeout: Duration) -> bool {
-        self.inner.get().is_none_or(|inner| inner.flush(timeout))
-    }
-
-    fn shutdown(&self, timeout: Duration) -> bool {
-        self.inner.get().is_none_or(|inner| inner.shutdown(timeout))
-    }
 }
 
-pub(crate) struct UserInitiatedTransportFactory(pub(crate) Arc<UserInitiatedTransport>);
+pub(crate) struct UserInitiatedTransportFactory;
 
 impl TransportFactory for UserInitiatedTransportFactory {
-    fn create_transport_with_options(&self, options: TransportOptions) -> Arc<dyn Transport> {
-        self.0.inner.get_or_init(|| {
-            Arc::new(
-                ReqwestHttpTransportOptions::from(options)
-                    .with_client(webpki_roots_client())
-                    .build(),
-            )
-        });
-        self.0.clone()
+    fn create_transport_with_options(&self, _options: TransportOptions) -> Arc<dyn Transport> {
+        Arc::new(UserInitiatedTransport)
     }
-}
-
-/// Reqwest's default rustls verifier is `rustls-platform-verifier`, which on Android
-/// aborts the process unless its JNI side is initialized; embedded webpki roots need no
-/// platform setup.
-fn webpki_roots_client() -> reqwest::Client {
-    let roots = rustls::RootCertStore {
-        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-    };
-    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
-        rustls::crypto::ring::default_provider(),
-    ))
-    .with_safe_default_protocol_versions()
-    .expect("ring provider supports the default protocol versions")
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-    reqwest::Client::builder()
-        .tls_backend_preconfigured(tls)
-        .build()
-        .expect("failed to build the sentry HTTP client")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::io::ErrorKind;
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
 
     use sentry::protocol::Event;
 
-    use crate::testing::recording_transport;
+    use crate::state::SentryState;
+    use crate::testing::config;
 
     #[test]
     fn what_the_sdk_sends_by_itself_goes_nowhere() {
-        let (transport, recorder) = recording_transport();
+        let dir = tempfile::tempdir().unwrap();
+        // A local socket, so an attempt to send shows up as a connection.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut config = config(dir.path());
+        config.dsn = format!("http://key@{}/1", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let state = SentryState::new(config);
 
-        transport.send_envelope(Event::default().into());
+        let captured = state.client.capture_event(Event::default(), None);
+        state.client.close(Some(Duration::from_secs(2)));
 
-        assert!(recorder.sent().is_empty());
+        // Otherwise a transport that never captured would pass for the wrong reason.
+        assert!(!captured.is_nil(), "the event never reached the transport");
+        let accepted = accept_within(&listener, Duration::from_millis(500));
+        assert!(
+            matches!(&accepted, Err(err) if err.kind() == ErrorKind::WouldBlock),
+            "the SDK reached the network on its own: {accepted:?}"
+        );
     }
 
-    #[test]
-    fn sending_is_what_transmits() {
-        let (transport, recorder) = recording_transport();
-
-        transport.send(Event::default().into());
-
-        assert_eq!(recorder.sent().len(), 1);
-    }
-
-    #[test]
-    fn closing_drains_a_report_sent_just_before_it() {
-        let (transport, recorder) = recording_transport();
-
-        transport.send(Event::default().into());
-
-        assert!(transport.shutdown(Duration::from_secs(2)));
-        assert!(recorder.drained());
-    }
-
-    #[test]
-    fn flushing_drains_a_report_sent_just_before_it() {
-        let (transport, recorder) = recording_transport();
-
-        transport.send(Event::default().into());
-
-        assert!(transport.flush(Duration::from_secs(2)));
-        assert!(recorder.drained());
-    }
-
-    #[test]
-    fn closing_before_anything_could_have_been_sent_is_fine() {
-        let transport = UserInitiatedTransport::default();
-
-        assert!(transport.shutdown(Duration::from_secs(2)));
+    fn accept_within(
+        listener: &TcpListener,
+        patience: Duration,
+    ) -> std::io::Result<(std::net::TcpStream, std::net::SocketAddr)> {
+        let deadline = Instant::now() + patience;
+        loop {
+            let accepted = listener.accept();
+            let waiting = matches!(&accepted, Err(err) if err.kind() == ErrorKind::WouldBlock);
+            if !waiting || Instant::now() >= deadline {
+                return accepted;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }

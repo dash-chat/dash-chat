@@ -1,10 +1,6 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
-use futures::FutureExt;
-use mailbox_local_server::MDNS_SERVICE_TYPE;
-use mdns_sd::ServiceDaemon;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -15,15 +11,20 @@ struct Args {
     #[arg(short, long, default_value = "mailbox.redb")]
     db_path: PathBuf,
 
-    /// Address to bind the server to.
-    #[arg(short, long, default_value = "[::]:3000")]
-    addr: SocketAddr,
+    /// Port to listen on, on every interface. Without it, the port this hub
+    /// served on last is reused when still free, else any free port is taken.
+    #[arg(short, long)]
+    port: Option<u16>,
+
+    /// P2P network id, as 64 hex characters (defaults to the production network)
+    #[arg(long, value_parser = mailbox_server::parse_network_id)]
+    network_id: Option<[u8; 32]>,
 }
 
-// TODO: refactor this to go through `spawn_local_mailbox_server` rather than
-// driving `spawn_server` directly.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    panic_policy::install_panic_hook();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -35,8 +36,8 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    // Load the identity up front (spawn_server reloads the same key from the
-    // same db) so the mDNS instance name can encode the EndpointId.
+    // Load the identity up front so the mDNS instance name can encode the
+    // EndpointId; spawn_server reloads the same key from the same db.
     let endpoint_id = {
         let db = mailbox_server::init_db(args.db_path.clone())
             .map_err(|e| anyhow::anyhow!("failed to open db: {e}"))?;
@@ -45,35 +46,49 @@ async fn main() -> anyhow::Result<()> {
             .public()
     };
 
-    let daemon = ServiceDaemon::new()?;
-    let mdns_fullname = mailbox_local_server::register_mdns_with_retry(
-        &daemon,
-        MDNS_SERVICE_TYPE,
+    // Bound before anything is announced, so a port that cannot be served is
+    // never advertised.
+    let listener = match args.port {
+        Some(port) => tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?,
+        None => {
+            let (listener, _) = mailbox_local_server::reserve_listener(&args.db_path)?;
+            listener.set_nonblocking(true)?;
+            tokio::net::TcpListener::from_std(listener)?
+        }
+    };
+    let port = listener.local_addr()?.port();
+    let announcement = std::sync::Arc::new(mailbox_local_server::spawn_local_hub_announcement(
         endpoint_id,
-        args.addr.port(),
-        3,
-    )?;
+        port,
+    )?);
 
-    let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
-    // No relay is configured, so the server stays fully local and needs no
-    // internet access — peers reach it over the addresses mDNS announces.
-    let result = mailbox_server::spawn_server(
+    // The goodbye goes out while the server is still serving: a browser that
+    // hears it retires the hub at once, where the refused probes it would get
+    // from a stopped one deliberately mean nothing.
+    let signal = {
+        let announcement = announcement.clone();
+        async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for event");
+            announcement.shutdown().await;
+        }
+    };
+    // No relay — the server stays fully local.
+    let served = mailbox_server::spawn_server(
         args.db_path,
-        args.addr.to_string(),
+        listener,
         None,
         None,
+        None,
+        args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
         None,
         signal,
     )
-    .await
-    .map_err(|e| anyhow::anyhow!("server failed: {e}"));
+    .await;
 
-    if let Err(e) = daemon.unregister(&mdns_fullname) {
-        log::error!("Failed to unregister MDNS service: {e:?}");
-    }
-    if let Err(e) = daemon.shutdown() {
-        log::error!("Failed to shut down MDNS daemon: {e:?}");
-    }
-
-    result
+    // However the server stopped: on ctrl-c this already said it, on any other
+    // exit it is late but still better than leaving peers to the lapse.
+    announcement.shutdown().await;
+    served.map_err(|e| anyhow::anyhow!("server failed: {e}"))
 }

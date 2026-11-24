@@ -4,14 +4,11 @@
 	"scripts": {
 		"start": "mprocs",
 		"dev": "concurrently --kill-others-on-fail \"pnpm -F dash-chat-stores dev\" \"pnpm -F ui dev\"",
-		"tauri": "tauri",
-		"e2e:build:desktop": "tauri build --debug --no-bundle --features e2e-tests",
-		"e2e:build:android": "tauri android build --debug --apk --split-per-abi --features e2e-tests -t $E2E_ANDROID_TARGETS",
-		"e2e:build:ios": "tauri ios build --debug --features e2e-tests && node scripts/export-session-ipa.ts"
+		"tauri": "tauri"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.36.0",
-		"@tauri-apps/cli": "^2.8.4",
+		"@tauri-apps/cli": "^2.12.1",
 		"@trivago/prettier-plugin-sort-imports": "^4.3.0",
 		"concurrently": "^9.2.1",
 		"eslint": "^9.36.0",
@@ -20,16 +17,15 @@
 		"mprocs": "^0.8.3",
 		"prettier": "^3.6.2",
 		"prettier-plugin-svelte": "^3.5.1",
-		"svelte": "^5.49.2",
-		"rust-just": "^1.46.0",
+		"rust-just": "^1.59.0",
+		"svelte": "^5.57.2",
 		"svelte-language-server": "^0.17.25",
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.45.0",
-		"vite": "^4.5.14",
-		"turbo": "^2.10.10"
+		"vite": "^4.5.14"
 	},
 	"type": "module",
-	"packageManager": "pnpm@11.18.0",
+	"packageManager": "pnpm@11.28.5",
 	"engines": {
 		"node": ">=24 <25",
 		"pnpm": ">=11.0.0"

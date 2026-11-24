@@ -16,9 +16,11 @@
 		"sharekit:allow-share-text",
 		"sharekit:allow-share-file",
 		"fs:allow-appcache-write-recursive",
+		"fs:allow-appcache-read-recursive",
 		"core:path:default",
 		"virtual-keyboard:default",
 		"sentry-reporting:default",
+		"audio-recorder:default",
 		{
 			"identifier": "opener:allow-open-url",
 			"allow": [{ "url": "http://*" }, { "url": "https://*" }]

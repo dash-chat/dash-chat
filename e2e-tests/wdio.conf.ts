@@ -1,74 +1,110 @@
 /**
- * Unified e2e config. The PLATFORMS env var lists the agents to launch as an
- * unordered multiset of platforms (default `desktop,desktop`) — `desktop`
- * (tauri-driver against the built binary), `android` (physical device via
+ * Unified e2e config. Every agent a spec asks for that no phone fills is a
+ * desktop agent — the host's own build, driven through its embedded WebDriver
+ * server — launched for that spec file. The PHONES env var lists the phones
+ * the run drives as an unordered multiset — `android` (physical device via
  * Appium), `android-emulator` (running emulator via Appium), or `ios`
- * (connected iPhone via Appium/XCUITest) — so any combo runs through this one
- * config, e.g. `PLATFORMS=ios,ios just e2e run send-messages`. Combos are bound
- * by host OS, though: `desktop` needs Linux (tauri-driver/WebKitGTK), `ios` needs
- * macOS + a device, so they can't share one host.
+ * (connected iPhone via Appium/XCUITest) — e.g.
+ * `PHONES=ios,ios just e2e run send-messages`; `ios` needs macOS.
  */
+import { setOptions } from 'expect-webdriverio';
 import type { ChildProcess } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { UI_TIMEOUT } from './helpers/timeouts';
-import { killLeftoverMailboxServers } from './setup/cleanup';
+import { AndroidNotifications } from './helpers/components/notifications/android';
+import { IosNotifications } from './helpers/components/notifications/ios';
+import { notificationMatchers } from './helpers/components/notifications/matchers';
+import { RENDER_SETTLE_WINDOW, UI_TIMEOUT } from './helpers/timeouts';
+import { buildFrontend } from './setup/app-build';
+import { startAppium } from './setup/appium-server';
+import { claimAllWhenFreeSync, release } from './setup/claims';
 import {
-	buildMailboxServer,
+	killAllE2EProcesses,
+	killLeftoverLocalHubs,
+	killLeftoverMailboxServers,
+} from './setup/cleanup';
+import {
+	failureSlug,
+	failuresDir,
+	saveFailureScreenshot,
+} from './setup/failure-screenshots';
+import { removeDirWithRetries, signalGroup } from './setup/host-process';
+import { releaseWifiDevice } from './setup/host-wifi';
+import { LOCAL_HUB_PACKAGE } from './setup/local-hub';
+import { ensureLoopback } from './setup/loopback';
+import { ensureHealthyMailbox, isRemoteMailbox } from './setup/mailbox-control';
+import {
+	buildCargoPackages,
 	startLocalMailboxServer,
 } from './setup/mailbox-server';
+import { CHECKOUT_CLAIM } from './setup/network-id';
 import { type AndroidKind, AndroidPlatform } from './setup/platforms/android';
-import { DesktopPlatform } from './setup/platforms/desktop';
-import { IosPlatform } from './setup/platforms/ios';
+import { buildDesktopApp, stopDesktopAgents } from './setup/platforms/desktop';
+import { IosPlatform, clearIosAppData } from './setup/platforms/ios';
 import type { AgentPlatform } from './setup/platforms/platform';
 import {
 	buildPushServer,
 	pushTestingEnabled,
 	startLocalPushServer,
 } from './setup/push-server';
+import { ensureHealthyRelay, startLocalRelay } from './setup/relay-server';
+import { specAgents } from './setup/setup-agents';
 import {
-	type AgentPlatformName,
+	type PhonePlatformName,
 	getSpecFileRetries,
-	platformNames,
+	phonePlatforms,
 	remoteMailboxUrl,
 } from './setup/test-env';
+import { startToxiproxy } from './setup/toxiproxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
-const nameBySlot = new Map<number, AgentPlatformName>(
-	platformNames().map((name, i) => [i + 1, name]),
+const nameBySlot = new Map<number, PhonePlatformName>(
+	phonePlatforms().map((name, i) => [i + 1, name]),
 );
 
-const desktopSlots = [...nameBySlot]
-	.filter(([, name]) => name === 'desktop')
-	.map(([slot]) => slot);
 const iosSlots = [...nameBySlot]
 	.filter(([, name]) => name === 'ios')
 	.map(([slot]) => slot);
 const androidKinds = new Map<number, AndroidKind>(
 	[...nameBySlot].filter(
-		(entry): entry is [number, AndroidKind] =>
-			entry[1] !== 'desktop' && entry[1] !== 'ios',
+		(entry): entry is [number, AndroidKind] => entry[1] !== 'ios',
 	),
 );
 
-/** The host mailbox-server build, kicked off before the Android platform is
- * constructed so it overlaps the emulator boots that block construction.
- * Awaited in onPrepare. */
+// Before anything is built, killed or claimed: the launcher waits for any run
+// already going in this checkout — its data dir and baked network id are one
+// per checkout. Workers inherit the launcher's claim.
+if (process.env.WDIO_WORKER_ID === undefined) {
+	claimAllWhenFreeSync([{ candidates: [CHECKOUT_CLAIM], needed: 1 }]);
+}
+
+/** The host mailbox-server build — plus the standalone hub the discovery
+ * specs spawn — kicked off before the Android platform is constructed so it
+ * overlaps the emulator boots that block construction. Awaited in onPrepare. */
 const mailboxBuild =
 	process.env.WDIO_WORKER_ID === undefined && remoteMailboxUrl() === null
-		? buildMailboxServer()
+		? buildCargoPackages([
+				'mailbox-server',
+				'relay-local-server',
+				LOCAL_HUB_PACKAGE,
+			])
 		: null;
 // Register a handler now so a build failure before onPrepare awaits the
 // promise doesn't crash node with an unhandled rejection.
 mailboxBuild?.catch(() => {});
 
-/** The push-notifications-server build, only when FCM_SERVICE_ACCOUNT_KEY is set
- * (the real-device push spec). Gated on the env var (not the throwing
- * pushServiceAccountKey()) so a bad path surfaces in onPrepare, not at load. */
+/** The e2e frontend build, overlapping the mailbox build; awaited before the
+ * platform builds that embed it. */
+const frontendBuild =
+	process.env.WDIO_WORKER_ID === undefined ? buildFrontend() : null;
+frontendBuild?.catch(() => {});
+
+/** The push-notifications-server build, only when a service-account key is
+ * present and a mobile agent runs (the real-device push spec). */
 const pushEnabled =
 	process.env.WDIO_WORKER_ID === undefined && pushTestingEnabled();
 const pushServerBuild = pushEnabled ? buildPushServer() : null;
@@ -77,10 +113,7 @@ pushServerBuild?.catch(() => {});
 const android =
 	androidKinds.size > 0 ? new AndroidPlatform(androidKinds) : null;
 const ios = iosSlots.length > 0 ? new IosPlatform(iosSlots) : null;
-const desktop =
-	desktopSlots.length > 0 ? new DesktopPlatform(desktopSlots) : null;
 const platforms: AgentPlatform[] = [];
-if (desktop !== null) platforms.push(desktop);
 if (android !== null) platforms.push(android);
 if (ios !== null) platforms.push(ios);
 
@@ -93,17 +126,44 @@ function agentEntry(slot: number) {
 	return platform.remoteOptions(slot);
 }
 
+/** The run's fixed sessions: one per phone. wdio refuses a run with none, so
+ *  a phone-less run gets one on webdriverio's protocol stub, which opens no
+ *  session and drives nothing. */
+function sessionEntries() {
+	if (nameBySlot.size === 0) {
+		return {
+			host: { automationProtocol: './protocol-stub.js', capabilities: {} },
+		};
+	}
+	return Object.fromEntries(
+		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
+	);
+}
+
 let mailboxServer: ChildProcess | undefined;
 let mailboxLogger: ChildProcess | undefined;
 let pushServer: ChildProcess | undefined;
 let pushLogger: ChildProcess | undefined;
+let toxiproxy: ChildProcess | undefined;
+let toxiproxyLogger: ChildProcess | undefined;
+let appium: ChildProcess | undefined;
+let mailboxTls: ChildProcess | undefined;
+let mailboxTlsLogger: ChildProcess | undefined;
+let relay: ChildProcess | undefined;
+let relayLogger: ChildProcess | undefined;
 
 async function teardown() {
-	for (const server of [mailboxServer, pushServer]) {
+	for (const server of [
+		mailboxServer,
+		mailboxTls,
+		relay,
+		pushServer,
+		toxiproxy,
+		appium,
+	]) {
 		if (server?.pid) {
-			// Negative PID = signal the entire detached process group.
 			try {
-				process.kill(-server.pid, 'SIGTERM');
+				signalGroup(server.pid, 'SIGTERM');
 			} catch {
 				/* already gone */
 			}
@@ -112,8 +172,15 @@ async function teardown() {
 	for (const platform of platforms) {
 		await platform.onComplete();
 	}
+	killAllE2EProcesses();
+	// A mailbox a spec respawned isn't `mailboxServer`, and would outlive the run.
+	killLeftoverMailboxServers();
 	mailboxLogger?.kill();
 	pushLogger?.kill();
+	toxiproxyLogger?.kill();
+	mailboxTlsLogger?.kill();
+	relayLogger?.kill();
+	release(CHECKOUT_CLAIM);
 }
 
 /** Save a per-agent screenshot of the current webview to .dbs/e2e/failures/. */
@@ -121,19 +188,37 @@ async function saveFailureScreenshots(test: {
 	parent: string;
 	title: string;
 }): Promise<void> {
-	const dir = path.join(ROOT, '.dbs', 'e2e', 'failures');
-	mkdirSync(dir, { recursive: true });
-	const slug = `${test.parent} ${test.title}`
-		.replace(/[^a-zA-Z0-9]+/g, '-')
-		.slice(0, 80);
-	for (const name of browser.instances) {
+	const dir = failuresDir();
+	const slug = failureSlug(`${test.parent} ${test.title}`);
+	for (const [i, agent] of specAgents.entries()) {
+		await saveFailureScreenshot(
+			agent,
+			path.join(dir, `${slug}-agent${i + 1}.png`),
+		);
+	}
+}
+
+/** After a failure, put every phone whose session was left outside the app's
+ *  webview — on a notification shade, in Settings — back in it: otherwise
+ *  every test after it fails on an unrelated-looking selector. A phone still
+ *  in the webview is left alone, since the way back from a shade (Back on
+ *  Android) would move the app itself. */
+async function recoverPhones(): Promise<void> {
+	for (const slot of [...androidKinds.keys(), ...iosSlots]) {
+		const b = browser.getInstance(`agent${slot}`);
 		try {
-			await browser
-				.getInstance(name)
-				.saveScreenshot(path.join(dir, `${slug}-${name}.png`));
+			const context = await b.getContext();
+			const id = typeof context === 'string' ? context : context.id;
+			if (id.startsWith('WEBVIEW')) continue;
 		} catch {
-			/* session may already be dead */
+			// Where the session is cannot be told, and a guess could press
+			// Back on the app itself.
+			continue;
 		}
+		const helper = iosSlots.includes(slot)
+			? new IosNotifications(b)
+			: new AndroidNotifications(b);
+		await helper.recover();
 	}
 }
 
@@ -145,27 +230,7 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	maxInstances: 1,
 	specFileRetries: getSpecFileRetries(),
 
-	capabilities: Object.fromEntries(
-		[...nameBySlot.keys()].map(slot => [`agent${slot}`, agentEntry(slot)]),
-	),
-
-	// The appium server's own log only reaches the console as truncated warnings,
-	// so keep the full one on disk — device-side failures (usbmux timeouts, WDA
-	// signing) are only diagnosable from it.
-	services:
-		appiumPort !== null
-			? [
-					[
-						'appium',
-						{
-							args: {
-								port: appiumPort,
-								log: path.join(ROOT, '.dbs', 'e2e', 'appium.log'),
-							},
-						},
-					],
-				]
-			: [],
+	capabilities: sessionEntries(),
 
 	logLevel: 'warn',
 	waitforTimeout: UI_TIMEOUT,
@@ -175,7 +240,10 @@ export const config: WebdriverIO.MultiremoteConfig = {
 	framework: 'mocha',
 	mochaOpts: {
 		ui: 'bdd',
-		timeout: 120_000,
+		// Phones and emulators can spend minutes on app cold starts and p2p
+		// syncs that desktop finishes in seconds, so give their hooks and
+		// tests more headroom.
+		timeout: android !== null || ios !== null ? 300_000 : 120_000,
 		// Fails any test during which an agent hit an uncaught error.
 		require: [path.join(__dirname, 'setup', 'fail-on-uncaught-errors.ts')],
 	},
@@ -192,18 +260,28 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		// A failed onPrepare must abort the run: wdio only logs hook errors and
 		// would carry on into sessions doomed to hang out their timeouts.
 		try {
+			ensureLoopback();
+			// Before the wipe: anything still running holds handles under
+			// `.dbs/e2e` and goes on writing, which leaves the dir dirty behind
+			// the wipe.
+			killLeftoverMailboxServers();
+			// A desktop run clears its own app processes, but a leftover agent
+			// outlives a phone-only run, where nothing used to clear it: it goes
+			// on announcing itself over mDNS under the run's own network id, and
+			// every agent that finds it spends a discovery session timing out on
+			// a node that will never answer.
+			killAllE2EProcesses();
+
 			// Clean up leftover databases from previous interrupted runs
 			const dataDir = path.join(ROOT, '.dbs', 'e2e');
 			try {
-				rmSync(dataDir, { recursive: true, force: true });
+				removeDirWithRetries(dataDir);
 			} catch {
 				// ignore
 			}
-			// The appium service starts right after this hook and writes its log
-			// here, so the directory has to exist before the first server does.
+			// Appium writes its log here, so the directory has to exist before
+			// the first server does.
 			mkdirSync(dataDir, { recursive: true });
-
-			killLeftoverMailboxServers();
 
 			// When MAILBOX_URL names a deployment environment, run against its
 			// cloud mailbox instead of spawning a local server. Specs that drive
@@ -228,17 +306,27 @@ export const config: WebdriverIO.MultiremoteConfig = {
 				}
 
 				await mailboxBuild;
+				({ proc: relay, logger: relayLogger } = await startLocalRelay());
+				// The mailbox's public port is a link through this, for the
+				// specs that degrade it.
+				({ proc: toxiproxy, logger: toxiproxyLogger } = await startToxiproxy());
 				// Start a local mailbox server so e2e tests don't hit the internet.
 				({
 					proc: mailboxServer,
 					logger: mailboxLogger,
+					tls: mailboxTls,
+					tlsLogger: mailboxTlsLogger,
 					port: mailboxPort,
 				} = await startLocalMailboxServer(pushUrl));
 			}
 
+			await frontendBuild;
+			buildDesktopApp();
+
 			for (const platform of platforms) {
 				await platform.onPrepare({ mailboxPort, pushPort });
 			}
+			if (appiumPort !== null) appium = await startAppium(appiumPort);
 		} catch (err) {
 			console.error('onPrepare failed, aborting run:', err);
 			// process.exit skips onComplete — tear down the already-started
@@ -258,20 +346,51 @@ export const config: WebdriverIO.MultiremoteConfig = {
 		}
 	},
 
+	/** Negated expect matchers (`.not.toBeExisting()`, …) poll their full wait
+	 * before passing, so the 30s waitforTimeout default turns every absence
+	 * assertion into a 30s stall. Cap all matchers at the settle window; an
+	 * assertion that genuinely needs longer opts in with `{ wait: UI_TIMEOUT }`. */
+	async before() {
+		setOptions({ wait: RENDER_SETTLE_WINDOW });
+		expect.extend(notificationMatchers);
+		killLeftoverLocalHubs();
+		// Before the mailbox, which exits unless it reaches the relay within 10s.
+		if (!isRemoteMailbox()) await ensureHealthyRelay();
+		await ensureHealthyMailbox();
+	},
+
 	/** On failure, save a per-agent screenshot to .dbs/e2e/failures/ so flakes
 	 * that only reproduce on slow devices leave usable evidence behind. A skip
 	 * is reported as `passed: false` with no error (wdio sets
 	 * `passed: !error && !skip`), so only an error counts as a failure — a spec
 	 * that skips itself for the launched platforms must not leave one behind. */
 	async afterTest(test, _context, result) {
-		if (result.error !== undefined) await saveFailureScreenshots(test);
+		if (result.error === undefined) return;
+		await saveFailureScreenshots(test);
+		await recoverPhones();
 	},
 
 	async afterHook(test, _context, result) {
-		if (result.error !== undefined) await saveFailureScreenshots(test);
+		if (result.error === undefined) return;
+		await saveFailureScreenshots(test);
+		await recoverPhones();
+	},
+
+	async after() {
+		for (const slot of iosSlots) {
+			await clearIosAppData(browser.getInstance(`agent${slot}`));
+		}
+		android?.clearAppData();
+		killLeftoverLocalHubs();
+		if (!isRemoteMailbox()) await ensureHealthyRelay();
+		await ensureHealthyMailbox();
+		// Not in afterSession: wdio skips it when the only session is the
+		// desktop-only stub, which has no session id.
+		await stopDesktopAgents();
 	},
 
 	async afterSession() {
+		releaseWifiDevice();
 		for (const platform of platforms) {
 			await platform.afterSession();
 		}

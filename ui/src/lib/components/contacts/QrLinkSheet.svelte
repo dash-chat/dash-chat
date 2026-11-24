@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
-	import { Sheet } from 'konsta/svelte';
 	import { mdiContentCopy } from '@mdi/js';
 	import { mdiShare } from '$lib/utils/icon';
 	import { shareText } from '$lib/utils/share';
@@ -9,6 +8,7 @@
 	import ActionList from '$lib/components/navigation/ActionList.svelte';
 	import ListAction from '$lib/components/navigation/ListAction.svelte';
 	import BorderedBox from '$lib/components/BorderedBox.svelte';
+	import SwipeableSheet from '$lib/components/SwipeableSheet.svelte';
 	import SheetHandle from '$lib/components/SheetHandle.svelte';
 	import { isIos } from '$lib/utils/environment';
 
@@ -32,11 +32,11 @@
 	const elevatedSurface = 'bg-ios-light-surface-1 dark:bg-white/10';
 </script>
 
-<Sheet
+<SwipeableSheet
 	class="pb-safe"
 	colors={{ bgIos: 'bg-ios-light-surface dark:bg-ios-dark-surface-1' }}
 	{opened}
-	onBackdropClick={onClose}
+	{onClose}
 >
 	<div class="flex-col" data-testid="qr-link-sheet">
 		<div class="flex flex-col items-center gap-6 px-4">
@@ -75,4 +75,4 @@
 			</ActionList>
 		</div>
 	</div>
-</Sheet>
+</SwipeableSheet>

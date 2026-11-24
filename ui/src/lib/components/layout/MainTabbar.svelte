@@ -1,0 +1,79 @@
+<script lang="ts">
+	import { page } from '$app/state';
+	import { TabbarLink, Toolbar, ToolbarPane, useTheme } from 'konsta/svelte';
+	import chatsSvg from '$lib/assets/main-tabbar/chats.svg?raw';
+	import settingsSvg from '$lib/assets/main-tabbar/settings.svg?raw';
+	import { m } from '$lib/paraglide/messages.js';
+	import ChatsUnreadBadge from '../ChatsUnreadBadge.svelte';
+	import HubWarningBadge from '../HubWarningBadge.svelte';
+
+	const isSettings = $derived(page.url.pathname.startsWith('/settings'));
+	const theme = $derived(useTheme());
+	// Konsta stretches the iOS bar across the screen; Signal's hugs its tabs.
+	const hugTabs = $derived(theme === 'ios' ? 'w-auto!' : '');
+	// Signal's bar sits inside the home-indicator inset.
+	const barOffset = $derived(
+		theme === 'ios'
+			? 'pb-[max(16px,calc(var(--k-safe-area-bottom)-13px))]!'
+			: '',
+	);
+	// Konsta sizes the fade behind the bar for its own, higher offset.
+	const barFade = $derived(
+		theme === 'ios'
+			? 'h-[calc(max(16px,calc(var(--k-safe-area-bottom)-13px))+80px)]!'
+			: '',
+	);
+	// Konsta caps a Material tab at 48px inside its 80px bar, which squashes
+	// the active pill; Signal's pill is 60 by 36.
+	const tabClass = $derived(
+		theme === 'ios'
+			? 'min-w-28'
+			: 'max-h-none! [&_.k-tabbar-link-icon]:h-9 [&_.k-tabbar-link-icon]:w-15',
+	);
+	// Signal's active iOS tab stays neutral instead of taking the accent colour.
+	const tabColors = { textActiveIos: 'text-black dark:text-white' };
+</script>
+
+<Toolbar
+	tabbar
+	tabbarLabels
+	tabbarIcons
+	class={barOffset}
+	bgClass={barFade}
+	innerClass={hugTabs}
+>
+	<ToolbarPane class={hugTabs}>
+		<TabbarLink
+			class={tabClass}
+			colors={tabColors}
+			active={!isSettings}
+			label={m.chats()}
+			linkProps={{ href: '/' }}
+			data-testid="main-tab-chats"
+		>
+			{#snippet icon()}
+				<ChatsUnreadBadge>
+					<span class="block size-6 *:size-full">
+						{@html chatsSvg}
+					</span>
+				</ChatsUnreadBadge>
+			{/snippet}
+		</TabbarLink>
+		<TabbarLink
+			class={tabClass}
+			colors={tabColors}
+			active={isSettings}
+			label={m.settings()}
+			linkProps={{ href: '/settings' }}
+			data-testid="main-tab-settings"
+		>
+			{#snippet icon()}
+				<HubWarningBadge>
+					<span class="block size-6 *:size-full">
+						{@html settingsSvg}
+					</span>
+				</HubWarningBadge>
+			{/snippet}
+		</TabbarLink>
+	</ToolbarPane>
+</Toolbar>

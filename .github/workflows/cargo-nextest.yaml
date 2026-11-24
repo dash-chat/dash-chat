@@ -6,12 +6,17 @@ on:
     branches: [ main, 'main-**', develop ]
 
 jobs:
-  cargo-nextest:
-    runs-on: ubuntu-latest
+  cargo-nextest-platform:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt install libwebkit2gtk-4.1-dev \
@@ -22,7 +27,8 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            libasound2-dev
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -37,5 +43,44 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
+      # On Windows the Tauri crate's test binary dies at startup with
+      # STATUS_ENTRYPOINT_NOT_FOUND: https://github.com/tauri-apps/tauri/issues/13419
       - name: Test
-        run: cargo nextest run
+        run: cargo nextest run ${{ runner.os == 'Windows' && '--workspace --exclude dash-chat' || '' }}
+
+  # The required check is named `cargo-nextest`, and a skipped required check
+  # counts as passing, so this always runs and fails unless every platform
+  # succeeded.
+  cargo-nextest:
+    if: always()
+    needs: cargo-nextest-platform
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.cargo-nextest-platform.result }}" = success
+
+  # The panic policy is a release-profile property that only a release-built
+  # binary on an Apple target can exercise; nextest builds debug on Linux.
+  panic-policy-release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # See ios-build.yaml: the homebrew shims would otherwise shadow rustup.
+      - name: Remove broken homebrew rust shims
+        run: rm -f /opt/homebrew/bin/cargo /opt/homebrew/bin/rustc /opt/homebrew/bin/rustup /opt/homebrew/bin/rustup-init
+
+      # An explicit toolchain makes the action skip rust-toolchain.toml, whose
+      # Android and iOS targets this host-only test never uses.
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.96.0
+          rustflags: ''
+
+      - name: Cache Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Test the release panic policy
+        run: cargo test --release -p panic-policy

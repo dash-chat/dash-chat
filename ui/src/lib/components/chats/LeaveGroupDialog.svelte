@@ -41,6 +41,7 @@
 <ActionDialog
 	{opened}
 	onCancel={() => (opened = false)}
+	cancelTestId="group-info-leave-cancel"
 	title={m.leaveGroup()}
 	description={m.areYouSureLeaveGroup()}
 	actions={[

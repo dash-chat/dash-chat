@@ -1,6 +1,8 @@
+use dashchat_utils::SeqNum;
+use p2panda::groups::GroupsArgs;
 use p2panda::operation::Header;
 use p2panda::{Hash, VerifyingKey};
-use p2panda_auth::{group::GroupAction, processor::GroupsArgs};
+use p2panda_auth::group::GroupAction;
 use p2panda_core::Body;
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
@@ -43,7 +45,7 @@ pub enum AnnouncementsPayload {
 pub enum InboxPayload {
     /// Invites the recipient to add the sender as a contact. `reply_topic` is a
     /// private inbox the sender created for this exchange; the recipient sends
-    /// its `ContactRequestAck` there rather than on the (possibly shared)
+    /// its `ContactRequestAccept` there rather than on the (possibly shared)
     /// advertised inbox, so other scanners of the same QR code never see it.
     /// `agent_id` is the sender's agent id; the recipient records it against the
     /// op author (device_pubkey)
@@ -57,7 +59,7 @@ pub enum InboxPayload {
     /// immediately rather than waiting for announcements sync. `agent_id` is the
     /// owner's agent id; the scanner records it against the op author
     /// (device_pubkey), a step toward dropping `agent_id` from the QR code.
-    ContactRequestAck { profile: Profile, agent_id: AgentId },
+    ContactRequestAccept { profile: Profile, agent_id: AgentId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +87,8 @@ pub enum ChatPayload {
     /// this JoinGroup message 1:1, to increase their ability to receive it.
     JoinGroup {
         chat_id: ChatId,
+        /// The Create or Add operation in `chat_id` that adds the invitee
+        add_member_operation_hash: Hash,
     },
 
     Message(ChatMessageContent),
@@ -139,6 +143,26 @@ pub enum ChatPayload {
     IntroduceAgents {
         agents: BTreeMap<DeviceId, AgentId>,
     },
+
+    /// Delivery acknowledgement: records, per author, the latest operation on
+    /// this chat topic that the acker has processed. Acks are delta-encoded:
+    /// each `MessageAck` only contains entries that changed since the acker's
+    /// previous one, so the acker's full map is the fold, in order, of all
+    /// their `MessageAck` operations. Acking an operation covers everything
+    /// at or below its `seq` in that author's log. `MessageAck` operations
+    /// themselves are never acked.
+    MessageAck {
+        acks: BTreeMap<DeviceId, AckedOp>,
+    },
+}
+
+/// An entry in a [`ChatPayload::MessageAck`] map. `seq` duplicates the
+/// referenced operation's seq_num so receivers can do coverage checks without
+/// resolving `hash` against a log they may not have fully synced yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AckedOp {
+    pub hash: Hash,
+    pub seq: SeqNum,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -170,23 +194,28 @@ pub struct DeleteForMePayload {
     pub message_hash: Hash,
 }
 
+/// Recorded by the scanner the moment it sends a contact request, before it
+/// knows the owner's agent id (the QR code no longer carries it). Keyed on
+/// the owner's device pubkey — the only identity the scanner has at that
+/// point — so the UI can show a "waiting for profile" placeholder chat.
+/// Superseded by the `AddContact` marker once the owner's ack arrives and
+/// the device -> agent mapping is known.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PendingContactRequest {
+    pub device_pubkey: DeviceId,
+    #[serde(default)]
+    pub profile_name: String,
+    pub direct_chat_topic_id: ChatId,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DeviceGroupPayload {
     AddContact {
         agent_id: AgentId,
+        direct_chat_topic_id: ChatId,
     },
-    /// Recorded by the scanner the moment it sends a contact request, before it
-    /// knows the owner's agent id (the QR code no longer carries it). Keyed on
-    /// the owner's device pubkey — the only identity the scanner has at that
-    /// point — so the UI can show a "waiting for profile" placeholder chat.
-    /// Superseded by the `AddContact` marker once the owner's ack arrives and
-    /// the device -> agent mapping is known.
-    PendingContactRequest {
-        device_pubkey: DeviceId,
-        #[serde(default)]
-        profile_name: String,
-    },
+    PendingContactRequest(PendingContactRequest),
     RejectContactRequest(AgentId),
     BlockAgent(AgentId),
     UnblockAgent(AgentId),
@@ -252,7 +281,7 @@ impl Cbor for Payload {}
 impl AsBody for Payload {}
 
 pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec<u8>, EncodeError> {
-    encode_cbor(&(header.to_bytes(), body.map(|body| body.to_bytes())))
+    encode_cbor(&(header.encode(), body.map(|body| body.to_bytes())))
 }
 
 pub fn decode_gossip_message(bytes: &[u8]) -> Result<(Vec<u8>, Option<Vec<u8>>), DecodeError> {
@@ -264,7 +293,7 @@ mod sqlx_impls {
     use super::Profile;
     use p2panda_core::cbor::{decode_cbor, encode_cbor};
     use sqlx::*;
-    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+    use sqlx::{Sqlite, encode::IsNull, error::BoxDynError};
 
     impl sqlx::Type<Sqlite> for Profile {
         fn type_info() -> <Sqlite as sqlx::Database>::TypeInfo {
@@ -275,7 +304,7 @@ mod sqlx_impls {
     impl sqlx::Encode<'_, Sqlite> for Profile {
         fn encode_by_ref(
             &self,
-            buf: &mut Vec<SqliteArgumentValue<'_>>,
+            buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
         ) -> Result<IsNull, BoxDynError> {
             let bytes = encode_cbor(self)?;
             <Vec<u8> as sqlx::Encode<Sqlite>>::encode(bytes, buf)

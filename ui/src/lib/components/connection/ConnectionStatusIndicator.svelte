@@ -1,119 +1,80 @@
 <script lang="ts">
-	import type { MailboxTrackerStore } from 'dash-chat-stores';
-	import { useReactivePromise } from '$lib/stores/use-signal';
-	import { getContext, type Snippet } from 'svelte';
-	import { wrapPathInSvg } from '$lib/utils/icon';
-	import { mdiEmoticonPoop } from '@mdi/js';
-	import { Chip, Dialog, DialogButton } from 'konsta/svelte';
+	import type {
+		IOnlinePeersStore,
+		MailboxTrackerStore,
+	} from 'dash-chat-stores';
+	import { useReactivePromises } from '$lib/stores/use-signal';
+	import { getContext } from 'svelte';
+	import { renderingResumedAt } from '$lib/stores/rendering-resumed.svelte';
+	import {
+		connectionModes,
+		connectionStatus,
+		UNKNOWN_CONNECTION_MODES,
+		type ConnectionModes,
+		type ConnectionStatus,
+	} from './connection-status';
+	import type { ConnectionStatusTag } from './connection-status-tags';
 	import { m } from '$lib/paraglide/messages.js';
+	import { onActivate } from '$lib/utils/keyboard';
+	import ConnectionModeDialog from './ConnectionModeDialog.svelte';
+	import ConnectionStatusIcon from './ConnectionStatusIcon.svelte';
 
 	const mailboxTrackerStore: MailboxTrackerStore = getContext(
 		'mailbox-tracker-store',
 	);
+	const onlinePeersStore: IOnlinePeersStore = getContext('online-peers-store');
 
-	const connectionStatus = useReactivePromise(
-		mailboxTrackerStore.connectionStatus,
-	);
+	const inputs = useReactivePromises(() => [
+		mailboxTrackerStore.connectionStatusForAllMailboxes(),
+		onlinePeersStore.onlinePeersInAnyChat(),
+	]);
+
+	const ariaLabels: Record<ConnectionStatusTag, () => string> = {
+		cloud: m.connectionStatusCloudAriaLabel,
+		pending: m.connectionStatusPendingAriaLabel,
+		local: m.connectionStatusLocalAriaLabel,
+		p2p: m.connectionStatusP2pAriaLabel,
+		disconnected: m.connectionStatusDisconnectedAriaLabel,
+	};
 
 	let dialogOpened = $state(false);
-
-	// Konsta's Dialog type intersects with HTMLAttributes (which has `title?: string`),
-	// so a Snippet for `title` can't be passed without a cast.
-	const asTitle = (snippet: Snippet) => snippet as unknown as string;
 </script>
 
-{#await $connectionStatus then connectionStatus}
-	{@const localCount = connectionStatus.connectedLocalMailboxCount}
-	{@const isLocal = localCount > 0}
-	{#if !connectionStatus.connectedToCloudMailboxServer}
-		<Chip
-			data-testid="connection-status"
-			data-status={isLocal ? 'local' : 'disconnected'}
-			class="p-1 cursor-pointer"
-			colors={{
-				fillBgIos: 'bg-black/10 dark:bg-brand-primary',
-				fillBgMaterial: 'bg-md-light-secondary-container dark:bg-brand-primary',
-			}}
-			role="button"
-			tabindex={0}
-			aria-label={isLocal
-				? m.connectionStatusLocalAriaLabel()
-				: m.connectionStatusDisconnectedAriaLabel()}
-			onClick={() => (dialogOpened = true)}
-			onkeydown={(e: KeyboardEvent) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					dialogOpened = true;
-				}
-			}}
-		>
-			{#if isLocal}
-				<wa-icon
-					class="connection-status"
-					src="/localmailboxserver.svg"
-					aria-hidden="true"
-				></wa-icon>
-			{:else}
-				<wa-icon
-					class="connection-status"
-					src={wrapPathInSvg(mdiEmoticonPoop)}
-					aria-hidden="true"
-				></wa-icon>
-			{/if}
-		</Chip>
+{#snippet chip(status: ConnectionStatus, modes: ConnectionModes)}
+	<span
+		data-testid="connection-status"
+		data-status={status.status}
+		class="flex cursor-pointer"
+		role="button"
+		tabindex={0}
+		aria-label={ariaLabels[status.status]()}
+		onclick={() => (dialogOpened = true)}
+		onkeydown={onActivate(() => (dialogOpened = true))}
+	>
+		<span class="flex w-[35px] justify-center" aria-hidden="true">
+			<ConnectionStatusIcon {status} />
+		</span>
+	</span>
 
-		{#snippet titleSlot()}
-			<div class="flex flex-row items-center gap-2">
-				<wa-icon
-					class="connection-status-dialog-icon"
-					src={isLocal
-						? '/localmailboxserver.svg'
-						: wrapPathInSvg(mdiEmoticonPoop)}
-					aria-hidden="true"
-				></wa-icon>
-				<span data-testid="connection-status-dialog-title">
-					{isLocal
-						? m.connectionStatusLocalTitle()
-						: m.connectionStatusDisconnectedTitle()}
-				</span>
-			</div>
-		{/snippet}
+	<ConnectionModeDialog
+		bind:opened={dialogOpened}
+		isolated={status.status === 'disconnected'}
+		{modes}
+	/>
+{/snippet}
 
-		<Dialog
-			data-testid="connection-status-dialog"
-			opened={dialogOpened}
-			onBackdropClick={() => (dialogOpened = false)}
-			title={asTitle(titleSlot)}
-		>
-			<span data-testid="connection-status-dialog-description">
-				{#if isLocal}
-					{m.connectionStatusLocalDescription({ count: localCount })}
-				{:else}
-					{m.connectionStatusDisconnectedDescription()}
-				{/if}
-			</span>
-
-			{#snippet buttons()}
-				<DialogButton
-					data-testid="connection-status-dialog-close"
-					onClick={() => (dialogOpened = false)}
-				>
-					{m.close()}
-				</DialogButton>
-			{/snippet}
-		</Dialog>
-	{/if}
+{#await $inputs}
+	{@render chip({ status: 'pending' }, UNKNOWN_CONNECTION_MODES)}
+{:then [mailboxes, onlinePeers]}
+	{@render chip(
+		connectionStatus(
+			mailboxes,
+			onlinePeers.length > 0,
+			renderingResumedAt.value,
+		),
+		connectionModes(mailboxes, onlinePeers.length, renderingResumedAt.value),
+	)}
+{:catch}
+	<!-- A store that stalls rejects here, and can still resolve later. -->
+	{@render chip({ status: 'pending' }, UNKNOWN_CONNECTION_MODES)}
 {/await}
-
-<style>
-	.connection-status {
-		color: var(--color-brand-primary);
-		font-size: 28px;
-	}
-	.connection-status-dialog-icon {
-		font-size: 32px;
-	}
-	:global(.dark) .connection-status {
-		color: white;
-	}
-</style>

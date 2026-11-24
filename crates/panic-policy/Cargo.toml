@@ -1,0 +1,16 @@
+[package]
+name = "panic-policy"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+log = "0.4"
+
+[dev-dependencies]
+libc = "0.2"
+
+# Only the example child in tests raises an Objective-C exception.
+[target.'cfg(target_vendor = "apple")'.dev-dependencies]
+objc2 = { version = "0.6", features = ["exception"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSException", "NSObjCRuntime", "NSString", "NSObject", "NSDictionary"] }

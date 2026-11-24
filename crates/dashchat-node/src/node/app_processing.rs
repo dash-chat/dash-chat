@@ -6,14 +6,18 @@ use p2panda::operation::Header;
 use p2panda::streams::{ProcessedOperation, Source, StreamEvent};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
+use crate::AckedOp;
 use crate::forward_edit_closure;
 use crate::node::actor::{ProcessorError, ProcessorEvent};
+use crate::node::backlog_monitor::BacklogMonitor;
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
 use super::*;
+
+const BACKLOG_SAMPLE_SECS: u64 = 30;
 
 #[derive(Clone, Debug, Serialize, Deserialize, From)]
 pub enum Notification {
@@ -42,6 +46,7 @@ impl Notification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpNotification {
     pub topic: TopicId,
+    #[serde(with = "crate::header_serde")]
     pub header: Header,
     pub payload: Option<Payload>,
 }
@@ -49,11 +54,25 @@ pub struct OpNotification {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum SystemNotification {
+    /// A group chat was added (its group was created with an admin).
+    GroupChatAdded { chat_id: ChatId },
+    /// Members of a group chat were added, removed, promoted or demoted.
+    GroupMembersChanged { chat_id: ChatId },
+    /// Devices were introduced as belonging to agents.
+    AgentsIntroduced { agents: BTreeMap<DeviceId, AgentId> },
     /// A new tombstone has been created.
     Tombstones {
         topic: TopicId,
         hashes: BTreeSet<Hash>,
         reason: TombstoneReason,
+    },
+    /// New delivery acknowledgements were recorded for a chat topic. `acks`
+    /// carries only the entries that changed, already filtered to ackers of a
+    /// different agent than the author, so consumers can fold it into their
+    /// delivered state (max seq per author) without re-querying.
+    MessageAcks {
+        topic: TopicId,
+        acks: BTreeMap<DeviceId, AckedOp>,
     },
 }
 
@@ -69,7 +88,33 @@ impl Node {
     ) -> anyhow::Result<()> {
         self.local_store.register_topic_as_subscribed(topic).await?;
         self.initialize_topic(*topic).await?;
+        // What the topic already holds is waiting in the mailbox: fetch it
+        // now rather than at the next scheduled poll.
+        self.mailboxes.request_sync(Some((*topic).into())).await;
 
+        Ok(())
+    }
+
+    pub(crate) async fn register_chat_topic(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        self.register_topic(chat_id).await?;
+        self.join_presence(chat_id).await
+    }
+
+    pub(crate) async fn join_presence(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        if !self.config.enable_p2p {
+            return Ok(());
+        }
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let command = Command::PresenceStream {
+            topic: (*chat_id).into(),
+            reply_tx,
+        };
+        self.actor_tx
+            .send(command)
+            .await
+            .map_err(|_| anyhow!("node actor gone, cannot join presence"))?;
+        let stream = reply_rx.await??;
+        self.online_peers.join(*chat_id, stream).await;
         Ok(())
     }
 
@@ -82,14 +127,15 @@ impl Node {
     pub(crate) async fn initialize_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         topic.alias_numbered();
 
-        if self.subscribe_to_topic(topic).await? {
-            self.import_mailbox_stream(topic).await?;
-        };
+        self.subscribe_to_topic(topic).await?;
+        // Not gated on the subscription being new: publishing into a topic
+        // subscribes it too, without importing its mailbox stream.
+        self.import_mailbox_stream(topic).await?;
         Ok(())
     }
 
     /// Subscribe to a topic.
-    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<bool> {
+    async fn subscribe_to_topic(&self, topic: TopicId) -> anyhow::Result<()> {
         debug!(topic = ?topic.aliased(), "subscribe to topic");
 
         let (reply_tx, reply_rx) = oneshot::channel();
@@ -105,25 +151,31 @@ impl Node {
             return Err(anyhow!("Error sending on actor channel"));
         };
 
-        let subscribed = reply_rx.await??;
+        reply_rx.await??;
 
         if let Some(tx) = &self.topic_subscribed_tx {
             let _ = tx.send(topic).await;
         }
 
-        Ok(subscribed)
+        Ok(())
     }
 
-    /// Import external operation stream from a mailbox.
+    /// Import external operation stream from a mailbox, unless it is already imported.
     async fn import_mailbox_stream(&self, topic: TopicId) -> anyhow::Result<()> {
-        debug!(topic = ?topic.aliased(), "import mailbox stream");
-
         let Some(mailbox_rx) = self.mailboxes.subscribe(topic.into()).await? else {
-            tracing::warn!("topic already initialized, skipping");
             return Ok(());
         };
+        debug!(topic = ?topic.aliased(), "import mailbox stream");
 
         let stream = Box::pin(ReceiverStream::new(mailbox_rx).map(Operation::from));
+        self.import_stream(topic, stream).await
+    }
+
+    pub(super) async fn import_stream(
+        &self,
+        topic: TopicId,
+        stream: std::pin::Pin<Box<dyn futures::Stream<Item = Operation> + Send>>,
+    ) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
             .actor_tx
@@ -138,7 +190,7 @@ impl Node {
             return Err(anyhow!("Error sending on actor channel"));
         };
 
-        let _ = reply_rx.await?;
+        reply_rx.await??;
 
         Ok(())
     }
@@ -147,16 +199,24 @@ impl Node {
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me=?self.device_id().aliased())))]
     pub(super) fn spawn_application_processor_task(
         &self,
-        mut events_rx: mpsc::Receiver<ProcessorEvent>,
+        mut events_rx: mpsc::UnboundedReceiver<ProcessorEvent>,
         mut cancel_rx: mpsc::Receiver<()>,
     ) -> tokio::task::JoinHandle<()> {
         let node = self.clone();
 
         let handle = tokio::spawn(async move {
             let node = node.clone();
+            let mut backlog = BacklogMonitor::default();
+            let mut backlog_tick =
+                tokio::time::interval(std::time::Duration::from_secs(BACKLOG_SAMPLE_SECS));
 
             loop {
                 tokio::select! {
+                    // Sampled on a timer, so a processor parked inside one event
+                    // (e.g. on a stalled frontend notification channel) still gets its backlog reported.
+                    _ = backlog_tick.tick() => {
+                        backlog.sample(events_rx.len());
+                    }
                     Some(processor_event) = events_rx.recv() => {
                         match processor_event {
                             ProcessorEvent::System(event) => {
@@ -176,6 +236,14 @@ impl Node {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "groups operation processing");
+                                if !node.recorded_for_app(&operation).await {
+                                    if let Some(processed_tx) = processed_tx {
+                                        let _ = processed_tx.send(Err(ProcessorError::App(
+                                            "failed to record the operation for the app".into(),
+                                        )));
+                                    }
+                                    continue;
+                                }
 
                                 if let Some(err) = error {
                                     // @TODO: should consider if this is the desired behavior.
@@ -213,10 +281,24 @@ impl Node {
                                     tracing::error!(?err, "failed to acknowledge operation");
                                 }
                             },
+                            ProcessorEvent::ImportFailed { topic, error } => {
+                                error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
+                                if let Err(err) = node.mailboxes.unsubscribe(topic).await {
+                                    error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
+                                }
+                            }
                             ProcessorEvent::App { operation, source, processed_tx } => {
                                 let topic = operation.topic();
                                 let id = operation.id();
                                 tracing::info!(op = ?id.aliased(), topic = ?topic.aliased(), "application operation processing");
+                                if !node.recorded_for_app(&operation).await {
+                                    if let Some(processed_tx) = processed_tx {
+                                        let _ = processed_tx.send(Err(ProcessorError::App(
+                                            "failed to record the operation for the app".into(),
+                                        )));
+                                    }
+                                    continue;
+                                }
 
 
                                 // Process the operation.
@@ -264,6 +346,46 @@ impl Node {
         handle
     }
 
+    /// As the push extension, record `operation` for the app to process too,
+    /// unless the app acknowledged it already or authored it. Done before
+    /// processing it, so the record outlives the extension being killed
+    /// mid-way; returns whether to go on processing, since acknowledging an
+    /// unrecorded operation would hide it from the app for good.
+    async fn recorded_for_app(&self, operation: &ProcessedOperation<Payload>) -> bool {
+        if !self.config.record_processed_operations {
+            return true;
+        }
+        let author = DeviceId::from(operation.author());
+        if author == self.device_id() {
+            return true;
+        }
+        let topic = TopicId::from(operation.topic());
+        let header = operation.processed().header();
+        let recorded = async {
+            let acked = self
+                .op_store
+                .acked_log_height(&topic, &author, &header.extensions.log_id())
+                .await?;
+            if acked.is_some_and(|acked| acked >= header.seq_num) {
+                return anyhow::Ok(());
+            }
+            self.local_store
+                .record_extension_processed_operation(operation.id(), topic)
+                .await
+        }
+        .await;
+        match recorded {
+            Ok(()) => true,
+            Err(err) => {
+                error!(
+                    ?err,
+                    "failed to record an operation for the app to process; leaving it unprocessed"
+                );
+                false
+            }
+        }
+    }
+
     async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
         // Mark the operation as processed so it can be awaited by
         // [`crate::testing::PollConfig::consistency`]
@@ -277,6 +399,24 @@ impl Node {
         // operation eligible for mailbox transmission (see
         // `OpStore::acked_log_height`).
         operation.ack().await?;
+        if self.config.import_recorded_operations
+            && let Err(err) = self
+                .local_store
+                .forget_extension_processed_operation(&operation.id())
+                .await
+        {
+            // At worst the operation is imported once more.
+            warn!(
+                ?err,
+                "failed to forget an operation the push extension recorded"
+            );
+        }
+
+        if DeviceId::from(operation.author()) == self.device_id() {
+            self.mailboxes
+                .publish_fast_push(operation.topic(), self.device_id())
+                .await;
+        }
 
         Ok(())
     }
@@ -330,7 +470,11 @@ impl Node {
             .await
         {
             // Continue processing.
-            Ok(_) => (),
+            Ok(event) => {
+                if let Some(event) = event {
+                    self.notify_system_event(event).await?;
+                }
+            }
 
             // Don't process but allow the log to proceed.
             Err(ProjectionError::InvalidOp(msg)) => {
@@ -413,24 +557,29 @@ impl Node {
         if Self::is_tombstoneable(&payload) {
             match payload {
                 Payload::Chat(ChatPayload::Message(m)) => {
-                    use p2panda_store::topics::TopicStore;
-                    let author = operation.header().verifying_key;
-                    let log_id = operation.header.extensions.log_id;
-                    let topic = self
-                        .op_store
-                        .store
-                        .resolve_topic(&author, &log_id)
-                        .await?
-                        .ok_or_else(|| {
-                            anyhow!(format!("failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}", author.aliased(), log_id.aliased()))
-                        })?;
+                    let author = operation.header.verifying_key;
+                    let log_id = operation.header.extensions.log_id();
+                    let topic = crate::topic::resolve_application_topic(
+                        &self.op_store.store,
+                        &author,
+                        &log_id,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "failed to resolve topic for operation. this is a bug. author: {:?}, log: {:?}",
+                            author.aliased(),
+                            log_id.aliased()
+                        )
+                    })?;
 
                     if let (Some(media), Some(blob_sync)) = (m.media(), &self.blob_sync) {
                         let hashes: Vec<_> = media.iter().map(|item| item.hash()).collect();
                         let is_own = DeviceId::from(author) == self.device_id();
                         if let Err(err) = self
-                            .local_store
-                            .remove_unfetched_blobs_all_mailboxes(&hashes)
+                            .mailboxes
+                            .blob_tracker()
+                            .remove_all_mailboxes(&hashes)
                             .await
                         {
                             tracing::warn!(?err, "failed to clear unfetched blob rows on delete");
@@ -517,7 +666,7 @@ impl Node {
                 }
             }
 
-            Payload::Chat(ChatPayload::JoinGroup { chat_id }) => {
+            Payload::Chat(ChatPayload::JoinGroup { chat_id, .. }) => {
                 self.join_group(*chat_id)
                     .await
                     .context("failed to join group from invitation")?;
@@ -541,9 +690,11 @@ impl Node {
                 }
                 match invitation {
                     InboxPayload::ContactRequest { agent_id, .. } => {
-                        // A request arrived on our advertised inbox. Perform no network
-                        // side-effects (bootstrap registration, topic
-                        // subscriptions) and disclose nothing about us until the
+                        // A request arrived on our advertised inbox. Except for
+                        // subscribing to the shared direct-chat topic (so the
+                        // requester's messages are readable before accepting),
+                        // perform no network side-effects (bootstrap
+                        // registration) and disclose nothing about us until the
                         // user explicitly accepts (see `accept_contact`). This
                         // keeps an unsolicited request — e.g. anyone scanning a
                         // shared QR — from amplifying our resources or handing our
@@ -552,13 +703,20 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         if is_advertised_topic && !matches!(source, Source::LocalStore) {
+                            self.register_topic(
+                                self.direct_chat_topic(crate::FakeAgentId::from(author)),
+                            )
+                            .await?;
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
                             // rather than waiting for a manual tap. Spawned so we
                             // don't await publishing (which needs this same
-                            // processor) and deadlock.
-                            if self.has_outgoing_pending_request(author).await? {
+                            // processor) and deadlock. A read-only node (the push
+                            // extension) leaves the accept to the app.
+                            if !self.config.read_only
+                                && self.has_outgoing_pending_request(author).await?
+                            {
                                 let node = self.clone();
                                 let agent_id = *agent_id;
                                 tokio::spawn(async move {
@@ -572,7 +730,7 @@ impl Node {
                             }
                         }
                     }
-                    InboxPayload::ContactRequestAck { agent_id, .. } => {
+                    InboxPayload::ContactRequestAccept { agent_id, .. } => {
                         // The op must arrive on our private reply topic and be
                         // signed by the device whose QR we scanned. Verifying
                         // Verifying author == expected_ack_author prevents a
@@ -587,19 +745,51 @@ impl Node {
                                 tracing::warn!(
                                     ?author,
                                     ?expected,
-                                    "ContactRequestAck author does not match expected; ignoring"
+                                    "ContactRequestAccept author does not match expected; ignoring"
                                 );
                                 return Ok(());
                             }
                             self.establish_contact(author, *agent_id).await?;
 
-                            let node = self.clone();
-                            let agent_id = *agent_id;
-                            tokio::spawn(async move {
-                                if let Err(err) = node.publish_add_contact(agent_id).await {
-                                    tracing::warn!(?err, "failed to record accepted contact");
-                                }
-                            });
+                            // A read-only node (the push extension) establishes
+                            // the contact's topics so it can notify on their
+                            // messages, but leaves recording the contact to the
+                            // app, which re-processes this accept when it
+                            // imports the extension's records.
+                            if !self.config.read_only {
+                                let node = self.clone();
+                                let agent_id = *agent_id;
+                                tokio::spawn(async move {
+                                    // The accept op can be processed more than once
+                                    // (it is replayed when its ack fails), and each
+                                    // processing lands here; record the contact only
+                                    // the first time.
+                                    match node.accepted_contact_agent_ids().await {
+                                        Ok(ids) if ids.contains(&agent_id) => return,
+                                        Ok(_) => {}
+                                        Err(err) => {
+                                            tracing::warn!(
+                                                ?err,
+                                                "failed to check recorded contacts"
+                                            );
+                                            return;
+                                        }
+                                    }
+                                    let topic_id =
+                                        node.direct_chat_topic(crate::FakeAgentId::from(author));
+                                    if let Err(err) =
+                                        node.publish_add_contact(agent_id, topic_id).await
+                                    {
+                                        tracing::warn!(?err, "failed to record accepted contact");
+                                        return;
+                                    }
+                                    // Messages they sent before we recorded the
+                                    // acceptance were processed but dropped by the
+                                    // ack filter; now that they are a contact,
+                                    // cover them.
+                                    node.mark_ack_topic_dirty(topic_id);
+                                });
+                            }
                         }
                     }
                 }
@@ -615,7 +805,6 @@ impl Node {
                     let valid_ops = self.valid_chat_ops(chat_id).await?;
                     let candidate = crate::chat::ReplyCandidate {
                         target,
-                        timestamp: operation.processed().header().timestamp.into(),
                         self_hash: Some(hash),
                     };
                     if let Err(err) = candidate.validate(&valid_ops) {
@@ -638,7 +827,7 @@ impl Node {
                 // forwarded to the frontend) with a warning.
                 let chat_id = ChatId::from_topic_id(topic)?;
                 let valid_ops = self.valid_chat_ops(chat_id).await?;
-                let edit_ts: u64 = operation.processed().header().timestamp.into();
+                let edit_ts: u64 = operation.processed().header().extensions.timestamp().into();
                 let candidate = EditCandidate {
                     target: *edit_hash,
                     editor: author,
@@ -680,8 +869,25 @@ impl Node {
                 }
             }
 
+            Payload::Chat(ChatPayload::MessageAck { .. }) => {
+                // Already folded into the projection by `reduce`; deliberately
+                // never marks the topic dirty below, or two online peers would
+                // ack each other's acks forever.
+            }
+
             _ => {
                 // Nothing to do.
+            }
+        }
+
+        if let Payload::Chat(chat_payload) = &payload {
+            if !matches!(chat_payload, ChatPayload::MessageAck { .. }) && author != self.device_id()
+            {
+                // Non-fatal: failing here must not fail (and so replay) the op.
+                match ChatId::from_topic_id(topic) {
+                    Ok(chat_id) => self.mark_ack_topic_dirty(chat_id),
+                    Err(err) => warn!(?err, "chat payload on non-chat topic; not marking for ack"),
+                }
             }
         }
 
@@ -724,8 +930,9 @@ impl Node {
         Ok(())
     }
 
-    /// Register a single node as a bootstrap (on the shared relay) so p2panda
-    /// discovery can reach it. Deduplicated so repeated calls are cheap. Used
+    /// Give p2panda a node's address on the shared relay, unless it already
+    /// knows the node, so discovery can reach it. Deduplicated so repeated
+    /// calls are cheap. Used
     /// both for mailbox-stream authors and for a freshly-scanned contact, the
     /// latter letting two nodes connect directly over the internet (relay +
     /// pkarr) without depending on a mutually-reachable mailbox.

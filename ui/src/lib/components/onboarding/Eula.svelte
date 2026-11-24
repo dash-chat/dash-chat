@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Navbar, NavbarBackLink, Page } from 'konsta/svelte';
-	import { Marked } from 'marked';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime';
 
@@ -15,12 +14,12 @@
 		agreements[`/messages/eula/${getLocale()}.md`] ??
 		agreements['/messages/eula/en.md'];
 
-	const markdown = new Marked().use({
-		breaks: true,
-		renderer: { link: ({ text }) => text },
-	});
-
-	const agreement = load().then(source => markdown.parse(source));
+	const agreement = Promise.all([load(), import('marked')]).then(
+		([source, { Marked }]) =>
+			new Marked()
+				.use({ breaks: true, renderer: { link: ({ text }) => text } })
+				.parse(source),
+	);
 </script>
 
 <Page>

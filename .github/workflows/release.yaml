@@ -142,6 +142,14 @@ jobs:
         with:
           cache-on-failure: true
 
+      # See android-build.yaml: a restored audiopus_sys CMake build dir whose
+      # CMAKE_C_COMPILER no longer matches the toolchain makes CMake re-run
+      # configure without CMAKE_POLICY_VERSION_MINIMUM, which vendored libopus
+      # cannot survive under CMake 4.
+      - name: Drop cached audiopus_sys CMake build dirs
+        shell: bash
+        run: rm -rf target/*/*/build/audiopus_sys-*
+
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -155,9 +163,16 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
+            libasound2-dev \
             javascriptcoregtk-4.1 \
             libsoup-3.0 \
-            webkit2gtk-4.1
+            webkit2gtk-4.1 \
+            patchelf \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-alsa \
+            gstreamer1.0-pulseaudio
 
       - name: Load server URLs and ENV from .env
         shell: bash
@@ -204,7 +219,7 @@ jobs:
 
       # Backstop: fail the release if the wayland client stack leaked back into
       # the AppImage (e.g. if tauri-bundler changes its cached-tool handling).
-      - name: Assert no wayland libs bundled (ubuntu only)
+      - name: Assert no wayland libs and gstreamer bundled (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: ./scripts/assert-no-wayland-in-appimage.sh
 
@@ -212,6 +227,71 @@ jobs:
         if: env.SENTRY_AUTH_TOKEN != ''
         shell: bash
         run: pnpm dlx @sentry/cli@2 debug-files upload ${{ matrix.debug_files }}
+
+  release-mailbox-local-server:
+    needs: create-release-draft
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            recipe: local-message-hub-arm
+            asset: local-message-hub-aarch64-linux
+          - target: x86_64-unknown-linux-gnu
+            recipe: local-message-hub-x86
+            asset: local-message-hub-x86_64-linux
+    # Same recipe as local builds, so a release binary matches one built on a dev machine
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nix
+        uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-25.11
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+          rustflags: ''
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: ${{ matrix.target }}
+
+      - name: build mailbox-local-server
+        run: nix run --inputs-from . nixpkgs#just -- mailbox ${{ matrix.recipe }}
+
+      # Run inside target/ so the checksum file names the bare asset, which is what `sha256sum -c` looks for next to it
+      - name: Write the binary's sha256 checksum
+        working-directory: target
+        run: sha256sum ${{ matrix.asset }} > ${{ matrix.asset }}.sha256
+
+      - name: Upload mailbox-local-server binary to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.asset }}
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
+          draft: true
+          overwrite: true
+
+      - name: Upload mailbox-local-server checksum to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.asset }}.sha256
+          release_id: ${{ needs.create-release-draft.outputs.releaseId }}
+          draft: true
+          overwrite: true
 
   release-docker-images:
     if: ${{ !contains(github.ref_name, '-staging') }}
@@ -228,7 +308,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install nix
-        uses: cachix/install-nix-action@v27
+        uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_path: nixpkgs=channel:nixos-25.11
@@ -290,14 +370,6 @@ jobs:
 
       - uses: cachix/cachix-action@v15
         with:
-          name: holochain-ci
-
-      - uses: cachix/cachix-action@v15
-        with:
-          name: darksoil-studio
-
-      - uses: cachix/cachix-action@v15
-        with:
           name: dash-chat
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
@@ -311,6 +383,13 @@ jobs:
         with:
           cache-on-failure: true
           shared-key: android-release
+
+      # See android-build.yaml: a restored audiopus_sys CMake build dir whose
+      # CMAKE_C_COMPILER no longer matches the NDK path makes CMake re-run
+      # configure without CMAKE_POLICY_VERSION_MINIMUM, which vendored libopus
+      # cannot survive under CMake 4.
+      - name: Drop cached audiopus_sys CMake build dirs
+        run: rm -rf target/*/*/build/audiopus_sys-*
 
       - name: setup Android signing
         run: |
@@ -374,6 +453,7 @@ jobs:
           file: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
+          overwrite: true
 
       - name: Upload APK to release
         uses: svenstaro/upload-release-action@v2
@@ -382,6 +462,7 @@ jobs:
           file: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           release_id: ${{ needs.create-release-draft.outputs.releaseId }}
           draft: true
+          overwrite: true
 
       - name: Upload debug files to Sentry
         if: env.SENTRY_AUTH_TOKEN != ''

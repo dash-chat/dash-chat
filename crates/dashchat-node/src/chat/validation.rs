@@ -12,6 +12,7 @@ pub use reply::*;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
+use dashchat_utils::SeqNum;
 use derive_more::{Deref, DerefMut, From};
 use p2panda::Hash;
 
@@ -42,7 +43,7 @@ pub struct ChatOp {
     /// Microseconds since the UNIX epoch (the operation header timestamp).
     pub timestamp: u64,
     /// Position in the author's append-only log; monotonic in publish order.
-    pub seq_num: u64,
+    pub seq_num: SeqNum,
     pub kind: ChatOpKind,
 }
 
@@ -126,20 +127,19 @@ impl ValidChatOps {
     // quote is dropped — and clearing a reply can't invalidate anything else,
     // so a single pass (after edit/delete pruning above) is enough.
     fn prune_invalid_replies(&mut self) {
-        let candidates: Vec<(Hash, Hash, u64)> = self
+        let candidates: Vec<(Hash, Hash)> = self
             .0
             .iter()
             .filter_map(|(hash, op)| match op.kind {
                 ChatOpKind::Message {
                     reply: Some(target),
-                } => Some((*hash, target, op.timestamp)),
+                } => Some((*hash, target)),
                 _ => None,
             })
             .collect();
-        for (hash, target, timestamp) in candidates {
+        for (hash, target) in candidates {
             let valid = ReplyCandidate {
                 target,
-                timestamp,
                 self_hash: Some(hash),
             }
             .validate(self)
@@ -196,6 +196,35 @@ mod tests {
                 ChatOp {
                     author: bobbi,
                     timestamp: 2000,
+                    seq_num: 0,
+                    kind: ChatOpKind::Message {
+                        reply: Some(hash(1)),
+                    },
+                },
+            ),
+        ]);
+
+        ops.prune();
+
+        assert_eq!(
+            ops.get(&hash(2)).unwrap().kind,
+            ChatOpKind::Message {
+                reply: Some(hash(1))
+            }
+        );
+    }
+
+    #[test]
+    fn prune_keeps_a_reply_stamped_before_its_target() {
+        let alice = device(1);
+        let bobbi = device(2);
+        let mut ops = ValidChatOps::new([
+            (hash(1), message(alice, 2000, 0)),
+            (
+                hash(2),
+                ChatOp {
+                    author: bobbi,
+                    timestamp: 1000,
                     seq_num: 0,
                     kind: ChatOpKind::Message {
                         reply: Some(hash(1)),

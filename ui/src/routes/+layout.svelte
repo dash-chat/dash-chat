@@ -22,22 +22,28 @@
 		SettingsStore,
 		MailboxTrackerStore,
 		type IMailboxTrackerStore,
+		OnlinePeersStore,
+		type IOnlinePeersStore,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
 		MockChatsStore,
 		MockMailboxTrackerStore,
+		MockOnlinePeersStore,
 		MockSettingsClient,
 		MockTombstoneClient,
 		TombstoneClient,
 		TombstoneStore,
+		MessageAckClient,
+		MessageAckStore,
+		MockMessageAckClient,
 		seedDemoData,
 		DEMO_IDS,
+		DEMO_CONTACT_DEVICES,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
-	import PreviewToolbar from '$lib/components/preview/PreviewToolbar.svelte';
 	import ToastManager from '$lib/components/toast/ToastManager.svelte';
 	import CrashReportDialog from '$lib/components/CrashReportDialog.svelte';
 	import DesktopLayout from '$lib/components/layout/DesktopLayout.svelte';
@@ -45,18 +51,15 @@
 	import { addContactPending } from '$lib/stores/add-contact-pending.svelte';
 	import { modalHost } from '$lib/stores/modal-host.svelte';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { useSignal } from '$lib/stores/use-signal';
+	import { useReactivePromise, useSignal } from '$lib/stores/use-signal';
 	import { applyDarkMode } from '$lib/utils/theme';
 	import { isIos, isMobile, isTauriEnv } from '$lib/utils/environment';
 	import {
 		forwardConsoleToTauriLog,
 		reportUncaughtErrors,
 	} from '$lib/utils/logs';
-	import {
-		listenForDeepLinks,
-		handleLaunchDeepLink,
-		handleUrls,
-	} from '$lib/utils/deep-links';
+	import { handleUrls } from '$lib/utils/deep-links';
+	import { followPendingNavigations } from '$lib/utils/pending-navigations';
 
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, type Locale, setLocale } from '$lib/paraglide/runtime';
@@ -64,7 +67,6 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
-	import { startOfflineModeLifecycle } from '$lib/offline-mode/service-lifecycle';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -95,9 +97,6 @@
 	let { children } = $props();
 
 	const isPreview = !isTauriEnv();
-	// Never in the binary under test
-	const isE2E = import.meta.env.VITE_E2E === 'true';
-	const showToolbar = (isPreview || import.meta.env.DEV) && !isMobile && !isE2E;
 
 	// --- Store initialization ---
 	let settingsStore: SettingsStore;
@@ -105,8 +104,10 @@
 	let devicesStore: DevicesStore;
 	let contactsStore: ContactsStore;
 	let tombstoneStore: TombstoneStore;
+	let messageAckStore: MessageAckStore;
 	let chatsStore: ChatsStore;
 	let mailboxTrackerStore: IMailboxTrackerStore;
+	let onlinePeersStore: IOnlinePeersStore;
 
 	if (isPreview) {
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
@@ -126,6 +127,7 @@
 			DEMO_IDS.MY_DEVICE_ID,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 			[DEMO_IDS.INBOX_TOPIC],
+			DEMO_CONTACT_DEVICES,
 		);
 		contactsStore = new ContactsStore(
 			logsStore,
@@ -136,19 +138,23 @@
 		tombstoneStore = new TombstoneStore(
 			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
 		);
+		mailboxTrackerStore = new MockMailboxTrackerStore();
+		onlinePeersStore = new MockOnlinePeersStore();
+		messageAckStore = new MessageAckStore(
+			new MockMessageAckClient(),
+			mailboxTrackerStore,
+		);
 
 		const mockChatsClient = new MockChatsClient();
 		chatsStore = new MockChatsStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			mockChatsClient,
 			mockLogsClient,
-			DEMO_IDS.MY_AGENT_ID,
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 		);
-
-		mailboxTrackerStore = new MockMailboxTrackerStore();
 	} else {
 		const logsClient = new TauriLogsClient<Payload>();
 		logsStore = new LogsStore<Payload>(logsClient);
@@ -161,16 +167,21 @@
 		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
 
 		tombstoneStore = new TombstoneStore(new TombstoneClient());
+		mailboxTrackerStore = new MailboxTrackerStore();
+		messageAckStore = new MessageAckStore(
+			new MessageAckClient(),
+			mailboxTrackerStore,
+		);
 
 		const chatsClient = new ChatsClient();
 		chatsStore = new ChatsStore(
 			logsStore,
 			contactsStore,
 			tombstoneStore,
+			messageAckStore,
 			chatsClient,
 		);
-
-		mailboxTrackerStore = new MailboxTrackerStore();
+		onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
 
 		invokeAfterSetup('log_webview_info', {
 			userAgent: navigator.userAgent,
@@ -182,10 +193,17 @@
 	setContext('contacts-store', contactsStore);
 	setContext('chats-store', chatsStore);
 	setContext('mailbox-tracker-store', mailboxTrackerStore);
+	setContext('online-peers-store', onlinePeersStore);
 
 	// Keep the chats summaries signal warm so it's always fully loaded
 	// when navigating back home from any page
 	useKeepAlive(chatsStore.allChatsSummaries);
+	useKeepAlive(mailboxTrackerStore.connectionStatusForAllMailboxes);
+
+	// Nothing routed renders until the device id has resolved: pages read it
+	// synchronously (useDeviceId), and a notification-tap navigation can mount
+	// them before the lazy myDeviceId reactive has ever been started.
+	const myDeviceId = useReactivePromise(contactsStore.myDeviceId);
 
 	let theme: 'ios' | 'material' = $state(isIos ? 'ios' : 'material');
 
@@ -222,39 +240,47 @@
 		);
 	});
 
-	if (isTauriEnv()) {
-		handleLaunchDeepLink(contactsStore);
-	}
 	$effect(() => {
 		if (!isTauriEnv()) return;
-		return listenForDeepLinks(contactsStore);
-	});
-
-	$effect(() => {
-		if (!isTauriEnv()) return;
-		return startOfflineModeLifecycle();
+		return followPendingNavigations(contactsStore);
 	});
 </script>
 
-{#if showToolbar}
-	<PreviewToolbar />
-{/if}
+<!-- On a phone a long press on any link or image would otherwise pick it up
+     and float its title and URL under the finger. Drags the app asks for with
+     draggable="true" still go through. -->
+<svelte:document
+	ondragstart={e => {
+		const optedIn =
+			e.target instanceof Element && e.target.closest('[draggable="true"]');
+		if (isMobile && !optedIn) e.preventDefault();
+	}}
+/>
 
 <KonstaProvider {theme} dark={effectiveDark}>
 	<App safeAreas {theme} class="k-{theme}" dark={effectiveDark}>
-		<OnboardingWrapper>
-			{#key currentLocale}
-				{#if isWideScreen.value}
-					<DesktopLayout>
-						{@render children()}
-					</DesktopLayout>
-				{:else}
-					<MobileLayout>
-						{@render children()}
-					</MobileLayout>
-				{/if}
-			{/key}
-		</OnboardingWrapper>
+		{#await $myDeviceId}
+			<div
+				class="column"
+				style="height: 100vh; width: 100vw; align-items: center; justify-content: center"
+			>
+				<Preloader></Preloader>
+			</div>
+		{:then}
+			<OnboardingWrapper>
+				{#key currentLocale}
+					{#if isWideScreen.value}
+						<DesktopLayout>
+							{@render children()}
+						</DesktopLayout>
+					{:else}
+						<MobileLayout>
+							{@render children()}
+						</MobileLayout>
+					{/if}
+				{/key}
+			</OnboardingWrapper>
+		{/await}
 		{#if addContactPending.value}
 			<div
 				class="fixed inset-0 z-40 flex items-center justify-center"

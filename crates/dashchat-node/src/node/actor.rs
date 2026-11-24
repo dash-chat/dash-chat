@@ -9,20 +9,24 @@ use p2panda::network::NetworkError;
 use p2panda::node::CreateStreamError;
 use p2panda::operation::{Extensions, LogId, Operation};
 use p2panda::streams::{
-    ExternalStreamFuture, ImportError, ProcessedOperation, PublishError, PublishFuture, Source,
-    StreamEvent, StreamPublisher, StreamSubscription,
+    ImportError, ProcessedOperation, PublishError, PublishFuture, Source, StreamEvent, StreamFrom,
+    StreamPublisher, StreamSubscription,
 };
 use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_auth::group::GroupCrdtError;
+use p2panda_stream::Processor;
+use p2panda_stream::groups::{GroupsArgs as GroupsProcessorArgs, GroupsError};
 use thiserror::Error;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_stream::{StreamExt, StreamMap};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::Payload;
-use crate::stores::GROUPS_STATE_ID;
+use crate::online_peers::PresenceStream;
 
-type GroupsProcessor = p2panda_auth::processor::GroupsProcessor<Topic, Extensions, LogId>;
+type GroupsProcessor = p2panda_stream::groups::Groups<GroupsProcessorArgs<()>, Extensions, LogId>;
 
 /// Node actor commands.
 pub(crate) enum Command {
@@ -38,7 +42,7 @@ pub(crate) enum Command {
     Import {
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-        reply_tx: oneshot::Sender<Result<ExternalStreamFuture, NodeActorError>>,
+        reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
     },
     Publish {
         topic: Topic,
@@ -53,6 +57,10 @@ pub(crate) enum Command {
     RegisterPeerAddr {
         addr: iroh::EndpointAddr,
         reply_tx: oneshot::Sender<Result<(), NodeActorError>>,
+    },
+    PresenceStream {
+        topic: Topic,
+        reply_tx: oneshot::Sender<Result<PresenceStream, NodeActorError>>,
     },
     Shutdown {
         reply_tx: oneshot::Sender<()>,
@@ -90,6 +98,11 @@ pub enum ProcessorEvent {
         source: Source,
         processed_tx: Option<oneshot::Sender<Result<(), ProcessorError>>>,
     },
+
+    ImportFailed {
+        topic: Topic,
+        error: ImportError,
+    },
 }
 
 /// Actor for the p2panda node.
@@ -121,13 +134,29 @@ pub struct Actor {
     groups_processor: GroupsProcessor,
 
     /// Channel for forwarding all received events on to the application layer processor.
-    events_tx: mpsc::Sender<ProcessorEvent>,
+    events_tx: mpsc::UnboundedSender<ProcessorEvent>,
+
+    /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
+    /// default per-topic cursor (`"{topic}"`);
+    stream_cursor_prefix: Option<String>,
+
+    /// Import tasks spawned so `handle_import` does not block the actor loop.
+    /// Dropped on shutdown, aborting any still-parked imports.
+    import_tasks: JoinSet<()>,
 }
 
 impl Actor {
-    pub(crate) fn new(node: p2panda::Node) -> (Self, mpsc::Receiver<ProcessorEvent>) {
+    pub(crate) fn new(
+        node: p2panda::Node,
+        stream_cursor_prefix: Option<String>,
+    ) -> (Self, mpsc::UnboundedReceiver<ProcessorEvent>) {
         let groups_processor = GroupsProcessor::new(node.store());
-        let (events_tx, events_rx) = mpsc::channel(100);
+        // Unbounded so the actor never blocks here: the application processor
+        // (the only consumer) itself sends commands to this actor and awaits the
+        // reply, so a bounded channel deadlocks under a burst of events (see
+        // `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in
+        // tests/reply_messages.rs, which used to hang this way).
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
 
         (
             Self {
@@ -137,6 +166,8 @@ impl Actor {
                 processed: Default::default(),
                 groups_processor,
                 events_tx,
+                stream_cursor_prefix,
+                import_tasks: JoinSet::new(),
             },
             events_rx,
         )
@@ -179,6 +210,10 @@ impl Actor {
                                 let result = self.handle_register_peer_addr(addr).await;
                                 let _ = reply_tx.send(result);
                             },
+                            Command::PresenceStream { topic, reply_tx } => {
+                                let result = self.inner.ephemeral_stream(topic).await.map_err(NodeActorError::from);
+                                let _ = reply_tx.send(result);
+                            },
                             Command::Shutdown { reply_tx } => {
                                 // Drop self and then break out of the processing loop which will
                                 // cause the actor task to complete.
@@ -189,7 +224,14 @@ impl Actor {
                         };
                     }
                     Some((_, event)) = self.streams.next() => {
-                        let _ = self.process_event(event).await;
+                        if let Err(err) = self.process_event(event).await {
+                            warn!(?err, "actor event processing failed");
+                        }
+                    }
+                    Some(result) = self.import_tasks.join_next() => {
+                        if let Err(err) = result {
+                            error!(?err, "import task panicked");
+                        }
                     }
                     else => {
                         warn!("node actor message channel closed, exiting event loop");
@@ -202,12 +244,30 @@ impl Actor {
         Ok(message_tx)
     }
 
+    /// Open a topic stream, tracking its ack cursor under a per-topic name. With
+    /// a cursor prefix set (the iOS push extension) the name is
+    /// `"{prefix}:{topic}"`, so each topic keeps its own cursor while staying
+    /// distinct from the app's default `"{topic}"` cursor: the two processes
+    /// share one database and must not advance each other's cursors.
+    async fn open_stream(
+        &self,
+        topic: Topic,
+    ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), CreateStreamError> {
+        let cursor_name = self
+            .stream_cursor_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}:{topic}"));
+        self.inner
+            .stream_from(topic, StreamFrom::Frontier, cursor_name)
+            .await
+    }
+
     async fn handle_subscribe(&mut self, topic: Topic) -> Result<bool, NodeActorError> {
         // If we're already subscribed to this topic then just return now.
         if self.tx_map.contains_key(&topic) {
             return Ok(false);
         }
-        let (tx, rx) = self.inner.stream(topic).await?;
+        let (tx, rx) = self.open_stream(topic).await?;
         self.tx_map.insert(topic, tx);
         self.streams.insert(topic, rx);
         Ok(true)
@@ -222,20 +282,31 @@ impl Actor {
         &mut self,
         topic: Topic,
         stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
-    ) -> Result<ExternalStreamFuture, NodeActorError> {
+    ) -> Result<(), NodeActorError> {
         // Retrieve the topic_tx from the tx_map and if it isn't present subscribe to the topic.
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
             None => {
-                let (tx, rx) = self.inner.stream(topic).await?;
+                let (tx, rx) = self.open_stream(topic).await?;
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
             }
         };
 
-        let import_fut = tx.import(stream).await?;
-        Ok(import_fut)
+        // Spawn the import consumption into a separate task so the actor loop
+        // is not blocked while the topic processor replays local operations
+        // before accepting the external stream. This keeps Publish commands and
+        // event processing responsive during backlog replay.
+        let events_tx = self.events_tx.clone();
+        self.import_tasks.spawn(async move {
+            if let Err(err) = tx.import(stream).await {
+                error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+                let _ = events_tx.send(ProcessorEvent::ImportFailed { topic, error: err });
+            }
+        });
+
+        Ok(())
     }
 
     async fn handle_publish(
@@ -247,7 +318,7 @@ impl Actor {
         let tx = match self.tx_map.get(&topic) {
             Some(tx) => tx.clone(),
             None => {
-                let (tx, rx) = self.inner.stream(topic).await?;
+                let (tx, rx) = self.open_stream(topic).await?;
                 self.tx_map.insert(topic, tx.clone());
                 self.streams.insert(topic, rx);
                 tx
@@ -275,7 +346,14 @@ impl Actor {
         node_id: NodeId,
         relay_url: RelayUrl,
     ) -> Result<(), NodeActorError> {
-        self.inner.insert_bootstrap(node_id, relay_url).await?;
+        // insert_node_addr replaces the whole entry, which would drop the LAN addresses of a peer
+        // we already know and leave it undialable while offline.
+        let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
+            .with_relay_url(relay_url);
+        if self.inner.node_addr_known(&addr).await? {
+            return Ok(());
+        }
+        self.inner.insert_node_addr(addr).await?;
         Ok(())
     }
 
@@ -340,7 +418,6 @@ impl Actor {
         // Forward the event for further application layer processing.
         self.events_tx
             .send(processor_event)
-            .await
             .map_err(|_| NodeActorError::EventSend)?;
 
         Ok(())
@@ -350,22 +427,32 @@ impl Actor {
         &self,
         operation: &ProcessedOperation<Payload>,
     ) -> Result<(), ProcessorError> {
-        let topic = operation.topic();
-        let header = operation.processed().header().to_owned();
-        let body = operation.processed().body().cloned();
-
-        let operation = Operation {
-            hash: header.hash(),
-            header,
-            body,
-        };
-
-        self.groups_processor
-            .process(&GROUPS_STATE_ID, &topic, &operation)
+        match self
+            .groups_processor
+            .process(operation.event.groups_args.clone())
             .await
-            .map_err(|err| ProcessorError::Groups(err.to_string()))?;
+        {
+            Ok(()) => {}
+            // Another process sharing the groups state (the iOS push extension)
+            // already applied it. A failed `process` enqueues nothing, so there
+            // is nothing to drain.
+            Err((_, GroupsError::Groups(GroupCrdtError::DuplicateOperation(..)))) => {
+                return Ok(());
+            }
+            Err((_, err)) => return Err(ProcessorError::Groups(err.to_string())),
+        }
 
-        Ok(())
+        // A successful `process` always enqueues exactly one item, no-ops included, and this is
+        // the only caller (the actor's single event loop), so `next` returns our own item without
+        // blocking. It carries only the input back plus a processed/no-op flag, so dropping it
+        // loses nothing; we drain it so the queue doesn't grow unboundedly.
+        //
+        // Note that this is only a temporary solution anyway and will go away with the spaces refactor.
+        self.groups_processor
+            .next()
+            .await
+            .map(|_| ())
+            .map_err(|(_, err)| ProcessorError::Groups(err.to_string()))
     }
 }
 
@@ -434,15 +521,17 @@ pub enum ProcessorError {
 #[cfg(test)]
 mod tests {
     use futures::future::join_all;
+    use p2panda::groups::GroupsArgs;
     use p2panda::{Hash, Node, SigningKey, Topic, VerifyingKey};
     use p2panda_auth::Access;
     use p2panda_auth::group::{GroupAction, GroupCrdtState, GroupMember};
-    use p2panda_auth::processor::{GroupsArgs, GroupsOperation};
     use p2panda_store::groups::GroupsStore;
     use p2panda_store::{SqliteStore, tx_unwrap};
+    use p2panda_stream::groups::GroupsOperation;
     use tokio::sync::oneshot;
 
     use crate::node::actor::ProcessorEvent;
+    use crate::stores::GROUPS_STATE_ID;
     use crate::testing::setup_tracing;
     use crate::{ChatMessageContent, ChatPayload, Payload};
 
@@ -459,11 +548,12 @@ mod tests {
         group_id: VerifyingKey,
         action: GroupAction<VerifyingKey>,
     ) -> Payload {
-        let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
-            .unwrap()
-            .unwrap_or_default();
+        let groups_y: GroupsState =
+            tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
+                .unwrap()
+                .unwrap_or_default();
 
-        let dependencies = groups_y.heads();
+        let dependencies = groups_y.heads(&[group_id]);
         Payload::GroupControl(GroupsArgs {
             group_id,
             action,
@@ -491,10 +581,10 @@ mod tests {
             .await
             .unwrap();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
         let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
 
         // Both alice and bobbi subscribe to topics a & b.
@@ -586,10 +676,10 @@ mod tests {
         let alice_id = alice.id();
         let bobbi_id = bobbi.id();
 
-        let (alice_actor, alice_events_rx) = Actor::new(alice);
+        let (alice_actor, alice_events_rx) = Actor::new(alice, None);
         let alice_actor_tx = alice_actor.spawn().await.unwrap();
 
-        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi);
+        let (bobbi_actor, bobbi_events_rx) = Actor::new(bobbi, None);
         let bobbi_actor_tx = bobbi_actor.spawn().await.unwrap();
 
         // Alice subscribes to topic.
@@ -648,9 +738,10 @@ mod tests {
 
         // And they have also processed the groups control message.
         for store in [alice_store, bobbi_store] {
-            let groups_y: GroupsState = tx_unwrap!(store, { store.get_groups_state(&0).await })
-                .unwrap()
-                .unwrap();
+            let groups_y: GroupsState =
+                tx_unwrap!(store, { store.get_groups_state_tx(*GROUPS_STATE_ID).await })
+                    .unwrap()
+                    .unwrap();
             let members = groups_y.members(group_id);
             assert!(members.contains(&(alice_id, Access::manage())));
             assert!(members.contains(&(bobbi_id, Access::manage())));

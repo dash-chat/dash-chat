@@ -31,14 +31,15 @@
 
 use std::marker::PhantomData;
 
-use crate::AgentId;
+use crate::{AgentId, FakeAgentId};
 
 use aliased::Aliasing;
 use p2panda::operation::LogId;
 use p2panda::{SigningKey, VerifyingKey};
 use p2panda_spaces::ActorId;
+use p2panda_store::{SqliteStore, topics::TopicStore};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use sqlx::{Sqlite, encode::IsNull, error::BoxDynError, sqlite::SqliteArgumentValue};
+use sqlx::{Sqlite, encode::IsNull, error::BoxDynError};
 
 pub trait TopicKind:
     Default
@@ -117,6 +118,29 @@ pub mod kind {
 
 pub type TopicId = p2panda::Topic;
 
+/// The single topic an application log belongs to, or `None` if the log has no association yet.
+///
+/// "Application log" here refers to p2panda's split of spaces into application and control logs.
+/// The application log is specified as `log_id = digest(space_id ++ "space_application/v1")`.
+/// Under proper use, there will only ever be one topic per application log.
+///
+/// This function must NOT be used for other types of logs, where the 1:1 mapping is not guaranteed.
+pub async fn resolve_application_topic(
+    store: &SqliteStore,
+    author: &VerifyingKey,
+    log_id: &LogId,
+) -> anyhow::Result<Option<TopicId>> {
+    let mut topics: Vec<TopicId> = store.resolve_topics(author, log_id).await?;
+    anyhow::ensure!(
+        topics.len() <= 1,
+        "application log resolved to {} topics, expected at most one. author: {:?}, log: {:?}",
+        topics.len(),
+        author.aliased(),
+        log_id.aliased(),
+    );
+    Ok(topics.pop())
+}
+
 // -- SQLite encoding for TopicId --
 
 impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
@@ -126,7 +150,10 @@ impl<K: TopicKind> sqlx::Type<Sqlite> for Topic<K> {
 }
 
 impl<K: TopicKind> sqlx::Encode<'_, Sqlite> for Topic<K> {
-    fn encode_by_ref(&self, buf: &mut Vec<SqliteArgumentValue<'_>>) -> Result<IsNull, BoxDynError> {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <Sqlite as sqlx::Database>::ArgumentBuffer,
+    ) -> Result<IsNull, BoxDynError> {
         <Vec<u8> as sqlx::Encode<Sqlite>>::encode(self.to_vec(), buf)
     }
 }
@@ -167,8 +194,6 @@ pub struct Topic<K: TopicKind> {
 
     kind: PhantomData<K>,
 }
-
-impl<K: TopicKind> p2panda_spaces::traits::SpaceId for Topic<K> {}
 
 impl<K: TopicKind> Topic<K> {
     pub(crate) fn new(id: [u8; 32]) -> Self {
@@ -214,7 +239,7 @@ impl Topic<kind::Chat> {
         Self::new(*pk.as_bytes())
     }
 
-    pub fn direct_chat(mut pks: [AgentId; 2]) -> Self {
+    pub fn direct_chat(mut pks: [FakeAgentId; 2]) -> Self {
         pks.sort();
         let mut hasher = blake3::Hasher::new();
         hasher.update(pks[0].as_bytes());
@@ -341,8 +366,6 @@ impl<'de, K: TopicKind> Deserialize<'de> for Topic<K> {
 mod tests {
     use super::*;
 
-    use mailbox_client::toy;
-
     const TOPIC_BYTES: [u8; 32] = [0xab; 32];
     const TOPIC_HEX: &str = "abababababababababababababababababababababababababababababababab";
 
@@ -359,34 +382,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&topic).unwrap(),
             format!("\"{}\"", TOPIC_HEX)
-        );
-    }
-
-    /// The toy mailbox client uses topic/author ids as HTTP map keys by JSON-
-    /// serializing them and stripping the surrounding quotes (`stringify`),
-    /// reversing that to decode (`unstringify`). That only works if the type's
-    /// `Serialize` impl emits a single JSON string. These tests pin that wire
-    /// format for the real `TopicId` and `DeviceId` so a future `Serialize`
-    /// change (e.g. emitting a byte array) can't silently corrupt mailbox keys.
-    /// See `ToyItemTraits` in `mailbox-client`.
-    #[test]
-    fn topic_id_stringifies_to_bare_hex_for_mailbox_key() {
-        let topic: TopicId = Topic::<kind::Untyped>::new(TOPIC_BYTES).into();
-        let key = toy::stringify(topic);
-        assert_eq!(key, TOPIC_HEX);
-        assert!(!key.contains('"'));
-        assert_eq!(toy::unstringify::<TopicId>(&key).unwrap(), topic);
-    }
-
-    #[test]
-    fn device_id_stringifies_to_bare_hex_for_mailbox_key() {
-        let device_id = crate::DeviceId::from(SigningKey::from_bytes(&[0xcd; 32]).verifying_key());
-        let key = toy::stringify(device_id);
-        assert_eq!(key, hex::encode(device_id.as_bytes()));
-        assert!(!key.contains('"'));
-        assert_eq!(
-            toy::unstringify::<crate::DeviceId>(&key).unwrap(),
-            device_id
         );
     }
 }

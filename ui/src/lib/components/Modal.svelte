@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
-	import { modalHost } from '$lib/stores/modal-host.svelte';
+	import { portalToModalHost } from '$lib/actions/portal-to-modal-host';
 	import { suppressKeyboardRestore } from 'tauri-plugin-virtual-keyboard';
 
 	interface ModalControls {
@@ -10,10 +10,13 @@
 
 	interface Props {
 		opened: boolean;
+		/** Called once the exit animation has finished and the overlay has left
+		 * the DOM. */
+		onClosed?: () => void;
 		children: Snippet<[ModalControls]>;
 	}
 
-	let { opened = $bindable(false), children }: Props = $props();
+	let { opened = $bindable(false), onClosed, children }: Props = $props();
 
 	type Phase = 'unmounted' | 'entering' | 'open' | 'leaving';
 
@@ -52,7 +55,10 @@
 
 		if (current === 'unmounted') return;
 		phase = 'leaving';
-		return afterDelay(EXIT_DURATION, () => (phase = 'unmounted'));
+		return afterDelay(EXIT_DURATION, () => {
+			phase = 'unmounted';
+			onClosed?.();
+		});
 	});
 
 	$effect(() => {
@@ -63,20 +69,10 @@
 	function close() {
 		opened = false;
 	}
-
-	// Konsta overlays are `position: fixed`. The virtual keyboard's FLIP writes
-	// inline transforms on the message list and the composer bar, which makes
-	// any fixed descendant resolve against them instead of the viewport.
-	function portal(node: HTMLElement) {
-		const host = modalHost.element;
-		if (!host) return;
-		host.append(node);
-		return () => node.remove();
-	}
 </script>
 
 {#if phase !== 'unmounted'}
-	<div class="contents" {@attach portal}>
+	<div class="contents" {@attach portalToModalHost}>
 		{@render children({ opened: phase === 'open', close })}
 	</div>
 {/if}

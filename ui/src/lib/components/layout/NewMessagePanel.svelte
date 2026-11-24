@@ -31,7 +31,7 @@
 	} from 'konsta/svelte';
 	import { page } from '$app/state';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import Avatar from '../profiles/Avatar.svelte';
+	import PeerAvatar from '../profiles/PeerAvatar.svelte';
 	import IconButton from '../IconButton.svelte';
 	import TitleTruncatedListItem from '../TitleTruncatedListItem.svelte';
 	import ContactActionsMenu from '$lib/components/contacts/ContactActionsMenu.svelte';
@@ -47,7 +47,7 @@
 		agentId: AgentId;
 		name: string;
 		anchor: HTMLElement;
-	} | null>(null);
+	}>();
 
 	function openMenu(agentId: AgentId, profile: Profile, anchor: HTMLElement) {
 		menuFor = { agentId, name: fullName(profile), anchor };
@@ -148,18 +148,19 @@
 						data-testid="new-message-contacts-empty"
 					/>
 				{:else}
-					{@const filteredContacts = contacts.filter(([_, profile]) =>
+					{@const filteredContacts = contacts.filter(({ profile }) =>
 						profile.name.toLowerCase().includes(searchQuery.toLowerCase()),
 					)}
-					{#each filteredContacts as [actorId, profile]}
+					{#each filteredContacts as { contact, profile }}
 						<TitleTruncatedListItem
 							link
 							class="hover-scope"
 							linkProps={{
-								href: `/direct-chats/${actorId}`,
+								href: `/direct-chats/${contact.chatId}`,
 								...(isMobile &&
 									longPressHandlers({
-										onLongPress: (_, row) => openMenu(actorId, profile, row),
+										onLongPress: (_, row) =>
+											openMenu(contact.agentId, profile, row),
 									})),
 							}}
 							title={profile.name}
@@ -168,10 +169,7 @@
 							data-contact-name={profile.name}
 						>
 							{#snippet media()}
-								<Avatar
-									image={profile.avatar}
-									initials={profile.name.slice(0, 2)}
-								/>
+								<PeerAvatar {profile} />
 							{/snippet}
 							{#snippet after()}
 								{#if !isMobile}
@@ -180,7 +178,8 @@
 											icon={mdiDotsVertical}
 											label={m.contactMenu()}
 											testid="contact-menu-button"
-											onClick={e => openMenu(actorId, profile, e.currentTarget)}
+											onClick={e =>
+												openMenu(contact.agentId, profile, e.currentTarget)}
 										/>
 									</span>
 								{/if}
@@ -196,12 +195,17 @@
 </div>
 
 {#if menuFor}
-	<ContactActionsMenu
-		anchor={menuFor.anchor}
-		agentId={menuFor.agentId}
-		name={menuFor.name}
-		onClose={() => (menuFor = null)}
-	/>
+	<!-- Keyed so a menu opened while the previous one is still animating out
+	     starts fresh instead of inheriting its closing state. -->
+	{#key menuFor}
+		<ContactActionsMenu
+			anchor={menuFor.anchor}
+			align={isMobile ? 'start' : 'end'}
+			agentId={menuFor.agentId}
+			name={menuFor.name}
+			onClose={() => (menuFor = undefined)}
+		/>
+	{/key}
 {/if}
 
 <style>

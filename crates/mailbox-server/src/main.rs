@@ -1,7 +1,8 @@
 use clap::Parser;
-use dashchat_utils::RELAY_URL;
+use dashchat_utils::{NETWORK_ID, RELAY_URL};
 use futures::FutureExt;
-use mailbox_server::spawn_server;
+use mailbox_server::{spawn_server, ServerConfig};
+use p2panda_net::NetworkId;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
@@ -19,10 +20,26 @@ struct Args {
     /// URL of the push notifications server (enables push notification integration)
     #[arg(long)]
     push_notifications_url: Option<String>,
+
+    /// P2P network id, as 64 hex characters (defaults to the production network)
+    #[arg(long, value_parser = mailbox_server::parse_network_id)]
+    network_id: Option<NetworkId>,
+
+    /// Reject HTTP blob uploads with 410 Gone (e2e knob for proving blob
+    /// delivery goes over iroh push)
+    #[arg(long)]
+    disable_blob_http_upload: bool,
+
+    /// Never fetch announced blobs from their sources (e2e knob for proving
+    /// blob delivery goes over iroh push, not mailbox pull)
+    #[arg(long)]
+    disable_blob_fetch: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    panic_policy::install_panic_hook();
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -35,12 +52,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let signal = tokio::signal::ctrl_c().map(|f| f.expect("failed to listen for event"));
+    let listener = tokio::net::TcpListener::bind(&args.addr).await?;
     spawn_server(
         args.db_path.into(),
-        args.addr,
+        listener,
         args.push_notifications_url,
         None,
         Some(RELAY_URL.clone()),
+        args.network_id.unwrap_or(*NETWORK_ID),
+        Some(ServerConfig {
+            disable_blob_http_upload: args.disable_blob_http_upload,
+            disable_blob_fetch: args.disable_blob_fetch,
+        }),
         signal,
     )
     .await?;

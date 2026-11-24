@@ -2,10 +2,16 @@ import { reactive, signal } from 'signalium';
 
 import { type IMessagesClient } from '../chats/messages-client';
 import { Message, MessagesStore } from '../chats/messages-store';
+import { dropOpsAuthoredSinceLeaving } from '../chats/op-visibility';
 import { Profile, fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
+import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { SimplifiedOperation } from '../p2panda/simplified-types';
+import {
+	AuthGroupMember,
+	GroupAction,
+	SimplifiedOperation,
+} from '../p2panda/simplified-types';
 import { AgentId, DeviceId, Hash, VerifyingKey } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
@@ -43,6 +49,7 @@ export class GroupChatStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
+		messageAckStore: MessageAckStore,
 		public client: IGroupChatClient,
 		public chatId: ChatId,
 		messagesClient: IMessagesClient,
@@ -51,36 +58,44 @@ export class GroupChatStore {
 			logsStore,
 			contactsStore,
 			tombstoneStore,
-			reactive(async () => chatId),
+			messageAckStore,
+			chatId,
 			messagesClient,
+			reactive(async () => !(await this.me()).member),
 		);
-		this.logsStore.logsClient.onNewOperation((topicId, op) => {
-			if (topicId === this.chatId && op.header.auth) {
+		this.client.onGroupMembersChanged(this.chatId, () => {
+			this.membersVersion.value++;
+		});
+		// Members are grouped by agent, so a device introduced after it joined
+		// regroups them.
+		this.contactsStore.client.onAgentsIntroduced(async agents => {
+			if (await this.hasAnyDevice(Object.keys(agents))) {
 				this.membersVersion.value++;
 			}
 		});
 	}
 
 	info = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const opsAuthoredBeforeLeaving = dropOpsAuthoredSinceLeaving(
+			await this.messages.opsByTimestamp(),
+			await this.contactsStore.myDeviceId(),
+		);
 
 		let latest:
 			| { info: GroupInfo; timestamp: number; seqNum: number }
 			| undefined;
-		for (const operations of Object.values(logs)) {
-			for (const operation of operations) {
-				const body = operation.body;
-				if (body?.type !== 'Chat') continue;
-				if (body.payload.type !== 'GroupInfo') continue;
-				const timestamp = operation.header.timestamp;
-				const seqNum = operation.header.seq_num;
-				if (
-					!latest ||
-					timestamp > latest.timestamp ||
-					(timestamp === latest.timestamp && seqNum > latest.seqNum)
-				) {
-					latest = { info: body.payload.payload, timestamp, seqNum };
-				}
+		for (const operation of opsAuthoredBeforeLeaving) {
+			const body = operation.body;
+			if (body?.type !== 'Chat') continue;
+			if (body.payload.type !== 'GroupInfo') continue;
+			const timestamp = operation.header.timestamp;
+			const seqNum = operation.header.seq_num;
+			if (
+				!latest ||
+				timestamp > latest.timestamp ||
+				(timestamp === latest.timestamp && seqNum > latest.seqNum)
+			) {
+				latest = { info: body.payload.payload, timestamp, seqNum };
 			}
 		}
 
@@ -92,26 +107,34 @@ export class GroupChatStore {
 		return info;
 	});
 
+	/** Members who left or were removed are gone from the member list, so fall
+	 * back to the device→agent mapping, which covers non-contacts too: every
+	 * group member is introduced to the group when they join. */
 	private nameForDevice = reactive(
 		async (deviceId: DeviceId): Promise<string | undefined> => {
 			const members = await this.allMembers();
-			return findName(members, deviceId);
+			const name = findName(members, deviceId);
+			if (name) return name;
+			const agentId = await this.contactsStore.agentForDevice(deviceId);
+			if (!agentId) return undefined;
+			const profile = await this.contactsStore.profiles(agentId);
+			return profile ? fullName(profile) : undefined;
 		},
 	);
 
 	controlEvents = reactive(async () => {
-		const logs = await this.logsStore.logsForAllAuthors(this.chatId);
+		const opsAuthoredWhileAMember =
+			await this.messages.opsAuthoredWhileAMember();
 		const myDeviceId = await this.contactsStore.myDeviceId();
-		const members = await this.allMembers();
 
 		const events: Record<Hash, GroupControlEvent> = {};
-		for (const ops of Object.values(logs)) {
-			for (const op of ops) {
-				const event = buildGroupControlEvent(op, myDeviceId, id =>
-					findName(members, id),
-				);
-				if (event) events[op.hash] = event;
-			}
+		for (const op of opsAuthoredWhileAMember) {
+			const event = await buildGroupControlEvent(
+				op,
+				myDeviceId,
+				this.nameForDevice,
+			);
+			if (event) events[op.hash] = event;
 		}
 		return events;
 	});
@@ -132,6 +155,7 @@ export class GroupChatStore {
 				event: { kind: 'message', message },
 				author: message.author,
 				timestamp: message.timestamp,
+				lamport: message.lamport,
 				type: 'Message',
 			};
 		}
@@ -150,6 +174,7 @@ export class GroupChatStore {
 				event: { kind: 'control', event },
 				author,
 				timestamp: event.timestamp,
+				lamport: 0,
 				type: 'GroupControl',
 			};
 		}
@@ -202,6 +227,13 @@ export class GroupChatStore {
 		void this.membersVersion.value;
 		return await this.client.getMembers(this.chatId);
 	});
+
+	private async hasAnyDevice(deviceIds: DeviceId[]): Promise<boolean> {
+		const members = await this.membersData();
+		return members.some(member =>
+			member.deviceIds.some(deviceId => deviceIds.includes(deviceId)),
+		);
+	}
 
 	me = reactive(async () => {
 		const myAgentId = await this.contactsStore.myAgentId();
@@ -294,11 +326,25 @@ function findName(
 	return undefined;
 }
 
-function buildGroupControlEvent(
+/** The device a membership action names, or undefined for an action that
+ * targets a subgroup rather than an individual. */
+function memberOfAuthAction(action: GroupAction): DeviceId | undefined {
+	if ('Add' in action) return individual(action.Add.member);
+	if ('Remove' in action) return individual(action.Remove.member);
+	if ('Promote' in action) return individual(action.Promote.member);
+	if ('Demote' in action) return individual(action.Demote.member);
+	return undefined;
+}
+
+function individual(member: AuthGroupMember): DeviceId | undefined {
+	return 'Individual' in member ? member.Individual : undefined;
+}
+
+async function buildGroupControlEvent(
 	op: SimplifiedOperation<Payload>,
 	myDeviceId: DeviceId,
-	nameForDevice: (deviceId: DeviceId) => string | undefined,
-): GroupControlEvent | undefined {
+	nameForDevice: (deviceId: DeviceId) => Promise<string | undefined>,
+): Promise<GroupControlEvent | undefined> {
 	const action = op.header.auth?.action;
 	if (!action) return undefined;
 	const ts = op.header.timestamp;
@@ -313,61 +359,61 @@ function buildGroupControlEvent(
 			kind: 'group_created',
 			isMine: actorIsMe,
 			iAmInitialMember,
-			creatorName: actorIsMe ? undefined : nameForDevice(actorDeviceId),
+			creatorName: actorIsMe ? undefined : await nameForDevice(actorDeviceId),
 			timestamp: ts,
 		};
 	}
+	const memberDeviceId = memberOfAuthAction(action);
+	const memberName = memberDeviceId
+		? await nameForDevice(memberDeviceId)
+		: undefined;
+	const adminName = await nameForDevice(actorDeviceId);
+	const targetsMe = memberDeviceId === myDeviceId;
+
 	if ('Add' in action) {
-		const memberDeviceId =
-			'Individual' in action.Add.member
-				? action.Add.member.Individual
-				: undefined;
 		return {
 			kind: 'group_member_added',
-			isMine: !!memberDeviceId && memberDeviceId === myDeviceId,
+			isMine: targetsMe,
 			addedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
-			adminName: nameForDevice(actorDeviceId),
+			memberName,
+			adminName,
 			timestamp: ts,
 		};
 	}
 	if ('Remove' in action) {
-		const memberDeviceId =
-			'Individual' in action.Remove.member
-				? action.Remove.member.Individual
-				: undefined;
+		if (memberDeviceId === actorDeviceId) {
+			return {
+				kind: 'group_member_left',
+				isMine: actorIsMe,
+				memberName,
+				timestamp: ts,
+			};
+		}
 		return {
 			kind: 'group_member_removed',
-			isMine: !!memberDeviceId && memberDeviceId === myDeviceId,
+			isMine: targetsMe,
 			removedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
-			adminName: nameForDevice(actorDeviceId),
+			memberName,
+			adminName,
 			timestamp: ts,
 		};
 	}
 	if ('Promote' in action) {
-		const memberDeviceId =
-			'Individual' in action.Promote.member
-				? action.Promote.member.Individual
-				: undefined;
 		return {
 			kind: 'group_member_promoted',
+			isMine: targetsMe,
 			promotedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
-			adminName: nameForDevice(actorDeviceId),
+			memberName,
+			adminName,
 			timestamp: ts,
 		};
 	}
 	if ('Demote' in action) {
-		const memberDeviceId =
-			'Individual' in action.Demote.member
-				? action.Demote.member.Individual
-				: undefined;
 		return {
 			kind: 'group_member_demoted',
 			demotedByMe: actorIsMe,
-			memberName: memberDeviceId ? nameForDevice(memberDeviceId) : undefined,
-			adminName: nameForDevice(actorDeviceId),
+			memberName,
+			adminName,
 			timestamp: ts,
 		};
 	}

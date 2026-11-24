@@ -6,11 +6,15 @@
  * messages, and media all have to propagate over a direct p2p (iroh/mDNS)
  * connection between the two agents. This is the path exercised by real
  * device-to-device delivery and, unlike the rest of the suite, never falls back
- * to a mailbox relay.
+ * to a mailbox relay. The home page chip says so: it reads "p2p" while the
+ * other agent is online.
  *
  * Skips against a remote environment mailbox, whose lifecycle we can't control.
  */
+import { backToHome } from '../helpers/flows/back-to-home';
+import { createProfiles } from '../helpers/flows/create-profiles';
 import { exchangeContacts } from '../helpers/flows/exchange-contacts';
+import { MAILBOX_HUNG_MS, UI_TIMEOUT } from '../helpers/timeouts';
 import {
 	isRemoteMailbox,
 	resumeMailbox,
@@ -18,7 +22,9 @@ import {
 } from '../setup/mailbox-control';
 import { type Agent, setupAgents } from '../setup/setup-agents';
 
-describe('Pure p2p sync (no mailbox)', () => {
+describe('Pure p2p sync (no mailbox)', function () {
+	this.timeout(300_000);
+
 	let agent1: Agent;
 	let agent2: Agent;
 
@@ -31,18 +37,33 @@ describe('Pure p2p sync (no mailbox)', () => {
 		// Take the mailbox down before any sync happens so contact exchange and
 		// every message below must travel over a direct p2p connection.
 		suspendMailbox();
-		await agent1.createProfilePage.createProfile('Alice', 'P2P');
-		await agent2.createProfilePage.createProfile('Bob', 'P2P');
-		await exchangeContacts(agent1, agent2);
+		await createProfiles({ Alice: agent1, Bob: agent2 });
+		await exchangeContacts([agent1, agent2]);
 	});
 
-	after(() => {
-		if (isRemoteMailbox()) return;
-		try {
-			resumeMailbox();
-		} catch {
-			/* mailbox process already gone */
+	it('both chips read p2p once the cloud is out of reach, and the dialog explains it', async () => {
+		await backToHome([agent1, agent2]);
+		for (const agent of [agent1, agent2]) {
+			await agent.homePage.connectionStatusIndicator.waitForStatus(
+				'p2p',
+				MAILBOX_HUNG_MS,
+				'the chip did not read p2p with the cloud down and the peer connected',
+			);
 		}
+
+		const chip = agent1.homePage.connectionStatusIndicator;
+		await chip.expectModes({
+			isolated: false,
+			internet: 'failed',
+			phoneToPhone: 'connected',
+		});
+		await chip.expectModeHelp();
+	});
+
+	it('the direct chat reads active while the peer is reachable just over p2p', async () => {
+		await agent1.homePage.openChat('Bob');
+		await agent2.homePage.openChat('Alice');
+		await agent1.directChatPage.activeOverP2p.waitForDisplayed();
 	});
 
 	it('syncs a text message agent1 → agent2 over p2p', async () => {
@@ -63,5 +84,42 @@ describe('Pure p2p sync (no mailbox)', () => {
 		await agent1.directChatPage.messages.waitForPhotoMessage('p2pphoto');
 		await agent2.directChatPage.messages.waitForMessage('photo over p2p');
 		await agent2.directChatPage.messages.waitForPhotoMessage('p2pphoto');
+	});
+
+	it('the chip reads disconnected once the peer goes offline, and p2p again once it is back', async () => {
+		await backToHome([agent1]);
+		const chip = agent1.homePage.connectionStatusIndicator;
+		await agent2.stopApp();
+		await chip.waitForStatus(
+			'disconnected',
+			UI_TIMEOUT,
+			'the chip did not read disconnected after the peer went offline',
+		);
+		await agent2.startApp();
+		await chip.waitForStatus(
+			'p2p',
+			UI_TIMEOUT,
+			'the chip did not read p2p after the peer came back',
+		);
+	});
+
+	it('the home chat row badges the peer only while reachable just over p2p', async () => {
+		const { homePage } = agent1;
+		await homePage.p2pBadge.waitForDisplayed({ timeout: UI_TIMEOUT });
+
+		await agent2.stopApp();
+		await homePage.p2pBadge.waitForExist({
+			reverse: true,
+			timeout: UI_TIMEOUT,
+		});
+
+		await agent2.startApp();
+		await homePage.p2pBadge.waitForDisplayed({ timeout: UI_TIMEOUT });
+
+		resumeMailbox();
+		await homePage.p2pBadge.waitForExist({
+			reverse: true,
+			timeout: MAILBOX_HUNG_MS,
+		});
 	});
 });

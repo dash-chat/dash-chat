@@ -100,10 +100,11 @@ pnpm install
 This is a pnpm workspace with multiple packages:
 - **ui/**: Svelte 5 + TypeScript frontend (SvelteKit application)
 - **packages/stores/**: Shared TypeScript stores for state management
-- **packages/site/**: Marketing/download site
 - **e2e-tests/**: WebdriverIO E2E test suite
 - **crates/dashchat-node/**: Core p2p backend logic (Rust)
 - **crates/mailbox-server/**: HTTP server for offline message storage
+- **crates/mailbox-client/**: Per-mailbox protocol client (Rust)
+- **crates/mailboxes-manager/**: Cross-mailbox orchestration (Rust)
 - **src-tauri/**: Tauri application wrapper and integration layer
 
 ### Backend Architecture (Rust)
@@ -116,7 +117,9 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 
 **mailbox-server** is the stateful HTTP relay that holds serialized p2panda operations (blobs) on behalf of offline peers until they reconnect. It supports bidirectional sync — clients pull blobs they are missing and push blobs the server is missing in the same exchange — runs a background cleanup task that drops blobs older than 7 days, and optionally forwards arrival notifications to a push-notifications-server so devices wake up to fetch new traffic. Deployable either as a standalone cloud service or spawned in-process by the Tauri app for LAN-only operation.
 
-**mailbox-client** is the async client the Node uses to talk to a mailbox-server (cloud or local), with a single API regardless of how the server is reached.
+**mailbox-client** is the per-mailbox layer: the `MailboxClient` protocol for talking to one mailbox-server (cloud or local) — publishing and fetching operations, announcing and uploading blobs — plus the pieces that protocol is built from: the sync coordinator (one mailbox's fetch/publish exchange), the connection-health state machine, and per-mailbox sync-scheduling primitives. Its HTTP (toy) and in-memory backends also live here.
+
+**mailboxes-manager** is the cross-mailbox layer the Node drives. It registers and tracks every mailbox, runs the poll loop that keeps subscribed topics synced (a bidirectional fetch + publish exchange per mailbox, scheduled by connection health with degraded/stopped backoff and a fast-push path for freshly published operations), persists per-mailbox sync watermarks, and tracks blob uploads with dedup and retry backoff. It depends one-way on mailbox-client; downstream crates import each concept from whichever of the two owns it.
 
 **push-notifications-server** registers FCM device tokens per topic and dispatches notifications when the mailbox-server tells it new blobs have arrived for a topic a device is subscribed to. **push-notifications-client** is the small HTTP client both the mailbox-server (for forwarding arrivals) and the Tauri app (for registering tokens) use to reach it.
 
@@ -144,7 +147,7 @@ The Rust workspace is one Cargo workspace covering the Tauri app crate (`src-tau
 
 **Frontend Patterns:**
 - Signalium for reactive state management
-- **STRICT: All Tauri commands must be invoked via `invokeAfterSetup()` from `packages/stores/src/utils/invoke-after-setup.ts`, never `invoke()` from `@tauri-apps/api` directly.** At startup the webview can invoke node-backed commands before `async_setup` finishes managing the node; `invokeAfterSetup()` retries the transient "state not managed" error until the backend is ready. Importing `invoke` directly from `@tauri-apps/api/core` (outside `invoke-after-setup.ts` itself) is a defect — flag it in review.
+- **STRICT: All Tauri commands must be invoked via `invokeAfterSetup()` from `packages/stores/src/utils/invoke-after-setup.ts`, never `invoke()` from `@tauri-apps/api` directly.** At startup the webview can invoke node-backed commands before `async_setup` finishes managing the node; `invokeAfterSetup()` retries the transient "state not managed" error until the backend is ready. Importing `invoke` directly from `@tauri-apps/api/core` (outside `invoke-after-setup.ts` itself) is a defect — flag it in review. The one exception is streaming commands: those are `#[subscription]` streams in Rust, called from the stores with `subscribe()` from `tauri-plugin-subscriptions`. They read the node through `node_slot` rather than managed state, so they can't hit "state not managed".
 - UI built with Konsta UI components (mobile-first design)
 - Internationalization using @inlang/paraglide-js
 - Image compression before upload
@@ -171,10 +174,10 @@ Create Profile (first launch only)
   └─ / (Home — chat list)
 
 / (Home)
-  ├─ [avatar] ──────────── /settings
+  ├─ [settings tab] ────── /settings          (bottom tab bar: Chats / Settings)
   ├─ [contacts icon] ───── /contacts
   ├─ [new message] ─────── /new-message        (FAB on Material, navbar link on iOS)
-  └─ [chat item] ──────── /direct-chats/{agentId}  or  /group-chat/{chatId}
+  └─ [chat item] ──────── /direct-chats/{chatId}  or  /group-chat/{chatId}
 
 /settings
   ├─ [profile item] ────── /settings/profile
@@ -196,7 +199,7 @@ Create Profile (first launch only)
 
 /new-message
   ├─ [add contact] ────── /new-message/add-contact
-  └─ [contact item] ───── /direct-chats/{agentId}
+  └─ [contact item] ───── /direct-chats/{chatId}
 
 /new-message/add-contact
   ├─ code tab ──── shows QR + code input
@@ -206,13 +209,13 @@ Create Profile (first launch only)
   ├─ step 1: member selection ─── [next] ──► step 2: group info ─── [create]
   └─ step 2 back ──► step 1
 
-/direct-chats/{agentId}
-  ├─ [navbar title] ────── /direct-chats/{agentId}/chat-settings
+/direct-chats/{chatId}
+  ├─ [navbar title] ────── /direct-chats/{chatId}/chat-settings
   └─ [back] ────────────── /
 
-/direct-chats/{agentId}/chat-settings
-  ├─ [search button] ───── /direct-chats/{agentId}?search=true
-  └─ [back] ────────────── /direct-chats/{agentId}
+/direct-chats/{chatId}/chat-settings
+  ├─ [search button] ───── /direct-chats/{chatId}?search=true
+  └─ [back] ────────────── /direct-chats/{chatId}
 
 /group-chat/{chatId}
   ├─ [navbar title] ────── /group-chat/{chatId}/info
@@ -370,34 +373,36 @@ Use `pnpm start` to run two instances locally that can communicate with each oth
 
 ### E2E Tests (WebdriverIO)
 
-The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). The `PLATFORMS` env var lists the agents to launch as an unordered comma-separated multiset of platforms (default `desktop,desktop`; duplicates set the agent count, order carries no meaning): `desktop` (tauri-driver against the built binary), `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
+The `e2e-tests/` package contains automated end-to-end tests using WebdriverIO. Tests launch agents and exercise the full messaging flow (profile creation, contact exchange, messaging). Every agent a spec asks for is a `desktop` agent (the built binary, driven through the WebDriver server the e2e build embeds, launched for that spec file) unless a phone fills it. The `PHONES` env var lists the phones to drive as an unordered comma-separated multiset (duplicates set the phone count, order carries no meaning; unset means none): `android` (physical device via Appium in the webview context), `android-emulator` (headless emulator, booted automatically), or `ios` (connected iPhone via Appium/XCUITest in the WKWebView context). Page objects and specs work unchanged across platforms.
 
 ```bash
 # Build the Tauri binary and run the e2e suite (recommended)
 just e2e
 
 # Build and run a single spec
-just e2e run full-flow
+just e2e run send-messages
 
-# Phone + desktop, two phones, two auto-booted emulators, or a single desktop
-PLATFORMS=android,desktop just e2e run send-messages
-PLATFORMS=android,android just e2e run send-messages
-PLATFORMS=android-emulator,android-emulator just e2e run send-messages
-PLATFORMS=desktop just e2e run settings-pages
+# A phone (desktops fill the other agents), two phones, or two auto-booted emulators
+PHONES=android just e2e run send-messages
+PHONES=android,android just e2e run send-messages
+PHONES=android-emulator,android-emulator just e2e run send-messages
 
-# Connected iPhone; pair two iPhones for two-agent specs (desktop needs Linux,
-# so it can't share a Mac host with an iOS agent)
-PLATFORMS=ios,ios just e2e run send-messages
-PLATFORMS=ios just e2e run settings-pages
+# Connected iPhone; pair two iPhones for two-agent specs, or one iPhone with
+# the Mac's own desktop build
+PHONES=ios,ios just e2e run send-messages
+PHONES=ios just e2e run send-messages
 ```
 
 **Key details:**
+- Desktop runs need `toxiproxy-server` on the PATH; the nix dev shell provides it. Without nix: the `toxiproxy-server` binary from the Shopify toxiproxy releases (2.12.0). Every run fronts the cloud mailbox with the proxy so specs can degrade its link, and the harness fails at startup, by name, when it is missing. Behind the proxy, `stunnel` (also in the nix dev shell) serves the local mailbox over TLS with a certificate from the committed test CA in `crates/mailbox-client/e2e-test-ca/`, which e2e builds trust, so a degraded link slows the TLS handshake the app's connect timeout covers.
+- Desktop agents also run on Windows. Beyond Tauri's prerequisites that needs Git for Windows (the harness builds through `sh`), `toxiproxy-server` and stunnel's `tstunnel` on the PATH, CMake, an MSVC Rust toolchain and a native Perl (`RUSTUP_TOOLCHAIN` and `OPENSSL_SRC_PERL`, see `e2e-tests/.env.example`). Start `just e2e` from PowerShell or cmd, which is also the shell its recipes use there: anything started through `sh` has Ctrl-C disabled, and local hubs only say goodbye on Ctrl-C. Windows Firewall may ask to allow the binaries the first time they run. Phones, host Wi-Fi moves, and the compat suite are not ported to Windows.
 - Tests use page objects from `e2e-tests/helpers/pages/`. `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` returns one `Agent` per requirement with all page-object instances pre-attached (`agent1.homePage`, `agent1.directChatPage`, …).
 - For DOM-side work that can't be modeled as a click (bulk overflow scans, programmatic event dispatch, test-only file-input injection), tests call `window.__test` functions (registered by `ui/tests/setup-utils.ts`) via `browser.execute()`.
-- Platform-specific setup (tauri-driver instances, Appium capabilities, adb reverses, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
-- Desktop agents get `DATA_DIR` and `MAILBOX_URL` through each agent's tauri-driver spawn env (`e2e-tests/setup/platforms/desktop.ts`); Android agents get the mailbox via a baked `http://127.0.0.1:3200` URL bridged with `adb reverse`.
+- Platform-specific setup (desktop app launches, Appium capabilities, log tailing) lives in `e2e-tests/setup/platforms/`; `wdio.conf.ts` is the single config for every combo.
+- Desktop agents are the e2e build launched by the harness with `DATA_DIR`, `MAILBOX_URL` and `TAURI_WEBDRIVER_PORT` in their env, and driven through the W3C WebDriver server that build embeds (`tauri-plugin-wdio-webdriver`, behind the `e2e-tests` cargo feature), on Linux and macOS alike (`e2e-tests/setup/platforms/desktop.ts`); the compat suite (`e2e-tests/compat/`) launches the binaries it builds from each ref the same way, so it can only test refs whose e2e build embeds that server; phone agents, Android and iOS alike, bake the host's LAN address as their mailbox and push server, so a phone reaches them over the network it is on and loses them when it leaves it.
 - The binary is built with `--features e2e-tests` to skip single-instance/updater plugins and throttle events.
 - Test data is stored in `.dbs/e2e/` and cleaned up after each run.
+- The hub fuzz (`local-hub-discovery-stress`) walks phones and local hubs through real Wi-Fi networks. `E2E_WIFI_NETWORKS=ssid:pass,ssid:pass` in a gitignored `e2e-tests/.env` (see `e2e-tests/.env.example`, which also lists what the access points must look like; `just e2e` loads it, and `ENV=staging just e2e` layers the root `.env.staging` under it) names them; the host's Wi-Fi card joins them as a client for the length of the run, which is what puts the hubs (processes on the host) on a LAN. Unset, every hub and network move stays out of the runs.
 
 **E2E coding style:**
 
@@ -405,7 +410,7 @@ PLATFORMS=ios just e2e run settings-pages
 - **Specs run in narrow (mobile) layout by default.** `setupAgent` forces `agent.setWideScreen(false)` so back buttons (`direct-chat-back`, `offline-back`, …) and FABs render — most of those are gated by `{#if !isWideScreen.value}`. When a spec needs the desktop two-panel layout (e.g. `review-checks` switching combos), call `agent.setWideScreen(true)` in `before()`. Wide-screen mode mounts `ChatListPanel` / `SettingsPanel` / `NewMessagePanel` in the sidebar; some navigation steps that need a back-out in narrow can skip it in wide-screen because the sidebar is always there. The handful of cross-mode helpers (`helpers/review/visit-all-pages.ts`) guard with `if (await page.back.isDisplayed())` to handle both.
 - **Use `page.ready()` instead of bare waits after navigation.** Each page object has a `ready()` method that waits for the first stable element on that page. Call it right after the click that triggered the navigation.
 - **Only pass custom `waitUntil` / `waitForExist` arguments when strictly necessary.** The default `waitforTimeout` (30s) is correct for incidental waits — animations, navigations, store hydration. Override `timeout` / `interval` / `timeoutMsg` only when (a) the operation genuinely needs longer than 30s (network sync, p2p propagation, connection-state flips that depend on real timeouts) or (b) a custom error message is the only way to diagnose a flake. Don't copy timeouts from neighbouring code without justifying them.
-- **Specs declare per-agent requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `{ platform: 'desktop' }`, `{ platform: 'android' }` (fulfilled by a physical device or an emulator), or `{ platform: 'ios' }` for the agent that needs it. The harness matches the requirements against the unordered `PLATFORMS` multiset — a `'desktop'` requirement gets a desktop agent regardless of its position in the list — and skips the suite when no assignment exists (including when the spec asks for more agents than `PLATFORMS` launches).
+- **Specs declare per-agent requirements in `setupAgents`.** Each suite builds its agents with `[agent1, agent2] = await setupAgents(this, [{ platform: 'any' }, { platform: 'any' }])` inside `before(async function () { ... })` (a plain `function`, so `this` is the mocha context). A spec covering a platform-specific feature passes `{ platform: 'desktop' }`, `{ platform: 'android' }` (fulfilled by a physical device or an emulator), or `{ platform: 'ios' }` for the agent that needs it. The harness gives each requirement a phone from the unordered `PHONES` multiset when one fulfills it (narrowest requirements first, so `'any'` takes the leftover phones) and launches a desktop agent for every other one; it skips the suite only when a requirement that needs a phone (`'android'`, `'ios'`, `'phone'`, `'mobile'`) finds none.
 - **One page object per route, one spec per feature.** When you add a new route under `ui/src/routes/`, add a matching page object under `e2e-tests/helpers/pages/` (mirror the route structure: `routes/settings/profile/edit-name/+page.svelte` → `helpers/pages/settings/profile/edit-name-page.ts`) and wire it into `setup-agents.ts`. New UI features must also ship with a spec in `e2e-tests/specs/` covering the happy path.
 
 **REQUIREMENT:** E2E specs must drive the UI via page objects (`agent.homePage.newMessageButton.click()`), not by inlining `document.querySelector` or duplicating selectors. DOM-side helpers that can't be expressed as clicks belong in `ui/tests/setup-utils.ts` under `window.__test`.
@@ -433,7 +438,7 @@ The `tauri-plugin-virtual-keyboard` plugin (source: `https://github.com/dash-cha
 - **Log redaction**: `REDACTION_REGEXES` in `src-tauri/src/commands/redact_log.rs` lists what counts as sensitive: hex strings, base64 blobs, public key byte arrays, hashes, signatures, device/agent IDs, timestamps, profile fields (name, surname, about), chat message content, and reactions. `tauri-plugin-sentry-reporting` applies those patterns to everything on its way off the device — whole-string over the attached log tail, and per string leaf over serialized Sentry events. **When adding any new feature that introduces private or user-generated data, you must add a pattern to `REDACTION_REGEXES` so that data never leaves the device in a report.**
 - **Error reporting**: error reports go to Sentry via `crates/tauri-plugin-sentry-reporting`, on the rule that **nothing leaves the device until the user presses Send**. Capture is local-only; a user-initiated command redacts and POSTs. `SENTRY_DSN` is set by CI at build time — one DSN across environments, with `ENV` distinguishing them in Sentry. With no DSN the whole path is inert and logging is unaffected.
 - **Rust edition**: Uses Rust edition 2021 (src-tauri) and 2024 (dashchat-node)
-- **Rust toolchain**: Pinned to stable 1.94.0 via `rust-toolchain.toml` (one toolchain including the Android and iOS targets).
+- **Rust toolchain**: Pinned to a stable version via `rust-toolchain.toml` (one toolchain including the Android and iOS targets).
 - **Mobile vs Desktop**: Code paths differ for mobile/desktop (check `#[cfg(mobile)]` and `#[cfg(not(mobile))]`)
 - **Internationalization**: UI supports multiple languages via Weblate integration
 

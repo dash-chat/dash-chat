@@ -28,9 +28,8 @@
 	class={className}
 >
 	<wa-icon
-		class="text-2xl transition-transform duration-200 {expanded
-			? 'rotate-45'
-			: ''}"
+		style="font-size: 26px"
+		class="transition-transform duration-200 {expanded ? 'rotate-45' : ''}"
 		src={wrapPathInSvg(mdiPlus)}
 	></wa-icon>
 </IconButton>

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use dashchat_node::{
-    stores::TombstoneReason, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo, OutgoingMedia,
-    RemoveGroupMemberError,
+    stores::TombstoneReason, AckedOp, AgentId, ChatId, ChatReaction, DeviceId, GroupInfo,
+    OutgoingMedia, RemoveGroupMemberError,
 };
 use p2panda_auth::{Access, AccessLevel};
 use p2panda_core::Hash;
@@ -142,6 +142,18 @@ pub async fn get_tombstones(
 }
 
 #[tauri::command]
+pub async fn get_message_acks(
+    chat_id: ChatId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<BTreeMap<DeviceId, AckedOp>, String> {
+    let node = app_node_manager.get().await?;
+    node.projection
+        .delivered_acks(chat_id.into())
+        .await
+        .map_err(|err| format!("{err:?}"))
+}
+
+#[tauri::command]
 pub async fn send_reaction(
     chat_id: ChatId,
     content: ChatReaction,
@@ -231,6 +243,24 @@ pub async fn remove_group_member(
     node.remove_group_member(chat_id, *device_id)
         .await
         .map_err(|e| format!("{e:?}"))
+}
+
+#[tauri::command]
+pub async fn promote_group_member_to_admin(
+    chat_id: ChatId,
+    agent_id: AgentId,
+    app_node_manager: State<'_, AppNodeManager>,
+) -> Result<(), String> {
+    let node = app_node_manager.get().await?;
+    let device_id = node
+        .projection
+        .lookup_contact_by_agent_id(agent_id)
+        .await
+        .map_err(|e| format!("{e:?}"))?
+        .ok_or_else(|| format!("No device found for agent {:?}", agent_id))?;
+    node.promote_group_member_to_admin(chat_id, *device_id)
+        .await
+        .map_err(|e| format!("Failed to promote group member to admin: {e:?}"))
 }
 
 #[tauri::command]

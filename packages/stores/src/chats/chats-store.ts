@@ -1,23 +1,18 @@
 import { reactive, signal } from 'signalium';
 
-import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
-import {
-	DirectChatClient,
-	type IDirectChatClient,
-} from '../direct-chats/direct-chat-client';
 import { DirectChatStore } from '../direct-chats/direct-chat-store';
 import {
 	GroupChatClient,
 	type IGroupChatClient,
 } from '../group-chats/group-chat-client';
 import { GroupChatStore } from '../group-chats/group-chat-store';
+import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { AgentId, VerifyingKey } from '../p2panda/types';
+import { VerifyingKey } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import { ChatId, ChatSummary, Payload } from '../types';
 import { memo } from '../utils/memo';
-import { pendingChatKey } from './chat-key';
 import { type IChatsClient } from './chats-client';
 import { type IMessagesClient, MessagesClient } from './messages-client';
 
@@ -28,24 +23,10 @@ export class ChatsStore {
 		protected logsStore: LogsStore<Payload>,
 		protected contactsStore: ContactsStore,
 		protected tombstoneStore: TombstoneStore,
+		protected messageAckStore: MessageAckStore,
 		public client: IChatsClient,
 	) {
-		this.logsStore.logsClient.onNewOperation((_topicId, op) => {
-			// GroupControl bumps are what reveal a newly joined group: the backend
-			// marks a chat as a group chat while reducing the group's Create op
-			// (before emitting this notification), which happens after the
-			// JoinGroup notification has already triggered a (too early) refetch.
-			if (
-				(op.body?.type === 'Chat' && op.body.payload.type === 'JoinGroup') ||
-				op.body?.type === 'GroupControl'
-			) {
-				this.groupChatVersion.value++;
-			}
-		});
-	}
-
-	protected directChatClient(): IDirectChatClient {
-		return new DirectChatClient();
+		this.client.onGroupChatAdded(() => this.groupChatVersion.value++);
 	}
 
 	protected groupChatClient(): IGroupChatClient {
@@ -82,6 +63,7 @@ export class ChatsStore {
 				this.logsStore,
 				this.contactsStore,
 				this.tombstoneStore,
+				this.messageAckStore,
 				this.groupChatClient(),
 				chatId,
 				this.messagesClient(),
@@ -89,37 +71,52 @@ export class ChatsStore {
 	);
 
 	directChats = memo(
-		(peer: AgentId) =>
+		(chatId: ChatId) =>
 			new DirectChatStore(
 				this.logsStore,
 				this.contactsStore,
 				this.tombstoneStore,
-				this.directChatClient(),
-				peer,
+				this.messageAckStore,
+				chatId,
 				this.messagesClient(),
 			),
 	);
 
-	allChatsIds = reactive(async () => {
-		const contacts = await this.contactsStore.contactsAgentIds();
-		// Combine and deduplicate
-		return contacts;
-	});
-
 	allChatsSummaries = reactive(async () => {
-		const [direct, groups, pending, outgoing] = await Promise.all([
+		const [direct, groups] = await Promise.all([
 			this.allDirectChatSummaries(),
 			this.allGroupChatSummaries(),
-			this.allPendingRequestSummaries(),
-			this.allOutgoingPendingSummaries(),
 		]);
-		const summaries = [...direct, ...groups, ...pending, ...outgoing];
+		const summaries = [...direct, ...groups];
 		summaries.sort((a, b) => b.lastEvent.timestamp - a.lastEvent.timestamp);
 		return summaries;
 	});
 
+	unreadMessagesCount = reactive(async () => {
+		const summaries = await this.allChatsSummaries();
+		return summaries.reduce(
+			(count, summary) => count + summary.unreadMessages,
+			0,
+		);
+	});
+
+	/** Every direct chat, whatever its lifecycle state: established contacts,
+	 * incoming contact requests, and outgoing requests awaiting their ack. */
+	private allDirectChatIds = reactive(async (): Promise<ChatId[]> => {
+		const [contacts, requests, outgoing] = await Promise.all([
+			this.contactsStore.contacts(),
+			this.contactsStore.contactRequests(),
+			this.contactsStore.outgoingContactRequests(),
+		]);
+		const chatIds = new Set<ChatId>();
+		for (const contact of Object.values(contacts)) chatIds.add(contact.chatId);
+		for (const request of requests) chatIds.add(request.chatId);
+		for (const request of outgoing) chatIds.add(request.chatId);
+		return Array.from(chatIds);
+	});
+
 	private allDirectChatSummaries = reactive(async () => {
-		const chatIds = await this.allChatsIds();
+		const chatIds = await this.allDirectChatIds();
 		return Promise.all(
 			chatIds.map(chatId => this.directChats(chatId).summary()),
 		);
@@ -132,43 +129,4 @@ export class ChatsStore {
 		);
 		return summaries.filter((s): s is ChatSummary => s !== undefined);
 	});
-
-	private allPendingRequestSummaries = reactive(
-		async (): Promise<ChatSummary[]> => {
-			const pendingRequests = await this.contactsStore.contactRequests();
-			const unique = pendingRequests.filter(
-				(request, index, self) =>
-					self.findIndex(r => r.agentId === request.agentId) === index,
-			);
-			return unique.map(pendingRequest => ({
-				type: 'DirectChat',
-				chatId: pendingRequest.agentId,
-				name: fullName(pendingRequest.profile),
-				avatar: pendingRequest.profile.avatar,
-				lastEvent: {
-					kind: 'contact_request',
-					timestamp: pendingRequest.timestamp,
-				},
-				unreadMessages: 1,
-			}));
-		},
-	);
-
-	private allOutgoingPendingSummaries = reactive(
-		async (): Promise<ChatSummary[]> => {
-			const pending = await this.contactsStore.outgoingPendingRequests();
-			return pending.map(request => ({
-				type: 'DirectChat',
-				chatId: pendingChatKey(request.devicePubkey),
-				name: request.profileName,
-				avatar: undefined,
-				waitingForProfile: true as const,
-				lastEvent: {
-					kind: 'contact_request',
-					timestamp: request.timestamp,
-				},
-				unreadMessages: 0,
-			}));
-		},
-	);
 }

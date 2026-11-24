@@ -6,6 +6,8 @@ pub mod driver;
 mod error;
 pub mod fcm_client;
 mod routes;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 use crate::fcm_client::Fcm;
 

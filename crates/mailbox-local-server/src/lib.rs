@@ -1,55 +1,69 @@
 //! Spawn an in-process mailbox server that shares a node's iroh endpoint and
-//! blob store, and (optionally) announce it on the LAN via mDNS so peers can
-//! discover and sync against it without any cloud service.
-//!
-//! This crate owns the `mdns-sd` dependency so that `dashchat-node` does not
-//! have to: it consumes this crate only as a dev dependency (for tests), while
-//! the Tauri host crate uses it in production.
+//! blob store, and announce it on the LAN via mDNS so peers can discover and
+//! sync against it without any cloud service.
 
-use std::path::PathBuf;
+use std::fs;
+use std::net::Ipv4Addr;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use dashchat_utils::local_hub::LocalHubRegistry;
 use iroh::EndpointId;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
 use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
-use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tokio::sync::mpsc::UnboundedSender;
 
-/// The mDNS service type production Dash Chat instances announce and browse.
-pub const MDNS_SERVICE_TYPE: &str = "_dashchat._tcp.local.";
+pub use local_hub_discovery::LocalHubAnnouncementService;
 
 /// A running in-process mailbox server. Call [`LocalMailboxServer::stop`] to
 /// shut it down gracefully.
 pub struct LocalMailboxServer {
     /// A loopback URL the server can be reached at locally (e.g. for health
-    /// checks). Peers on the LAN reach it via the mDNS-announced addresses.
+    /// checks).
     pub url: String,
     pub port: u16,
+    endpoint_id: EndpointId,
+    local_hub_registry: LocalHubRegistry,
     stop_signal: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
+    announcement: LocalHubAnnouncementService,
 }
 
 impl LocalMailboxServer {
+    /// Retires the announcement, so peers hear this hub leave instead of
+    /// waiting out its silence.
     pub async fn stop(self) {
+        // Close the push port first: a push refused mid-shutdown falls back to
+        // the HTTP upload, which the server still answers until it retires.
+        self.local_hub_registry.deregister(self.endpoint_id);
+        // Goodbye first, while the server is still serving: a browser that hears
+        // it retires the hub at once, where a refused probe deliberately means
+        // nothing.
+        self.announcement.shutdown().await;
         let _ = self.stop_signal.send(());
-        if let Err(err) = self.task.await {
+        let served = self.task.await;
+        if let Err(err) = served {
             log::error!("Local mailbox server task ended unexpectedly: {err}");
         }
     }
 }
 
 /// Spawn an in-process mailbox server sharing the given iroh endpoint and blob
-/// store (the `BlobSync::shared` model), so relayed blobs land in the same store
-/// served by the same endpoint and the mailbox's EndpointId equals
-/// `endpoint_id`. A free port is allocated automatically.
+/// store, so it serves blobs from the same store over the same endpoint. The
+/// server is announced on the LAN over mDNS, owned by the returned server so
+/// stopping it retires the announcement.
 ///
-/// The returned [`LocalMailboxServer`] is not yet announced on the LAN; pair it
-/// with [`register_mdns_with_retry`] for discovery.
+/// The port is remembered beside `db_path` and reused across restarts, so
+/// peers that discovered this hub keep reaching it.
 ///
 /// `upload_grace` overrides how long the mailbox defers dialing a blob's source
 /// after an announce that expects an inline upload; `None` uses the production
-/// default. Tests pass a short window to keep the fetch backstop fast.
+/// default.
+///
+/// `local_hub_registry` must be the handle the node's config holds: registering
+/// here is what opens this endpoint's blob push port, which the node's
+/// authorization loop guards.
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
     blobs: BlobsProtocol,
@@ -58,8 +72,16 @@ pub async fn spawn_local_mailbox_server(
     fetch_config: Option<FetchConfig>,
     upload_grace: Option<Duration>,
     peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
+    local_hub_registry: LocalHubRegistry,
 ) -> anyhow::Result<LocalMailboxServer> {
-    let port = free_port()?;
+    let (listener, port) = {
+        let db_path = db_path.clone();
+        tokio::task::spawn_blocking(move || reserve_listener(&db_path)).await??
+    };
+    listener.set_nonblocking(true)?;
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+    // Captured before `endpoint` is moved into the blob sync.
+    let endpoint_id = endpoint.id();
 
     let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint, peer_addr_tx);
     if let Some(fetch_config) = fetch_config {
@@ -71,85 +93,168 @@ pub async fn spawn_local_mailbox_server(
 
     let (stop_signal, stop_signal_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Bind dual-stack so peers can reach us over both the IPv4 and IPv6
-    // addresses the mDNS record auto-announces. A `::` socket accepts IPv4
-    // connections as v4-mapped addresses on platforms where `IPV6_V6ONLY`
-    // defaults off (macOS, Linux).
-    let addr = format!("[::]:{port}");
+    let task_registry = local_hub_registry.clone();
     let task = tokio::spawn(async move {
         let signal = async move {
             let _ = stop_signal_rx.await;
         };
-        if let Err(e) =
-            mailbox_server::spawn_server(db_path, addr, None, Some(blob_sync), None, signal).await
+        if let Err(e) = mailbox_server::spawn_server(
+            db_path,
+            listener,
+            None,
+            Some(blob_sync),
+            None,
+            *dashchat_utils::NETWORK_ID,
+            None,
+            signal,
+        )
+        .await
         {
             log::error!("Local mailbox server failed: {e:?}");
         }
+        // Backstop for a server that failed rather than being stopped: stop()
+        // deregisters on the graceful path, and removal is idempotent.
+        task_registry.deregister(endpoint_id);
     });
+
+    let announcement = spawn_local_hub_announcement(endpoint_id, port)?;
+
+    // Hosting a hub opens this endpoint's blob push port; stop() closes it.
+    local_hub_registry.register(endpoint_id);
 
     Ok(LocalMailboxServer {
         url: format!("http://127.0.0.1:{port}"),
         port,
+        endpoint_id,
+        local_hub_registry,
         stop_signal,
         task,
+        announcement,
     })
 }
 
-fn free_port() -> anyhow::Result<u16> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-    Ok(listener.local_addr()?.port())
+fn port_path(db_path: &Path) -> PathBuf {
+    db_path.with_extension("port")
 }
 
-/// Register the mailbox as an mDNS service, retrying up to `attempts` times.
-/// Returns the registered service fullname (needed later to unregister).
-pub fn register_mdns_with_retry(
-    daemon: &ServiceDaemon,
-    service_type: &str,
-    endpoint_id: EndpointId,
-    port: u16,
-    attempts: u32,
-) -> anyhow::Result<String> {
-    let mut last_err = None;
-    for attempt in 1..=attempts {
-        let service = mdns_service_info(service_type, endpoint_id, port)?;
-        let fullname = service.get_fullname().to_string();
-        log::info!(
-            "Registering local mailbox service via mdns: {} ({})",
-            fullname,
-            service.get_type()
-        );
-        match daemon.register(service) {
-            Ok(()) => return Ok(fullname),
-            Err(e) => {
-                log::error!(
-                    "Failed to register local mailbox service via mdns, attempt {attempt} of {attempts}, error: {e:?}"
-                );
-                last_err = Some(e);
+/// The socket to serve on, bound: on the port this hub served on last when it
+/// is still free, so a restart does not strand every peer that discovered it at
+/// the old one. Falls back to any free port, and remembers whichever it took.
+///
+/// Holding the socket is the reservation -- nothing can take the port between
+/// here and the server taking it over.
+pub fn reserve_listener(db_path: &Path) -> anyhow::Result<(std::net::TcpListener, u16)> {
+    // A remembered port outlives its hub only as long as the store it belongs
+    // to; next to a database that is gone it would pin an arbitrary port on a
+    // fresh install.
+    if !db_path.exists() {
+        let _ = fs::remove_file(port_path(db_path));
+    }
+    let remembered = fs::read_to_string(port_path(db_path))
+        .ok()
+        .and_then(|port| port.trim().parse::<u16>().ok());
+    let listener = match remembered {
+        Some(port) => match std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)) {
+            Ok(listener) => listener,
+            Err(err) => {
+                log::info!("Local mailbox port {port} is not free ({err}); taking another");
+                any_free_listener()?
             }
+        },
+        None => any_free_listener()?,
+    };
+    let port = listener.local_addr()?.port();
+    if remembered != Some(port) {
+        if let Err(err) = fs::write(port_path(db_path), port.to_string()) {
+            log::warn!("Failed to remember local mailbox port {port}: {err}");
         }
     }
-    Err(last_err
-        .map(anyhow::Error::from)
-        .unwrap_or_else(|| anyhow::anyhow!("failed to register local mailbox service via mdns")))
+    Ok((listener, port))
 }
 
-fn mdns_service_info(
-    service_type: &str,
+fn any_free_listener() -> anyhow::Result<std::net::TcpListener> {
+    Ok(std::net::TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))?)
+}
+
+/// Announce a mailbox on the LAN so peers discover it. The instance id is the
+/// hub's MailboxId (base64url-no-pad of the endpoint's public key). `port` is
+/// where the server listens on every interface.
+pub fn spawn_local_hub_announcement(
     endpoint_id: EndpointId,
     port: u16,
-) -> anyhow::Result<ServiceInfo> {
-    // The base64url-no-pad MailboxId encoding of the endpoint's 32-byte public
-    // key (43 chars, fits a single DNS label) is used as the instance name so
-    // the mDNS instance name IS the canonical MailboxId.
-    let instance_name = encode_mailbox_id(endpoint_id);
-
-    // Per-device hostname so the A/AAAA owner-name doesn't collide with every
-    // other Dash Chat instance on the LAN. A shared hostname can cause one
-    // instance's address cache entry to overwrite another's in the resolver.
-    let host_name = format!("{instance_name}.local.");
-
-    Ok(
-        ServiceInfo::new(service_type, &instance_name, &host_name, "", port, vec![])?
-            .enable_addr_auto(),
+) -> anyhow::Result<LocalHubAnnouncementService> {
+    LocalHubAnnouncementService::spawn(
+        local_hub_discovery::service_name(),
+        &encode_mailbox_id(endpoint_id),
+        port,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The store a hub is restarting on: a remembered port only counts next to
+    /// the database it was remembered for.
+    fn db_path(dir: &tempfile::TempDir) -> PathBuf {
+        let db_path = dir.path().join("mailbox.redb");
+        if !db_path.exists() {
+            fs::write(&db_path, b"").unwrap();
+        }
+        db_path
+    }
+
+    fn remembered_port(db_path: &Path) -> Option<u16> {
+        fs::read_to_string(port_path(db_path))
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    }
+
+    #[test]
+    fn a_hub_serves_on_the_port_it_served_on_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let (listener, first) = reserve_listener(&db_path(&dir)).unwrap();
+        drop(listener);
+        let (_, again) = reserve_listener(&db_path(&dir)).unwrap();
+        if again != first {
+            // These run in parallel: another test can take the port in the
+            // moment it is free between the two calls. The replacement is then
+            // what is remembered, which is the case the next test covers.
+            assert_eq!(remembered_port(&db_path(&dir)), Some(again));
+            return;
+        }
+        assert_eq!(again, first);
+    }
+
+    #[test]
+    fn a_remembered_port_that_is_no_longer_free_is_replaced_and_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        // Holding the first reservation is what makes its port unavailable.
+        let (taken, first) = reserve_listener(&db_path(&dir)).unwrap();
+        let (held, second) = reserve_listener(&db_path(&dir)).unwrap();
+        assert_ne!(second, first);
+
+        // The new port is the one remembered from here on, whether or not the
+        // old one comes free again.
+        drop(taken);
+        drop(held);
+        assert_eq!(reserve_listener(&db_path(&dir)).unwrap().1, second);
+    }
+
+    /// Discovery only announces IPv4 addresses, so that is what peers dial.
+    #[test]
+    fn a_hub_accepts_ipv4_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_listener, port) = reserve_listener(&db_path(&dir)).unwrap();
+        std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    }
+
+    #[test]
+    fn a_hub_with_nothing_remembered_takes_any_free_port() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(reserve_listener(&db_path(&dir)).is_ok());
+        assert!(port_path(&db_path(&dir)).exists());
+    }
 }
