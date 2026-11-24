@@ -3,7 +3,9 @@
 	import { getVersion } from '@tauri-apps/api/app';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
+	import { useReactiveValue } from '$lib/stores/use-signal';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
+	import { showToast } from '$lib/utils/toasts';
 	import {
 		BlockTitle,
 		List,
@@ -14,10 +16,32 @@
 		Toggle,
 		useTheme,
 	} from 'konsta/svelte';
+	import { getContext } from 'svelte';
+	import type { SettingsStore } from 'dash-chat-stores';
 
 	const theme = $derived(useTheme());
+	const settingsStore: SettingsStore = getContext('settings-store');
+	const developerModeEnabled = useReactiveValue(
+		settingsStore.developerModeEnabled,
+	);
 
 	const versionPromise = getVersion();
+
+	const UNLOCK_TAP_COUNT = 7;
+	const MAX_TAP_GAP_MS = 300;
+
+	let tapCount = 0;
+	let lastTapAt = 0;
+
+	async function onVersionTap() {
+		const now = Date.now();
+		tapCount = now - lastTapAt < MAX_TAP_GAP_MS ? tapCount + 1 : 1;
+		lastTapAt = now;
+		if (tapCount < UNLOCK_TAP_COUNT) return;
+		tapCount = 0;
+		await settingsStore.setDeveloperModeEnabled(true);
+		showToast(m.developerModeEnabled());
+	}
 </script>
 
 <Page>
@@ -46,8 +70,11 @@
 
 				{#await versionPromise then version}
 					<ListItem
+						link
+						chevron={false}
 						title={m.version()}
 						after={version}
+						onClick={$developerModeEnabled === true ? undefined : onVersionTap}
 						data-testid="help-version"
 					/>
 				{/await}

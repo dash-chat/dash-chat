@@ -17,6 +17,7 @@ export interface Settings {
 	p2p_enabled: boolean;
 	notifications_enabled: boolean;
 	background_mode_enabled: boolean;
+	developer_mode_enabled: boolean;
 }
 
 export type { ColorScheme, ColorSchemePreference };
@@ -31,6 +32,7 @@ export interface ISettingsClient {
 	setLocalMailboxEnabled(enabled: boolean): Promise<void>;
 	setNotificationsEnabled(enabled: boolean): Promise<void>;
 	setBackgroundModeEnabled(enabled: boolean): Promise<void>;
+	setDeveloperModeEnabled(enabled: boolean): Promise<void>;
 	onSettingsUpdated(handler: (settings: Settings) => void): UnsubscribeFunction;
 }
 
@@ -65,6 +67,10 @@ export class SettingsClient implements ISettingsClient {
 
 	setBackgroundModeEnabled(enabled: boolean): Promise<void> {
 		return this.setSetting('background_mode_enabled', enabled);
+	}
+
+	setDeveloperModeEnabled(enabled: boolean): Promise<void> {
+		return this.setSetting('developer_mode_enabled', enabled);
 	}
 
 	onSettingsUpdated(

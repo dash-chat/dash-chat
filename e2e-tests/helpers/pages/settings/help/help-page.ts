@@ -10,4 +10,19 @@ export class HelpPage extends TestHelper {
 	async ready() {
 		await this.contactUsLink.waitForExist();
 	}
+
+	/** Tap the version row `times` in a row. Driven from inside the page so every
+	 * gap is well under the 300ms the developer-mode unlock allows between taps —
+	 * one WDIO click per tap would spend longer than that in round trips. */
+	async tapVersion(times: number): Promise<void> {
+		await this.versionItem.waitForExist();
+		await this.agent.execute(
+			(sel: string, count: number) => {
+				const el = document.querySelector(sel) as HTMLElement;
+				for (let i = 0; i < count; i++) el.click();
+			},
+			tid('help-version'),
+			times,
+		);
+	}
 }

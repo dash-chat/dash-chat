@@ -424,5 +424,9 @@
 	"testBanner": "Early access test",
 	"feedback": "Feedback",
 	"reportSent": "Report sent. Thank you!",
-	"reportQueued": "Report saved. It will be sent when you're back online."
+	"reportQueued": "Report saved. It will be sent when you're back online.",
+	"developer": "Developer",
+	"developerModeEnabled": "Developer mode enabled",
+	"developerModeDisabled": "Developer mode disabled",
+	"disableDeveloperMode": "Disable developer mode"
 }
