@@ -969,7 +969,7 @@ impl OpProjection {
     /// exception: a `DeletedForMe` upgrades an existing `DeletedForEveryone` (so
     /// a message I deleted for myself vanishes even when it's also deleted for
     /// everyone). Every other combination keeps the existing reason.
-    async fn add_tombstone(
+    pub(crate) async fn add_tombstone(
         &self,
         topic: TopicId,
         op_hash: Hash,

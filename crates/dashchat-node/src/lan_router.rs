@@ -46,7 +46,30 @@ pub struct LanRouterConfig {
     /// Hard cap after the oldest still-pending authored op, so a steady
     /// stream of authoring still pushes (`PushDebouncePolicy::max_latency_ms`).
     pub push_max_latency: std::time::Duration,
+    /// Largest message the router's gossip overlay carries, in bytes. The
+    /// node configures p2panda's gossip layer with exactly this, and the
+    /// router packs its frames to fit (minus dash-router's wire headroom),
+    /// so a broadcast is never refused.
+    ///
+    /// An operation whose header and payload do not fit one frame is
+    /// advertised header-only, which [`LanRouter`] refuses to ingest, so
+    /// this is also the largest operation the router can carry. It has to
+    /// clear a contact request's base64 avatar (tens of KiB); media is
+    /// exchanged as blobs, not as operation payloads, so nothing bigger
+    /// needs to pass this way.
+    ///
+    /// Every peer pays for it past 128 KiB: iroh-gossip's send queue is
+    /// 1 MiB per peer by default and never smaller than eight messages, so
+    /// beyond that every 1 MiB here costs 8 MiB per peer. Raising it also
+    /// only helps if every node on the overlay does: gossip drops a
+    /// message over the *receiver's* limit.
+    pub max_wire_bytes: usize,
 }
+
+/// The default [`LanRouterConfig::max_wire_bytes`]: room for a contact
+/// request's avatar and then some, still inside the per-peer send queue
+/// iroh-gossip keeps anyway.
+pub const DEFAULT_MAX_WIRE_BYTES: usize = 64 * 1024;
 
 impl LanRouterConfig {
     pub fn new(enabled: bool) -> Self {
@@ -54,6 +77,7 @@ impl LanRouterConfig {
             enabled,
             push_debounce: std::time::Duration::from_millis(50),
             push_max_latency: std::time::Duration::from_millis(200),
+            max_wire_bytes: DEFAULT_MAX_WIRE_BYTES,
         }
     }
 }
@@ -72,6 +96,22 @@ impl IsSpace for crate::stores::LocalStore {
     }
 }
 
+/// Whether an operation's payload was deliberately dropped: all the router
+/// needs of the node's [`crate::stores::OpProjection`]. A payload a
+/// tombstone deleted must never be written back by a peer that still holds
+/// it (see [`LanRouter`]'s repair of a body-less row).
+#[async_trait::async_trait]
+pub trait Tombstones: Send + Sync + 'static {
+    async fn is_tombstoned(&self, topic: TopicId, hash: p2panda::Hash) -> anyhow::Result<bool>;
+}
+
+#[async_trait::async_trait]
+impl Tombstones for crate::stores::OpProjection {
+    async fn is_tombstoned(&self, topic: TopicId, hash: p2panda::Hash) -> anyhow::Result<bool> {
+        self.is_tombstoned(topic, hash).await
+    }
+}
+
 /// What the node hands the router at startup.
 pub struct LanRouterParams {
     pub config: LanRouterConfig,
@@ -81,6 +121,9 @@ pub struct LanRouterParams {
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub is_space: Arc<dyn IsSpace>,
+    /// Read only by the feature-on router.
+    #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
+    pub tombstones: Arc<dyn Tombstones>,
     /// Read only by the feature-on router.
     #[cfg_attr(not(feature = "lan-router"), allow(dead_code))]
     pub(crate) streams: Arc<TopicStreams>,
@@ -277,6 +320,9 @@ mod imp {
     #[derive(Clone)]
     pub(crate) struct OpStoreExt {
         store: LanRouterStore,
+        /// Consulted before a payload is written back into a stored
+        /// operation, so a deleted one stays deleted.
+        tombstones: Arc<dyn Tombstones>,
         /// Read on every held/fetch/ingest; written on (un)subscribe. Never
         /// held across an await.
         followed: Arc<RwLock<Followed>>,
@@ -288,9 +334,10 @@ mod imp {
     }
 
     impl OpStoreExt {
-        pub(crate) fn new(store: LanRouterStore) -> Self {
+        pub(crate) fn new(store: LanRouterStore, tombstones: Arc<dyn Tombstones>) -> Self {
             Self {
                 store,
+                tombstones,
                 followed: Default::default(),
                 hints: broadcast::channel(64).0,
                 topics_changed: Default::default(),
@@ -396,6 +443,67 @@ mod imp {
                 .iter()
                 .filter_map(|topic| followed.imports.get(topic).cloned())
                 .collect()
+        }
+
+        /// The followed topics that have `log_id`.
+        fn topics_of(&self, log_id: &LogId) -> Vec<TopicId> {
+            let followed = self.followed.read().unwrap();
+            followed
+                .logs
+                .get(log_id)
+                .map(|topics| topics.iter().copied().collect())
+                .unwrap_or_default()
+        }
+
+        /// Write the payload back into an operation p2panda has stored
+        /// without one, now that a peer has offered it.
+        ///
+        /// An older build imported header-only advertisements (see
+        /// [`AsyncStorage::ingest`]), and p2panda's insert ignores a second,
+        /// complete copy, so those rows stay payload-less however often the
+        /// whole operation arrives again. The app reads payloads out of the
+        /// store, so such an operation is invisible to it forever.
+        ///
+        /// Repairs nothing else: the payload must be the one the stored
+        /// header signs, the row must have no body, and the operation must
+        /// not be tombstoned on any topic that carries its log — a payload
+        /// a delete dropped is never resurrected.
+        async fn repair_body(
+            &self,
+            log: &RouterLog,
+            header: &Header,
+            payload: Option<Vec<u8>>,
+        ) -> anyhow::Result<()> {
+            let Some(payload) = payload else {
+                return Ok(());
+            };
+            if header.payload_size == 0 {
+                return Ok(());
+            }
+            let hash = header.hash();
+            let Some(stored) = self.store.get_operation(&hash).await? else {
+                return Ok(());
+            };
+            if stored.body.is_some() {
+                return Ok(());
+            }
+            let body = Body::from_bytes(&payload);
+            let operation = Operation {
+                hash,
+                header: header.clone(),
+                body: Some(body.clone()),
+            };
+            p2panda_core::validate_operation(&operation).context("invalid operation")?;
+            for topic in self.topics_of(&log.log_id()) {
+                if self.tombstones.is_tombstoned(topic, hash).await? {
+                    tracing::debug!(%log, "lan router left a tombstoned payload deleted");
+                    return Ok(());
+                }
+            }
+            if self.store.restore_body(&hash, &body).await? {
+                tracing::debug!(%log, seq = header.seq_num, "lan router restored a missing payload");
+            }
+            Ok(())
         }
 
         /// The highest seq of `author`'s log that may be served: `Ok(None)`
@@ -579,11 +687,24 @@ mod imp {
                     "header log id != log"
                 );
                 let hash = header.hash();
+                // An op too big for one wire frame is still advertised, but
+                // header-only (dash-router's `pack_have` drops its payload).
+                // Importing that would store the operation without its
+                // payload for good: p2panda's insert ignores a later,
+                // complete copy, and the app reads payloads back out of the
+                // store. Refuse it and leave the op to log sync or a
+                // mailbox, which carry it whole.
+                ensure!(
+                    header.payload_size == 0 || op.payload.is_some(),
+                    "op claims a {} byte payload the router did not carry",
+                    header.payload_size
+                );
                 // A stream's held state is acked-only, so the router treats
                 // ops p2panda stored but has not acked yet as novel and
                 // ingests them again.
                 if self.store.has_operation(&hash).await? {
                     tracing::trace!(%log, seq, "lan router ingest: op already stored");
+                    self.repair_body(&log, &header, op.payload).await?;
                     return Ok(());
                 }
                 let txs = self.import_txs_of(&log.log_id());
@@ -639,7 +760,7 @@ mod imp {
         p2panda::Hash::digest(dash_router::GOSSIP_TOPIC.as_bytes()).into()
     }
 
-    pub(crate) struct Publisher(EphemeralStreamPublisher<ByteBuf>);
+    pub(crate) struct Publisher(EphemeralStreamPublisher<ByteBuf>, usize);
 
     impl GossipPublisher for Publisher {
         async fn publish(&mut self, bytes: Vec<u8>) -> anyhow::Result<()> {
@@ -647,6 +768,15 @@ mod imp {
                 .publish(ByteBuf::from(bytes))
                 .await
                 .map_err(|e| anyhow!("gossip publish: {e}"))
+        }
+
+        /// What the node configured p2panda's gossip layer with
+        /// ([`LanRouterConfig::max_wire_bytes`]). The router packs its
+        /// frames under it, so a broadcast is never refused — which would
+        /// end the router task, since the publisher cannot tell a message
+        /// that is too large from an overlay that is gone.
+        fn max_message_size(&self) -> Option<usize> {
+            Some(self.1)
         }
     }
 
@@ -669,13 +799,14 @@ mod imp {
 
     pub(crate) async fn open_transport(
         streams: &TopicStreams,
+        max_wire_bytes: usize,
     ) -> anyhow::Result<GossipTransport<Publisher, Subscription>> {
         let (publisher, subscription) = streams
             .ephemeral_stream::<ByteBuf>(router_topic())
             .await
             .map_err(|e| anyhow!("ephemeral stream: {e}"))?;
         Ok(GossipTransport::new(
-            Publisher(publisher),
+            Publisher(publisher, max_wire_bytes),
             Subscription(subscription),
         ))
     }
@@ -755,8 +886,11 @@ mod imp {
             let relay =
                 DiskRelayStore::<RouterLog>::open(&params.data_path.join("lan_router.redb"))
                     .context("opening lan_router.redb")?;
-            let ext = OpStoreExt::new(LanRouterStore::new(params.op_store.store.clone()));
-            let transport = open_transport(&params.streams).await?;
+            let ext = OpStoreExt::new(
+                LanRouterStore::new(params.op_store.store.clone()),
+                params.tombstones.clone(),
+            );
+            let transport = open_transport(&params.streams, params.config.max_wire_bytes).await?;
             let config = CoreConfig {
                 router: RouterConfig {
                     want_ttl: WANT_TTL.into(),
@@ -769,7 +903,8 @@ mod imp {
                     window_ms: params.config.push_debounce.as_millis() as u64,
                     max_latency_ms: params.config.push_max_latency.as_millis() as u64,
                 },
-                // Derived from the ephemeral stream's gossip limit.
+                // Derived from the ephemeral stream's gossip limit, which
+                // the node set from `LanRouterConfig::max_wire_bytes`.
                 max_wire_bytes: None,
             };
             let intervals = PolicyIntervals {
@@ -1041,6 +1176,20 @@ mod imp {
             }
         }
 
+        /// These tests delete nothing.
+        struct NoTombstones;
+
+        #[async_trait::async_trait]
+        impl Tombstones for NoTombstones {
+            async fn is_tombstoned(
+                &self,
+                _topic: TopicId,
+                _hash: p2panda::Hash,
+            ) -> anyhow::Result<bool> {
+                Ok(false)
+            }
+        }
+
         /// A real p2panda node, offline is fine for these tests (ephemeral
         /// streams need networking, so use the online builder with no
         /// discovery and a random network id). The drain is returned so the
@@ -1070,6 +1219,7 @@ mod imp {
                     op_store: OpStore::from_sqlite(store, streams.clone()),
                     streams,
                     is_space: Arc::new(NoSpaces),
+                    tombstones: Arc::new(NoTombstones),
                 },
                 dir,
                 drain,
@@ -1211,7 +1361,10 @@ mod imp {
             let node =
                 crate::testing::TestNode::new(crate::NodeConfig::testing().no_p2p(), "ext").await;
             let store = node.op_store.clone();
-            let ext = OpStoreExt::new(LanRouterStore::new(store.store.clone()));
+            let ext = OpStoreExt::new(
+                LanRouterStore::new(store.store.clone()),
+                Arc::new(node.projection.clone()),
+            );
             let topic = TopicId::random();
             let log_id = LogId::from_topic(topic);
             let (tx, import_rx) = mpsc::channel(8);
@@ -1427,11 +1580,144 @@ mod imp {
             let op = signed_op(&other, stray_log_id, 0, None, b"x");
             let wire = dash_router::core::Op {
                 header: op.header.encode(),
-                payload: None,
+                payload: op.body.as_ref().map(|b| b.to_bytes()),
             };
             let log = RouterLog::new(stray_log_id, other.verifying_key());
             assert!(f.ext.ingest(log, 0, wire).await.is_err());
             assert_eq!(f.ext.rejected(), 1);
+        }
+
+        /// An op too big for one wire frame is advertised header-only. It
+        /// must not be imported: p2panda would store it without its payload
+        /// for good, leaving it unreadable to the app.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn ingest_rejects_a_header_whose_payload_is_missing() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, f.log_id, 0, None, b"a payload the router dropped");
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: None,
+            };
+            assert!(f.ext.ingest(log, 0, wire).await.is_err());
+            assert_eq!(f.ext.rejected(), 1);
+            assert_eq!(f.ext.forwarded(), 0);
+            assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
+            assert!(
+                !f.ext.store.has_operation(&op.hash).await.unwrap(),
+                "not stored either"
+            );
+        }
+
+        /// An op that carries no payload at all is still ingested.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn ingest_forwards_an_op_with_no_payload() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let header = p2panda::operation::Header::builder().seq_num(0).build(
+                &other,
+                p2panda::operation::Extensions::builder(f.log_id).build(),
+            );
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            let wire = dash_router::core::Op {
+                header: header.encode(),
+                payload: None,
+            };
+            f.ext.ingest(log, 0, wire).await.unwrap();
+            let got = f.import_rx.recv().await.unwrap();
+            assert_eq!(got.hash, header.hash());
+            assert!(got.body.is_none());
+            assert_eq!(f.ext.forwarded(), 1);
+        }
+
+        /// A row an older build stored header-only is repaired when a peer
+        /// offers the payload the stored header signs.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn ingest_restores_a_missing_payload() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, f.log_id, 0, None, b"hello");
+            let headless = Operation {
+                hash: op.hash,
+                header: op.header.clone(),
+                body: None,
+            };
+            insert(&f.node.op_store, &headless, &f.log_id).await;
+            assert!(
+                f.node
+                    .op_store
+                    .get_stored_operation(&op.hash)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .body
+                    .is_none()
+            );
+
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: op.body.as_ref().map(|b| b.to_bytes()),
+            };
+            f.ext.ingest(log, 0, wire).await.unwrap();
+
+            assert_eq!(
+                f.node
+                    .op_store
+                    .get_stored_operation(&op.hash)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .body,
+                op.body,
+                "payload written back"
+            );
+            assert!(f.import_rx.try_recv().is_err(), "nothing re-imported");
+            assert_eq!(f.ext.rejected(), 0);
+        }
+
+        /// A payload a delete dropped stays dropped, however often a peer
+        /// that still holds it offers it back.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn ingest_leaves_a_tombstoned_payload_deleted() {
+            let mut f = fixture(Some(3)).await;
+            let other = p2panda::SigningKey::generate();
+            let op = signed_op(&other, f.log_id, 0, None, b"hello");
+            let headless = Operation {
+                hash: op.hash,
+                header: op.header.clone(),
+                body: None,
+            };
+            insert(&f.node.op_store, &headless, &f.log_id).await;
+            f.node
+                .projection
+                .add_tombstone(
+                    f.topic,
+                    op.hash,
+                    crate::stores::TombstoneReason::DeletedForEveryone,
+                )
+                .await
+                .unwrap();
+
+            let log = RouterLog::new(f.log_id, other.verifying_key());
+            let wire = dash_router::core::Op {
+                header: op.header.encode(),
+                payload: op.body.as_ref().map(|b| b.to_bytes()),
+            };
+            f.ext.ingest(log, 0, wire).await.unwrap();
+
+            assert!(
+                f.node
+                    .op_store
+                    .get_stored_operation(&op.hash)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .body
+                    .is_none(),
+                "still deleted"
+            );
         }
 
         /// `get_log`'s cursor is exclusive: a non-zero start must still

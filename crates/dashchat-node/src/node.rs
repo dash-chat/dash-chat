@@ -393,6 +393,15 @@ impl Node {
         if no_networking {
             builder = builder.offline();
         } else {
+            // The LAN router rides on an ephemeral gossip stream and carries
+            // whole operations over it, so the overlay has to accept a
+            // message that size. Set unconditionally: the limit applies to
+            // the receiving side too, so every node on the network must
+            // agree on it, router or no router.
+            builder = builder.gossip_config(p2panda_net::gossip::GossipConfig {
+                max_message_size: config.lan_router.max_wire_bytes,
+                ..Default::default()
+            });
             builder = builder.mdns_mode(config.mdns_mode.clone());
 
             if config.use_relay {
@@ -457,6 +466,7 @@ impl Node {
             op_store: op_store.clone(),
             streams: streams.clone(),
             is_space: Arc::new(local_store.clone()),
+            tombstones: Arc::new(projection.clone()),
         })
         .await
         .context("starting the LAN router")?;

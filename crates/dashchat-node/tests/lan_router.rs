@@ -182,6 +182,65 @@ mod localhost {
         b.shutdown().await;
     }
 
+    /// A contact request carries the requester's profile, so one with a
+    /// picture runs to tens of kilobytes — far past the gossip default the
+    /// router used to pack to, which advertised it header-only and left the
+    /// receiver storing an operation with no payload it could never read.
+    /// `LanRouterConfig::max_wire_bytes` sizes the overlay to carry it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_contact_request_with_a_picture_crosses_the_router() {
+        tracing();
+        let config = router_config();
+        let a = TestNode::new(config.clone(), "a").await;
+        let b = TestNode::new(config, "b").await;
+        b.set_profile(dashchat_node::Profile {
+            name: "b".to_string(),
+            surname: None,
+            // An avatar the size the app's own compression produces.
+            avatar: Some("x".repeat(24 * 1024)),
+            about: None,
+        })
+        .await
+        .unwrap();
+        introduce_peers([&a, &b]).await.unwrap();
+
+        let qr = a.create_add_contact_qr_code().await.unwrap();
+        let AddContactResult::NewRequest(_) = b.add_contact(qr).await.unwrap() else {
+            panic!("expected a fresh request");
+        };
+
+        // Read the request back the way the app does: out of the stored
+        // operation's payload. An operation stored without its payload is
+        // invisible here however often it is delivered.
+        slow_poll()
+            .wait_for(|| async {
+                for topic in inbox_topics(&a).await {
+                    let log_id = p2panda::operation::LogId::from_topic(topic);
+                    for op in a.op_store.get_log(&b.device_id(), &log_id, None).await? {
+                        let Ok(Some(body)) = op.body else { continue };
+                        let Ok(dashchat_node::Payload::Inbox(
+                            dashchat_node::InboxPayload::ContactRequest { profile, .. },
+                        )) =
+                            <dashchat_node::Payload as dashchat_node::AsBody>::try_from_body(&body)
+                        else {
+                            continue;
+                        };
+                        if profile.avatar.as_ref().map(|a| a.len()) == Some(24 * 1024) {
+                            return Ok(());
+                        }
+                    }
+                }
+                Err(anyhow::anyhow!(
+                    "the request with its picture has not arrived"
+                ))
+            })
+            .await
+            .expect("a contact request with a picture crosses the router");
+
+        a.shutdown().await;
+        b.shutdown().await;
+    }
+
     /// Wait until `relay`'s relay store holds everything `node` serves, so
     /// `node` can leave.
     async fn wait_for_relay(relay: &TestNode, node: &TestNode) {
