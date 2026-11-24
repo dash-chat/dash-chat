@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use dashchat_utils::SeqNum;
 use p2panda::operation::{ExtensionsVariantV1, LogId, Operation, SpacesHeaderArgs};
 use p2panda::{Hash, VerifyingKey};
+use p2panda_core::Body;
 use p2panda_store::SqliteStore;
 use p2panda_store::topics::TopicStore;
 use sqlx::prelude::*;
@@ -150,6 +151,35 @@ impl LanRouterStore {
         Ok(p2panda_store::tx!(self.store, {
             OperationStore::<Operation, Hash>::has_operation_tx(&self.store, hash).await?
         }))
+    }
+
+    /// One stored operation as it was stored, body and all.
+    pub(crate) async fn get_operation(&self, hash: &Hash) -> anyhow::Result<Option<Operation>> {
+        use p2panda_store::operations::OperationStore;
+        Ok(p2panda_store::tx!(self.store, {
+            OperationStore::<Operation, Hash>::get_operation_tx(&self.store, hash).await?
+        }))
+    }
+
+    /// Give a stored operation the payload it is missing. Returns whether a
+    /// row was written: nothing happens when the operation is unknown or
+    /// already has a body, so a payload another writer restored first, or
+    /// one a tombstone deleted and a racing delivery would undo, is left
+    /// alone.
+    pub(crate) async fn restore_body(&self, hash: &Hash, body: &Body) -> anyhow::Result<bool> {
+        let hash = hash.to_hex();
+        let bytes = body.to_bytes();
+        let rows = self
+            .store
+            .execute(async move |tx| {
+                let query =
+                    sqlx::query("UPDATE operations_v1 SET body = ? WHERE hash = ? AND body IS NULL")
+                        .bind(bytes)
+                        .bind(hash);
+                Ok(query.execute(tx).await?.rows_affected())
+            })
+            .await?;
+        Ok(rows > 0)
     }
 }
 
