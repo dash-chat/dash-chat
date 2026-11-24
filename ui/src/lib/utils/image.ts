@@ -1,7 +1,10 @@
 import type { ImageBlobReduce } from 'image-blob-reduce';
 
 const AVATAR_MAX_PX = 300;
-const AVATAR_JPEG_QUALITY = 0.8;
+// A profile op must fit the LAN router's 64 KiB frame together with its header
+// and the other profile fields, or the router never carries it.
+const AVATAR_MAX_DATA_URL_LENGTH = 56_000;
+const AVATAR_JPEG_QUALITIES_BEST_FIRST = [0.8, 0.6, 0.4, 0.2];
 
 let reducer: Promise<ImageBlobReduce> | undefined;
 
@@ -13,6 +16,15 @@ export function imageReducer(): Promise<ImageBlobReduce> {
 		);
 	}
 	return reducer;
+}
+
+function jpegWithinAvatarBudget(canvas: HTMLCanvasElement): string {
+	let dataUrl = '';
+	for (const quality of AVATAR_JPEG_QUALITIES_BEST_FIRST) {
+		dataUrl = canvas.toDataURL('image/jpeg', quality);
+		if (dataUrl.length <= AVATAR_MAX_DATA_URL_LENGTH) break;
+	}
+	return dataUrl;
 }
 
 /**
@@ -27,7 +39,7 @@ export async function fileToAvatar(file: File): Promise<string> {
 			throw new Error(`failed to decode ${file.name}`);
 		});
 	if (canvas instanceof HTMLCanvasElement)
-		return canvas.toDataURL('image/jpeg', AVATAR_JPEG_QUALITY);
+		return jpegWithinAvatarBudget(canvas);
 
 	const out = document.createElement('canvas');
 	out.width = canvas.width;
@@ -35,5 +47,5 @@ export async function fileToAvatar(file: File): Promise<string> {
 	const ctx = out.getContext('2d');
 	if (!ctx) throw new Error(`failed to decode ${file.name}`);
 	ctx.drawImage(canvas, 0, 0);
-	return out.toDataURL('image/jpeg', AVATAR_JPEG_QUALITY);
+	return jpegWithinAvatarBudget(out);
 }
