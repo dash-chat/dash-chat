@@ -280,6 +280,15 @@ impl TopicStreams {
         (streams, drain)
     }
 
+    /// The cursor `topic`'s stream or space is subscribed under: `"{prefix}:{topic}"`, or the
+    /// topic itself (p2panda's default) when there is no prefix. p2panda keeps the orderer state
+    /// under the same name, so the two processes sharing the store never reset each other's.
+    fn cursor_name(&self, topic: Topic) -> Option<String> {
+        self.stream_cursor_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}:{topic}"))
+    }
+
     /// Open a topic stream, tracking its ack cursor under a per-topic name. With
     /// a cursor prefix set (the iOS push extension) the name is
     /// `"{prefix}:{topic}"`, so each topic keeps its own cursor while staying
@@ -289,10 +298,7 @@ impl TopicStreams {
         &self,
         topic: Topic,
     ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), StreamsError> {
-        let cursor_name = self
-            .stream_cursor_prefix
-            .as_ref()
-            .map(|prefix| format!("{prefix}:{topic}"));
+        let cursor_name = self.cursor_name(topic);
         Ok(self
             .with_node(async |node| {
                 node.stream_from(topic, StreamFrom::Frontier, cursor_name)
@@ -344,8 +350,12 @@ impl TopicStreams {
                 )
             }
             StreamIntent::JoinSpace => {
+                let cursor_name = self.cursor_name(topic);
                 let (space, subscriber) = self
-                    .with_node(async |node| node.space(topic).await)
+                    .with_node(async |node| {
+                        node.space_from(topic, StreamFrom::Frontier, cursor_name)
+                            .await
+                    })
                     .await??;
                 (
                     Publisher::Space(Space::pending(topic, space)),
