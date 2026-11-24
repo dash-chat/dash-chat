@@ -433,5 +433,5 @@
 	"disableDeveloperMode": "Disable developer mode",
 	"lanRouter": "Dash Router",
 	"enableLanRouter": "Enable Dash Router",
-	"lanRouterDescription": "Experimental. Passes messages along through nearby devices that also have this on, so they reach people you aren't directly connected to. Those devices keep a copy of what they pass along, and some of it, like contact requests, isn't end-to-end encrypted."
+	"lanRouterDescription": "Experimental. Nearby devices store and forward each other's messages until they reach their recipients."
 }
