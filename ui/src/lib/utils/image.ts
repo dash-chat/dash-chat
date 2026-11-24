@@ -3,6 +3,7 @@ import type { ImageBlobReduce } from 'image-blob-reduce';
 const AVATAR_MAX_PX = 300;
 // A profile op must fit the LAN router's 64 KiB frame together with its header
 // and the other profile fields, or the router never carries it.
+// TODO: drop the budget and the quality step-down once avatars are blobs.
 const AVATAR_MAX_DATA_URL_LENGTH = 56_000;
 const AVATAR_JPEG_QUALITIES_BEST_FIRST = [0.8, 0.6, 0.4, 0.2];
 
