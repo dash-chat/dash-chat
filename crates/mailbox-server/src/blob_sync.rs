@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dashchat_utils::{
-    blob_sync::{download_capped, BlobDownloader, MAX_BLOB_BYTES},
+    blob_sync::{download_capped, BlobDownloader, DownloadProgress, MAX_BLOB_BYTES},
     fetch_loop, FetchConfig, FetchPool,
 };
 use futures::StreamExt;
@@ -487,14 +487,14 @@ impl BlobSync {
             return false;
         }
         let providers = Shuffled::new(sources.into_iter().map(Into::into).collect());
-        let (provider_tx, _provider_rx) = watch::channel(None);
+        let (progress_tx, _progress_rx) = watch::channel(DownloadProgress::default());
         let fetched = download_capped(
             &*self.downloader,
             hash,
             providers,
             attempt_timeout,
             &self.blobs,
-            provider_tx,
+            progress_tx,
         )
         .await;
         if fetched {

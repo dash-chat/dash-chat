@@ -13,7 +13,7 @@ use tokio::{
 use tokio_stream::StreamExt;
 
 use aliased::Aliasing;
-use dashchat_utils::blob_sync::{BlobDownloader, download_capped};
+use dashchat_utils::blob_sync::{BlobDownloader, DownloadProgress, download_capped};
 use derive_more::derive::Constructor;
 use futures::Stream;
 use iroh_blobs::api::downloader::Downloader;
@@ -151,7 +151,7 @@ impl BlobSync {
 
         let source_count = sources.len();
         let this = self.clone();
-        let (provider_tx, provider_rx) = watch::channel(None);
+        let (progress_tx, progress_rx) = watch::channel(DownloadProgress::default());
         let handle = tokio::spawn(async move {
             let fetched = download_capped(
                 &*this.downloader,
@@ -159,7 +159,7 @@ impl BlobSync {
                 sources,
                 attempt_timeout,
                 &this.blobs,
-                provider_tx,
+                progress_tx,
             )
             .await;
             tracing::debug!(%hash, source_count, fetched, "blob fetch attempt");
@@ -168,7 +168,7 @@ impl BlobSync {
 
         BlobFetchTask {
             handle,
-            current_provider: provider_rx,
+            progress: progress_rx,
             topic,
             hash,
         }
@@ -273,35 +273,88 @@ impl BlobSync {
         }
     }
 
+    /// How long a provider can be active without making forward progress before the
+    /// fetcher considers it stalled and may pivot to another source.
+    const STALL_TIMEOUT: Duration = Duration::from_secs(2);
+    /// How long to give a newly-selected provider before treating a lack of
+    /// progress as a stall.
+    const PROVIDER_WARMUP: Duration = Duration::from_millis(500);
+
     /// Whether the active provider reported by iroh is a peer (not a mailbox
     /// and not unknown). We only switch away from a download when we are sure
     /// it is coming from a peer; otherwise we risk aborting an already-running
     /// mailbox transfer.
-    async fn current_provider_is_peer(
-        &self,
-        current_provider: &watch::Receiver<Option<iroh::EndpointId>>,
-    ) -> bool {
-        let Some(id) = *current_provider.borrow() else {
+    async fn current_provider_is_peer(&self, progress: &watch::Receiver<DownloadProgress>) -> bool {
+        let Some(id) = progress.borrow().provider else {
             return false;
         };
         !self.sources.is_mailbox(id).await
     }
 
+    /// Whether the peer download is making forward progress. A provider is
+    /// stalled when it has had the chance to warm up and has not delivered any
+    /// bytes for a while.
+    fn peer_is_stalled(progress: &DownloadProgress) -> bool {
+        let provider_warm = progress
+            .provider_changed_at
+            .map(|t| t.elapsed() >= Self::PROVIDER_WARMUP)
+            .unwrap_or(false);
+        let no_recent_progress = progress
+            .last_progress_at
+            .map(|t| t.elapsed() >= Self::STALL_TIMEOUT)
+            .unwrap_or(true);
+        provider_warm && no_recent_progress
+    }
+
+    /// Whether the peer download has transferred enough of the blob that it is
+    /// better to let it finish than to restart from a mailbox. The total size
+    /// comes from the local store's view of the blob, so this only returns
+    /// true once the store knows the expected size.
+    fn peer_is_nearly_done(
+        progress: &DownloadProgress,
+        status: iroh_blobs::api::proto::BlobStatus,
+    ) -> bool {
+        let total_size = match status {
+            iroh_blobs::api::proto::BlobStatus::Complete { size } => size,
+            iroh_blobs::api::proto::BlobStatus::Partial { size: Some(size) } => size,
+            _ => return false,
+        };
+        if total_size == 0 {
+            return false;
+        }
+        progress.bytes_transferred as f64 / total_size as f64 >= 0.7
+    }
+
     /// Whether it makes sense to abort the current in-topic download and restart
-    /// it from a mailbox. True only when we are sure the active provider is a
-    /// peer and at least one registered mailbox reports already holding the blob.
+    /// it from a mailbox. True only when the active provider is a peer, the
+    /// transfer is not already near completion, the transfer is stalled or has
+    /// not yet made progress, and at least one registered mailbox reports
+    /// already holding the blob.
     async fn can_switch_to_mailbox(
         &self,
         topic: TopicId,
         hash: iroh_blobs::Hash,
-        current_provider: &watch::Receiver<Option<iroh::EndpointId>>,
+        progress: &watch::Receiver<DownloadProgress>,
     ) -> bool {
-        self.current_provider_is_peer(current_provider).await
-            && self
-                .sources
-                .any_mailbox_has_blob(topic, hash)
-                .await
-                .unwrap_or(false)
+        if !self.current_provider_is_peer(progress).await {
+            return false;
+        }
+        let progress = *progress.borrow();
+        let status = self
+            .blobs
+            .status(hash)
+            .await
+            .unwrap_or(iroh_blobs::api::proto::BlobStatus::NotFound);
+        if Self::peer_is_nearly_done(&progress, status) {
+            return false;
+        }
+        if !Self::peer_is_stalled(&progress) {
+            return false;
+        }
+        self.sources
+            .any_mailbox_has_blob(topic, hash)
+            .await
+            .unwrap_or(false)
     }
 
     /// Keep attempting an on-demand download of `hash` until it is present
@@ -332,7 +385,7 @@ impl BlobSync {
             for topic in topics {
                 let task = self.spawn_fetch(topic, hash, remaining).await;
                 let mut handle = task.handle;
-                let current_provider = task.current_provider;
+                let progress = task.progress;
                 let poll_interval = Duration::from_millis(250);
                 loop {
                     tokio::select! {
@@ -354,11 +407,11 @@ impl BlobSync {
                             }
 
                             if !switched_to_mailbox
-                                && self.can_switch_to_mailbox(topic, hash, &current_provider).await
+                                && self.can_switch_to_mailbox(topic, hash, &progress).await
                             {
                                 tracing::debug!(
                                     %hash,
-                                    current_provider = ?*current_provider.borrow(),
+                                    current_provider = ?progress.borrow().provider,
                                     "peer download in progress and mailbox reports blob, switching to mailbox"
                                 );
                                 switched_to_mailbox = true;
@@ -383,7 +436,7 @@ impl BlobSync {
 #[allow(dead_code)]
 struct BlobFetchTask {
     handle: JoinHandle<bool>,
-    current_provider: watch::Receiver<Option<iroh::EndpointId>>,
+    progress: watch::Receiver<DownloadProgress>,
     topic: TopicId,
     hash: iroh_blobs::Hash,
 }
@@ -391,10 +444,10 @@ struct BlobFetchTask {
 impl BlobFetchTask {
     /// A task that has already failed without spawning a download.
     fn failed() -> Self {
-        let (_tx, current_provider) = watch::channel(None);
+        let (_tx, progress) = watch::channel(DownloadProgress::default());
         Self {
             handle: tokio::spawn(std::future::ready(false)),
-            current_provider,
+            progress,
             topic: TopicId::random(),
             hash: iroh_blobs::Hash::new([0u8; 32]),
         }

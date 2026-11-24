@@ -1,5 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -10,9 +11,39 @@ use iroh_blobs::api::downloader::{
 };
 use iroh_blobs::protocol::GetRequest;
 use tokio::sync::watch;
-use tokio::time::Duration;
 
 pub type BoxedDownloadStream = Pin<Box<dyn Stream<Item = DownloadProgressItem> + Send + 'static>>;
+
+/// Snapshot of an in-flight blob download, updated by the downloader as it makes
+/// progress. Used by the caller to decide whether to abort a slow peer transfer
+/// and pivot to a faster source.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DownloadProgress {
+    /// The provider currently being attempted, if known.
+    pub provider: Option<iroh::EndpointId>,
+    /// Total bytes transferred so far for this blob.
+    pub bytes_transferred: u64,
+    /// When bytes_transferred last increased.
+    pub last_progress_at: Option<Instant>,
+    /// When the current provider was first reported.
+    pub provider_changed_at: Option<Instant>,
+}
+
+impl DownloadProgress {
+    /// Start tracking a new provider, preserving accumulated byte counters.
+    fn provider_changed(mut self, provider: iroh::EndpointId, now: Instant) -> Self {
+        self.provider = Some(provider);
+        self.provider_changed_at = Some(now);
+        self
+    }
+
+    /// Update cumulative bytes and the timestamp of the last forward progress.
+    fn progress(mut self, bytes: u64, now: Instant) -> Self {
+        self.bytes_transferred = bytes;
+        self.last_progress_at = Some(now);
+        self
+    }
+}
 
 /// Abstracts the iroh-blobs downloader so tests can inject mock download streams
 /// (slow transfers, provider failures, progress events) without real networking.
@@ -49,14 +80,15 @@ pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Download `hash` from `providers`, aborting if the transfer exceeds
 /// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
-/// `current_provider` is updated with the provider currently being attempted.
+/// `progress_tx` is updated with the provider currently being attempted and
+/// bytes transferred so the caller can observe stalls and near-completion.
 pub async fn download_capped(
     downloader: &dyn BlobDownloader,
     hash: iroh_blobs::Hash,
     providers: impl ContentDiscovery,
     attempt_timeout: Duration,
     blobs: &iroh_blobs::BlobsProtocol,
-    current_provider: watch::Sender<Option<iroh::EndpointId>>,
+    progress_tx: watch::Sender<DownloadProgress>,
 ) -> bool {
     let result = tokio::time::timeout(attempt_timeout, async {
         let options = DownloadRequest {
@@ -77,6 +109,7 @@ pub async fn download_capped(
             .await
             .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
         while let Some(item) = stream.next().await {
+            let now = Instant::now();
             match item {
                 // Dropping the stream on return cancels the in-flight download.
                 DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
@@ -84,13 +117,18 @@ pub async fn download_capped(
                 }
                 DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
                 DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
+                DownloadProgressItem::Progress(total) => {
+                    let next = progress_tx.borrow().progress(total, now);
+                    let _ = progress_tx.send(next);
+                }
                 DownloadProgressItem::TryProvider { id, .. } => {
-                    let _ = current_provider.send(Some(id));
+                    let next = progress_tx.borrow().provider_changed(id, now);
+                    let _ = progress_tx.send(next);
                 }
                 DownloadProgressItem::ProviderFailed { id, .. } => {
-                    let current = *current_provider.borrow();
+                    let current = progress_tx.borrow().provider;
                     if current == Some(id) {
-                        let _ = current_provider.send(None);
+                        let _ = progress_tx.send(Default::default());
                     }
                 }
                 _ => {}
