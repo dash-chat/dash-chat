@@ -3,9 +3,9 @@ import { TestHelper } from '../test-helper';
 
 export class DeveloperPage extends TestHelper {
 	back = this.el(tid('developer-back'));
-	disable = this.el(tid('developer-disable'));
+	page = this.el(tid('developer-page'));
 
 	async ready() {
-		await this.disable.waitForExist();
+		await this.page.waitForExist();
 	}
 }

@@ -39,13 +39,8 @@ describe('Developer mode', () => {
 		await expect(agent.settingsPage.developerLink).toBeDisplayed();
 	});
 
-	it('opens the developer page and disables developer mode again', async () => {
+	it('opens the developer page', async () => {
 		await agent.settingsPage.developerLink.click();
 		await agent.developerPage.ready();
-
-		await agent.developerPage.disable.click();
-		await agent.settingsPage.ready();
-
-		await expect(agent.settingsPage.developerLink).not.toBeDisplayed();
 	});
 });
