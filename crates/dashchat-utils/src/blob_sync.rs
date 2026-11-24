@@ -14,10 +14,6 @@ use tokio::sync::watch;
 
 pub type BoxedDownloadStream = Pin<Box<dyn Stream<Item = DownloadProgressItem> + Send + 'static>>;
 
-/// Failed provider entries expire after this window so a transient iroh
-/// failure doesn't blacklist a mailbox forever.
-const RECENT_FAILURE_WINDOW: Duration = Duration::from_secs(30);
-
 /// Snapshot of an in-flight blob download, updated by the downloader as it makes
 /// progress. Used by the caller to decide whether to abort a slow peer transfer
 /// and pivot to a faster source.
@@ -31,13 +27,10 @@ pub struct DownloadProgress {
     pub last_progress_at: Option<Instant>,
     /// When the current provider was first reported.
     pub provider_changed_at: Option<Instant>,
-    /// iroh providers that recently failed for this blob.
-    pub recent_failures: Vec<(iroh::EndpointId, Instant)>,
 }
 
 impl DownloadProgress {
-    /// Start tracking a new provider, preserving accumulated byte counters and
-    /// the recent-failure list.
+    /// Start tracking a new provider, preserving accumulated byte counters.
     fn provider_changed(mut self, provider: iroh::EndpointId, now: Instant) -> Self {
         self.provider = Some(provider);
         self.provider_changed_at = Some(now);
@@ -51,29 +44,14 @@ impl DownloadProgress {
         self
     }
 
-    /// Record that a provider failed over iroh, so the caller can avoid
-    /// switching to it again within the failure window.
-    fn provider_failed(mut self, provider: iroh::EndpointId, now: Instant) -> Self {
-        self.recent_failures
-            .retain(|(_, t)| now.duration_since(*t) < RECENT_FAILURE_WINDOW);
-        self.recent_failures.push((provider, now));
-        // If the failing provider was the active one, clear it so the caller
-        // knows we no longer have a current provider.
+    /// Record that the current provider failed over iroh, clearing it so the
+    /// caller no longer considers the download active from that provider.
+    fn provider_failed(mut self, provider: iroh::EndpointId) -> Self {
         if self.provider == Some(provider) {
             self.provider = None;
             self.provider_changed_at = None;
         }
         self
-    }
-
-    /// Providers that have failed over iroh recently enough that we should not
-    /// switch to them now.
-    pub fn recently_failed(&self, now: Instant) -> Vec<iroh::EndpointId> {
-        self.recent_failures
-            .iter()
-            .filter(|(_, t)| now.duration_since(*t) < RECENT_FAILURE_WINDOW)
-            .map(|(id, _)| *id)
-            .collect()
     }
 }
 
@@ -158,7 +136,7 @@ pub async fn download_capped(
                     let _ = progress_tx.send(next);
                 }
                 DownloadProgressItem::ProviderFailed { id, .. } => {
-                    let next = progress_tx.borrow().clone().provider_failed(id, now);
+                    let next = progress_tx.borrow().clone().provider_failed(id);
                     let _ = progress_tx.send(next);
                 }
                 _ => {}
