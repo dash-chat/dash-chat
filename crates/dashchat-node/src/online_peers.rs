@@ -306,4 +306,32 @@ mod tests {
         peers.forget_silent();
         assert_eq!(online(&peers), BTreeSet::from([device(1)]));
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_peer_that_joined_twice_at_once_is_seen_online() {
+        use crate::NodeConfig;
+        use crate::testing::{PollConfig, TestNode, introduce_peers};
+
+        let config = NodeConfig::testing().random_network_id();
+        let alice = TestNode::new(config.clone(), "alice").await;
+        let bobbi = TestNode::new(config, "bobbi").await;
+        introduce_peers([&alice, &bobbi]).await.unwrap();
+        let chat: crate::ChatId = alice.direct_chat_with(&bobbi).into();
+
+        alice.join_presence(chat).await.unwrap();
+        let (first, second) = tokio::join!(bobbi.join_presence(chat), bobbi.join_presence(chat));
+        first.unwrap();
+        second.unwrap();
+
+        PollConfig::seconds(30)
+            .wait_for(|| async {
+                let mut devices = std::pin::pin!(alice.online_peers.devices(*chat));
+                match devices.next().await.unwrap().contains(&bobbi.device_id()) {
+                    true => Ok(()),
+                    false => Err("alice never saw bobbi online in the chat"),
+                }
+            })
+            .await
+            .unwrap();
+    }
 }
