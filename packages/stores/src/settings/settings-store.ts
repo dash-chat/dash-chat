@@ -64,6 +64,11 @@ export class SettingsStore {
 		return settings.background_mode_enabled;
 	});
 
+	developerModeEnabled = reactive(async () => {
+		const settings = await this.settings();
+		return settings.developer_mode_enabled;
+	});
+
 	async setColorSchemePreference(scheme: ColorSchemePreference): Promise<void> {
 		await this.client.setColorSchemePreference(scheme);
 	}
@@ -82,5 +87,9 @@ export class SettingsStore {
 
 	async setNotificationsEnabled(enabled: boolean): Promise<void> {
 		await this.client.setNotificationsEnabled(enabled);
+	}
+
+	async setDeveloperModeEnabled(enabled: boolean): Promise<void> {
+		await this.client.setDeveloperModeEnabled(enabled);
 	}
 }
