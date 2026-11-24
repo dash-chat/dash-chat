@@ -128,24 +128,20 @@ impl BlobSync {
         self.downloader = downloader;
     }
 
-    /// Spawn a per-topic fetch task using a specific provider list. When
-    /// `providers` is empty, fall back to the topic's normal source list.
+    /// Spawn a per-topic fetch task and return a handle that can be polled and
+    /// aborted while the download is in flight.
     async fn spawn_fetch(
         &self,
         topic: TopicId,
         hash: iroh_blobs::Hash,
         attempt_timeout: Duration,
-        providers: Option<Vec<iroh::EndpointId>>,
     ) -> BlobFetchTask {
-        let sources = match providers {
-            Some(providers) => providers,
-            None => match self.sources.sources(topic).await {
-                Ok(sources) => sources,
-                Err(err) => {
-                    tracing::warn!(%hash, ?err, "blob source lookup failed");
-                    return BlobFetchTask::failed();
-                }
-            },
+        let sources = match self.sources.sources(topic).await {
+            Ok(sources) => sources,
+            Err(err) => {
+                tracing::warn!(%hash, ?err, "blob source lookup failed");
+                return BlobFetchTask::failed();
+            }
         };
 
         if sources.is_empty() {
@@ -190,7 +186,7 @@ impl BlobSync {
             return true;
         }
 
-        let task = self.spawn_fetch(topic, hash, attempt_timeout, None).await;
+        let task = self.spawn_fetch(topic, hash, attempt_timeout).await;
         task.await_complete().await
     }
 
@@ -334,14 +330,7 @@ impl BlobSync {
                 return false;
             }
             for topic in topics {
-                let providers = if switched_to_mailbox {
-                    self.sources.mailbox_sources(topic).await.ok()
-                } else {
-                    None
-                };
-                let task = self
-                    .spawn_fetch(topic, hash, remaining, providers.clone())
-                    .await;
+                let task = self.spawn_fetch(topic, hash, remaining).await;
                 let mut handle = task.handle;
                 let current_provider = task.current_provider;
                 let poll_interval = Duration::from_millis(250);
@@ -666,11 +655,6 @@ impl MixedSourceLookup {
         Ok(sources)
     }
 
-    /// Return the iroh EndpointIds of mailboxes currently tracking `topic`.
-    pub async fn mailbox_sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
-        self.mailboxes.get_sources(&topic).await
-    }
-
     /// Whether `endpoint` identifies one of the registered mailboxes.
     pub async fn is_mailbox(&self, endpoint: iroh::EndpointId) -> bool {
         self.mailboxes.is_mailbox(endpoint).await
@@ -687,19 +671,19 @@ impl MixedSourceLookup {
         // Only consider mailboxes that are subscribed to this topic. Otherwise
         // the switch could fire against a mailbox that won't appear in the
         // restarted provider list at all.
-        let topic_mailboxes = self.mailbox_sources(topic).await?;
-        for decoded in topic_mailboxes {
-            let Some(tracked) = self
-                .mailboxes
-                .tracked_mailbox(&mailbox_server::encode_mailbox_id(decoded).into())
-                .await
-            else {
+        let topic_sources = self.sources(topic).await?;
+        for decoded in topic_sources {
+            if !self.is_mailbox(decoded).await {
+                continue;
+            }
+            let mailbox_id: mailbox_client::MailboxId =
+                mailbox_server::encode_mailbox_id(decoded).into();
+            let Some(tracked) = self.mailboxes.tracked_mailbox(&mailbox_id).await else {
                 continue;
             };
             if tracked.health().borrow().status != mailbox_client::SyncStatus::Active {
                 continue;
             }
-            let mailbox_id = tracked.client().await.id();
             match tracked.client().await.has_blob(hash).await {
                 Ok(true) => {
                     tracing::debug!(%hash, %mailbox_id, "mailbox reports blob available");
