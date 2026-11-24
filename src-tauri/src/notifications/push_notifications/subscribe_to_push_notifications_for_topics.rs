@@ -375,6 +375,91 @@ mod tests {
         assert!(!server.db.topics_of(&device(&node)).contains(&group_topic));
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn drops_a_group_the_device_is_removed_from() {
+        use dashchat_node::testing::{TestMailbox, TestNode};
+
+        let server = TestPushServer::start().await;
+        let mailbox = TestMailbox::from_env();
+        let alice = TestNode::new(NodeConfig::testing(), "alice")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        let bobbi = TestNode::new(NodeConfig::testing(), "bobbi")
+            .await
+            .add_mailbox(&mailbox)
+            .await;
+        alice
+            .behavior()
+            .initiate_and_establish_contact(&bobbi)
+            .await
+            .unwrap();
+        // A `TestNode` sends no topics on this channel: the test pokes the task
+        // where the app's node would.
+        let (new_topics_tx, new_topics) = mpsc::channel(100);
+        let _subscriptions = SubscribeToPushNotificationsForTopicsTask::spawn(
+            (*bobbi).clone(),
+            None,
+            server.client(),
+            new_topics,
+        );
+
+        let group = alice
+            .create_chat_group(BTreeMap::from([(
+                *bobbi.device_id(),
+                p2panda_auth::Access::write(),
+            )]))
+            .await
+            .unwrap();
+        bobbi
+            .behavior()
+            .accept_next_group_invitation()
+            .await
+            .unwrap();
+        new_topics_tx.send(*group).await.unwrap();
+        let group_topic = PushTopicId::from(group.to_hex());
+        eventually("the server has the group's topic", || async {
+            server.db.topics_of(&device(&bobbi)).contains(&group_topic)
+        })
+        .await;
+
+        alice
+            .remove_group_member(group, *bobbi.device_id())
+            .await
+            .unwrap();
+        eventually("bobbi sees the removal", || async {
+            !bobbi
+                .get_group_members(group)
+                .await
+                .unwrap()
+                .iter()
+                .any(|(member, _)| *member == bobbi.device_id())
+        })
+        .await;
+        // Recompute, as the next restart would.
+        new_topics_tx.send(*group).await.unwrap();
+
+        eventually("the server no longer has the group's topic", || async {
+            !server.db.topics_of(&device(&bobbi)).contains(&group_topic)
+        })
+        .await;
+
+        alice
+            .add_group_member(group, *bobbi.device_id(), p2panda_auth::Access::write())
+            .await
+            .unwrap();
+        bobbi
+            .behavior()
+            .accept_next_group_invitation()
+            .await
+            .unwrap();
+        new_topics_tx.send(*group).await.unwrap();
+        eventually("the server has the group's topic again", || async {
+            server.db.topics_of(&device(&bobbi)).contains(&group_topic)
+        })
+        .await;
+    }
+
     /// A fresh node; the channel it sends each topic it subscribes to on; its store,
     /// which is deleted when dropped.
     async fn start_node() -> (Node, mpsc::Receiver<TopicId>, TempDir) {
