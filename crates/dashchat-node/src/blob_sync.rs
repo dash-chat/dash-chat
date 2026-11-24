@@ -1268,19 +1268,19 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::time::Duration;
 
-        /// A downloader that starts a peer download, reports that the peer failed
-        /// over iroh, then emits a `TryProvider` for a mailbox endpoint and stalls.
-        /// The mailbox is registered and claims to have the blob. If the switch
-        /// logic does not exclude recently-failed providers, it will abort and
-        /// restart; if it does, the original peer download keeps running.
-        struct PeerThenFailingMailboxDownloader {
+        /// A downloader that reports a mailbox try/failure first, then a peer
+        /// `TryProvider`, and stalls. The mailbox is registered and claims to have
+        /// the blob. Because the active provider is a stalled peer and the mailbox
+        /// is in `recent_failures`, the switch logic must exclude that mailbox to
+        /// avoid aborting the peer download.
+        struct FailingMailboxThenPeerDownloader {
             calls: AtomicUsize,
             peer: iroh::EndpointId,
             mailbox: iroh::EndpointId,
         }
 
         #[async_trait::async_trait]
-        impl BlobDownloader for PeerThenFailingMailboxDownloader {
+        impl BlobDownloader for FailingMailboxThenPeerDownloader {
             async fn download_with_opts(
                 &self,
                 _options: iroh_blobs::api::downloader::DownloadRequest,
@@ -1289,36 +1289,27 @@ mod tests {
                 let peer = self.peer;
                 let mailbox = self.mailbox;
                 let stream = async_stream::stream! {
-                    yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
-                        id: peer,
-                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
-                            iroh_blobs::Hash::new([0; 32]),
-                        )),
-                    };
-                    // Give the poll loop time to see the peer as active.
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    // The peer failed over iroh.
-                    yield iroh_blobs::api::downloader::DownloadProgressItem::ProviderFailed {
-                        id: peer,
-                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
-                            iroh_blobs::Hash::new([0; 32]),
-                        )),
-                    };
-                    // Then iroh tries the mailbox next.
+                    // iroh tries the mailbox first and fails.
                     yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
                         id: mailbox,
                         request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
                             iroh_blobs::Hash::new([0; 32]),
                         )),
                     };
-                    // The mailbox also fails over iroh.
                     yield iroh_blobs::api::downloader::DownloadProgressItem::ProviderFailed {
                         id: mailbox,
                         request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
                             iroh_blobs::Hash::new([0; 32]),
                         )),
                     };
-                    // Stall forever; there are no more providers to try.
+                    // iroh falls back to the peer, which becomes the current provider.
+                    yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
+                        id: peer,
+                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                            iroh_blobs::Hash::new([0; 32]),
+                        )),
+                    };
+                    // Stall forever; the peer transfer is slow but still running.
                     std::future::pending::<()>().await;
                 };
                 Ok(Box::pin(stream))
@@ -1378,7 +1369,7 @@ mod tests {
             })
             .await;
 
-        let downloader = Arc::new(PeerThenFailingMailboxDownloader {
+        let downloader = Arc::new(FailingMailboxThenPeerDownloader {
             calls: AtomicUsize::new(0),
             peer,
             mailbox: mailbox_endpoint,
