@@ -2209,6 +2209,7 @@ version = "0.1.0"
 dependencies = [
  "aliased",
  "anyhow",
+ "async-stream",
  "async-trait",
  "base64 0.22.1",
  "blake3",

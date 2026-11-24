@@ -678,6 +678,10 @@ mod tests {
         iroh_blobs::Hash::new([n; 32])
     }
 
+    fn test_endpoint(n: u8) -> iroh::EndpointId {
+        iroh::EndpointId::from_bytes(&[n; 32]).expect("valid test key")
+    }
+
     /// A downloader that counts calls and never completes. Useful for tests
     /// that need to verify a slow download was cancelled and restarted.
     struct CountingNeverEndingDownloader {
@@ -974,22 +978,33 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::time::Duration;
 
-        /// Every download attempt is slow and never completes. The number of
-        /// calls recorded here lets the test verify that a slow attempt was
-        /// cancelled and restarted.
-        struct CallCountingNeverEndingDownloader {
+        /// Every download attempt is slow and never completes after it emits a
+        /// single `TryProvider` event for the given endpoint. The number of calls
+        /// recorded here lets the test verify that a slow attempt was cancelled
+        /// and restarted.
+        struct SlowDownloader {
             calls: AtomicUsize,
+            provider: iroh::EndpointId,
         }
 
         #[async_trait::async_trait]
-        impl BlobDownloader for CallCountingNeverEndingDownloader {
+        impl BlobDownloader for SlowDownloader {
             async fn download_with_opts(
                 &self,
                 _options: iroh_blobs::api::downloader::DownloadRequest,
             ) -> anyhow::Result<BoxedDownloadStream> {
                 self.calls.fetch_add(1, Ordering::SeqCst);
-                let (_tx, rx) = tokio::sync::mpsc::channel(1);
-                Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
+                let provider = self.provider;
+                let stream = async_stream::stream! {
+                    yield iroh_blobs::api::downloader::DownloadProgressItem::TryProvider {
+                        id: provider,
+                        request: std::sync::Arc::new(iroh_blobs::protocol::GetRequest::blob(
+                            iroh_blobs::Hash::new([0; 32]),
+                        )),
+                    };
+                    std::future::pending::<()>().await;
+                };
+                Ok(Box::pin(stream))
             }
         }
 
@@ -1075,8 +1090,10 @@ mod tests {
             })
             .await;
 
-        let downloader = Arc::new(CallCountingNeverEndingDownloader {
+        let peer = test_endpoint(1);
+        let downloader = Arc::new(SlowDownloader {
             calls: AtomicUsize::new(0),
+            provider: peer,
         });
 
         let mut blob_sync = bobbi.blob_sync().clone();
@@ -1087,7 +1104,7 @@ mod tests {
         // the slow task was cancelled and restarted when the mailbox became
         // available.
         let _ = tokio::time::timeout(
-            Duration::from_millis(1000),
+            Duration::from_millis(2000),
             blob_sync.fetch_now(hash, Duration::from_secs(10)),
         )
         .await;
