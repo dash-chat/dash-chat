@@ -1,6 +1,7 @@
 import type { ImageBlobReduce } from 'image-blob-reduce';
 
 const AVATAR_MAX_PX = 300;
+const AVATAR_JPEG_QUALITY = 0.8;
 
 let reducer: Promise<ImageBlobReduce> | undefined;
 
@@ -25,7 +26,8 @@ export async function fileToAvatar(file: File): Promise<string> {
 		.catch(() => {
 			throw new Error(`failed to decode ${file.name}`);
 		});
-	if (canvas instanceof HTMLCanvasElement) return canvas.toDataURL();
+	if (canvas instanceof HTMLCanvasElement)
+		return canvas.toDataURL('image/jpeg', AVATAR_JPEG_QUALITY);
 
 	const out = document.createElement('canvas');
 	out.width = canvas.width;
@@ -33,5 +35,5 @@ export async function fileToAvatar(file: File): Promise<string> {
 	const ctx = out.getContext('2d');
 	if (!ctx) throw new Error(`failed to decode ${file.name}`);
 	ctx.drawImage(canvas, 0, 0);
-	return out.toDataURL();
+	return out.toDataURL('image/jpeg', AVATAR_JPEG_QUALITY);
 }
