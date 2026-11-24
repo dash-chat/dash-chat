@@ -52,8 +52,8 @@ pub struct LanRouterConfig {
     /// so a broadcast is never refused.
     ///
     /// An operation whose header and payload do not fit one frame is
-    /// advertised header-only, which [`LanRouter`] refuses to ingest, so
-    /// this is also the largest operation the router can carry. It has to
+    /// advertised header-only and ingested without its payload, so this is
+    /// also the largest operation the router can carry whole. It has to
     /// clear a contact request's base64 avatar (tens of KiB); media is
     /// exchanged as blobs, not as operation payloads, so nothing bigger
     /// needs to pass this way.
@@ -458,11 +458,11 @@ mod imp {
         /// Write the payload back into an operation p2panda has stored
         /// without one, now that a peer has offered it.
         ///
-        /// An older build imported header-only advertisements (see
+        /// A header-only advertisement is imported as it is (see
         /// [`AsyncStorage::ingest`]), and p2panda's insert ignores a second,
-        /// complete copy, so those rows stay payload-less however often the
+        /// complete copy, so that row stays payload-less however often the
         /// whole operation arrives again. The app reads payloads out of the
-        /// store, so such an operation is invisible to it forever.
+        /// store, so such an operation is invisible to it until then.
         ///
         /// Repairs nothing else: the payload must be the one the stored
         /// header signs, the row must have no body, and the operation must
@@ -687,18 +687,10 @@ mod imp {
                     "header log id != log"
                 );
                 let hash = header.hash();
-                // An op too big for one wire frame is still advertised, but
-                // header-only (dash-router's `pack_have` drops its payload).
-                // Importing that would store the operation without its
-                // payload for good: p2panda's insert ignores a later,
-                // complete copy, and the app reads payloads back out of the
-                // store. Refuse it and leave the op to log sync or a
-                // mailbox, which carry it whole.
-                ensure!(
-                    header.payload_size == 0 || op.payload.is_some(),
-                    "op claims a {} byte payload the router did not carry",
-                    header.payload_size
-                );
+                // An op can arrive without the payload its header declares:
+                // a delete dropped it at the sender, or it was too big for one
+                // wire frame. It is imported all the same, since p2panda
+                // accepts nothing later in a log that has a gap.
                 // A stream's held state is acked-only, so the router treats
                 // ops p2panda stored but has not acked yet as novel and
                 // ingests them again.
@@ -1587,11 +1579,11 @@ mod imp {
             assert_eq!(f.ext.rejected(), 1);
         }
 
-        /// An op too big for one wire frame is advertised header-only. It
-        /// must not be imported: p2panda would store it without its payload
-        /// for good, leaving it unreadable to the app.
+        /// An op whose payload was deleted, or was too big for one wire
+        /// frame, arrives header-only. It is imported without its payload,
+        /// so the rest of its log is not held up behind it.
         #[tokio::test(flavor = "multi_thread")]
-        async fn ingest_rejects_a_header_whose_payload_is_missing() {
+        async fn ingest_forwards_a_header_whose_payload_is_missing() {
             let mut f = fixture(Some(3)).await;
             let other = p2panda::SigningKey::generate();
             let op = signed_op(&other, f.log_id, 0, None, b"a payload the router dropped");
@@ -1600,14 +1592,12 @@ mod imp {
                 header: op.header.encode(),
                 payload: None,
             };
-            assert!(f.ext.ingest(log, 0, wire).await.is_err());
-            assert_eq!(f.ext.rejected(), 1);
-            assert_eq!(f.ext.forwarded(), 0);
-            assert!(f.import_rx.try_recv().is_err(), "nothing forwarded");
-            assert!(
-                !f.ext.store.has_operation(&op.hash).await.unwrap(),
-                "not stored either"
-            );
+            f.ext.ingest(log, 0, wire).await.unwrap();
+            let got = f.import_rx.recv().await.unwrap();
+            assert_eq!(got.hash, op.hash);
+            assert!(got.body.is_none());
+            assert_eq!(f.ext.rejected(), 0);
+            assert_eq!(f.ext.forwarded(), 1);
         }
 
         /// An op that carries no payload at all is still ingested.
@@ -1631,8 +1621,8 @@ mod imp {
             assert_eq!(f.ext.forwarded(), 1);
         }
 
-        /// A row an older build stored header-only is repaired when a peer
-        /// offers the payload the stored header signs.
+        /// A row stored header-only is repaired when a peer offers the
+        /// payload the stored header signs.
         #[tokio::test(flavor = "multi_thread")]
         async fn ingest_restores_a_missing_payload() {
             let mut f = fixture(Some(3)).await;
