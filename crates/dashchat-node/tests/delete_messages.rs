@@ -5,11 +5,11 @@
 
 use std::collections::BTreeMap;
 
+use dashchat_node::topic::application_log_id;
 use dashchat_node::{testing::*, *};
 use mailbox_client::{FetchRequest, FetchResponse, MailboxClient, store::MailboxStore};
 use maplit::btreemap;
 use p2panda::Hash;
-use p2panda::operation::LogId;
 use tokio_stream::StreamExt;
 
 fn setup() {
@@ -36,7 +36,7 @@ async fn payload_present(
 ) -> Option<bool> {
     let logs = node
         .op_store
-        .get_interleaved_logs(LogId::from_topic(topic), vec![author])
+        .get_interleaved_logs(application_log_id(topic), vec![author])
         .await
         .unwrap();
     logs.into_iter()
@@ -116,7 +116,7 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
         .unwrap();
 
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
         })
         .await
@@ -229,8 +229,9 @@ async fn delete_tombstones_chain_and_hides_payloads_from_new_members() {
 
     // Neither alice nor bobbi will ever transmit the deleted payloads: the
     // mailbox-facing log view serves the chain ops body-less.
+    let alice_log = Log::new(alice.device_id(), application_log_id(*chat));
     for node in [&alice, &bobbi] {
-        let served = MailboxStore::get_log(&node.op_store, &alice.device_id(), &chat, 0)
+        let served = MailboxStore::get_log(&node.op_store, &alice_log, &chat, 0)
             .await
             .unwrap()
             .unwrap();
@@ -546,7 +547,7 @@ async fn delete_cannot_censor_unsynced_message_from_another_author() {
     }
 
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => p2panda_auth::Access::manage(),
             *mallory.device_id() => p2panda_auth::Access::manage(),
         })

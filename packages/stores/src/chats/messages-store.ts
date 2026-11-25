@@ -4,8 +4,11 @@ import { fullName } from '../contacts/contacts-client';
 import { ContactsStore } from '../contacts/contacts-store';
 import { MessageAckStore } from '../message-acks/message-ack-store';
 import { LogsStore } from '../p2panda/logs-store';
-import { SimplifiedOperation } from '../p2panda/simplified-types';
-import { AgentId, DeviceId, Hash } from '../p2panda/types';
+import {
+	SimplifiedHeader,
+	SimplifiedOperation,
+} from '../p2panda/simplified-types';
+import { AgentId, DeviceId, Hash, LogId } from '../p2panda/types';
 import { TombstoneStore } from '../tombstones/tombstone-store';
 import {
 	ChatId,
@@ -47,6 +50,7 @@ export interface Message {
 	 * gone (tombstoned). */
 	lamport: number;
 	author: DeviceId;
+	logId: LogId;
 	seqNum: number;
 	replyQuote?: MessageReply;
 	/** Set only on the viewer's own messages */
@@ -58,6 +62,7 @@ export type Bodyless = {
 	timestamp: number;
 	lamport: number;
 	author: DeviceId;
+	logId: LogId;
 	seqNum: number;
 };
 
@@ -72,6 +77,8 @@ export class MessagesStore {
 		public chatId: ChatId,
 		public client: IMessagesClient,
 		public readOnly: () => ReactivePromise<boolean>,
+		/** The chat's group-control ops, which decide when we were a member. */
+		public controlOps: () => ReactivePromise<SimplifiedOperation<Payload>[]>,
 	) {}
 
 	opsByTimestamp = reactive(async () => {
@@ -88,6 +95,7 @@ export class MessagesStore {
 	opsAuthoredWhileAMember = reactive(async () =>
 		dropOpsAuthoredWhileNotAMember(
 			await this.opsByTimestamp(),
+			await this.controlOps(),
 			await this.contactsStore.myDeviceId(),
 		),
 	);
@@ -127,6 +135,7 @@ export class MessagesStore {
 			message.deliveryStatus = await this.messageAckStore.deliveryStatus(
 				this.chatId,
 				message.author,
+				message.logId,
 				message.seqNum,
 			);
 		}
@@ -164,8 +173,9 @@ export class MessagesStore {
 		if (Object.keys(histories).length === 0) return ops;
 
 		return ops.filter(op => {
-			if (op.body?.type !== 'Chat' || op.body.payload.type === 'GroupInfo')
+			if (op.body?.type === 'Chat' && op.body.payload.type === 'GroupInfo')
 				return true;
+			if (op.body?.type !== 'Chat' && !op.undecryptable) return true;
 			const agentId = deviceAgents[op.header.verifying_key];
 			const history = agentId === undefined ? undefined : histories[agentId];
 			if (history === undefined) return true;
@@ -374,9 +384,34 @@ export function logsToMessages(
 	// Map of EditMessage -> the target they reference
 	const editTargets: Record<Hash, Hash> = {};
 
+	const undecryptablePositions = new Set(
+		causalOps.filter(op => op.undecryptable).map(op => logPosition(op.header)),
+	);
+
 	for (const op of causalOps) {
 		const author = op.header.verifying_key;
 		const body = op.body;
+
+		if (op.undecryptable && !tombstones[op.hash]) {
+			// We can not tell a message from a reaction or an acknowledgement, so a
+			// run of undecryptable ops in a log stands for one message.
+			const previous = logPosition({
+				...op.header,
+				seq_num: op.header.seq_num - 1,
+			});
+			if (!undecryptablePositions.has(previous)) {
+				messages[op.hash] = {
+					hash: op.hash,
+					content: 'undecryptable',
+					author,
+					logId: op.header.log_id,
+					seqNum: op.header.seq_num,
+					timestamp: op.header.timestamp,
+					lamport: 0,
+				};
+			}
+			continue;
+		}
 
 		if (tombstones[op.hash] || !body) {
 			// Put a bodyless placeholder for any deleted messages,
@@ -386,6 +421,7 @@ export function logsToMessages(
 			messages[op.hash] = {
 				hash: op.hash,
 				author,
+				logId: op.header.log_id,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
 				lamport: 0,
@@ -445,6 +481,7 @@ export function logsToMessages(
 					editHistory: [],
 				},
 				author,
+				logId: op.header.log_id,
 				seqNum: op.header.seq_num,
 				timestamp: op.header.timestamp,
 				lamport: body.payload.payload.lamport ?? 0,
@@ -526,6 +563,10 @@ export function logsToMessages(
 	return result;
 }
 
+function logPosition(header: SimplifiedHeader): string {
+	return `${header.verifying_key}/${header.log_id}/${header.seq_num}`;
+}
+
 function walkToRoot(hash: Hash, predecessors: Record<Hash, Hash>): Hash {
 	let current = hash;
 	while (predecessors[current]) {
@@ -541,6 +582,7 @@ function placeholderFor(message: Bodyless): Message {
 		hash: message.hash,
 		content: 'deleted-for-everyone',
 		author: message.author,
+		logId: message.logId,
 		seqNum: message.seqNum,
 		timestamp: message.timestamp,
 		lamport: message.lamport,

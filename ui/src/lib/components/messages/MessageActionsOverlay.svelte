@@ -80,6 +80,17 @@
 	/>
 {/snippet}
 
+{#snippet actionsMenu()}
+	<MessageActionsMenu
+		{message}
+		{myDeviceId}
+		onEdit={edit}
+		onReply={onReply ? reply : undefined}
+		onCopy={copy}
+		onDelete={close}
+	/>
+{/snippet}
+
 {#await $readOnly then readOnly}
 	<SpotlightOverlay
 		{opened}
@@ -87,18 +98,8 @@
 		onClose={close}
 		contentHidden={expanded}
 		above={readOnly ? undefined : reactionBar}
-	>
-		{#snippet below()}
-			<MessageActionsMenu
-				{message}
-				{myDeviceId}
-				onEdit={edit}
-				onReply={onReply ? reply : undefined}
-				onCopy={copy}
-				onDelete={close}
-			/>
-		{/snippet}
-	</SpotlightOverlay>
+		below={actionsMenu}
+	/>
 {/await}
 
 {#if opened || expanded}

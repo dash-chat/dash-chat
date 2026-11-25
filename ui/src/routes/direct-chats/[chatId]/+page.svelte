@@ -76,6 +76,7 @@
 	import Divider from '$lib/components/Divider.svelte';
 	import SearchNavBar from '$lib/components/direct-chats/bottom-bar/SearchNavBar.svelte';
 	import ContactRequestBar from '$lib/components/direct-chats/bottom-bar/ContactRequestBar.svelte';
+	import AwaitingAcceptanceBar from '$lib/components/direct-chats/bottom-bar/AwaitingAcceptanceBar.svelte';
 	import RequestMessagesDisclosure from '$lib/components/direct-chats/RequestMessagesDisclosure.svelte';
 	import { renderAboveKeyboard } from '$lib/utils/virtual-keyboard/render-above-keyboard';
 	let chatId = page.params.chatId!;
@@ -97,6 +98,8 @@
 	const peerProfile = useReactivePromise(store.peerProfile);
 	const peerName = useReactivePromise(store.peerName);
 	const contactRequest = useReactivePromise(store.contactRequest);
+	// TODO: pre-accept: remove with the AwaitingAcceptanceBar.
+	const pendingOutgoingRequest = useReactiveValue(store.pendingOutgoingRequest);
 	const messageListData = useReactivePromises(() => [
 		store.groupedEvents(),
 		store.messages.readOnly(),
@@ -704,7 +707,10 @@
 					<div bind:clientHeight={bottomBarHeight}>
 						{#await $blocked then isBlocked}
 							{@const showComposer =
-								!searchMode && !isBlocked && !contactRequest}
+								!searchMode &&
+								!isBlocked &&
+								!contactRequest &&
+								!$pendingOutgoingRequest}
 							{#if showComposer}
 								<div class={theme === 'ios' ? 'pb-safe' : ''}>
 									<MessageComposer
@@ -742,6 +748,10 @@
 											onBlock={() => (showBlockDialog = true)}
 											onReport={() => (showReportDialog = true)}
 											onAccept={() => (showAcceptDialog = true)}
+										/>
+									{:else if $pendingOutgoingRequest}
+										<AwaitingAcceptanceBar
+											name={$pendingOutgoingRequest.profileName}
 										/>
 									{/if}
 								</div>

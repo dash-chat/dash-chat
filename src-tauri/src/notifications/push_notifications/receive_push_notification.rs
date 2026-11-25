@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Context};
+use dashchat_node::topic::application_log_id;
 use dashchat_node::{AsBody, ChatPayload, Payload, SeqNum, TopicId};
 #[cfg(target_os = "android")]
 use jni::objects::JClass;
@@ -193,7 +194,7 @@ async fn handle_push_notification(
     app_data_root: PathBuf,
     handler_deadline: tokio::time::Instant,
 ) -> anyhow::Result<Option<NotificationData>> {
-    // Title = topic ID (hex), Body = operation ID ("author_hex:seq_num")
+    // Title = topic ID (hex), Body = operation ID ("author_hex.log_hex:seq_num")
     let topic_hex = notification
         .title
         .as_deref()
@@ -203,10 +204,11 @@ async fn handle_push_notification(
         .as_deref()
         .context("notification has no body")?;
 
-    let (author_hex, seq_str) = op_id
+    let (log_key, seq_str) = op_id
         .split_once(':')
         .context("op_id missing ':' separator")?;
     let seq_num: SeqNum = seq_str.parse().context("failed to parse seq_num")?;
+    let (author_hex, log_hex) = log_key.split_once('.').unwrap_or((log_key, ""));
 
     let author_bytes: [u8; 32] = hex::decode(author_hex)
         .context("failed to hex-decode author")?
@@ -220,6 +222,11 @@ async fn handle_push_notification(
         .try_into()
         .map_err(|_| anyhow!("topic_id bytes are not 32 bytes long"))?;
     let topic_id = TopicId::try_from(topic_bytes)?;
+
+    let Some(log_id) = notifiable_log(topic_id, log_hex) else {
+        log::debug!("Ignoring a push for a control log of {topic_hex}.");
+        return Ok(None);
+    };
 
     let filesystem = FileSystem::from_app_root_dir(app_data_root)?;
     // The setting alone, unlike `are_notifications_enabled`: there is no app
@@ -250,10 +257,17 @@ async fn handle_push_notification(
 
     log::info!("dashchat node built successfully.");
 
+    // A member removed from a space still gets its pushes, and can read none of them.
+    if crate::notifications::space_membership(&node, topic_id).await? == Some(false) {
+        log::info!("Ignoring a push for a space we were removed from: {topic_hex}.");
+        return Ok(None);
+    }
+
     wait_for_pushed_operation_notification(
         node,
         &filesystem,
         topic_id,
+        log_id,
         verifying_key,
         seq_num,
         handler_deadline,
@@ -261,10 +275,24 @@ async fn handle_push_notification(
     .await
 }
 
+/// The log a push names, when its operations can be worth a notification: a
+/// space's application log, or the one log of a plain topic such as an inbox.
+/// Space, group and key bundle logs reach the mailbox too, and yield `None`.
+fn notifiable_log(topic_id: TopicId, log_hex: &str) -> Option<LogId> {
+    let application_log = application_log_id(topic_id);
+    if log_hex.is_empty() {
+        return Some(application_log);
+    }
+    [application_log, LogId::from_topic(topic_id)]
+        .into_iter()
+        .find(|log_id| dashchat_node::LogId::from(*log_id).to_hex() == log_hex)
+}
+
 async fn wait_for_pushed_operation_notification(
     node: dashchat_node::Node,
     filesystem: &FileSystem,
     topic_id: TopicId,
+    log_id: LogId,
     verifying_key: p2panda_core::VerifyingKey,
     seq_num: SeqNum,
     handler_deadline: tokio::time::Instant,
@@ -308,11 +336,12 @@ async fn wait_for_pushed_operation_notification(
         }
         let log = node
             .op_store
-            .get_log(&device_id, &LogId::from_topic(topic_id), from)
+            .get_log(&device_id, &log_id, from)
             .await
             .map_err(|err| anyhow!("failed to read op log: {err:?}"))?;
-        if let Some(first) = log.into_iter().next() {
-            entry = Some(first);
+        // An encrypted operation is not read until its secret arrives, and a later one may be.
+        entry = log.into_iter().find(|op| op.header.seq_num == seq_num);
+        if entry.is_some() {
             break;
         }
         tokio::time::sleep(OP_POLL_INTERVAL).await;
@@ -325,12 +354,16 @@ async fn wait_for_pushed_operation_notification(
         return Ok(Some(notifications::new_message_generic_notification()));
     };
 
-    let payload = match operation.body.as_ref() {
-        Some(body) => Some(
+    let payload = match &operation.body {
+        Ok(Some(body)) => Some(
             Payload::try_from_body(body)
                 .map_err(|err| anyhow!("failed to decode payload: {err:?}"))?,
         ),
-        None => None,
+        Ok(None) => None,
+        Err(err) => {
+            log::warn!("Operation {op_id} is unreadable, showing generic notification: {err}");
+            None
+        }
     };
 
     let Some((data, notified)) = notification_for_pushed_operation(

@@ -32,10 +32,6 @@ fn is_group_info(notification: &OpNotification) -> bool {
     )
 }
 
-fn is_group_control(notification: &OpNotification) -> bool {
-    matches!(&notification.payload, Some(Payload::GroupControl(_)))
-}
-
 fn notification_author(notification: &OpNotification) -> DeviceId {
     DeviceId::from(notification.header.verifying_key)
 }
@@ -253,7 +249,7 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
     // cammy is an admin so she can perform a group-control action (removing
     // bobbi); bobbi is a plain member.
     let chat = alice
-        .create_group(btreemap! {
+        .create_chat_group(btreemap! {
             *bobbi.device_id() => Access::write(),
             *cammy.device_id() => Access::manage(),
         })
@@ -307,8 +303,24 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         image: None,
     };
     cammy.set_group_info(chat, renamed.clone()).await.unwrap();
-    cammy
+    let text = cammy
         .send_message(chat, "blocked group text", None, None)
+        .await
+        .unwrap();
+    // Bobbi's ack of the text must not race his removal: an ack published as he is removed
+    // is processed by some members and not others.
+    let ack_poll = PollConfig {
+        poll_timeout: Duration::from_secs(30),
+        ..PollConfig::default()
+    };
+    ack_poll
+        .wait_for(|| async {
+            let acks = cammy.projection.delivered_acks(chat.into()).await.unwrap();
+            match acks.get(&cammy.device_id()) {
+                Some(acked) if acked.seq >= text.seq_num => Ok(()),
+                other => Err(format!("bobbi has not acked the text yet: {other:?}")),
+            }
+        })
         .await
         .unwrap();
     cammy
@@ -323,19 +335,26 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         .unwrap();
 
     // Collect every notification alice emitted for cammy's post-block ops.
-    let from_cammy: Vec<OpNotification> = {
+    // Membership changes arrive as a system notification that names no author,
+    // so cammy's removal of bobbi is the only one that can be in the buffer.
+    let mut from_cammy: Vec<OpNotification> = vec![];
+    let mut members_changed = false;
+    {
         let mut watcher = alice.watcher.lock().await;
-        let mut collected = vec![];
         while let Ok(n) = watcher.try_recv() {
-            let Some(n) = n.op().cloned() else {
-                continue;
-            };
-            if notification_author(&n) == cammy.device_id() {
-                collected.push(n);
+            match n {
+                Notification::Op(n) if notification_author(&n) == cammy.device_id() => {
+                    from_cammy.push(n)
+                }
+                Notification::System(SystemNotification::GroupMembersChanged { chat_id })
+                    if chat_id == chat =>
+                {
+                    members_changed = true
+                }
+                _ => {}
             }
         }
-        collected
-    };
+    }
 
     // The blocked chat message was never surfaced to alice...
     assert!(
@@ -349,8 +368,9 @@ async fn test_blocked_group_member_control_and_info_still_apply() {
         from_cammy.iter().any(is_group_info),
         "alice must still process a blocked group member's group-info update",
     );
+
     assert!(
-        from_cammy.iter().any(is_group_control),
+        members_changed,
         "alice must still process a blocked group member's group-control action",
     );
 

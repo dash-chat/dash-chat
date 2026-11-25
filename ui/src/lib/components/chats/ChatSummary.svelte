@@ -18,6 +18,7 @@
 	} from '$lib/utils/time';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { groupEventText } from '$lib/utils/group-event-text';
+	import { messagePlaceholderText } from '../messages/message-helpers';
 	import AvatarWithP2pBadge from './AvatarWithP2pBadge.svelte';
 	import { wrapPathInSvg } from '$lib/utils/icon';
 	import { mdiCancel } from '@mdi/js';
@@ -122,12 +123,16 @@
 						{#if hasBody(summary.lastEvent.content)}
 							{summarizeMessage(summary.lastEvent.content)}
 						{:else}
-							<span class="italic">{m.messageDeleted()}</span>
+							<span class="italic"
+								>{messagePlaceholderText(summary.lastEvent.content)}</span
+							>
 						{/if}
 					{:else if hasBody(summary.lastEvent.content)}
 						{summarizeMessage(summary.lastEvent.content)}
 					{:else}
-						<span class="italic">{m.messageDeleted()}</span>
+						<span class="italic"
+							>{messagePlaceholderText(summary.lastEvent.content)}</span
+						>
 					{/if}
 				{:else}
 					{groupEventText(summary.lastEvent)}

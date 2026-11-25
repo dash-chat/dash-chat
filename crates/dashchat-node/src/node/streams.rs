@@ -1,0 +1,1073 @@
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
+use std::time::Duration;
+
+use aliased::Aliasing;
+use derive_more::derive::From;
+use futures::future::{BoxFuture, Shared, join};
+use futures::{FutureExt, Stream, StreamExt};
+use p2panda::network::NetworkError;
+use p2panda::node::{CreateSpaceError, CreateStreamError, SubscribeSpaceError};
+use p2panda::operation::{Extensions, Header, LogId, Operation};
+use p2panda::spaces::{PendingSpace, PublishSpaceError, SpaceSubscription};
+use p2panda::streams::{
+    EphemeralStreamPublisher, EphemeralStreamSubscription, ImportError, ProcessedOperation,
+    PublishError, Source, StreamEvent, StreamFrom, StreamPublisher, StreamSubscription,
+};
+use p2panda::{Hash, NodeId, RelayUrl, Topic};
+use p2panda_core::traits::Digest;
+use p2panda_encryption::crypto::xchacha20::XAeadNonce;
+use p2panda_encryption::data_scheme::GroupSecretId;
+use p2panda_spaces::{SecretsError, SpaceSecrets};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use tokio::select;
+use tokio::sync::{RwLockReadGuard, mpsc, oneshot};
+use tokio::task::JoinSet;
+use tokio_stream::StreamMap;
+use tracing::{error, warn};
+
+use crate::Payload;
+
+const SPACE_JOIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+type JoinedSpace = Shared<BoxFuture<'static, Option<Arc<p2panda::spaces::Space<Payload>>>>>;
+
+/// A space we created or subscribed to.
+///
+/// The topic publisher is available from the start, so operations can be imported into the
+/// topic before we are admitted. The space API itself (`run`) waits for p2panda to report us
+/// joined, which for a subscribed space happens once the admitting control messages arrive.
+#[derive(Clone)]
+pub struct Space {
+    topic: Topic,
+    tx: StreamPublisher<Payload>,
+    joined: JoinedSpace,
+}
+
+impl Space {
+    pub fn created(topic: Topic, space: p2panda::spaces::Space<Payload>) -> Self {
+        Self {
+            topic,
+            tx: space.publisher().clone(),
+            joined: futures::future::ready(Some(Arc::new(space)))
+                .boxed()
+                .shared(),
+        }
+    }
+
+    pub fn pending(topic: Topic, space: PendingSpace<Payload>) -> Self {
+        Self {
+            topic,
+            tx: space.publisher().clone(),
+            joined: async move {
+                match space.joined().await {
+                    Ok(space) => Some(Arc::new(space)),
+                    Err(err) => {
+                        warn!(topic = ?topic.aliased(), ?err, "waiting to join space failed");
+                        None
+                    }
+                }
+            }
+            .boxed()
+            .shared(),
+        }
+    }
+
+    pub fn publisher(&self) -> &StreamPublisher<Payload> {
+        &self.tx
+    }
+
+    /// Run a Space function on its own task and await it.
+    ///
+    /// p2panda's state futures are deep and can easily overflow the stack.
+    /// Therefore, we require any state operation to be run on its own task.
+    pub async fn run<T, E, F>(
+        &self,
+        f: impl FnOnce(Arc<p2panda::spaces::Space<Payload>>) -> F + Send + 'static,
+    ) -> Result<Result<T, E>, StreamsError>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        F: Future<Output = Result<T, E>> + Send + 'static,
+    {
+        let space = tokio::time::timeout(SPACE_JOIN_TIMEOUT, self.joined.clone())
+            .await
+            .ok()
+            .flatten()
+            .ok_or(StreamsError::SpaceNotJoined(self.topic))?;
+        Ok(tokio::spawn(async move { f(space).await }).await?)
+    }
+}
+
+type Event = p2panda::processor::Event<LogId, Extensions, Topic>;
+
+/// The ciphertext of a message published into a space.
+pub(crate) struct EncryptedMessage {
+    pub group_secret_id: GroupSecretId,
+    pub nonce: XAeadNonce,
+    pub ciphertext: Vec<u8>,
+}
+
+/// Why the payload of an operation published into a space can not be read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
+pub(crate) enum Unreadable {
+    /// Expected while the space's key agreement lags behind its messages.
+    #[error("we do not hold the secret this payload was encrypted with (yet)")]
+    SecretMissing,
+
+    /// Permanent: the ciphertext is corrupt, or was not encrypted with the secret it names.
+    #[error("the payload does not decrypt with the secret it names")]
+    DecryptionFailed,
+}
+
+impl EncryptedMessage {
+    fn decrypt(&self, secrets: &SpaceSecrets<'_>) -> Result<Vec<u8>, Unreadable> {
+        match secrets.decrypt(self.group_secret_id, self.nonce, &self.ciphertext) {
+            Ok(plaintext) => Ok(plaintext),
+            Err(SecretsError::UnknownSecret(_)) => Err(Unreadable::SecretMissing),
+            Err(err) => {
+                error!(?err, "failed to decrypt a space message");
+                Err(Unreadable::DecryptionFailed)
+            }
+        }
+    }
+}
+
+pub(crate) type ProcessedTx = oneshot::Sender<Result<Header, ProcessorError>>;
+type ProcessedRx = oneshot::Receiver<Result<Header, ProcessorError>>;
+
+/// Something [`Drain::next`] hands to the application processor.
+pub enum ProcessorEvent {
+    /// An operation ready for application processing. `processed_tx` is set when a local
+    /// `publish` is awaiting it, and must be resolved once processing is done.
+    Operation {
+        operation: ProcessedOperation<Payload>,
+        source: Source,
+        processed_tx: Option<ProcessedTx>,
+    },
+
+    ImportFailed {
+        topic: Topic,
+        error: ImportError,
+    },
+
+    /// A space's membership changed.
+    SpaceMembersChanged {
+        topic: Topic,
+    },
+
+    /// A group-auth operation on `topic`'s space was processed.
+    GroupMembershipOp {
+        topic: Topic,
+        header: Header,
+    },
+}
+
+/// Per-topic p2panda streams.
+///
+/// This is a thin wrapper around the p2panda node API which holds all publish handles.
+/// Every subscription stream is merged into the [`Drain`], which is created at the same
+/// time as `Streams`.
+pub struct TopicStreams {
+    /// p2panda node. Taken by [`shutdown`](Self::shutdown): dropping it stops p2panda's
+    /// network actors, which share the operation store's pool.
+    node: tokio::sync::RwLock<Option<p2panda::Node>>,
+
+    /// Prefix for each topic stream's ack cursor name. `None` uses p2panda's
+    /// default per-topic cursor (`"{topic}"`);
+    stream_cursor_prefix: Option<String>,
+
+    /// All publishing channel senders.
+    ///
+    /// Held across opening a new topic's stream so two callers racing on the same new topic
+    /// can't open it twice.
+    publishers: tokio::sync::Mutex<HashMap<Topic, Publisher>>,
+
+    /// Senders for locally authored operations awaiting application processing, keyed by
+    /// operation hash. When the operation has been fully processed, we remove the sender from
+    /// the map and fire its signal.
+    in_process: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
+
+    drain_tx: mpsc::UnboundedSender<DrainCommand>,
+
+    shut_down: AtomicBool,
+}
+
+#[derive(Clone, From)]
+pub enum Publisher {
+    Stream(StreamPublisher<Payload>),
+    Space(Space),
+}
+
+impl Publisher {
+    pub fn tx(&self) -> &StreamPublisher<Payload> {
+        match self {
+            Publisher::Stream(tx) => tx,
+            Publisher::Space(space) => space.publisher(),
+        }
+    }
+}
+
+pub enum Subscriber {
+    Stream(StreamSubscription<Payload>),
+    Space(SpaceSubscription<Payload>),
+}
+
+impl Stream for Subscriber {
+    type Item = StreamEvent<Payload>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match &mut *self {
+            Subscriber::Stream(stream) => stream.poll_next_unpin(cx),
+            Subscriber::Space(space) => space.poll_next_unpin(cx),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Subscriber::Stream(stream) => stream.size_hint(),
+            Subscriber::Space(space) => space.size_hint(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum StreamIntent {
+    CreateSpace,
+    JoinSpace,
+    SubscribeStream,
+    ExistingOnly,
+}
+
+enum DrainCommand {
+    Subscribe(Topic, Subscriber),
+    Unsubscribe(Topic),
+    Import {
+        topic: Topic,
+        publisher: Publisher,
+        stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
+    },
+}
+
+impl TopicStreams {
+    pub(crate) fn new(
+        node: p2panda::Node,
+        stream_cursor_prefix: Option<String>,
+    ) -> (Self, TopicDrain) {
+        let (drain_tx, command_rx) = mpsc::unbounded_channel();
+        let processed = Arc::new(std::sync::Mutex::new(HashMap::new()));
+
+        let drain = TopicDrain {
+            streams: Default::default(),
+            processed: processed.clone(),
+            command_rx,
+            import_tasks: JoinSet::new(),
+        };
+
+        let streams = Self {
+            node: tokio::sync::RwLock::new(Some(node)),
+            stream_cursor_prefix,
+            publishers: Default::default(),
+            in_process: processed,
+            drain_tx,
+            shut_down: AtomicBool::new(false),
+        };
+
+        (streams, drain)
+    }
+
+    /// The cursor `topic`'s stream or space is subscribed under: `"{prefix}:{topic}"`, or the
+    /// topic itself (p2panda's default) when there is no prefix.
+    fn cursor_name(&self, topic: Topic) -> Option<String> {
+        self.stream_cursor_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}:{topic}"))
+    }
+
+    /// Open a topic stream, tracking its ack cursor under a per-topic name. With
+    /// a cursor prefix set (the iOS push extension) the name is
+    /// `"{prefix}:{topic}"`, so each topic keeps its own cursor while staying
+    /// distinct from the app's default `"{topic}"` cursor: the two processes
+    /// share one database and must not advance each other's cursors.
+    async fn open_stream(
+        &self,
+        topic: Topic,
+    ) -> Result<(StreamPublisher<Payload>, StreamSubscription<Payload>), StreamsError> {
+        let cursor_name = self.cursor_name(topic);
+        Ok(self
+            .with_node(async |node| {
+                node.stream_from(topic, StreamFrom::Frontier, cursor_name)
+                    .await
+            })
+            .await??)
+    }
+
+    #[deprecated = "direct p2panda node access is bad encapsulation for TopicStreams (private access is fine, public access needs to be removed)"]
+    pub(crate) async fn with_node<T>(
+        &self,
+        f: impl AsyncFnOnce(&p2panda::Node) -> T,
+    ) -> Result<T, StreamsError> {
+        let node = RwLockReadGuard::try_map(self.node.read().await, Option::as_ref)
+            .map_err(|_| StreamsError::ShutDown)?;
+        Ok(Box::pin(f(&node)).await)
+    }
+
+    fn ensure_node(&self) -> Result<(), StreamsError> {
+        if self.shut_down.load(Ordering::Acquire) {
+            return Err(StreamsError::ShutDown);
+        } else {
+            Ok(())
+        }
+    }
+
+    /// The topic's publisher, creating the stream/space if this is the first use of the topic.
+    ///
+    /// Returns whether the stream was newly created.
+    async fn publisher(
+        &self,
+        topic: Topic,
+        space: StreamIntent,
+    ) -> Result<(Publisher, bool), StreamsError> {
+        self.ensure_node()?;
+        let mut pubs = self.publishers.lock().await;
+        if let Some(sub) = pubs.get(&topic) {
+            return Ok((sub.clone(), false));
+        }
+
+        let (publisher, subscriber) = match space {
+            StreamIntent::CreateSpace => {
+                let (space, subscriber) = self
+                    .with_node(async |node| node.create_space_with_id(topic).await)
+                    .await??;
+                (
+                    Publisher::Space(Space::created(topic, space)),
+                    Subscriber::Space(subscriber),
+                )
+            }
+            StreamIntent::JoinSpace => {
+                let cursor_name = self.cursor_name(topic);
+                let (space, subscriber) = self
+                    .with_node(async |node| {
+                        node.space_from(topic, StreamFrom::Frontier, cursor_name)
+                            .await
+                    })
+                    .await??;
+                (
+                    Publisher::Space(Space::pending(topic, space)),
+                    Subscriber::Space(subscriber),
+                )
+            }
+            StreamIntent::SubscribeStream => {
+                let (tx, rx) = self.open_stream(topic).await?;
+                (Publisher::Stream(tx), Subscriber::Stream(rx))
+            }
+            StreamIntent::ExistingOnly => return Err(StreamsError::NotSubscribed(topic)),
+        };
+
+        pubs.insert(topic, publisher.clone());
+        self.send_to_drain(DrainCommand::Subscribe(topic, subscriber))?;
+        Ok((publisher, true))
+    }
+
+    fn send_to_drain(&self, command: DrainCommand) -> Result<(), StreamsError> {
+        self.drain_tx
+            .send(command)
+            .map_err(|_| StreamsError::DrainClosed)
+    }
+
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn create_space(&self, topic: Topic) -> Result<Space, StreamsError> {
+        tracing::info!(topic = ?topic.aliased(), "create_space");
+        let (publisher, created) = self.publisher(topic, StreamIntent::CreateSpace).await?;
+        if !created {
+            return Err(StreamsError::SpaceAlreadyExists(topic));
+        }
+        match publisher {
+            Publisher::Space(space) => Ok(space),
+            Publisher::Stream(_) => {
+                unreachable!("we created the space, so this is a space publisher")
+            }
+        }
+    }
+
+    /// Whether p2panda has materialized this space locally, because we created it or
+    /// because its control messages have been processed. Joining alone does not count.
+    pub(crate) async fn has_space(&self, topic: Topic) -> Result<bool, StreamsError> {
+        #[allow(deprecated)]
+        let has_space = self
+            .with_node(async |node| node.spaces_manager().has_space(topic).await)
+            .await?
+            .map_err(SubscribeSpaceError::from)?;
+        Ok(has_space)
+    }
+
+    pub(crate) async fn join_space(&self, topic: Topic) -> Result<Space, StreamsError> {
+        let (publisher, _) = self.publisher(topic, StreamIntent::JoinSpace).await?;
+        match publisher {
+            Publisher::Space(space) => Ok(space),
+            Publisher::Stream(_) => Err(StreamsError::NotASpace(topic)),
+        }
+    }
+
+    /// Subscribe to a topic. Returns `false` if already subscribed.
+    #[tracing::instrument(skip(self), fields(topic = ?topic.aliased()))]
+    pub(crate) async fn subscribe(&self, topic: Topic) -> Result<bool, StreamsError> {
+        let (_, opened) = self.publisher(topic, StreamIntent::SubscribeStream).await?;
+        tracing::info!(topic = ?topic.aliased(), ?opened, "topic subscribed");
+        Ok(opened)
+    }
+
+    #[allow(unused)]
+    pub(crate) async fn unsubscribe(&self, topic: Topic) {
+        self.publishers.lock().await.remove(&topic);
+        let _ = self.send_to_drain(DrainCommand::Unsubscribe(topic));
+    }
+
+    /// Decrypt messages published into a space, with the secrets p2panda holds for it.
+    /// Works for a space we have left as well.
+    //
+    // TODO: once we have a projection of valid, processed operations that caches their plaintext,
+    // we can afford to decrypt one message at a time instead of in a batch, which simplifies
+    // the logic and types.
+    pub(crate) async fn decrypt_messages(
+        &self,
+        space: Topic,
+        messages: Vec<EncryptedMessage>,
+    ) -> anyhow::Result<Vec<Result<Vec<u8>, Unreadable>>> {
+        #[allow(deprecated)]
+        self.with_node(async |node| {
+            let manager = node.spaces_manager();
+            // A space's messages can reach us before the control messages that create it.
+            if !manager.has_space(space).await? {
+                return Ok(vec![Err(Unreadable::SecretMissing); messages.len()]);
+            }
+            let space = manager.space(space).created().await?;
+            let plaintexts = space
+                .with_secrets(|secrets| {
+                    messages
+                        .iter()
+                        .map(|message| message.decrypt(secrets))
+                        .collect()
+                })
+                .await?;
+            Ok(plaintexts)
+        })
+        .await?
+    }
+
+    pub(crate) async fn space(&self, topic: Topic) -> Result<Space, StreamsError> {
+        let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
+        match publisher {
+            Publisher::Space(space) => Ok(space),
+            _ => Err(StreamsError::NotSubscribed(topic)),
+        }
+    }
+
+    /// Import an external stream of operations into a subscribed topic.
+    pub(crate) async fn import(
+        &self,
+        topic: Topic,
+        stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
+    ) -> Result<(), StreamsError> {
+        let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
+        self.send_to_drain(DrainCommand::Import {
+            topic,
+            publisher,
+            stream,
+        })
+    }
+
+    /// Publish a payload into a subscribed topic, encrypted towards the topic's space if it
+    /// has one.
+    pub(crate) async fn publish(
+        &self,
+        topic: Topic,
+        payload: Payload,
+    ) -> Result<ProcessFuture, StreamsError> {
+        let (publisher, _) = self.publisher(topic, StreamIntent::ExistingOnly).await?;
+        let process_fut = match publisher {
+            Publisher::Stream(tx) => self.publish_plain(&tx, payload).await?,
+            Publisher::Space(space) => self.publish_encrypted(&space, payload).await?,
+        };
+        process_fut.hash().alias_numbered();
+        Ok(process_fut)
+    }
+
+    async fn publish_plain(
+        &self,
+        tx: &StreamPublisher<Payload>,
+        payload: Payload,
+    ) -> Result<ProcessFuture, StreamsError> {
+        let (processed_tx, processed_rx) = oneshot::channel();
+        let mut registered = None;
+        // `publish_with` calls back before the operation enters the pipeline, so the entry
+        // is in place before the drain can see the operation.
+        let published = tx
+            .publish_with(payload, |hash| {
+                self.in_process.lock().unwrap().insert(hash, processed_tx);
+                registered = Some(hash);
+            })
+            .await;
+
+        match published {
+            Ok(publish_fut) => Ok(ProcessFuture::new(
+                publish_fut.hash(),
+                publish_fut.map(|published| published.map(|_| ()).map_err(|err| err.to_string())),
+                processed_rx,
+            )),
+            Err(err) => {
+                if let Some(hash) = registered {
+                    self.in_process.lock().unwrap().remove(&hash);
+                }
+                Err(err.into())
+            }
+        }
+    }
+
+    async fn publish_encrypted(
+        &self,
+        space: &Space,
+        payload: Payload,
+    ) -> Result<ProcessFuture, StreamsError> {
+        let (processed_tx, processed_rx) = oneshot::channel();
+        let in_process = self.in_process.clone();
+        let published = space
+            .run(move |space| async move {
+                let mut registered = None;
+                space
+                    .publish_with(payload, |hash| {
+                        in_process.lock().unwrap().insert(hash, processed_tx);
+                        registered = Some(hash);
+                    })
+                    .await
+                    .map_err(|err| (err, registered))
+            })
+            .await?;
+
+        match published {
+            Ok(space_fut) => Ok(ProcessFuture::new(
+                space_fut.hash(),
+                space_fut.map(|published| published.map_err(|err| err.to_string())),
+                processed_rx,
+            )),
+            Err((err, registered)) => {
+                // Remove the operation from the in-process map if it was registered
+                // before returning.
+                if let Some(hash) = registered {
+                    self.in_process.lock().unwrap().remove(&hash);
+                }
+                Err(Box::new(err).into())
+            }
+        }
+    }
+
+    /// Open an ephemeral (gossip-only) stream on a topic.
+    pub(crate) async fn ephemeral_stream<M>(
+        &self,
+        topic: Topic,
+    ) -> Result<(EphemeralStreamPublisher<M>, EphemeralStreamSubscription<M>), StreamsError>
+    where
+        M: Serialize + for<'a> Deserialize<'a>,
+    {
+        Ok(self
+            .with_node(async |node| node.ephemeral_stream(topic).await)
+            .await??)
+    }
+
+    pub(crate) async fn register_bootstrap(
+        &self,
+        node_id: NodeId,
+        relay_url: RelayUrl,
+    ) -> Result<(), StreamsError> {
+        // insert_node_addr replaces the whole entry, which would drop the LAN addresses of a peer
+        // we already know and leave it undialable while offline.
+        let addr = iroh::EndpointAddr::new(p2panda_net::utils::from_verifying_key(node_id))
+            .with_relay_url(relay_url);
+        let known = self
+            .with_node(async |node| node.node_addr_known(&addr).await)
+            .await??;
+        if known {
+            return Ok(());
+        }
+        self.with_node(async |node| node.insert_node_addr(addr).await)
+            .await??;
+        Ok(())
+    }
+
+    /// Insert (or refresh) a peer's dialing address in the p2panda address book.
+    ///
+    /// Always overwrites any existing entry: `insert_node_addr` replaces the
+    /// whole `NodeInfo`, resetting its metrics, so an entry marked "stale" by an
+    /// earlier failed dial — which `AddressBookDiscovery` then refuses to
+    /// resolve, leaving the peer undialable and, since the address book is
+    /// persisted, staying that way across restarts — is refreshed and becomes
+    /// dialable again. Callers only ever pass mailbox `/health` self-addresses
+    /// and addresses a user's opt-in local mailbox forwards, so there is no
+    /// untrusted address here to guard an existing entry against.
+    //
+    // KNOWN LIMITATION: a malicious client that registered this endpoint
+    // before p2panda discovered it via mDNS/gossip can continue to inject
+    // undialable addresses here (griefing). We cannot detect the upgrade
+    // from mailbox-discovered to node-discovered without a
+    // p2panda discovery hook;
+    // the iroh QUIC handshake prevents data from flowing to the wrong peer,
+    // so the worst case is wasted dial attempts.
+    pub(crate) async fn register_peer_addr(
+        &self,
+        addr: iroh::EndpointAddr,
+    ) -> Result<(), StreamsError> {
+        self.with_node(async |node| node.insert_node_addr(addr).await)
+            .await??;
+        Ok(())
+    }
+
+    /// Drop every publisher and the p2panda node, refuse to open any more streams, and fail
+    /// every publish still awaiting processing. Still-parked imports are aborted when the
+    /// [`Drain`] is dropped.
+    pub(crate) async fn shutdown(&self) {
+        let mut publishers = self.publishers.lock().await;
+        self.shut_down.store(true, Ordering::Release);
+        publishers.clear();
+        self.in_process.lock().unwrap().clear();
+        self.node.write().await.take();
+    }
+}
+
+/// Every subscription stream merged into one, pulled by the application processor.
+///
+/// The application processor must never await a publish into a subscribed topic while it is
+/// pulling from here: p2panda's per-topic pipeline is bounded all the way through to the
+/// subscription, so such a publish can wait on the very drain it is blocking (see
+/// `late_joiner_syncing_crossing_replies_can_hit_target_not_found` in `tests/reply_messages.rs`,
+/// which hangs this way).
+pub(crate) struct TopicDrain {
+    /// All subscription streams.
+    streams: StreamMap<Topic, Subscriber>,
+
+    processed: Arc<std::sync::Mutex<HashMap<Hash, ProcessedTx>>>,
+
+    command_rx: mpsc::UnboundedReceiver<DrainCommand>,
+
+    /// Import tasks spawned so an import does not block the drain.
+    /// Dropped with the drain, aborting any still-parked imports.
+    import_tasks: JoinSet<Option<(Topic, ImportError)>>,
+}
+
+impl TopicDrain {
+    /// Wait for the next event to process, handling subscription changes in the meantime.
+    ///
+    /// Returns `None` once [`Streams`] has been dropped. Cancel safe.
+    pub(crate) async fn next(&mut self) -> Option<ProcessorEvent> {
+        loop {
+            select!(
+                command = self.command_rx.recv() => {
+                    let Some(command) = command else {
+                        warn!("streams dropped, exiting drain");
+                        return None;
+                    };
+                    self.handle_command(command);
+                }
+                Some((topic, event)) = self.streams.next() => {
+                    if let Some(event) = self.processor_event(topic, event) {
+                        return Some(event);
+                    }
+                }
+                Some(result) = self.import_tasks.join_next() => {
+                    match result {
+                        Ok(Some((topic, error))) => {
+                            return Some(ProcessorEvent::ImportFailed { topic, error });
+                        }
+                        Ok(None) => {}
+                        Err(err) => error!(?err, "import task panicked"),
+                    }
+                }
+            );
+        }
+    }
+
+    fn handle_command(&mut self, command: DrainCommand) {
+        match command {
+            DrainCommand::Subscribe(topic, rx) => {
+                self.streams.insert(topic, rx);
+            }
+            DrainCommand::Unsubscribe(topic) => {
+                self.streams.remove(&topic);
+            }
+            DrainCommand::Import {
+                topic,
+                publisher,
+                stream,
+            } => {
+                self.spawn_import(topic, publisher, stream);
+            }
+        }
+    }
+
+    fn spawn_import(
+        &mut self,
+        topic: Topic,
+        publisher: Publisher,
+        stream: Pin<Box<dyn Stream<Item = Operation> + Send>>,
+    ) {
+        self.import_tasks.spawn(async move {
+            let err = publisher.tx().import(stream).await.err()?;
+            error!(topic = ?topic.aliased(), ?err, "import stream failed; topic will not receive further mailbox deliveries until unsubscribed");
+            Some((topic, err))
+        });
+    }
+
+    /// The event to hand to the application processor, logging any system event instead.
+    fn processor_event(
+        &mut self,
+        topic: Topic,
+        event: StreamEvent<Payload>,
+    ) -> Option<ProcessorEvent> {
+        match event {
+            StreamEvent::Processed { operation, source } => {
+                let processed_tx = self.processed.lock().unwrap().remove(&operation.id());
+                Some(ProcessorEvent::Operation {
+                    operation,
+                    source,
+                    processed_tx,
+                })
+            }
+            StreamEvent::ProcessingFailed { event, error, .. } => {
+                warn!("error processing operation: {error:?}");
+                self.fail(event.hash(), format!("processing failed: {error}"));
+                None
+            }
+            StreamEvent::DecodeFailed { event, error } => {
+                warn!("error decoding operation: {error:?}");
+                self.fail(event.hash(), format!("decoding failed: {error}"));
+                None
+            }
+            StreamEvent::ReplayFailed { error } => {
+                warn!("error replaying stream: {error:?}");
+                None
+            }
+            StreamEvent::AckFailed { event, error } => {
+                warn!("error acking operation: {error:?}");
+                self.fail(event.hash(), format!("acking failed: {error}"));
+                None
+            }
+            StreamEvent::Space { space_id, .. } => Some(ProcessorEvent::SpaceMembersChanged {
+                topic: Topic::from(space_id),
+            }),
+            StreamEvent::Group { event, .. } => Some(ProcessorEvent::GroupMembershipOp {
+                topic,
+                header: event.header().clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Fail the local publish awaiting `hash`, if any.
+    fn fail(&mut self, hash: Hash, reason: String) {
+        if let Some(processed_tx) = self.processed.lock().unwrap().remove(&hash) {
+            let _ = processed_tx.send(Err(ProcessorError::System(reason)));
+        }
+    }
+}
+
+/// Future which can be awaited to find out when a locally published operation has finished
+/// system and application layer processing.
+pub struct ProcessFuture {
+    hash: Hash,
+    inner: Pin<Box<dyn Future<Output = Result<Header, ProcessError>> + Send>>,
+}
+
+impl ProcessFuture {
+    pub fn new(
+        hash: Hash,
+        published_fut: impl Future<Output = Result<(), String>> + Send + 'static,
+        processed_rx: ProcessedRx,
+    ) -> Self {
+        let inner =
+            join(published_fut, processed_rx).map(|(published, processed)| match processed {
+                Ok(Ok(header)) => published.map(|()| header).map_err(ProcessError::System),
+                Ok(Err(err)) => Err(ProcessError::Processor(err)),
+                Err(_) => Err(ProcessError::ProcessorGone),
+            });
+        Self {
+            hash,
+            inner: Box::pin(inner),
+        }
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+}
+
+impl Future for ProcessFuture {
+    type Output = Result<Header, ProcessError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner.poll_unpin(cx)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum StreamsError {
+    #[error(transparent)]
+    Publish(#[from] PublishError),
+
+    #[error(transparent)]
+    Subscribe(#[from] CreateStreamError),
+
+    #[error(transparent)]
+    CreateSpace(#[from] CreateSpaceError),
+
+    #[error(transparent)]
+    SubscribeSpace(#[from] SubscribeSpaceError),
+
+    #[error(transparent)]
+    Import(#[from] ImportError),
+
+    #[error(transparent)]
+    PublishSpace(#[from] Box<PublishSpaceError>),
+
+    #[error("can't create a space that already exists")]
+    SpaceAlreadyExists(Topic),
+
+    #[error("topic is already subscribed to as a normal stream, not a space")]
+    NotASpace(Topic),
+
+    #[error("topic must be subscribed to first")]
+    NotSubscribed(p2panda::Topic),
+
+    #[error("not (yet) a member of space {0:?}")]
+    SpaceNotJoined(Topic),
+
+    #[error("space task failed: {0}")]
+    SpaceTask(#[from] tokio::task::JoinError),
+
+    #[error("stream drain is gone")]
+    DrainClosed,
+
+    #[error("streams are shut down")]
+    ShutDown,
+
+    #[error(transparent)]
+    Network(#[from] NetworkError),
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum ProcessorError {
+    #[error("application layer processing error: {0}")]
+    App(String),
+
+    #[error("system layer processing error: {0}")]
+    System(String),
+}
+
+/// Why a locally published operation did not finish processing.
+#[derive(Debug, Error)]
+pub enum ProcessError {
+    #[error("system layer never reported the operation processed: {0}")]
+    System(String),
+
+    #[error(transparent)]
+    Processor(ProcessorError),
+
+    #[error("application processor went away before processing the operation")]
+    ProcessorGone,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use futures::future::join_all;
+    use p2panda::{Node, Topic};
+
+    use crate::node::streams::{ProcessError, ProcessorEvent, StreamsError, TopicDrain};
+    use crate::testing::setup_tracing;
+    use crate::{ChatMessageContent, ChatPayload, Payload};
+
+    use super::TopicStreams;
+
+    fn chat(message: &str) -> Payload {
+        Payload::Chat(ChatPayload::Message(ChatMessageContent::text_only(message)))
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn subscribe_and_send() {
+        setup_tracing(&["dashchat=info"], true);
+
+        let network_id = Topic::random();
+
+        let topic_a = Topic::random();
+        let topic_b = Topic::random();
+
+        let alice = Node::builder()
+            .network_id(network_id.into())
+            .spawn()
+            .await
+            .unwrap();
+        let bobbi = Node::builder()
+            .network_id(network_id.into())
+            .spawn()
+            .await
+            .unwrap();
+
+        let (alice_streams, alice_drain) = TopicStreams::new(alice, None);
+        let (bobbi_streams, bobbi_drain) = TopicStreams::new(bobbi, None);
+
+        // Both alice and bobbi subscribe to topics a & b.
+        for topic in [topic_a, topic_b] {
+            assert!(alice_streams.subscribe(topic).await.unwrap());
+            assert!(bobbi_streams.subscribe(topic).await.unwrap());
+        }
+
+        // Alice sends a message into each topic.
+        let topic_a_message = chat("hey from topic a!");
+        let topic_b_message = chat("hey from topic b!");
+
+        let mut processed_futures = vec![];
+        for (topic, payload) in [
+            (topic_a, topic_a_message.clone()),
+            (topic_b, topic_b_message.clone()),
+        ] {
+            let processed_future = alice_streams.publish(topic, payload).await.unwrap();
+            processed_futures.push(processed_future);
+        }
+
+        // Both alice and bobbi receive the messages on their events stream.
+        for mut drain in [alice_drain, bobbi_drain] {
+            let mut topic_a_message_received = false;
+            let mut topic_b_message_received = false;
+            while let Some(ProcessorEvent::Operation {
+                operation,
+                processed_tx,
+                ..
+            }) = drain.next().await
+            {
+                if let Some(processed_tx) = processed_tx {
+                    let _ = processed_tx.send(Ok(operation.processed().header().clone()));
+                }
+
+                if operation.message() == &topic_a_message {
+                    topic_a_message_received = true;
+                }
+
+                if operation.message() == &topic_b_message {
+                    topic_b_message_received = true;
+                }
+
+                if topic_a_message_received && topic_b_message_received {
+                    break;
+                }
+            }
+        }
+
+        for header in join_all(processed_futures).await {
+            header.unwrap();
+        }
+    }
+
+    async fn spawn_node() -> Node {
+        Node::builder()
+            .network_id(Topic::random().into())
+            .spawn()
+            .await
+            .unwrap()
+    }
+
+    /// Pull the drain forever, acknowledging every operation as processed.
+    fn spawn_acking_drain(mut drain: TopicDrain) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            while let Some(event) = drain.next().await {
+                if let ProcessorEvent::Operation {
+                    operation,
+                    processed_tx: Some(processed_tx),
+                    ..
+                } = event
+                {
+                    let _ = processed_tx.send(Ok(operation.processed().header().clone()));
+                }
+            }
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn concurrent_publishes_form_one_log() {
+        setup_tracing(&["dashchat=info"], true);
+        let topic = Topic::random();
+        let (streams, drain) = TopicStreams::new(spawn_node().await, None);
+        let streams = Arc::new(streams);
+        let drain_task = spawn_acking_drain(drain);
+        streams.subscribe(topic).await.unwrap();
+
+        let publishes = (0..10).map(|i| {
+            let streams = streams.clone();
+            tokio::spawn(async move {
+                streams
+                    .publish(topic, chat(&format!("message {i}")))
+                    .await
+                    .unwrap()
+                    .await
+                    .unwrap()
+            })
+        });
+        let mut headers: Vec<_> = join_all(publishes)
+            .await
+            .into_iter()
+            .map(|header| header.unwrap())
+            .collect();
+        headers.sort_by_key(|header| header.seq_num);
+
+        for (seq_num, pair) in headers.windows(2).enumerate() {
+            assert_eq!(pair[0].seq_num, seq_num as u32);
+            assert_eq!(pair[1].backlink, Some(pair[0].hash()));
+        }
+        assert_eq!(headers.len(), 10);
+        drain_task.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn racing_subscribes_open_a_topic_once() {
+        let topic = Topic::random();
+        let (streams, _drain) = TopicStreams::new(spawn_node().await, None);
+        let streams = Arc::new(streams);
+
+        let subscribes = (0..4).map(|_| {
+            let streams = streams.clone();
+            tokio::spawn(async move { streams.subscribe(topic).await.unwrap() })
+        });
+        let opened = join_all(subscribes)
+            .await
+            .into_iter()
+            .filter(|opened| *opened.as_ref().unwrap())
+            .count();
+        assert_eq!(opened, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_fails_in_flight_publish_and_refuses_new_ones() {
+        let topic = Topic::random();
+        let (streams, drain) = TopicStreams::new(spawn_node().await, None);
+        streams.subscribe(topic).await.unwrap();
+
+        let in_flight = streams
+            .publish(topic, chat("never processed"))
+            .await
+            .unwrap();
+        streams.shutdown().await;
+        drop(drain);
+
+        assert!(matches!(in_flight.await, Err(ProcessError::ProcessorGone)));
+        assert!(matches!(
+            streams.publish(topic, chat("after shutdown")).await,
+            Err(StreamsError::ShutDown)
+        ));
+        assert!(matches!(
+            streams.subscribe(topic).await,
+            Err(StreamsError::ShutDown)
+        ));
+    }
+}

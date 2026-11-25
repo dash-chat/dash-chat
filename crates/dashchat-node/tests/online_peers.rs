@@ -68,6 +68,46 @@ async fn contact_is_online_until_it_shuts_down_and_again_once_it_is_back() {
         .unwrap();
 }
 
+/// A peer that processes our acceptance twice joins the direct chat twice at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn contact_that_joined_the_chat_twice_at_once_is_online() {
+    dashchat_node::testing::setup_tracing(&TRACING_FILTER, true);
+
+    let config = NodeConfig::testing().random_network_id();
+    let alice = TestNode::new(config.clone(), "alice").await;
+    let bobbi = TestNode::new(config, "bobbi").await;
+    alice
+        .save_keybundle(bobbi.keybundle().await.unwrap())
+        .await
+        .unwrap();
+    introduce_peers([&alice, &bobbi]).await.unwrap();
+    alice
+        .create_direct_chat_space(bobbi.fake_agent_id())
+        .await
+        .unwrap();
+
+    let topic = alice.direct_chat_with(&bobbi);
+    let (first, second) = tokio::join!(
+        bobbi.join_space(topic.into()),
+        bobbi.join_space(topic.into())
+    );
+    first.unwrap();
+    second.unwrap();
+
+    let bobbi_device = bobbi.device_id();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let devices = online_devices(&alice, topic.into()).await;
+            anyhow::ensure!(
+                devices.contains(&bobbi_device),
+                "expected bobbi online, saw {devices:?}"
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
 /// Each node keeps at most 5 gossip neighbours per topic and only syncs directly with them, yet
 /// what it publishes reaches the rest of the topic through them right away. In a group of
 /// [`GROUP_SIZE`], Alice syncs directly with only some of the others, and every one of them has to
@@ -106,7 +146,7 @@ async fn every_member_of_a_large_group_is_online() {
     .unwrap();
 
     let chat_id = alice
-        .create_group(
+        .create_chat_group(
             members
                 .iter()
                 .map(|member| (*member.device_id(), p2panda_auth::Access::write()))
@@ -161,7 +201,7 @@ async fn blocked_contact_is_offline_until_unblocked() {
             .unwrap();
     }
     let group_id = alice
-        .create_group(
+        .create_chat_group(
             [&bobbi, &cammy]
                 .iter()
                 .map(|member| (*member.device_id(), p2panda_auth::Access::write()))
@@ -299,22 +339,6 @@ async fn contact_is_online_only_once_the_request_is_accepted() {
 
     let qr = alice.create_add_contact_qr_code().await.unwrap();
     bobbi.add_contact(qr).await.unwrap();
-    PollConfig::seconds(15)
-        .wait_for(|| async {
-            for node in [&alice, &bobbi] {
-                if !node
-                    .local_store
-                    .subscribed_topics()
-                    .await?
-                    .contains(&*direct_chat)
-                {
-                    anyhow::bail!("the pending request's direct chat is not registered yet");
-                }
-            }
-            Ok(())
-        })
-        .await
-        .unwrap();
     tokio::join!(
         stays_offline(&alice, direct_chat.into(), Duration::from_secs(8)),
         stays_offline(&bobbi, direct_chat.into(), Duration::from_secs(8)),

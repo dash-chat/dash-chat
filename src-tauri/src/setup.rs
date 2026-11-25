@@ -130,7 +130,7 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     // rebuilt when p2p is switched on or off.
     // AppNodeManager::spawn owns the notification and topic-subscribed channels and wires
     // up the notification loop and push notifications internally.
-    let app_node_manager = crate::node::AppNodeManager::spawn(&app_handle, local_data_path).await?;
+    let app_node_manager = spawn_app_node_manager(app_handle.clone(), local_data_path).await?;
     app_handle.manage(app_node_manager);
 
     // Start the local mailbox server after the node is managed so it can
@@ -141,4 +141,25 @@ pub async fn async_setup(app_handle: AppHandle) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Spawns the [`AppNodeManager`](crate::node::AppNodeManager) on a thread of its
+/// own. `async_setup` runs on the main thread, whose ~1 MB stack on iOS is
+/// overrun by decoding a space's state while the node starts.
+async fn spawn_app_node_manager(
+    app_handle: AppHandle,
+    data_path: std::path::PathBuf,
+) -> anyhow::Result<crate::node::AppNodeManager> {
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name("node-setup".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            let result = tauri::async_runtime::block_on(crate::node::AppNodeManager::spawn(
+                &app_handle,
+                data_path,
+            ));
+            let _ = result_tx.send(result);
+        })?;
+    result_rx.await?
 }

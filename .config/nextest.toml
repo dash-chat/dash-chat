@@ -181,10 +181,10 @@ filter = 'binary(lan_sync_crowded_address_book)'
 slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
 
 # Setting up seven nodes, their contacts and the group takes 35-45s on CI on its own,
-# and the presence wait that follows is allowed 30s.
+# and over 110s on a loaded Windows runner; the presence wait that follows is allowed 30s.
 [[profile.default.overrides]]
 filter = 'binary(online_peers) & test(every_member_of_a_large_group_is_online)'
-slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "fail" }
 
 # Every write commits to disk, and commits are an order of magnitude slower on
 # Windows runners: 5000 sequential writes take ~12s on Linux and over 60s there.
@@ -193,7 +193,41 @@ platform = 'cfg(windows)'
 filter = 'package(mailbox-server) & binary(stress)'
 slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
 
-# Nine nodes form a group and are then left alone for a minute.
+# Encrypting, storing, syncing and decrypting a 16 MB message takes ~17s locally in a debug
+# build, close to the default limit on slower CI runners.
+[[profile.default.overrides]]
+filter = 'binary(message_encryption) & test(largest_message_reaches_the_other_member)'
+slow-timeout = { period = "60s", terminate-after = 3, on-timeout = "fail" }
+
+# Nine nodes form a group and are then left alone for a minute. That takes up to 230s on a
+# Windows runner and longer with spaces encryption, so allow twice that.
 [[profile.default.overrides]]
 filter = 'binary(large_group_memory)'
-slow-timeout = { period = "60s", terminate-after = 4, on-timeout = "fail" }
+slow-timeout = { period = "60s", terminate-after = 8, on-timeout = "fail" }
+
+# Takes about 30s on Linux CI and runs past a minute on a loaded Windows runner.
+[[profile.default.overrides]]
+filter = 'binary(reply_messages) & test(late_joiner_syncing_crossing_replies_can_hit_target_not_found)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Several ack round trips, each up to 30s on a loaded Windows runner.
+[[profile.default.overrides]]
+filter = 'binary(message_acks) & test(acks_are_delta_encoded_and_never_cascade)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Three members, a block, and a wait for an ack before a removal: up to 55s on Windows.
+[[profile.default.overrides]]
+filter = 'binary(blocking) & test(test_blocked_group_member_control_and_info_still_apply)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Three members, a group and a profile wait per member: 30s on Windows, past a minute on a
+# loaded Linux runner.
+[[profile.default.overrides]]
+filter = 'binary(profiles) & test(profile_reaches_group_members)'
+slow-timeout = { period = "60s", terminate-after = 2, on-timeout = "fail" }
+
+# Forms a group over p2p, then sends photos through a deliberately throttled mailbox uplink:
+# about 47s on Windows and past the default minute on a loaded run.
+[[profile.default.overrides]]
+filter = 'binary(photo_delivery) & test(photo_reaches_mailbox_through_a_member_after_its_sender_is_gone)'
+slow-timeout = { period = "60s", terminate-after = 3, on-timeout = "fail" }

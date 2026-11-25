@@ -2,7 +2,7 @@ use std::path::PathBuf;
 #[cfg(mobile)]
 use std::sync::Arc;
 
-use dashchat_node::{Node, Notification};
+use dashchat_node::{Node, Notification, OpNotification, SystemNotification};
 use p2panda_core::{cbor::encode_cbor, Body};
 use sqlite_gate::SqliteGate;
 use tauri::{AppHandle, Emitter};
@@ -48,7 +48,9 @@ impl AppNodeManager {
     pub async fn spawn(app: &AppHandle, data_path: PathBuf) -> anyhow::Result<Self> {
         // The notification channel is owned here: the sender is reused across node
         // rebuilds, and the receiver drives the app-lifetime notification loop.
-        let (notification_tx, notification_rx) = mpsc::channel(100);
+        // The node drops notifications once this is full and the frontend never
+        // refetches them, so it has to be able to hold a whole catch-up's worth.
+        let (notification_tx, notification_rx) = mpsc::channel(1_000);
         let sqlite_gate = SqliteGate::new();
         let notified_operations_store = NotifiedOperationsStore::open(
             &crate::filesystem::FileSystem::new(app)?.notified_operations_db_path(),
@@ -166,7 +168,7 @@ async fn notification_loop(
                     None => None,
                 };
                 let simplified_operation =
-                    match simplify(n.topic.into(), n.header.hash(), n.header.clone(), body) {
+                    match simplify(n.topic.into(), n.header.hash(), n.header.clone(), Ok(body)) {
                         Ok(o) => o,
                         Err(err) => {
                             log::error!("Failed to simplify operation: {err:?}");
@@ -181,8 +183,16 @@ async fn notification_loop(
                 crate::notifications::show_sync_notification(&app_handle, &n).await;
             }
             Notification::System(n) => {
-                if let Err(err) = app_handle.emit("dashchat://system-event", n) {
+                if let Err(err) = app_handle.emit("dashchat://system-event", &n) {
                     log::error!("Failed to emit system event: {err:?}");
+                }
+                if let SystemNotification::Membership { topic, header } = n {
+                    let op = OpNotification {
+                        topic,
+                        header,
+                        payload: None,
+                    };
+                    crate::notifications::show_sync_notification(&app_handle, &op).await;
                 }
             }
         }

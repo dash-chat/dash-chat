@@ -2,11 +2,17 @@ import type {
 	GroupMember,
 	IGroupChatClient,
 } from '../group-chats/group-chat-client';
+import type { SimplifiedOperation } from '../p2panda/simplified-types';
 import type { AgentId } from '../p2panda/types';
-import type { ChatId, GroupInfo } from '../types';
+import type { ChatId, GroupInfo, Payload } from '../types';
 
 export class MockGroupChatClient implements IGroupChatClient {
 	async getMembers(_chatId: ChatId): Promise<GroupMember[]> {
+		return [];
+	}
+	async getControlOps(
+		_chatId: ChatId,
+	): Promise<SimplifiedOperation<Payload>[]> {
 		return [];
 	}
 	onGroupMembersChanged(): () => void {

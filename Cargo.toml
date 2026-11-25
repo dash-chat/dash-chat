@@ -41,27 +41,32 @@ local-hub-discovery = { path = "crates/local-hub-discovery" }
 lan-multicast-probe = { path = "crates/lan-multicast-probe" }
 reporting = { path = "crates/reporting" }
 
-# p2panda 0.7.1 with the offline-node backport and the groups extension API,
-# merged with `dashchat-named-stream-cursors`, which adds:
-# - SQLite transactions begin with BEGIN IMMEDIATE, so the app and the iOS push
-#   extension sharing one database file stop refusing each other's writes with
-#   "database is locked".
-# - The `custom_cursor_name` param to `stream_from` (p2panda#1408).
-# On top, the `dashchat-071-lan-priority` sync patches: nodes found over mDNS
-# are discovered right away, and sync forgets ended sessions, skips duplicate
-# ones, backs off from nodes whose sessions keep failing, lets go of a session
-# once its protocol finishes, and starts and ends sync only on a topic's own
-# neighbour changes. It also moves p2panda-net to iroh-gossip 0.102.
-# The `dashchat-071` branch holds all of it, plus: a group change the orderer
-# held back for a missing dependency keeps its groups args when it is released,
-# so it gets applied.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0", features = [
+# p2panda main past 0.8.1 with our patches on top (branch `dashchat-main`),
+# among them:
+# - The offline-node backport.
+# - `can_remove_member` lets a member remove themself, matching the group
+#   CRDT, so a non-admin can leave a space.
+# - `PendingSpace::publisher`, so a space's topic can import mailbox
+#   operations before we have joined it.
+# - `encrypt_aux`/`decrypt_aux` and `Space::with_secrets` for encrypting
+#   auxiliary data (media blobs) towards a space.
+# - The gossip manager survives a message arriving before the first subscriber.
+# - The pipeline thread gets a 16 MiB stack: the orderer recurses once per
+#   pending operation a new one releases, which overran 2 MiB on catch-up.
+# - A space skips an application message whose body is missing (deleted, or
+#   delivered header-only) instead of failing on it.
+# - Opening a stream replays in causal order instead of resetting the
+#   orderer state, so the app and the push extension sharing a store don't
+#   wipe what the other processed. Each keeps its own ack cursor.
+# - `SpaceSubscription::ack` and the operation on `StreamEvent::Member`, so a
+#   space's control operations can be acknowledged under the explicit policy.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -69,12 +74,12 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
 
 # iroh imports must match p2panda iroh dep version
-iroh = { version = "1.4.1", default-features = false, features = [
+iroh = { version = "1.5.0", default-features = false, features = [
   "tls-ring",
 ] }
 iroh-blobs = "0.104.0"
@@ -105,18 +110,14 @@ ndk-context = { git = "https://github.com/dash-chat/ndk-context", rev = "4ed51f9
 # dashchat-rebind-defunct-sockets).
 swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = "b6cbbc61445132fbc326ec4b9181576fdd884843" }
 
-# Fork of p2panda (rev 92e7782 + one patch): clears the SQLite TransactionPermit
-# slot synchronously on drop (p2panda-store/src/sqlite.rs) so a cancelled rollback
-# task can't poison the store and abort the process. See the iOS push-extension /
-# shared-DB crash investigation.
-# [patch."https://github.com/p2panda/p2panda"]
-# p2panda = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-auth = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-core = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-store = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-net = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-stream = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
-# p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+# [patch."https://github.com/dash-chat/p2panda"]
+# p2panda = { path = "/home/michael/work/p2panda/p2panda" }
+# p2panda-auth = { path = "/home/michael/work/p2panda/p2panda-auth" }
+# p2panda-core = { path = "/home/michael/work/p2panda/p2panda-core" }
+# p2panda-store = { path = "/home/michael/work/p2panda/p2panda-store" }
+# p2panda-spaces = { path = "/home/michael/work/p2panda/p2panda-spaces" }
+# p2panda-net = { path = "/home/michael/work/p2panda/p2panda-net" }
+# p2panda-stream = { path = "/home/michael/work/p2panda/p2panda-stream" }
+# p2panda-sync = { path = "/home/michael/work/p2panda/p2panda-sync" }
+# p2panda-discovery = { path = "/home/michael/work/p2panda/p2panda-discovery" }
+# p2panda-encryption = { path = "/home/michael/work/p2panda/p2panda-encryption" }

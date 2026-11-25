@@ -8,7 +8,6 @@ use iroh_blobs::provider::events::{
     AbortReason, ConnectMode, EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate,
 };
 use mailboxes_manager::Mailboxes;
-use p2panda::operation::{LogId, Operation};
 use p2panda_store::SqliteStore;
 use std::{
     collections::{HashMap, HashSet},
@@ -27,7 +26,9 @@ use dashchat_utils::FetchPool;
 pub use dashchat_utils::FetchConfig as BlobFetchConfig;
 
 use crate::{
-    AsBody, ChatPayload, DeviceId, Payload, TopicId, mailbox::MailboxOperation, stores::OpStore,
+    AsBody, ChatPayload, DeviceId, Payload, TopicId,
+    mailbox::MailboxOperation,
+    stores::{OpStore, ReadOperation},
 };
 
 /// Drop a pending fetch entry after this many consecutive failed passes, so a
@@ -436,14 +437,15 @@ impl BlobFetchPool {
     ///
     /// TODO: find a way to avoid re-streaming all operations on startup
     pub async fn from_ops(
-        ops: impl Stream<Item = Result<Operation, anyhow::Error>> + '_,
+        ops: impl Stream<Item = Result<ReadOperation, anyhow::Error>> + '_,
         topic_store: SqliteStore,
+        decrypt_index: &crate::blob_crypto::BlobDecryptIndex,
     ) -> anyhow::Result<Self> {
         let store = Self::default();
         let mut s = store.stack.lock().await;
         tokio::pin!(ops);
         while let Some(op) = ops.try_next().await? {
-            let Some(body) = op.body else {
+            let Ok(Some(body)) = op.body else {
                 continue;
             };
             let Ok(payload) = Payload::try_from_body(&body) else {
@@ -466,6 +468,7 @@ impl BlobFetchPool {
                             );
                             continue;
                         };
+                        decrypt_index.insert_blobs(topic, media);
                         for item in media {
                             s.push((topic, item.hash()));
                         }
@@ -490,7 +493,7 @@ impl MixedSourceLookup {
     /// Return a list of providers for the blobs in a topic.
     /// Mailboxes come first, then peer subscribers.
     pub async fn sources(&self, topic: TopicId) -> anyhow::Result<Vec<iroh::EndpointId>> {
-        let log_id = LogId::from_topic(topic);
+        let log_id = crate::topic::application_log_id(topic);
         let mut sources = vec![];
         sources.extend(self.mailboxes.get_sources(&topic).await?);
         sources.extend(
