@@ -38,9 +38,13 @@ impl DownloadProgress {
     }
 
     /// Update cumulative bytes and the timestamp of the last forward progress.
+    /// Only advances `last_progress_at` when the byte count actually increases,
+    /// so repeated progress reports for the same total don't mask a stall.
     fn progress(mut self, bytes: u64, now: Instant) -> Self {
-        self.bytes_transferred = bytes;
-        self.last_progress_at = Some(now);
+        if bytes > self.bytes_transferred {
+            self.bytes_transferred = bytes;
+            self.last_progress_at = Some(now);
+        }
         self
     }
 
