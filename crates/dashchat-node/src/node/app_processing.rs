@@ -217,37 +217,48 @@ impl Node {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    event = drain.next() => match event {
-                        Some(ProcessorEvent::Operation { operation, source, processed_tx }) => {
-                            // A stalled processor stalls p2panda's bounded pipeline, so this
-                            // is the only early warning that it has fallen behind.
-                            warn_if_slow(
-                                "processing an operation",
-                                node.process_operation(operation, source, processed_tx),
-                            )
-                            .await;
-                        }
-                        Some(ProcessorEvent::GroupMembershipOp { topic, header }) => {
-                            let operation_hash = header.hash();
-                            node.notify(SystemNotification::Membership { topic: topic.into(), header }.into());
-                            drain.acknowledge(topic, operation_hash).await;
-                        }
-                        Some(ProcessorEvent::SpaceMembersChanged { topic, operation_hash }) => {
-                            if let Err(err) = node.notify_group_members_changed(topic).await {
-                                warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
+                    event = drain.next() => {
+                        let Some(event) = event else { break };
+                        let handled_operation = match event {
+                            ProcessorEvent::Operation { operation, source, processed_tx } => {
+                                let topic = operation.topic();
+                                let header = operation.processed().header().clone();
+                                // A stalled processor stalls p2panda's bounded pipeline, so this
+                                // is the only early warning that it has fallen behind.
+                                warn_if_slow(
+                                    "processing an operation",
+                                    node.process_operation(operation, source, processed_tx),
+                                )
+                                .await
+                                .then_some((topic, header))
                             }
-                            drain.acknowledge(topic, operation_hash).await;
-                        }
-                        Some(ProcessorEvent::KeyBundleProcessed { topic, operation_hash }) => {
-                            drain.acknowledge(topic, operation_hash).await;
-                        }
-                        Some(ProcessorEvent::ImportFailed { topic, error }) => {
-                            error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
-                            if let Err(err) = node.mailboxes.unsubscribe(topic).await {
-                                error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
+                            ProcessorEvent::GroupMembershipOp { topic, header } => {
+                                node.notify(SystemNotification::Membership { topic: topic.into(), header: header.clone() }.into());
+                                Some((topic, header))
                             }
+                            ProcessorEvent::SpaceMembersChanged { topic, header } => {
+                                if let Err(err) = node.notify_group_members_changed(topic).await {
+                                    warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
+                                }
+                                Some((topic, header))
+                            }
+                            ProcessorEvent::KeyBundleProcessed { topic, header } => Some((topic, header)),
+                            ProcessorEvent::ImportFailed { topic, error } => {
+                                error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
+                                if let Err(err) = node.mailboxes.unsubscribe(topic).await {
+                                    error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
+                                }
+                                None
+                            }
+                        };
+                        // The node uses an `Explicit` ack policy, so this persisted ack is what
+                        // makes an application operation eligible for mailbox transmission (see
+                        // `OpStore::acked_log_height`).
+                        if let Some((topic, header)) = handled_operation
+                            && drain.acknowledge(topic, header.hash()).await
+                        {
+                            node.fast_push_if_authored(topic, &header).await;
                         }
-                        None => break,
                     },
                     Some(()) = cancel_rx.recv() => {
                         tracing::info!("stream processing loop cancelled");
@@ -260,14 +271,15 @@ impl Node {
         })
     }
 
-    /// Process one received operation, resolve its `processed_tx` with the result, and acknowledge
-    /// it if processing succeeded so that a failed operation is replayed another time.
+    /// Process one received operation and resolve its `processed_tx` with the result. Returns
+    /// whether processing succeeded: a failed operation must stay unacknowledged, so that it
+    /// is replayed another time.
     async fn process_operation(
         &self,
         operation: ProcessedOperation<Payload>,
         source: Source,
         processed_tx: Option<ProcessedTx>,
-    ) {
+    ) -> bool {
         tracing::info!(op = ?operation.id().aliased(), topic = ?operation.topic().aliased(), "operation processing");
 
         let result = if self.recorded_for_app(&operation).await {
@@ -294,12 +306,29 @@ impl Node {
 
         if let Err(err) = result {
             error!(?err, "process operation error");
-            return;
+            return false;
         }
 
-        if let Err(err) = self.ack_operation(&operation).await {
-            error!(?err, "failed to acknowledge operation");
+        // Mark the operation as processed so it can be awaited by
+        // [`crate::testing::PollConfig::consistency`]
+        #[cfg(feature = "testing")]
+        self.op_store
+            .mark_op_processed(operation.topic(), &operation.id());
+
+        if self.config.import_recorded_operations
+            && let Err(err) = self
+                .local_store
+                .forget_extension_processed_operation(&operation.id())
+                .await
+        {
+            // At worst the operation is imported once more.
+            warn!(
+                ?err,
+                "failed to forget an operation the push extension recorded"
+            );
         }
+
+        true
     }
 
     /// As the push extension, record `operation` for the app to process too,
@@ -342,41 +371,11 @@ impl Node {
         }
     }
 
-    async fn ack_operation(&self, operation: &ProcessedOperation<Payload>) -> anyhow::Result<()> {
-        // Mark the operation as processed so it can be awaited by
-        // [`crate::testing::PollConfig::consistency`]
-        #[cfg(feature = "testing")]
-        self.op_store
-            .mark_op_processed(operation.topic(), &operation.id());
-
-        // Acknowledge the operation now that application-layer
-        // processing has finished. The node uses an `Explicit`
-        // ack policy, so this persisted ack is what makes the
-        // operation eligible for mailbox transmission (see
-        // `OpStore::acked_log_height`).
-        operation.ack().await?;
-        if self.config.import_recorded_operations
-            && let Err(err) = self
-                .local_store
-                .forget_extension_processed_operation(&operation.id())
-                .await
-        {
-            // At worst the operation is imported once more.
-            warn!(
-                ?err,
-                "failed to forget an operation the push extension recorded"
-            );
+    async fn fast_push_if_authored(&self, topic: p2panda::Topic, header: &Header) {
+        if DeviceId::from(header.verifying_key) == self.device_id() {
+            let log = Log::new(self.device_id(), header.extensions.log_id());
+            self.mailboxes.publish_fast_push(topic, log).await;
         }
-
-        if DeviceId::from(operation.author()) == self.device_id() {
-            let log_id = operation.processed().header().extensions.log_id();
-            let log = Log::new(self.device_id(), log_id);
-            self.mailboxes
-                .publish_fast_push(operation.topic(), log)
-                .await;
-        }
-
-        Ok(())
     }
 
     /// Enforce the topic's tombstone set on a received operation: if its hash

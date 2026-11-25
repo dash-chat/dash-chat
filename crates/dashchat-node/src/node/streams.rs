@@ -158,7 +158,7 @@ pub enum ProcessorEvent {
     /// A space's membership changed.
     SpaceMembersChanged {
         topic: Topic,
-        operation_hash: Hash,
+        header: Header,
     },
 
     /// A group-auth operation on `topic`'s space was processed.
@@ -170,7 +170,7 @@ pub enum ProcessorEvent {
     /// A member's key bundle on `topic`'s space was processed.
     KeyBundleProcessed {
         topic: Topic,
-        operation_hash: Hash,
+        header: Header,
     },
 }
 
@@ -697,24 +697,26 @@ impl TopicDrain {
         }
     }
 
-    /// Acknowledge a control operation of `topic`'s space. p2panda leaves that to the
-    /// application for every space event it forwards, like it does for application messages.
-    pub(crate) async fn acknowledge(&self, topic: Topic, operation_hash: Hash) {
+    /// Acknowledge an operation of `topic`, returning whether that worked. p2panda leaves
+    /// it to the application for everything it forwards: application messages and space
+    /// events alike.
+    pub(crate) async fn acknowledge(&self, topic: Topic, operation_hash: Hash) -> bool {
         let Some((_, subscriber)) = self
             .streams
             .iter()
             .find(|(subscribed, _)| *subscribed == topic)
         else {
-            warn!(topic = ?topic.aliased(), "no stream to acknowledge a control operation on");
-            return;
+            warn!(topic = ?topic.aliased(), "no stream to acknowledge an operation on");
+            return false;
         };
         let acknowledged = match subscriber {
             Subscriber::Stream(stream) => stream.ack(operation_hash).await,
             Subscriber::Space(space) => space.ack(operation_hash).await,
         };
-        if let Err(err) = acknowledged {
-            warn!(topic = ?topic.aliased(), ?err, "failed to acknowledge a control operation");
+        if let Err(err) = &acknowledged {
+            error!(topic = ?topic.aliased(), ?err, "failed to acknowledge an operation");
         }
+        acknowledged.is_ok()
     }
 
     fn handle_command(&mut self, command: DrainCommand) {
@@ -784,11 +786,11 @@ impl TopicDrain {
             }
             StreamEvent::Space { event, .. } => Some(ProcessorEvent::SpaceMembersChanged {
                 topic,
-                operation_hash: event.hash(),
+                header: event.header().clone(),
             }),
             StreamEvent::Member { event, .. } => Some(ProcessorEvent::KeyBundleProcessed {
                 topic,
-                operation_hash: event.hash(),
+                header: event.header().clone(),
             }),
             StreamEvent::Group { event, .. } => Some(ProcessorEvent::GroupMembershipOp {
                 topic,
