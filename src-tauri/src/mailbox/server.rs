@@ -39,11 +39,13 @@ pub async fn start_local_mailbox<R: Runtime>(handle: &AppHandle<R>) -> anyhow::R
     let blob_sync = node.blob_sync_optional().expect("blob sync is enabled");
     let server = mailbox_local_server::spawn_local_mailbox_server(
         path,
-        blob_sync.blobs.clone(),
-        blob_sync.downloader(),
+        mailbox_local_server::BlobSyncConfig {
+            protocol: blob_sync.blobs.clone(),
+            downloader: blob_sync.downloader(),
+            fetch_config: None,
+            upload_grace: None,
+        },
         endpoint,
-        None,
-        None,
         peer_addr_tx,
         local_hub_registry,
     )
