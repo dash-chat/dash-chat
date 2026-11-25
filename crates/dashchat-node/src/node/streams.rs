@@ -288,8 +288,7 @@ impl TopicStreams {
     }
 
     /// The cursor `topic`'s stream or space is subscribed under: `"{prefix}:{topic}"`, or the
-    /// topic itself (p2panda's default) when there is no prefix. p2panda keeps the orderer state
-    /// under the same name, so the two processes sharing the store never reset each other's.
+    /// topic itself (p2panda's default) when there is no prefix.
     fn cursor_name(&self, topic: Topic) -> Option<String> {
         self.stream_cursor_prefix
             .as_ref()
