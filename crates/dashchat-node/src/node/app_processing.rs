@@ -555,7 +555,7 @@ impl Node {
                     .context("failed to join group from invitation")?;
                 // Push my profile into the new space.
                 // Spawned: publishing needs this processor.
-                if !source.is_local() {
+                if author != self.device_id() {
                     let node = self.clone();
                     let chat_id = *chat_id;
                     tokio::spawn(async move {
@@ -599,8 +599,7 @@ impl Node {
                         // the requester's agent_id directly rather than trusting
                         // the embedded QR code's agent_id.
                         //
-                        // TODO: maybe find a way to not rely on `source`?
-                        if is_advertised_topic && !source.is_local() {
+                        if is_advertised_topic && author != self.device_id() {
                             // Mutual add: if we also sent this peer a contact
                             // request, their incoming request is an implicit
                             // acceptance — complete the exchange automatically
@@ -637,8 +636,7 @@ impl Node {
                         // third party from injecting a spoofed ack with
                         // an attacker-chosen agent_id/profile.
                         //
-                        // TODO: maybe find a way to not rely on `source`?
-                        if is_reply && !source.is_local() {
+                        if is_reply && author != self.device_id() {
                             let expected = self
                                 .local_store
                                 .get_reply_inbox_expected_ack_author(topic_id)
