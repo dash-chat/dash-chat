@@ -11,6 +11,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_stream::StreamExt;
+use tokio_util::task::AbortOnDropHandle;
 
 use aliased::Aliasing;
 use dashchat_utils::blob_sync::{BlobDownloader, DownloadProgress, download_capped};
@@ -167,10 +168,10 @@ impl BlobSync {
         });
 
         BlobFetchTask {
-            handle,
+            handle: AbortOnDropHandle::new(handle),
             progress: progress_rx,
-            topic,
-            hash,
+            _topic: topic,
+            _hash: hash,
         }
     }
 
@@ -435,13 +436,14 @@ impl BlobSync {
 }
 
 /// Ongoing per-topic blob download that exposes its current provider and can
-/// be aborted.
-#[allow(dead_code)]
+/// be aborted. Uses `AbortOnDropHandle` so that shutdown (or dropping the task
+/// without awaiting it) cancels the underlying iroh download instead of
+/// detaching it.
 struct BlobFetchTask {
-    handle: JoinHandle<bool>,
+    handle: AbortOnDropHandle<bool>,
     progress: watch::Receiver<DownloadProgress>,
-    topic: TopicId,
-    hash: iroh_blobs::Hash,
+    _topic: TopicId,
+    _hash: iroh_blobs::Hash,
 }
 
 impl BlobFetchTask {
@@ -449,17 +451,11 @@ impl BlobFetchTask {
     fn failed() -> Self {
         let (_tx, progress) = watch::channel(DownloadProgress::default());
         Self {
-            handle: tokio::spawn(std::future::ready(false)),
+            handle: AbortOnDropHandle::new(tokio::spawn(std::future::ready(false))),
             progress,
-            topic: TopicId::random(),
-            hash: iroh_blobs::Hash::new([0u8; 32]),
+            _topic: TopicId::random(),
+            _hash: iroh_blobs::Hash::new([0u8; 32]),
         }
-    }
-
-    /// Abort the in-flight download.
-    #[allow(dead_code)]
-    fn abort(&self) {
-        self.handle.abort_handle().abort();
     }
 
     /// Wait for the task to finish on its own.
