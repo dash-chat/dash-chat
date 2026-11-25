@@ -158,7 +158,7 @@ pub enum ProcessorEvent {
     /// A space's membership changed.
     SpaceMembersChanged {
         topic: Topic,
-        operation: Hash,
+        operation_hash: Hash,
     },
 
     /// A group-auth operation on `topic`'s space was processed.
@@ -170,7 +170,7 @@ pub enum ProcessorEvent {
     /// A member's key bundle on `topic`'s space was processed.
     KeyBundleProcessed {
         topic: Topic,
-        operation: Hash,
+        operation_hash: Hash,
     },
 }
 
@@ -699,7 +699,7 @@ impl TopicDrain {
 
     /// Acknowledge a control operation of `topic`'s space. p2panda leaves that to the
     /// application for every space event it forwards, like it does for application messages.
-    pub(crate) async fn acknowledge(&self, topic: Topic, operation: Hash) {
+    pub(crate) async fn acknowledge(&self, topic: Topic, operation_hash: Hash) {
         let Some((_, subscriber)) = self
             .streams
             .iter()
@@ -709,8 +709,8 @@ impl TopicDrain {
             return;
         };
         let acknowledged = match subscriber {
-            Subscriber::Stream(stream) => stream.ack(operation).await,
-            Subscriber::Space(space) => space.ack(operation).await,
+            Subscriber::Stream(stream) => stream.ack(operation_hash).await,
+            Subscriber::Space(space) => space.ack(operation_hash).await,
         };
         if let Err(err) = acknowledged {
             warn!(topic = ?topic.aliased(), ?err, "failed to acknowledge a control operation");
@@ -784,11 +784,11 @@ impl TopicDrain {
             }
             StreamEvent::Space { event, .. } => Some(ProcessorEvent::SpaceMembersChanged {
                 topic,
-                operation: event.hash(),
+                operation_hash: event.hash(),
             }),
             StreamEvent::Member { event, .. } => Some(ProcessorEvent::KeyBundleProcessed {
                 topic,
-                operation: event.hash(),
+                operation_hash: event.hash(),
             }),
             StreamEvent::Group { event, .. } => Some(ProcessorEvent::GroupMembershipOp {
                 topic,

@@ -228,18 +228,18 @@ impl Node {
                             .await;
                         }
                         Some(ProcessorEvent::GroupMembershipOp { topic, header }) => {
-                            let operation = header.hash();
+                            let operation_hash = header.hash();
                             node.notify(SystemNotification::Membership { topic: topic.into(), header }.into());
-                            drain.acknowledge(topic, operation).await;
+                            drain.acknowledge(topic, operation_hash).await;
                         }
-                        Some(ProcessorEvent::SpaceMembersChanged { topic, operation }) => {
+                        Some(ProcessorEvent::SpaceMembersChanged { topic, operation_hash }) => {
                             if let Err(err) = node.notify_group_members_changed(topic).await {
                                 warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
                             }
-                            drain.acknowledge(topic, operation).await;
+                            drain.acknowledge(topic, operation_hash).await;
                         }
-                        Some(ProcessorEvent::KeyBundleProcessed { topic, operation }) => {
-                            drain.acknowledge(topic, operation).await;
+                        Some(ProcessorEvent::KeyBundleProcessed { topic, operation_hash }) => {
+                            drain.acknowledge(topic, operation_hash).await;
                         }
                         Some(ProcessorEvent::ImportFailed { topic, error }) => {
                             error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
