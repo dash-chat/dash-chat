@@ -104,7 +104,9 @@ describe('Contact accepted while the app is backgrounded (iOS push extension)', 
 		await rex.homePage.ready();
 		await rex.waitUntil(
 			() =>
-				/importing operations the push extension processed/.test(rex.readLog()),
+				/importing operations the push extension processed.* recorded=[1-9]/.test(
+					rex.readLog(),
+				),
 			{
 				timeout: SYNC_TIMEOUT,
 				timeoutMsg:

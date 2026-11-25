@@ -705,6 +705,7 @@ impl TopicDrain {
             .iter()
             .find(|(subscribed, _)| *subscribed == topic)
         else {
+            warn!(topic = ?topic.aliased(), "no stream to acknowledge a control operation on");
             return;
         };
         let acknowledged = match subscriber {
@@ -781,10 +782,8 @@ impl TopicDrain {
                 self.fail(event.hash(), format!("acking failed: {error}"));
                 None
             }
-            StreamEvent::Space {
-                space_id, event, ..
-            } => Some(ProcessorEvent::SpaceMembersChanged {
-                topic: Topic::from(space_id),
+            StreamEvent::Space { event, .. } => Some(ProcessorEvent::SpaceMembersChanged {
+                topic,
                 operation: event.hash(),
             }),
             StreamEvent::Member { event, .. } => Some(ProcessorEvent::KeyBundleProcessed {

@@ -83,17 +83,24 @@ impl OpStore {
         author: &DeviceId,
         log_id: &LogId,
     ) -> anyhow::Result<Option<SeqNum>> {
+        let cursor = self.ack_cursor(topic).await?;
+        Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
+    }
+
+    async fn ack_cursor(
+        &self,
+        topic: &TopicId,
+    ) -> anyhow::Result<Option<p2panda::Cursor<p2panda::VerifyingKey, LogId>>> {
         use p2panda_store::cursors::CursorStore;
         // The ack cursor is persisted by p2panda under the topic's string
         // representation (see `StreamSubscription`'s internal `Acked`).
-        let cursor = p2panda_store::tx!(self.store, {
+        Ok(p2panda_store::tx!(self.store, {
             CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
                 &self.store,
                 topic.to_string(),
             )
             .await?
-        });
-        Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
+        }))
     }
 
     /// The operations stored for `topic` above the cursor [`Self::acked_log_height`] reads.
@@ -102,10 +109,16 @@ impl OpStore {
         topic: &TopicId,
     ) -> anyhow::Result<Vec<Operation>> {
         use mailbox_client::store::MailboxStore;
+        let cursor = self.ack_cursor(topic).await?;
         let mut operations = Vec::new();
-        for (log, _) in MailboxStore::get_log_heights(self, topic).await? {
+        for (log, height) in MailboxStore::get_log_heights(self, topic).await? {
             let log_id: LogId = log.log_id.into();
-            let acked = self.acked_log_height(topic, &log.author, &log_id).await?;
+            let acked = cursor
+                .as_ref()
+                .and_then(|c| c.log_height(&log.author, &log_id).copied());
+            if acked.is_some_and(|acked| acked >= height) {
+                continue;
+            }
             operations.extend(self.log_operations(&log.author, &log_id, acked).await?);
         }
         Ok(operations)

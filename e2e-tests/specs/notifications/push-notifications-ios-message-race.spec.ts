@@ -76,7 +76,7 @@ describe('Photos sent into a chat open on the iPhone', function () {
 		const log = iphone.readLog().slice(logBefore);
 		expect(log).toMatch(/PushNotificationsExtension.*Posted nse-did-process/);
 		expect(log).toMatch(
-			/Dash Chat\[.*importing operations the push extension processed/,
+			/Dash Chat\[.*importing operations the push extension processed.* recorded=[1-9]/,
 		);
 	});
 });

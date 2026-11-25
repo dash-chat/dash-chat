@@ -5,6 +5,7 @@
 //! processed and the app imports that on a resync.
 
 use dashchat_node::{testing::*, *};
+use mailbox_client::store::MailboxStore;
 
 /// The app node never syncs on its own here, so what it processes can only
 /// have come from the shared store.
@@ -105,20 +106,11 @@ async fn the_control_operations_of_a_space_are_acknowledged() {
     let chat = alice.direct_chat_with(&bobbi);
 
     for node in [&alice, &bobbi] {
-        PollConfig::seconds(30)
-            .wait_for(|| async {
-                let unacknowledged = node
-                    .op_store
-                    .unacknowledged_operations(&chat.into())
-                    .await
-                    .unwrap()
-                    .len();
-                (unacknowledged == 0)
-                    .then_some(())
-                    .ok_or(format!("{unacknowledged} unacknowledged"))
-            })
+        let stored = MailboxStore::get_log_heights(&node.op_store, &chat.into())
             .await
             .unwrap();
+        assert!(!stored.is_empty(), "the chat holds no operations");
+        wait_until_all_acknowledged(node, chat).await;
     }
 }
 
@@ -201,6 +193,7 @@ async fn a_group_operation_the_extension_applied_first_is_processed() {
     bobbi.resync().await.unwrap();
 
     wait_until_nothing_recorded(&bobbi).await;
+    wait_until_all_acknowledged(&bobbi, chat).await;
 }
 
 /// The accept of Bobbi's contact request reaching her extension first must
@@ -398,6 +391,23 @@ async fn wait_until_processed(bobbi: &TestNode, chat: ChatId, photo: iroh_blobs:
                 .contains(&chat.into())
                 .then_some(())
                 .ok_or("the app never processed the photo message")
+        })
+        .await
+        .unwrap();
+}
+
+async fn wait_until_all_acknowledged(node: &TestNode, chat: ChatId) {
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            let unacknowledged = node
+                .op_store
+                .unacknowledged_operations(&chat.into())
+                .await
+                .unwrap()
+                .len();
+            (unacknowledged == 0)
+                .then_some(())
+                .ok_or(format!("{unacknowledged} unacknowledged"))
         })
         .await
         .unwrap();

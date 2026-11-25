@@ -2443,6 +2443,10 @@ impl Node {
                 }
             }
         }
+        let recorded_counts: HashMap<TopicId, usize> = by_topic
+            .iter()
+            .map(|(topic, operations)| (*topic, operations.len()))
+            .collect();
         for topic in self.local_store.subscribed_spaces().await? {
             let operations = by_topic.entry(topic).or_default();
             let recorded: HashSet<Hash> = operations.iter().map(|op| op.hash).collect();
@@ -2459,8 +2463,9 @@ impl Node {
         for (topic, mut operations) in by_topic {
             operations
                 .sort_by_key(|op| (DeviceId::from(op.header.verifying_key), op.header.seq_num));
-            // The race e2e spec matches on this line.
-            tracing::info!(topic = ?topic.aliased(), count = operations.len(), "importing operations the push extension processed");
+            let recorded = recorded_counts.get(&topic).copied().unwrap_or(0);
+            // The race e2e spec matches on this line and its `recorded` count.
+            tracing::info!(topic = ?topic.aliased(), recorded, above_cursor = operations.len() - recorded, "importing operations the push extension processed");
             if let Err(err) = self
                 .import_stream(topic, Box::pin(futures::stream::iter(operations)))
                 .await
