@@ -65,10 +65,20 @@ maplit = "1.0"
 pretty_assertions = "1.4.1"
 cap = { version = "0.1.2", features = ["stats"] }
 tempfile = "3"
+async-stream = "0.3"
 p2panda-store = { workspace = true, features = ["test_utils"] }
 
 [features]
 default = ["instrument"]
 instrument = []
-testing = ["tempfile", "nanoid", "p2panda-store/test_utils", "mailbox-client/testing"]
+testing = [
+  "tempfile",
+  "nanoid",
+  "p2panda-store/test_utils",
+  "mailbox-client/testing",
+]
 p2p = []
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+patchbay = "0.7"
+ctor = "1"

@@ -16,6 +16,8 @@ use mailbox_server::FetchConfig;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
+pub mod media;
+
 /// Short blob-fetch grace window for tests, so the mailbox's fetch backstop
 /// fires quickly instead of waiting out the production default.
 pub const TEST_UPLOAD_GRACE: Duration = Duration::from_millis(500);
@@ -67,9 +69,14 @@ pub struct StandaloneMailbox {
 }
 
 pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
+    spawn_standalone_mailbox_on(std::net::Ipv4Addr::LOCALHOST.into()).await
+}
+
+/// A standalone mailbox reachable at `ip`, for a mailbox other hosts dial.
+pub async fn spawn_standalone_mailbox_on(ip: std::net::IpAddr) -> StandaloneMailbox {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("mailbox.redb");
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = tokio::net::TcpListener::bind((ip, 0)).await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     tokio::spawn(async move {

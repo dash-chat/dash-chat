@@ -1921,6 +1921,10 @@ name = "ctor"
 version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "914a755b7c2d4af2bdcff7ce1739e2db9a1b81a9b07123d8015786ae03c0980d"
+dependencies = [
+ "link-section",
+ "linktime-proc-macro",
+]
 
 [[package]]
 name = "ctr"
@@ -2205,12 +2209,14 @@ version = "0.1.0"
 dependencies = [
  "aliased",
  "anyhow",
+ "async-stream",
  "async-trait",
  "base64 0.22.1",
  "blake3",
  "bytes",
  "cap",
  "chrono",
+ "ctor",
  "dashchat-compat",
  "dashchat-node",
  "dashchat-utils",
@@ -2236,6 +2242,7 @@ dependencies = [
  "p2panda-spaces",
  "p2panda-store",
  "p2panda-stream",
+ "patchbay",
  "pretty_assertions",
  "rand 0.9.5",
  "reporting",
@@ -4715,7 +4722,7 @@ dependencies = [
  "netlink-packet-route 0.28.0",
  "netlink-proto",
  "netlink-sys 0.8.8",
- "rtnetlink",
+ "rtnetlink 0.20.0",
  "system-configuration 0.7.0",
  "tokio",
  "windows 0.62.2",
@@ -4869,6 +4876,9 @@ name = "ipnet"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "iroh"
@@ -5676,6 +5686,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "link-section"
+version = "0.19.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d9aae57673c1a235149777a74d152f3210ebd3e3b13346d2cdb6809e566bd3c"
+
+[[package]]
+name = "linktime-proc-macro"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e57c38c1e860fd37c604281cdfb1dd2216977fd76a50f85ba2f388ef3219616"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6410,6 +6432,18 @@ name = "netlink-packet-route"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9854ea6ad14e3f4698a7f03b65bce0833dd2d81d594a0e4a984170537146b6"
+dependencies = [
+ "bitflags 2.13.2",
+ "libc",
+ "log",
+ "netlink-packet-core 0.8.2",
+]
+
+[[package]]
+name = "netlink-packet-route"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be8919612f6028ab4eacbbfe1234a9a43e3722c6e0915e7ff519066991905092"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
@@ -7923,6 +7957,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
+name = "patchbay"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07db6594ac62885d28def27f2385d526f16ba4d2edd096d8806072fa81b757f2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "derive_more 2.1.1",
+ "futures",
+ "hickory-proto",
+ "ipnet",
+ "libc",
+ "nix 0.31.3",
+ "rtnetlink 0.21.0",
+ "serde",
+ "serde_json",
+ "strum",
+ "tokio",
+ "tokio-util",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9246,6 +9306,24 @@ dependencies = [
  "log",
  "netlink-packet-core 0.8.2",
  "netlink-packet-route 0.28.0",
+ "netlink-proto",
+ "netlink-sys 0.8.8",
+ "nix 0.30.1",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
+name = "rtnetlink"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc19f84f710fa2f337617f9bc0400260a94224bde7bae28fd8879f3771ca5784"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "log",
+ "netlink-packet-core 0.8.2",
+ "netlink-packet-route 0.30.0",
  "netlink-proto",
  "netlink-sys 0.8.8",
  "nix 0.30.1",

@@ -243,4 +243,22 @@ impl MailboxClient<MailboxOperation> for TestMailboxClient {
             Self::Toy(client) => client.fetch(request).await,
         }
     }
+
+    async fn has_blob(&self, hash: iroh_blobs::Hash) -> Result<bool, anyhow::Error> {
+        match self {
+            Self::Mem(client) => client.has_blob(hash).await,
+            Self::Toy(client) => client.has_blob(hash).await,
+        }
+    }
+
+    async fn announce_blob_hashes(
+        &self,
+        hashes: Vec<iroh_blobs::Hash>,
+        expect_upload: bool,
+    ) -> Result<Vec<iroh_blobs::Hash>, anyhow::Error> {
+        match self {
+            Self::Mem(client) => client.announce_blob_hashes(hashes, expect_upload).await,
+            Self::Toy(client) => client.announce_blob_hashes(hashes, expect_upload).await,
+        }
+    }
 }

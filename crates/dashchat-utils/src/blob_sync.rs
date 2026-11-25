@@ -1,12 +1,88 @@
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
+use futures::Stream;
 use futures::StreamExt;
 use iroh_blobs::api::downloader::{
     ContentDiscovery, DownloadProgressItem, DownloadRequest, Downloader, FiniteRequest,
     SplitStrategy,
 };
 use iroh_blobs::protocol::GetRequest;
-use tokio::time::Duration;
+use tokio::sync::watch;
+
+pub type BoxedDownloadStream = Pin<Box<dyn Stream<Item = DownloadProgressItem> + Send + 'static>>;
+
+/// Snapshot of an in-flight blob download, updated by the downloader as it makes
+/// progress. Used by the caller to decide whether to abort a slow peer transfer
+/// and pivot to a faster source.
+#[derive(Clone, Debug, Default)]
+pub struct DownloadProgress {
+    /// The provider currently being attempted, if known.
+    pub provider: Option<iroh::EndpointId>,
+    /// Total bytes transferred so far for this blob.
+    pub bytes_transferred: u64,
+    /// When bytes_transferred last increased.
+    pub last_progress_at: Option<Instant>,
+    /// When the current provider was first reported.
+    pub provider_changed_at: Option<Instant>,
+}
+
+impl DownloadProgress {
+    /// Start tracking a new provider, preserving accumulated byte counters.
+    fn provider_changed(mut self, provider: iroh::EndpointId, now: Instant) -> Self {
+        self.provider = Some(provider);
+        self.provider_changed_at = Some(now);
+        self
+    }
+
+    /// Update cumulative bytes and the timestamp of the last forward progress.
+    /// Only advances `last_progress_at` when the byte count actually increases,
+    /// so repeated progress reports for the same total don't mask a stall.
+    fn progress(mut self, bytes: u64, now: Instant) -> Self {
+        if bytes > self.bytes_transferred {
+            self.bytes_transferred = bytes;
+            self.last_progress_at = Some(now);
+        }
+        self
+    }
+
+    /// Record that the current provider failed over iroh, clearing it so the
+    /// caller no longer considers the download active from that provider.
+    fn provider_failed(mut self, provider: iroh::EndpointId) -> Self {
+        if self.provider == Some(provider) {
+            self.provider = None;
+            self.provider_changed_at = None;
+        }
+        self
+    }
+}
+
+/// Abstracts the iroh-blobs downloader so tests can inject mock download streams
+/// (slow transfers, provider failures, progress events) without real networking.
+#[async_trait]
+pub trait BlobDownloader: Send + Sync + 'static {
+    async fn download_with_opts(
+        &self,
+        options: DownloadRequest,
+    ) -> anyhow::Result<BoxedDownloadStream>;
+}
+
+#[async_trait]
+impl BlobDownloader for Downloader {
+    async fn download_with_opts(
+        &self,
+        options: DownloadRequest,
+    ) -> anyhow::Result<BoxedDownloadStream> {
+        let stream = self
+            .download_with_opts(options)
+            .stream()
+            .await
+            .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
+        Ok(Box::pin(stream))
+    }
+}
 
 /// Max size of a single blob. The hash is content-addressed but its size is not
 /// bounded by anything the fetcher can see, so an untrusted log could reference
@@ -18,12 +94,15 @@ pub const MAX_BLOB_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Download `hash` from `providers`, aborting if the transfer exceeds
 /// [`MAX_BLOB_BYTES`]. Returns whether the blob is present locally afterwards.
+/// `progress_tx` is updated with the provider currently being attempted and
+/// bytes transferred so the caller can observe stalls and near-completion.
 pub async fn download_capped(
-    downloader: &Downloader,
+    downloader: &dyn BlobDownloader,
     hash: iroh_blobs::Hash,
     providers: impl ContentDiscovery,
     attempt_timeout: Duration,
     blobs: &iroh_blobs::BlobsProtocol,
+    progress_tx: watch::Sender<DownloadProgress>,
 ) -> bool {
     let result = tokio::time::timeout(attempt_timeout, async {
         let options = DownloadRequest {
@@ -41,10 +120,10 @@ pub async fn download_capped(
         };
         let mut stream = downloader
             .download_with_opts(options)
-            .stream()
             .await
             .map_err(|e| anyhow::anyhow!("download stream: {e}"))?;
         while let Some(item) = stream.next().await {
+            let now = Instant::now();
             match item {
                 // Dropping the stream on return cancels the in-flight download.
                 DownloadProgressItem::Progress(total) if total > MAX_BLOB_BYTES => {
@@ -52,6 +131,18 @@ pub async fn download_capped(
                 }
                 DownloadProgressItem::Error(err) => anyhow::bail!("download failed: {err}"),
                 DownloadProgressItem::DownloadError => anyhow::bail!("download error"),
+                DownloadProgressItem::Progress(total) => {
+                    let next = progress_tx.borrow().clone().progress(total, now);
+                    let _ = progress_tx.send(next);
+                }
+                DownloadProgressItem::TryProvider { id, .. } => {
+                    let next = progress_tx.borrow().clone().provider_changed(id, now);
+                    let _ = progress_tx.send(next);
+                }
+                DownloadProgressItem::ProviderFailed { id, .. } => {
+                    let next = progress_tx.borrow().clone().provider_failed(id);
+                    let _ = progress_tx.send(next);
+                }
                 _ => {}
             }
         }
