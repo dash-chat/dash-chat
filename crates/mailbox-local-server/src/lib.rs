@@ -11,7 +11,7 @@ use dashchat_utils::local_hub::LocalHubRegistry;
 use iroh::EndpointId;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
-use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
+use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig, ServerConfig};
 use tokio::sync::mpsc::UnboundedSender;
 
 pub use local_hub_discovery::LocalHubAnnouncementService;
@@ -101,11 +101,11 @@ pub async fn spawn_local_mailbox_server(
         if let Err(e) = mailbox_server::spawn_server(
             db_path,
             listener,
-            None,
-            Some(blob_sync),
-            None,
             *dashchat_utils::NETWORK_ID,
-            None,
+            Some(ServerConfig {
+                blob_sync: Some(blob_sync),
+                ..ServerConfig::default()
+            }),
             signal,
         )
         .await

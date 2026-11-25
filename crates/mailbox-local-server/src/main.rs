@@ -78,9 +78,6 @@ async fn main() -> anyhow::Result<()> {
     let served = mailbox_server::spawn_server(
         args.db_path,
         listener,
-        None,
-        None,
-        None,
         args.network_id.unwrap_or(*dashchat_utils::NETWORK_ID),
         None,
         signal,

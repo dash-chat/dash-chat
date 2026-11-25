@@ -79,9 +79,6 @@ pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
         if let Err(err) = mailbox_server::spawn_server(
             db_path,
             listener,
-            None,
-            None,
-            None,
             *dashchat_utils::NETWORK_ID,
             None,
             signal,

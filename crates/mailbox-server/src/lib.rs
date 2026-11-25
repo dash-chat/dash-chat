@@ -108,7 +108,7 @@ pub fn parse_network_id(hex: &str) -> Result<NetworkId, hex::FromHexError> {
 
 /// Config options for the mailbox server. `None` passed to [`spawn_server`]
 /// means `ServerConfig::default()`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct ServerConfig {
     /// Reject HTTP blob uploads with 410 Gone (e2e knob for proving blob
     /// delivery goes over iroh push).
@@ -117,6 +117,9 @@ pub struct ServerConfig {
     /// from their sources (e2e knob for proving blob delivery goes over
     /// client push, not mailbox pull).
     pub disable_blob_fetch: bool,
+    pub push_notifications_url: Option<String>,
+    pub relay_url: Option<iroh::RelayUrl>,
+    pub blob_sync: Option<BlobSync>,
 }
 
 impl Default for ServerConfig {
@@ -124,6 +127,9 @@ impl Default for ServerConfig {
         Self {
             disable_blob_http_upload: false,
             disable_blob_fetch: false,
+            push_notifications_url: None,
+            relay_url: None,
+            blob_sync: None,
         }
     }
 }
@@ -137,9 +143,6 @@ impl Default for ServerConfig {
 pub async fn spawn_server(
     db_path: PathBuf,
     listener: tokio::net::TcpListener,
-    push_notifications_url: Option<String>,
-    blob_sync: Option<BlobSync>,
-    relay_url: Option<iroh::RelayUrl>,
     network_id: NetworkId,
     config: Option<ServerConfig>,
     signal: impl Future<Output = ()> + Send + 'static,
@@ -152,13 +155,13 @@ pub async fn spawn_server(
     let cleanup_task = spawn_cleanup_task(Arc::clone(&db_arc));
     tracing::info!("Started background cleanup task (runs every 5 minutes)");
 
-    let blob_sync = match blob_sync {
+    let blob_sync = match config.blob_sync.clone() {
         Some(blob_sync) => blob_sync,
         None => {
             let secret_key = load_or_create_secret_key(&db_arc)
                 .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             let blobs_root = db_path_blobs_dir(&db_path);
-            BlobSync::new(secret_key, blobs_root, relay_url, network_id).await?
+            BlobSync::new(secret_key, blobs_root, config.relay_url.clone(), network_id).await?
         }
     };
     tracing::info!("Mailbox iroh endpoint id: {}", blob_sync.endpoint_id());
@@ -169,10 +172,10 @@ pub async fn spawn_server(
     };
     let blob_gc_handle = blob_sync.spawn_blob_gc_task();
 
-    let push_client = match push_notifications_url {
+    let push_client = match config.push_notifications_url.as_ref() {
         Some(url) => {
             tracing::info!("Push notifications integration enabled: {url}");
-            Some(Arc::new(PushNotificationsClient::new(url)?))
+            Some(Arc::new(PushNotificationsClient::new(url.clone())?))
         }
         None => None,
     };
