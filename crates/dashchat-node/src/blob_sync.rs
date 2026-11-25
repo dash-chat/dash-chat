@@ -403,6 +403,7 @@ impl BlobSync {
                         _ = tokio::time::sleep(poll_interval) => {
                             if self.blobs.has(hash).await.unwrap_or(false) {
                                 handle.abort();
+                                let _ = handle.await;
                                 return true;
                             }
 
@@ -416,10 +417,12 @@ impl BlobSync {
                                 );
                                 switched_to_mailbox = true;
                                 handle.abort();
+                                let _ = handle.await;
                                 break;
                             }
                             if std::time::Instant::now() >= deadline {
                                 handle.abort();
+                                let _ = handle.await;
                                 return false;
                             }
                         }
