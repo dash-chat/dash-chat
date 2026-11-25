@@ -2398,7 +2398,8 @@ impl Node {
     /// another process (the iOS push extension) wrote into the shared store
     /// while the app was running: it subscribes to any newly-stored topics,
     /// replaying their operations from the app's own un-advanced cursor, and
-    /// imports the operations the extension recorded as processed.
+    /// imports the operations the extension recorded as processed along with
+    /// what its spaces hold above that cursor.
     pub async fn resync(&self) -> anyhow::Result<()> {
         self.initialize_stored_topics().await
     }
@@ -2409,6 +2410,11 @@ impl Node {
     /// and acknowledging one below this node's cursor is a no-op. A freshly
     /// opened stream replays the ones above the cursor as well, which is
     /// harmless: processing an operation twice is idempotent.
+    ///
+    /// The extension records application operations only, and those depend on
+    /// the control operations of their space, which this node's pipeline has
+    /// not seen either. So whatever a subscribed space holds above this node's
+    /// cursor is imported along with them.
     async fn import_extension_processed_operations(&self) -> anyhow::Result<()> {
         if !self.config.import_recorded_operations {
             return Ok(());
@@ -2437,6 +2443,18 @@ impl Node {
                 }
             }
         }
+        for topic in self.local_store.subscribed_spaces().await? {
+            let operations = by_topic.entry(topic).or_default();
+            let recorded: HashSet<Hash> = operations.iter().map(|op| op.hash).collect();
+            operations.extend(
+                self.op_store
+                    .unacknowledged_operations(&topic)
+                    .await?
+                    .into_iter()
+                    .filter(|op| !recorded.contains(&op.hash)),
+            );
+        }
+        by_topic.retain(|_, operations| !operations.is_empty());
         let mut failures = 0usize;
         for (topic, mut operations) in by_topic {
             operations

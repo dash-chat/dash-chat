@@ -96,6 +96,21 @@ impl OpStore {
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
+    /// The operations stored for `topic` above the cursor [`Self::acked_log_height`] reads.
+    pub async fn unacknowledged_operations(
+        &self,
+        topic: &TopicId,
+    ) -> anyhow::Result<Vec<Operation>> {
+        use mailbox_client::store::MailboxStore;
+        let mut operations = Vec::new();
+        for (log, _) in MailboxStore::get_log_heights(self, topic).await? {
+            let log_id: LogId = log.log_id.into();
+            let acked = self.acked_log_height(topic, &log.author, &log_id).await?;
+            operations.extend(self.log_operations(&log.author, &log_id, acked).await?);
+        }
+        Ok(operations)
+    }
+
     /// Gracefully close the underlying SQLite pool (no-op for the in-memory variant).
     pub async fn close(&self) {
         self.store.pool().close().await;
@@ -211,9 +226,8 @@ impl OpStore {
     /// enforce, so it must not be sent onward yet. Truncating (rather than
     /// filtering) keeps the returned log dense from `from`, which callers
     /// index by sequence number. Control operations (space, group and key
-    /// bundle logs) are always safe to transmit — only application payloads
-    /// are ever tombstoned — and are acknowledged by p2panda before ever
-    /// reaching the application layer.
+    /// bundle logs) are always safe to transmit: only application payloads
+    /// are ever tombstoned.
     async fn sendable_log_segment(
         &self,
         log: &Log,

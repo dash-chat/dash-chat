@@ -82,6 +82,46 @@ async fn app_acknowledges_a_later_operation() -> (TestNode, ChatId, iroh_blobs::
     (bobbi, chat, photo)
 }
 
+/// A resync imports whatever a space holds above the app's cursor, and opening
+/// a stream replays it, so a control operation left unacknowledged would be
+/// processed again every time.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_control_operations_of_a_space_are_acknowledged() {
+    let config = NodeConfig::testing().no_p2p();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config, "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    alice
+        .behavior()
+        .initiate_and_establish_contact(&bobbi)
+        .await
+        .unwrap();
+    let chat = alice.direct_chat_with(&bobbi);
+
+    for node in [&alice, &bobbi] {
+        PollConfig::seconds(30)
+            .wait_for(|| async {
+                let unacknowledged = node
+                    .op_store
+                    .unacknowledged_operations(&chat.into())
+                    .await
+                    .unwrap()
+                    .len();
+                (unacknowledged == 0)
+                    .then_some(())
+                    .ok_or(format!("{unacknowledged} unacknowledged"))
+            })
+            .await
+            .unwrap();
+    }
+}
+
 /// The extension already applied a group control operation to the groups
 /// state the app shares, which must not keep the app from processing and
 /// acknowledging it.

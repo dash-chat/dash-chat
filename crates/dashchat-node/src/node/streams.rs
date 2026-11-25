@@ -158,12 +158,19 @@ pub enum ProcessorEvent {
     /// A space's membership changed.
     SpaceMembersChanged {
         topic: Topic,
+        operation: Hash,
     },
 
     /// A group-auth operation on `topic`'s space was processed.
     GroupMembershipOp {
         topic: Topic,
         header: Header,
+    },
+
+    /// A member's key bundle on `topic`'s space was processed.
+    KeyBundleProcessed {
+        topic: Topic,
+        operation: Hash,
     },
 }
 
@@ -690,6 +697,25 @@ impl TopicDrain {
         }
     }
 
+    /// Acknowledge a control operation of `topic`'s space. p2panda leaves that to the
+    /// application for every space event it forwards, like it does for application messages.
+    pub(crate) async fn acknowledge(&self, topic: Topic, operation: Hash) {
+        let Some((_, subscriber)) = self
+            .streams
+            .iter()
+            .find(|(subscribed, _)| *subscribed == topic)
+        else {
+            return;
+        };
+        let acknowledged = match subscriber {
+            Subscriber::Stream(stream) => stream.ack(operation).await,
+            Subscriber::Space(space) => space.ack(operation).await,
+        };
+        if let Err(err) = acknowledged {
+            warn!(topic = ?topic.aliased(), ?err, "failed to acknowledge a control operation");
+        }
+    }
+
     fn handle_command(&mut self, command: DrainCommand) {
         match command {
             DrainCommand::Subscribe(topic, rx) => {
@@ -755,8 +781,15 @@ impl TopicDrain {
                 self.fail(event.hash(), format!("acking failed: {error}"));
                 None
             }
-            StreamEvent::Space { space_id, .. } => Some(ProcessorEvent::SpaceMembersChanged {
+            StreamEvent::Space {
+                space_id, event, ..
+            } => Some(ProcessorEvent::SpaceMembersChanged {
                 topic: Topic::from(space_id),
+                operation: event.hash(),
+            }),
+            StreamEvent::Member { event, .. } => Some(ProcessorEvent::KeyBundleProcessed {
+                topic,
+                operation: event.hash(),
             }),
             StreamEvent::Group { event, .. } => Some(ProcessorEvent::GroupMembershipOp {
                 topic,
