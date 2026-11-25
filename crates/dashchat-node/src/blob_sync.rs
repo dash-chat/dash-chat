@@ -277,9 +277,6 @@ impl BlobSync {
     /// How long a provider can be active without making forward progress before the
     /// fetcher considers it stalled and may pivot to another source.
     const STALL_TIMEOUT: Duration = Duration::from_secs(2);
-    /// How long to give a newly-selected provider before treating a lack of
-    /// progress as a stall.
-    const PROVIDER_WARMUP: Duration = Duration::from_millis(500);
 
     /// Whether the active provider reported by iroh is a peer (not a mailbox
     /// and not unknown). We only switch away from a download when we are sure
@@ -293,18 +290,15 @@ impl BlobSync {
     }
 
     /// Whether the peer download is making forward progress. A provider is
-    /// stalled when it has had the chance to warm up and has not delivered any
-    /// bytes for a while.
+    /// stalled when it has not delivered any bytes for a while. There is no
+    /// separate warmup window: if a mailbox already holds the blob, a brand-new
+    /// peer that has not moved in the first poll is a worse choice than the
+    /// mailbox.
     fn peer_is_stalled(progress: &DownloadProgress) -> bool {
-        let provider_warm = progress
-            .provider_changed_at
-            .map(|t| t.elapsed() >= Self::PROVIDER_WARMUP)
-            .unwrap_or(false);
-        let no_recent_progress = progress
+        progress
             .last_progress_at
             .map(|t| t.elapsed() >= Self::STALL_TIMEOUT)
-            .unwrap_or(true);
-        provider_warm && no_recent_progress
+            .unwrap_or(true)
     }
 
     /// Whether the peer download has transferred enough of the blob that it is
@@ -1254,6 +1248,69 @@ mod tests {
             calls, 1,
             "download from a mailbox should not be restarted to switch to a mailbox (calls: {calls})"
         );
+    }
+
+    #[tokio::test]
+    async fn fetch_now_does_not_switch_when_peer_transfer_is_nearly_done() {
+        use dashchat_utils::blob_sync::DownloadProgress;
+        use std::time::{Duration, Instant};
+
+        let total_size = 1000u64;
+        let _hash = iroh_blobs::Hash::new([0; 32]);
+
+        // A transfer that is nearly done (80%) and still moving should not be
+        // switched away from.
+        let mut progress = DownloadProgress::default();
+        progress.bytes_transferred = total_size * 8 / 10;
+        progress.last_progress_at = Some(Instant::now());
+        let status = iroh_blobs::api::proto::BlobStatus::Partial {
+            size: Some(total_size),
+        };
+        assert!(
+            BlobSync::peer_is_nearly_done(&progress, status),
+            "transfer above 70% should be nearly done"
+        );
+        assert!(
+            !BlobSync::peer_is_stalled(&progress),
+            "transfer with fresh progress should not be stalled"
+        );
+
+        // A transfer that is not nearly done (10%) and moving should be allowed
+        // to switch.
+        let mut progress = DownloadProgress::default();
+        progress.bytes_transferred = total_size / 10;
+        progress.last_progress_at = Some(Instant::now());
+        assert!(!BlobSync::peer_is_nearly_done(
+            &progress,
+            iroh_blobs::api::proto::BlobStatus::Partial {
+                size: Some(total_size),
+            }
+        ));
+        assert!(!BlobSync::peer_is_stalled(&progress));
+
+        // A stalled transfer that is nearly done should still switch — the peer
+        // stopped making progress, so finishing it locally is no longer a safe
+        // bet.
+        let mut progress = DownloadProgress::default();
+        progress.bytes_transferred = total_size * 8 / 10;
+        progress.last_progress_at = Some(Instant::now() - Duration::from_secs(5));
+        assert!(BlobSync::peer_is_nearly_done(
+            &progress,
+            iroh_blobs::api::proto::BlobStatus::Partial {
+                size: Some(total_size),
+            }
+        ));
+        assert!(BlobSync::peer_is_stalled(&progress));
+
+        // Unknown total size means we cannot know it is nearly done, so the
+        // switch is not blocked on that basis.
+        let mut progress = DownloadProgress::default();
+        progress.bytes_transferred = total_size * 8 / 10;
+        progress.last_progress_at = Some(Instant::now());
+        assert!(!BlobSync::peer_is_nearly_done(
+            &progress,
+            iroh_blobs::api::proto::BlobStatus::Partial { size: None }
+        ));
     }
 
     #[tokio::test]
