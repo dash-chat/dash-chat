@@ -141,6 +141,8 @@ describe('Leaving group', () => {
 
 		await agent2.groupChatPage.composer.sendMessage('Before Alice leaves');
 		await agent1.groupChatPage.messages.waitForMessage('Before Alice leaves');
+		await agent1.groupChatPage.composer.sendMessage('From Alice, still in');
+		await agent2.groupChatPage.messages.waitForMessage('From Alice, still in');
 
 		await agent1.groupChatPage.infoLink.click();
 		await agent1.groupInfoPage.ready();
@@ -200,5 +202,19 @@ describe('Leaving group', () => {
 				'After Alice left',
 			),
 		).toBe(false);
+	});
+
+	it('keeps the name of a member who left on the messages they sent', async () => {
+		await agent2.directChatPage.back.click();
+		await agent2.homePage.ready();
+		await agent2.homePage.chatListItem('Left Group').click();
+		await agent2.groupChatPage.ready();
+		await agent2.groupChatPage.messages.waitForMessage('From Alice, still in');
+
+		const rendered = await agent2.groupChatPage.messages.renderedMessages();
+		const fromAlice = rendered.find(
+			message => message.text === 'From Alice, still in',
+		);
+		expect(fromAlice?.sender).toBe('Alice');
 	});
 });

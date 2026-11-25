@@ -50,4 +50,35 @@ describe('Group chat inline system messages', () => {
 
 		expect(await message.wrapper.isExisting()).toBe(true);
 	});
+
+	it("follows a member's rename in the messages it already shows", async () => {
+		expect(
+			await agent2.groupChatPage.messages.messageAreaContains(
+				await agent2.tr('someoneAddedYouToTheGroup', { name: 'Alice' }),
+			),
+		).toBe(true);
+
+		await agent1.groupChatPage.back.click();
+		await agent1.homePage.ready();
+		await agent1.mainTabbar.settingsTab.click();
+		await agent1.settingsPage.ready();
+		await agent1.settingsPage.profileLink.click();
+		await agent1.profilePage.ready();
+		await agent1.profilePage.editName.click();
+		await agent1.editNamePage.ready();
+		await agent1.editNamePage.setName('Alicia');
+		await agent1.editNamePage.save();
+		await agent1.profilePage.ready();
+
+		const renamed = await agent2.tr('someoneAddedYouToTheGroup', {
+			name: 'Alicia',
+		});
+		await agent2.waitUntil(
+			async () => agent2.groupChatPage.messages.messageAreaContains(renamed),
+			{
+				timeout: SYNC_TIMEOUT,
+				timeoutMsg: `the group never showed "${renamed}"`,
+			},
+		);
+	});
 });
