@@ -34,5 +34,7 @@
 	onCancel={() => (opened = false)}
 	title={m.sendErrorReport()}
 	description={m.errorReportExplanation()}
-	actions={[{ text: m.send(), onClick: send }]}
+	actions={[
+		{ text: m.send(), testid: 'send-error-report-confirm', onClick: send },
+	]}
 />

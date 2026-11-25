@@ -2,11 +2,11 @@ import type { UnsubscribeFunction } from 'emittery';
 
 import type { IMessageAckClient } from '../message-acks/message-ack-client';
 import type { ChatId, MessageAcks } from '../types';
+import { mockBackend } from './backend-state';
 
-/** Mock mode has no peers, so nothing is ever delivered. */
 export class MockMessageAckClient implements IMessageAckClient {
 	async getMessageAcks(_chatId: ChatId): Promise<MessageAcks> {
-		return {};
+		return mockBackend.messageAcks;
 	}
 
 	onNewMessageAcks(

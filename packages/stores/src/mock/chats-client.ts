@@ -4,6 +4,8 @@ import type { IChatsClient } from '../chats/chats-client';
 import type { VerifyingKey } from '../p2panda/types';
 import type { Hash } from '../p2panda/types';
 import type { ChatId } from '../types';
+import { failIfTold } from './backend-state';
+import { mockGroupChatIds, setMockGroupMembers } from './group-chats';
 
 function random_hexadecimal(length: number) {
 	let result = '';
@@ -14,12 +16,11 @@ function random_hexadecimal(length: number) {
 }
 
 export class MockChatsClient implements IChatsClient {
-	private groupChats: ChatId[] = [];
 	private emitter = new Emittery<{ 'group-chat-added': ChatId }>();
 
 	async createGroup(_initialMembers: VerifyingKey[]): Promise<ChatId> {
 		const chatId = random_hexadecimal(64);
-		this.groupChats.push(chatId);
+		setMockGroupMembers(chatId, []);
 		void this.emitter.emit('group-chat-added', chatId);
 		return chatId;
 	}
@@ -29,7 +30,8 @@ export class MockChatsClient implements IChatsClient {
 	}
 
 	async getGroupChats(): Promise<ChatId[]> {
-		return this.groupChats;
+		failIfTold('get_group_chats');
+		return mockGroupChatIds();
 	}
 
 	async markMessagesRead(

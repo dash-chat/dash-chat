@@ -18,10 +18,28 @@ import {
 } from '../src/lib/components/connection/connection-status-tags';
 import type { m } from '../src/lib/paraglide/messages.js';
 import { discardPendingCrashReport } from '../src/lib/utils/error-report';
+import { markedTranslationKeys } from './translation-key-markers';
 
 const requestJoinOutcomes = new Map<string, string>();
 
 type Messages = typeof m;
+
+/** A scene step as the screenshot runner gets it: `run` stands for a
+ * function, which only the page can call. */
+export type SceneStepToCapture =
+	| { tap: string }
+	| { hold: string }
+	| { hover: string }
+	| { type: string; into: string }
+	| { run: number };
+
+export interface SceneToCapture {
+	name: string;
+	path: string;
+	device?: 'iphone' | 'desktop' | 'linux-desktop';
+	steps: SceneStepToCapture[];
+	drawn: string[];
+}
 
 /** Fake recent-photos data the composer strip reads via `window.__test`. This is
  * the single source of truth for the seam's shape — `$lib/utils/recent-photos`
@@ -708,8 +726,54 @@ function swipeToReply(messageHash: string): boolean {
 	return claimed;
 }
 
+const TRANSLATED_ATTRIBUTES = ['placeholder', 'aria-label', 'title', 'alt'];
+
+function isPaintedInViewport(el: Element): boolean {
+	const box = el.getBoundingClientRect();
+	return (
+		box.width > 0 &&
+		box.height > 0 &&
+		box.bottom > 0 &&
+		box.right > 0 &&
+		box.top < window.innerHeight &&
+		box.left < window.innerWidth &&
+		el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+	);
+}
+
+/** The text and translated attributes `el` itself holds, without its descendants'. */
+function ownTranslatedText(el: Element): string {
+	const ownText = Array.from(el.childNodes)
+		.filter(node => node.nodeType === Node.TEXT_NODE)
+		.map(node => node.textContent);
+	const attributes = TRANSLATED_ATTRIBUTES.map(name => el.getAttribute(name));
+	// A closed <select> paints none of its options, yet they are what it offers.
+	const options =
+		el instanceof HTMLSelectElement
+			? Array.from(el.options).map(option => option.textContent)
+			: [];
+	return [...ownText, ...attributes, ...options].join('');
+}
+
+/** The message keys currently on screen. Empty unless the build marks its
+ * messages (`VITE_TRANSLATION_KEY_MARKERS`). */
+function visibleTranslationKeys(): string[] {
+	const keys = Array.from(document.body.querySelectorAll('*'))
+		.map(el => ({ el, keys: markedTranslationKeys(ownTranslatedText(el)) }))
+		.filter(({ el, keys }) => keys.length > 0 && isPaintedInViewport(el))
+		.flatMap(({ keys }) => keys);
+	return [...new Set(keys)].sort();
+}
+
 export const testUtils = {
 	simulateUpdate,
+	visibleTranslationKeys,
+	/** The scenes the translation screenshots are taken of — set by
+	 * registerTestUtils from +layout.svelte. */
+	scenes: [] as SceneToCapture[],
+	/** Call the function that is step `index` of the scene on screen — set by
+	 * registerTestUtils from +layout.svelte. */
+	runSceneStep: (_index: number): Promise<void> => Promise.resolve(),
 	hasText,
 	disableP2p,
 	clearNotifications,
@@ -799,6 +863,8 @@ export function registerTestUtils(
 	messages?: Messages,
 	enablePreviewFeatures?: () => void,
 	handleDeepLink?: (url: string) => void,
+	scenes?: SceneToCapture[],
+	runSceneStep?: (index: number) => Promise<void>,
 ) {
 	window.__test = testUtils;
 	if (enablePreviewFeatures) {
@@ -806,6 +872,12 @@ export function registerTestUtils(
 	}
 	if (handleDeepLink) {
 		testUtils.handleDeepLink = handleDeepLink;
+	}
+	if (scenes) {
+		testUtils.scenes = scenes;
+	}
+	if (runSceneStep) {
+		testUtils.runSceneStep = runSceneStep;
 	}
 	if (goto) {
 		testUtils.goto = goto;

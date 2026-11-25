@@ -60,3 +60,15 @@ check:
 # regenerate paraglide message exports from source translation files
 paraglide:
     pnpm --filter ui paraglide
+
+# take the screenshots translators see, one per scene (the scenes.ts files
+# next to the routes), failing when a source string has none. Set CHROME_BIN
+# where Chrome is not installed where Playwright looks for it.
+translation-screenshots:
+    pnpm -F dash-chat-stores build
+    node ui/scripts/translation-screenshots.ts
+
+# upload those screenshots to Weblate, attached to the strings each one shows.
+# Needs WEBLATE_URL, WEBLATE_TOKEN, WEBLATE_PROJECT and WEBLATE_COMPONENT.
+sync-weblate-screenshots:
+    node ui/scripts/sync-weblate-screenshots.ts

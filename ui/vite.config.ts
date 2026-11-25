@@ -5,6 +5,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
+import { translationKeyMarkers } from './translation-key-markers-plugin.ts';
+
 // Resolve signalium's development ESM build for production builds
 const require = createRequire(import.meta.url);
 const signaliumPkgDir = path.dirname(require.resolve('signalium/package.json'));
@@ -27,7 +29,12 @@ const sentryEnabled = !!process.env.SENTRY_DSN;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
 	define: {
-		'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(sentryEnabled),
+		// The translation screenshots show both kinds of build from one, so there
+		// a scene decides (`reportingIsUnavailable` in demo-world.ts).
+		'import.meta.env.VITE_SENTRY_ENABLED':
+			process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
+				? '(globalThis.__reportingIsUnavailable !== true)'
+				: JSON.stringify(sentryEnabled),
 	},
 	optimizeDeps: {
 		exclude: ['dash-chat-stores'],
@@ -56,6 +63,9 @@ export default defineConfig(async () => ({
 			outdir: './src/lib/paraglide',
 			strategy: ['preferredLanguage', 'cookie', 'globalVariable', 'baseLocale'],
 		}),
+		...(process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
+			? [translationKeyMarkers()]
+			: []),
 	],
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

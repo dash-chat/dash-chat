@@ -3,6 +3,7 @@ import Emittery, { type UnsubscribeFunction } from 'emittery';
 
 import type { LogsClient } from './../p2panda/logs-client';
 import type {
+	GroupsArgs,
 	SimplifiedHeader,
 	SimplifiedOperation,
 } from './../p2panda/simplified-types';
@@ -67,7 +68,12 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 	}
 
 	/** Synchronous version of create — used by seedDemoData to write all data before stores read. */
-	createSync<T>(topicId: TopicId, body: T, timestamp?: number) {
+	createSync<T>(
+		topicId: TopicId,
+		body: T,
+		timestamp?: number,
+		auth?: GroupsArgs,
+	) {
 		const logKey = `${topicId}/${this._myPubKey}`;
 		const items = this.getItems();
 		const operations: SimplifiedOperation<any>[] = Object.entries(items)
@@ -83,8 +89,9 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 			previous: [],
 			verifying_key: this._myPubKey,
 			seq_num: lastOperation ? lastOperation.header.seq_num + 1 : 0,
-			timestamp: timestamp ?? Math.floor(Date.now() / 1000),
+			timestamp: timestamp ?? Date.now(),
 			topic_id: topicId,
+			auth,
 		};
 
 		const headerHash = hash(header);

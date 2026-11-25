@@ -1,6 +1,7 @@
 import type { IMessagesClient } from '../chats/messages-client';
 import type { Hash, TopicId } from '../p2panda/types';
 import type { ChatId, ChatReaction, OutgoingMedia } from '../types';
+import { failIfTold } from './backend-state';
 import { type LocalStorageLogsClient } from './client';
 
 export class MockMessagesClient implements IMessagesClient {
@@ -15,6 +16,7 @@ export class MockMessagesClient implements IMessagesClient {
 		_media: OutgoingMedia | null,
 		reply: Hash | null,
 	): Promise<Hash> {
+		failIfTold('send_message');
 		return this.logsClient.create(chatId, {
 			type: 'Chat',
 			payload: {

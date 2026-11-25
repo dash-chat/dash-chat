@@ -31,6 +31,7 @@
 		MockMailboxTrackerStore,
 		MockOnlinePeersStore,
 		MockSettingsClient,
+		MockSettingsStore,
 		MockTombstoneClient,
 		TombstoneClient,
 		TombstoneStore,
@@ -67,6 +68,12 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
+	import { installPreviewTauri } from '$lib/utils/preview-tauri';
+	import {
+		requestedScene,
+		runRequestedSceneStep,
+		scenesToCapture,
+	} from '$lib/scenes';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -87,6 +94,8 @@
 			m,
 			() => previewFeatures.enable(),
 			url => handleUrls([url], contactsStore),
+			scenesToCapture(),
+			runRequestedSceneStep,
 		),
 	);
 
@@ -110,11 +119,16 @@
 	let onlinePeersStore: IOnlinePeersStore;
 
 	if (isPreview) {
+		installPreviewTauri();
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
-		seedDemoData(mockLogsClient);
+		const scene = requestedScene();
+		// A scene starts from the demo data alone, whatever an earlier one left.
+		if (scene) localStorage.clear();
+		if (!scene?.firstLaunch) seedDemoData(mockLogsClient);
+		scene?.seed?.(mockLogsClient);
 
 		logsStore = new LogsStore<Payload>(mockLogsClient);
-		settingsStore = new SettingsStore(new MockSettingsClient());
+		settingsStore = new MockSettingsStore(new MockSettingsClient());
 
 		const mockDevicesClient = new MockDevicesClient(
 			DEMO_IDS.DEVICE_GROUP_TOPIC,

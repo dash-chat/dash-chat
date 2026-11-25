@@ -8,7 +8,7 @@ export const DEMO_IDS = {
 	INBOX_TOPIC: 'dd'.repeat(32),
 };
 
-const CONTACTS = [
+export const DEMO_CONTACTS = [
 	{
 		agentId: '01'.repeat(32),
 		deviceId: '11'.repeat(32),
@@ -39,7 +39,7 @@ const CONTACTS = [
 	},
 ];
 
-const EVE = {
+export const DEMO_CONTACT_REQUESTER = {
 	agentId: '05'.repeat(32),
 	deviceId: '15'.repeat(32),
 	name: 'Eve',
@@ -48,12 +48,14 @@ const EVE = {
 
 /** The device pubkey of each demo identity, for agent → device lookups. */
 export const DEMO_CONTACT_DEVICES: Record<string, string> = Object.fromEntries(
-	[...CONTACTS, EVE].map(contact => [contact.agentId, contact.deviceId]),
+	[...DEMO_CONTACTS, DEMO_CONTACT_REQUESTER].map(contact => [
+		contact.agentId,
+		contact.deviceId,
+	]),
 );
 
-/** Seconds-since-epoch timestamps (matching real backend) */
-function minutesAgo(minutes: number): number {
-	return Math.floor((Date.now() - minutes * 60_000) / 1000);
+export function minutesAgo(minutes: number): number {
+	return Date.now() - minutes * 60_000;
 }
 
 export function seedDemoData(logsClient: LocalStorageLogsClient) {
@@ -78,7 +80,7 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	);
 
 	// 2. Contact profiles (each written by their own device)
-	for (const contact of CONTACTS) {
+	for (const contact of DEMO_CONTACTS) {
 		const contactLogsClient = new LocalStorageLogsClient(contact.deviceId);
 		contactLogsClient.createSync(
 			personalTopicFor(contact.agentId),
@@ -99,7 +101,7 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	}
 
 	// 3. Add contacts to device group
-	CONTACTS.forEach((contact, i) => {
+	DEMO_CONTACTS.forEach((contact, i) => {
 		logsClient.createSync(
 			DEMO_IDS.DEVICE_GROUP_TOPIC,
 			{
@@ -124,9 +126,9 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	// Alice: conversation with several messages
 	const aliceChatId = chatIdForDevices(
 		DEMO_IDS.MY_DEVICE_ID,
-		CONTACTS[0].deviceId,
+		DEMO_CONTACTS[0].deviceId,
 	);
-	const aliceClient = new LocalStorageLogsClient(CONTACTS[0].deviceId);
+	const aliceClient = new LocalStorageLogsClient(DEMO_CONTACTS[0].deviceId);
 
 	aliceClient.createSync(
 		aliceChatId,
@@ -134,7 +136,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 			type: 'Chat',
 			payload: {
 				type: 'Message',
-				payload: 'Hey! Have you tried the new encrypted messaging?',
+				payload: {
+					message: 'Hey! Have you tried the new encrypted messaging?',
+					media: null,
+				},
 			},
 		},
 		minutesAgo(30),
@@ -146,7 +151,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 			type: 'Chat',
 			payload: {
 				type: 'Message',
-				payload: 'Yes! The p2p sync is working great.',
+				payload: {
+					message: 'Yes! The p2p sync is working great.',
+					media: null,
+				},
 			},
 		},
 		minutesAgo(28),
@@ -156,7 +164,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 		aliceChatId,
 		{
 			type: 'Chat',
-			payload: { type: 'Message', payload: 'I love that it works offline too' },
+			payload: {
+				type: 'Message',
+				payload: { message: 'I love that it works offline too', media: null },
+			},
 		},
 		minutesAgo(25),
 	);
@@ -165,7 +176,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 		aliceChatId,
 		{
 			type: 'Chat',
-			payload: { type: 'Message', payload: 'Absolutely. No servers needed!' },
+			payload: {
+				type: 'Message',
+				payload: { message: 'Absolutely. No servers needed!', media: null },
+			},
 		},
 		minutesAgo(20),
 	);
@@ -174,7 +188,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 		aliceChatId,
 		{
 			type: 'Chat',
-			payload: { type: 'Message', payload: 'See you at the meetup tomorrow?' },
+			payload: {
+				type: 'Message',
+				payload: { message: 'See you at the meetup tomorrow?', media: null },
+			},
 		},
 		minutesAgo(5),
 	);
@@ -182,15 +199,18 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	// Bob: short conversation
 	const bobChatId = chatIdForDevices(
 		DEMO_IDS.MY_DEVICE_ID,
-		CONTACTS[1].deviceId,
+		DEMO_CONTACTS[1].deviceId,
 	);
-	const bobClient = new LocalStorageLogsClient(CONTACTS[1].deviceId);
+	const bobClient = new LocalStorageLogsClient(DEMO_CONTACTS[1].deviceId);
 
 	bobClient.createSync(
 		bobChatId,
 		{
 			type: 'Chat',
-			payload: { type: 'Message', payload: 'Check out this article on E2EE' },
+			payload: {
+				type: 'Message',
+				payload: { message: 'Check out this article on E2EE', media: null },
+			},
 		},
 		minutesAgo(60),
 	);
@@ -199,7 +219,10 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 		bobChatId,
 		{
 			type: 'Chat',
-			payload: { type: 'Message', payload: 'Thanks, will read it later!' },
+			payload: {
+				type: 'Message',
+				payload: { message: 'Thanks, will read it later!', media: null },
+			},
 		},
 		minutesAgo(55),
 	);
@@ -207,15 +230,18 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	// Carol: single message
 	const carolChatId = chatIdForDevices(
 		DEMO_IDS.MY_DEVICE_ID,
-		CONTACTS[2].deviceId,
+		DEMO_CONTACTS[2].deviceId,
 	);
-	const carolClient = new LocalStorageLogsClient(CONTACTS[2].deviceId);
+	const carolClient = new LocalStorageLogsClient(DEMO_CONTACTS[2].deviceId);
 
 	carolClient.createSync(
 		carolChatId,
 		{
 			type: 'Chat',
-			payload: { type: 'Message', payload: 'Welcome to Dash Chat!' },
+			payload: {
+				type: 'Message',
+				payload: { message: 'Welcome to Dash Chat!', media: null },
+			},
 		},
 		minutesAgo(180),
 	);
@@ -223,7 +249,7 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 	// Dave: no messages (contact only)
 
 	// 5. Contact request from Eve (inbox message, not yet accepted)
-	const eveClient = new LocalStorageLogsClient(EVE.deviceId);
+	const eveClient = new LocalStorageLogsClient(DEMO_CONTACT_REQUESTER.deviceId);
 	eveClient.createSync(
 		DEMO_IDS.INBOX_TOPIC,
 		{
@@ -231,11 +257,11 @@ export function seedDemoData(logsClient: LocalStorageLogsClient) {
 			payload: {
 				type: 'ContactRequest',
 				payload: {
-					agent_id: EVE.agentId,
+					agent_id: DEMO_CONTACT_REQUESTER.agentId,
 					reply_topic: DEMO_IDS.INBOX_TOPIC,
 					profile: {
-						name: EVE.name,
-						surname: EVE.surname,
+						name: DEMO_CONTACT_REQUESTER.name,
+						surname: DEMO_CONTACT_REQUESTER.surname,
 						avatar: undefined,
 						about: undefined,
 					},

@@ -1,6 +1,8 @@
 export function isTauriEnv() {
 	// eslint-disable-next-line
-	return !!(window as any).__TAURI_INTERNALS__;
+	const internals = (window as any).__TAURI_INTERNALS__;
+	// The browser preview installs a stand-in (preview-tauri.ts).
+	return !!internals && internals.preview !== true;
 }
 
 export const isIos = /iPhone|iPad|iPod/i.test(navigator.userAgent);

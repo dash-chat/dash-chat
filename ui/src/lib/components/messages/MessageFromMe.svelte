@@ -149,6 +149,7 @@
 {#snippet row()}
 	<div
 		class="group flex justify-end"
+		data-testid="message-from-me"
 		use:longpress={{
 			onLongPress,
 			onPressStart: () => (actionsMounted = true),

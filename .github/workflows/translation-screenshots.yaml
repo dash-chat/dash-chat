@@ -1,0 +1,58 @@
+name: Translation Screenshots
+
+# Takes the screenshots translators see (one per scene, see the scenes.ts files
+# next to the routes) and fails when a source string has none. Off pull
+# requests it also uploads them to Weblate, attached to the strings each shows.
+on:
+  pull_request:
+    branches: [main, 'main-**', develop]
+    paths:
+      - 'ui/**'
+      - 'packages/stores/**'
+  schedule:
+    - cron: '0 3 * * *'
+  push:
+    branches: [develop]
+    paths:
+      - 'ui/messages/en.json'
+  workflow_dispatch:
+
+concurrency:
+  group: translation-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  translation-screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup just
+        uses: extractions/setup-just@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Install pnpm dependencies
+        run: pnpm install --reporter=append-only
+
+      # The runner image's own Chrome, which Playwright finds by channel.
+      - name: Take the screenshots
+        run: just translation-screenshots
+
+      - name: Upload them to Weblate
+        if: github.event_name != 'pull_request'
+        env:
+          WEBLATE_URL: ${{ vars.WEBLATE_URL }}
+          WEBLATE_PROJECT: ${{ vars.WEBLATE_PROJECT }}
+          WEBLATE_COMPONENT: ${{ vars.WEBLATE_COMPONENT }}
+          WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
+        run: just sync-weblate-screenshots

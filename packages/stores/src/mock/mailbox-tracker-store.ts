@@ -10,6 +10,7 @@ import {
 	type OperationSyncState,
 } from '../mailbox-tracker/types';
 import type { DeviceId, TopicId } from '../p2panda/types';
+import { mockBackend } from './backend-state';
 
 const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
@@ -67,23 +68,12 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 	);
 
 	connectionStatusForAllMailboxes = reactive(
-		async (): Promise<AllMailboxesConnectionState> => ({
-			cloudMailbox: {
-				status: 'Active',
-				consecutive_errors: 0,
-				next_poll_in_ms: 5000,
-				// Far future: this value is computed once, and a success before the
-				// page's last resume would read as unproven rather than connected.
-				last_success_at: '9999-01-01T00:00:00Z',
-				last_error: null,
-			},
-			localMailboxes: [],
-		}),
+		async (): Promise<AllMailboxesConnectionState> => mockBackend.mailboxes,
 	);
 
 	syncStatusForOp = reactive(
 		async (_topicId: TopicId, _author: DeviceId, _seq: number) => ({
-			syncedWithCloudMailbox: true,
+			syncedWithCloudMailbox: mockBackend.operationsReachMailboxes,
 			syncedWithAnyLocalMailbox: false,
 		}),
 	);

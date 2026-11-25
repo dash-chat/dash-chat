@@ -5,6 +5,7 @@ import type {
 } from '../contacts/contacts-client';
 import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
 import { personalTopicFor } from '../topics';
+import { failIfTold } from './backend-state';
 import { type LocalStorageLogsClient, chatIdForDevices } from './client';
 
 export class MockContactsClient implements IContactsClient {
@@ -25,8 +26,11 @@ export class MockContactsClient implements IContactsClient {
 		return this.deviceId;
 	}
 
-	async agentForDevice(_devicePubkey: DeviceId): Promise<AgentId | undefined> {
-		return undefined;
+	async agentForDevice(devicePubkey: DeviceId): Promise<AgentId | undefined> {
+		if (devicePubkey === this.deviceId) return this.agentId;
+		return Object.keys(this.knownDevices).find(
+			agentId => this.knownDevices[agentId] === devicePubkey,
+		);
 	}
 
 	onAgentsIntroduced(): () => void {
@@ -38,6 +42,7 @@ export class MockContactsClient implements IContactsClient {
 	}
 
 	async setProfile(profile: Profile): Promise<void> {
+		failIfTold('set_profile');
 		await this.logsClient.create(personalTopicFor(this.agentId), {
 			type: 'Announcements',
 			payload: { type: 'SetProfile', payload: profile },
@@ -49,6 +54,7 @@ export class MockContactsClient implements IContactsClient {
 	}
 
 	async createContactCode(): Promise<string> {
+		failIfTold('create_contact_code');
 		const bytes = new Uint8Array(45);
 		crypto.getRandomValues(bytes);
 		return btoa(String.fromCharCode(...Array.from(bytes)));
@@ -59,6 +65,7 @@ export class MockContactsClient implements IContactsClient {
 	}
 
 	async addContact(_contactCode: string): Promise<AddContactResult> {
+		failIfTold('add_contact');
 		return {
 			kind: 'NewRequest',
 			chatId: chatIdForDevices(this.deviceId, this.deviceId),
@@ -96,6 +103,7 @@ export class MockContactsClient implements IContactsClient {
 	}
 
 	async reportContact(agentId: AgentId): Promise<void> {
+		failIfTold('report_contact');
 		await this.logsClient.create(this.deviceGroupTopicId, {
 			type: 'DeviceGroupPayload',
 			payload: {

@@ -11,3 +11,6 @@ export * from './message-ack-client.js';
 export * from './mailbox-tracker-store.js';
 export * from './seed-demo-data.js';
 export * from './online-peers-store.js';
+export * from './group-chats.js';
+export * from './backend-state.js';
+export * from './settings-store.js';

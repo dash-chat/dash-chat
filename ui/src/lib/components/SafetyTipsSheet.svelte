@@ -156,6 +156,7 @@
 		<Button
 			tonal
 			rounded
+			data-testid="security-tips-next"
 			onClick={currentTip === tips.length - 1 ? handleClose : nextTip}
 			class="w-auto"
 		>

@@ -51,7 +51,7 @@
 			load();
 			return;
 		}
-		if (!recentPhotosSupported) return;
+		if (!recentPhotosSupported()) return;
 		loading = true;
 		permission = await getRecentPhotosPermission();
 		if (permission === 'granted') await load();
