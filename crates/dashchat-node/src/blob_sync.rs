@@ -327,10 +327,9 @@ impl BlobSync {
     }
 
     /// Whether it makes sense to abort the current in-topic download and restart
-    /// it from a mailbox. True only when the active provider is a peer, the
-    /// transfer is not already near completion, the transfer is stalled or has
-    /// not yet made progress, and at least one registered mailbox reports
-    /// already holding the blob.
+    /// it from a mailbox. True only when the active provider is a peer, the peer
+    /// transfer is either stalled or not already near completion, and at least one
+    /// registered mailbox reports already holding the blob.
     async fn can_switch_to_mailbox(
         &self,
         topic: TopicId,
@@ -346,10 +345,10 @@ impl BlobSync {
             .status(hash)
             .await
             .unwrap_or(iroh_blobs::api::proto::BlobStatus::NotFound);
-        if Self::peer_is_nearly_done(&progress, status) {
-            return false;
-        }
-        if !Self::peer_is_stalled(&progress) {
+        // Let a peer transfer finish if it is both nearly done and still moving.
+        // In every other case — stalled, unknown size, or far from complete — a
+        // mailbox that already has the blob is a better source.
+        if Self::peer_is_nearly_done(&progress, status) && !Self::peer_is_stalled(&progress) {
             return false;
         }
         self.sources
