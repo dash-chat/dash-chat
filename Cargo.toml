@@ -55,15 +55,18 @@ reporting = { path = "crates/reporting" }
 #   pending operation a new one releases, which overran 2 MiB on catch-up.
 # - A space skips an application message whose body is missing (deleted, or
 #   delivered header-only) instead of failing on it.
-# - Orderer state is kept per cursor, so the app and the push extension
-#   sharing a store don't reset each other's.
-p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
-p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be", features = [
+# - Opening a stream replays in causal order instead of resetting the
+#   orderer state, so the app and the push extension sharing a store don't
+#   wipe what the other processed. Each keeps its own ack cursor.
+# - `SpaceSubscription::ack` and the operation on `StreamEvent::Member`, so a
+#   space's control operations can be acknowledged under the explicit policy.
+p2panda = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-auth = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064", features = [
   "serde",
 ] }
-p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
-p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
-p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be", features = [
+p2panda-core = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-net = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064", features = [
   "sqlite",
 ] }
 # Do NOT enable `test_utils` here: it chains through p2panda-auth to
@@ -71,9 +74,9 @@ p2panda-store = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e
 # mock_instant clock — in normal builds, not just tests. Every operation then
 # carries the same timestamp and timestamp-ordered validation (replies, edits,
 # deletes) collapses.
-p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
-p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
-p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "8cf91fb9e6a16e4c979081c7e351481bf24df1be" }
+p2panda-spaces = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
+p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "2adf7a6b154356daadad6fb2309231cb02e9d064" }
 
 # iroh imports must match p2panda iroh dep version
 iroh = { version = "1.5.0", default-features = false, features = [
