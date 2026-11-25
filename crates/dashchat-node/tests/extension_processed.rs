@@ -256,6 +256,79 @@ async fn an_accept_the_extension_processed_first_is_recorded_by_the_app() {
     wait_until_nothing_recorded(&bobbi).await;
 }
 
+/// Off iOS the push handler's node runs only while the app is closed, so the
+/// app first meets an accept that handler stored as a replay at its next
+/// start, and that is when it has to record the contact.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_accept_the_push_handler_stored_is_recorded_when_the_app_starts() {
+    let config = NodeConfig::testing().no_p2p();
+    let mailbox = TestMailbox::from_env();
+    let alice = TestNode::new(config.clone(), "alice")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    let bobbi = TestNode::new(config.clone(), "bobbi")
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+
+    let qr = alice.create_add_contact_qr_code().await.unwrap();
+    bobbi.add_contact(qr).await.unwrap();
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            alice
+                .projection
+                .lookup_contact_by_agent_id(bobbi.agent_id())
+                .await
+                .unwrap()
+                .is_some()
+                .then_some(())
+                .ok_or("alice has not received the request")
+        })
+        .await
+        .unwrap();
+    let bobbi_agent_id = bobbi.agent_id();
+    let store = bobbi.shutdown().await;
+
+    alice.accept_contact(bobbi_agent_id).await.unwrap();
+
+    let mut push_handler_config = extension_config();
+    push_handler_config.record_processed_operations = false;
+    let push_handler = TestNode::new_at_path(push_handler_config, "bobbi-push-handler", store)
+        .await
+        .add_mailbox(&mailbox)
+        .await;
+    PollConfig::seconds(30)
+        .wait_for(|| async {
+            push_handler
+                .get_profile(alice.agent_id())
+                .await
+                .unwrap()
+                .is_some()
+                .then_some(())
+                .ok_or("the push handler has not processed the accept")
+        })
+        .await
+        .unwrap();
+    let store = push_handler.shutdown().await;
+
+    // No mailbox: the accept is in the store already, and the replay is the
+    // only thing that can hand it to the app.
+    let bobbi = TestNode::new_at_path(config, "bobbi", store).await;
+    PollConfig::seconds(60)
+        .wait_for(|| async {
+            bobbi
+                .get_contacts()
+                .await
+                .unwrap()
+                .contains(&alice.agent_id())
+                .then_some(())
+                .ok_or("the app never recorded the accepted contact")
+        })
+        .await
+        .unwrap();
+}
+
 struct Stored {
     alice: TestNode,
     bobbi: TestNode,
