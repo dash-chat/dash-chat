@@ -145,7 +145,6 @@ ptr_arg = "allow"
 question_mark = "allow"
 redundant_closure = "allow"
 to_string_in_format_args = "allow"
-too_many_arguments = "allow"                # Working on this one
 type_complexity = "allow"
 unnecessary_cast = "allow"
 unwrap_or_default = "allow"
