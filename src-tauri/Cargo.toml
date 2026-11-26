@@ -20,7 +20,11 @@ vergen-gitcl = "9"
 sentry-types = "0.42"
 
 [dependencies]
-tauri = { version = "2.12.4", features = ["devtools", "tray-icon", "image-png"] }
+tauri = { version = "2.12.4", features = [
+  "devtools",
+  "tray-icon",
+  "image-png",
+] }
 
 tauri-plugin-system-theme = { git = "https://github.com/dash-chat/tauri-plugin-system-theme", rev = "347505a15d1607529d1426fe126274a9082e27a9" }
 tauri-plugin-dialog = "2.3"
@@ -60,7 +64,10 @@ p2panda-core = { workspace = true }
 
 anyhow = "1.0.95"
 async-trait = "0.1.85"
-backon = { version = "1.6", default-features = false, features = ["std", "tokio-sleep"] }
+backon = { version = "1.6", default-features = false, features = [
+  "std",
+  "tokio-sleep",
+] }
 time = "0.3"
 tokio = { version = "1.43.0", features = ["fs"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -105,7 +112,10 @@ openssl-sys = { version = "0.9", features = ["vendored"] }
 # `iroh-relay` (via `reqwest 0.13` + `rustls 0.23`) panics on first TLS
 # handshake unless a CryptoProvider has been installed. Pull rustls in
 # directly so we can install the `ring` provider at startup.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = { git = "https://github.com/guillemcordoba/plugins-workspace", branch = "fix/barcode-scanner-ios" }
@@ -160,4 +170,9 @@ e2e-tests = [
 dashchat-node = { path = "../crates/dashchat-node", features = ["testing"] }
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
-push-notifications-server = { path = "../crates/push-notifications-server", features = ["test-utils"] }
+push-notifications-server = { path = "../crates/push-notifications-server", features = [
+  "test-utils",
+] }
+
+[lints]
+workspace = true

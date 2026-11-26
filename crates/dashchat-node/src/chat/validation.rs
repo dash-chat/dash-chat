@@ -59,6 +59,7 @@ impl ValidChatOps {
         Self(ops.into_iter().collect())
     }
 
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) fn contains(&self, hash: &Hash) -> bool {
         self.0.contains_key(hash)
     }

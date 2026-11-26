@@ -38,3 +38,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "any", "sqlite"] }
 
 [features]
 test-utils = ["dep:mockall"]
+
+[lints]
+workspace = true

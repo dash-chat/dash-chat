@@ -21,3 +21,6 @@ rubato = "5"
 
 [dev-dependencies]
 hound = "3.5"
+
+[lints]
+workspace = true
