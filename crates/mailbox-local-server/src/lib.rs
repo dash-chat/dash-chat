@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use dashchat_utils::local_hub::LocalHubRegistry;
 use iroh::EndpointId;
-use iroh_blobs::BlobsProtocol;
 use iroh_blobs::api::downloader::Downloader;
-use mailbox_server::{BlobSync, FetchConfig, ServerConfig, encode_mailbox_id};
+use iroh_blobs::BlobsProtocol;
+use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig, ServerConfig};
 use tokio::sync::mpsc::UnboundedSender;
 
 pub use local_hub_discovery::LocalHubAnnouncementService;
