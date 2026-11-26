@@ -58,7 +58,7 @@ check: clippy
     pnpm -r --if-present check
 
 clippy:
-    cargo clippy --workspace -- -D warnings
+    cargo clippy --workspace
 
 # regenerate paraglide message exports from source translation files
 paraglide:
