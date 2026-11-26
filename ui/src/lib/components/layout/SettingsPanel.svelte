@@ -181,6 +181,29 @@
 			</List>
 		{/if}
 
+		{#if $developerModeEnabled === true}
+			<List
+				strongIos
+				nested={theme !== 'ios'}
+				class={theme === 'ios' ? 'mb-0' : ''}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
+				<ListItem
+					link
+					class={isActive('/settings/developer') ? 'active' : ''}
+					linkProps={{ href: '/settings/developer' }}
+					data-testid="settings-developer-link"
+					title={m.developer()}
+					chevron={false}
+				>
+					{#snippet media()}
+						<wa-icon src={wrapPathInSvg(mdiCodeTags)} style="font-size: 28px"
+						></wa-icon>
+					{/snippet}
+				</ListItem>
+			</List>
+		{/if}
+
 		<List
 			strongIos
 			nested={theme !== 'ios'}
@@ -202,28 +225,6 @@
 				{/snippet}
 			</ListItem>
 		</List>
-
-		{#if $developerModeEnabled === true}
-			<List
-				strongIos
-				nested={theme !== 'ios'}
-				inset={isWideScreen.value || theme === 'ios'}
-			>
-				<ListItem
-					link
-					class={isActive('/settings/developer') ? 'active' : ''}
-					linkProps={{ href: '/settings/developer' }}
-					data-testid="settings-developer-link"
-					title={m.developer()}
-					chevron={false}
-				>
-					{#snippet media()}
-						<wa-icon src={wrapPathInSvg(mdiCodeTags)} style="font-size: 28px"
-						></wa-icon>
-					{/snippet}
-				</ListItem>
-			</List>
-		{/if}
 	{/await}
 </div>
 

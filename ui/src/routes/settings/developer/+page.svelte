@@ -48,7 +48,11 @@
 
 	<div class="column" style="flex: 1">
 		<div class="column center-in-desktop">
-			<List strongIos inset={isWideScreen.value || theme === 'ios'}>
+			<List
+				strongIos
+				class={theme === 'ios' ? '' : 'mt-0'}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
 				<ListItem
 					title={m.enableLanRouter()}
 					data-testid="developer-lan-router-toggle"
