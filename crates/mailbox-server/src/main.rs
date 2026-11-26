@@ -56,13 +56,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     spawn_server(
         args.db_path.into(),
         listener,
-        args.push_notifications_url,
-        None,
-        Some(RELAY_URL.clone()),
         args.network_id.unwrap_or(*NETWORK_ID),
         Some(ServerConfig {
             disable_blob_http_upload: args.disable_blob_http_upload,
             disable_blob_fetch: args.disable_blob_fetch,
+            push_notifications_url: args.push_notifications_url,
+            relay_url: Some(RELAY_URL.clone()),
+            blob_sync: None,
         }),
         signal,
     )

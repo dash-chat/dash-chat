@@ -11,7 +11,7 @@ use dashchat_utils::local_hub::LocalHubRegistry;
 use iroh::EndpointId;
 use iroh_blobs::api::downloader::Downloader;
 use iroh_blobs::BlobsProtocol;
-use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig};
+use mailbox_server::{encode_mailbox_id, BlobSync, FetchConfig, ServerConfig};
 use tokio::sync::mpsc::UnboundedSender;
 
 pub use local_hub_discovery::LocalHubAnnouncementService;
@@ -49,28 +49,33 @@ impl LocalMailboxServer {
     }
 }
 
-/// Spawn an in-process mailbox server sharing the given iroh endpoint and blob
-/// store, so it serves blobs from the same store over the same endpoint. The
-/// server is announced on the LAN over mDNS, owned by the returned server so
-/// stopping it retires the announcement.
+/// Parameters for the local mailbox server's blob synchronization layer.
+#[derive(Debug, Clone)]
+pub struct BlobSyncConfig {
+    pub protocol: BlobsProtocol,
+    pub downloader: Downloader,
+    pub fetch_config: Option<FetchConfig>,
+    /// How long the mailbox defers dialing a blob's source after an announce that
+    /// expects an inline upload; `None` uses the production default.
+    pub upload_grace: Option<Duration>,
+}
+
+/// Spawn an in-process mailbox server sharing the given iroh endpoint and
+/// blob store, so it serves blobs from the same store over the same endpoint. The
+/// server is announced on the LAN via mDNS so peers can discover it and
+/// sync against it without any cloud service. The returned server owns the
+/// announcement; calling [`LocalMailboxServer::stop`] retires it.
 ///
 /// The port is remembered beside `db_path` and reused across restarts, so
 /// peers that discovered this hub keep reaching it.
-///
-/// `upload_grace` overrides how long the mailbox defers dialing a blob's source
-/// after an announce that expects an inline upload; `None` uses the production
-/// default.
 ///
 /// `local_hub_registry` must be the handle the node's config holds: registering
 /// here is what opens this endpoint's blob push port, which the node's
 /// authorization loop guards.
 pub async fn spawn_local_mailbox_server(
     db_path: PathBuf,
-    blobs: BlobsProtocol,
-    downloader: Downloader,
+    blob_sync_config: BlobSyncConfig,
     endpoint: iroh::Endpoint,
-    fetch_config: Option<FetchConfig>,
-    upload_grace: Option<Duration>,
     peer_addr_tx: UnboundedSender<iroh::EndpointAddr>,
     local_hub_registry: LocalHubRegistry,
 ) -> anyhow::Result<LocalMailboxServer> {
@@ -83,11 +88,16 @@ pub async fn spawn_local_mailbox_server(
     // Captured before `endpoint` is moved into the blob sync.
     let endpoint_id = endpoint.id();
 
-    let mut blob_sync = BlobSync::shared(blobs, downloader, endpoint, peer_addr_tx);
-    if let Some(fetch_config) = fetch_config {
+    let mut blob_sync = BlobSync::shared(
+        blob_sync_config.protocol,
+        blob_sync_config.downloader,
+        endpoint,
+        peer_addr_tx,
+    );
+    if let Some(fetch_config) = blob_sync_config.fetch_config {
         blob_sync = blob_sync.with_fetch_config(fetch_config);
     }
-    if let Some(upload_grace) = upload_grace {
+    if let Some(upload_grace) = blob_sync_config.upload_grace {
         blob_sync = blob_sync.with_upload_grace(upload_grace);
     }
 
@@ -101,11 +111,11 @@ pub async fn spawn_local_mailbox_server(
         if let Err(e) = mailbox_server::spawn_server(
             db_path,
             listener,
-            None,
-            Some(blob_sync),
-            None,
             *dashchat_utils::NETWORK_ID,
-            None,
+            Some(ServerConfig {
+                blob_sync: Some(blob_sync),
+                ..ServerConfig::default()
+            }),
             signal,
         )
         .await

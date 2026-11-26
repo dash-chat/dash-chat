@@ -34,11 +34,13 @@ pub async fn spawn_relay_mailbox(
     let blob_sync = relay.blob_sync_optional().expect("blob sync is enabled");
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
-        blob_sync.blobs.clone(),
-        blob_sync.downloader(),
+        mailbox_local_server::BlobSyncConfig {
+            protocol: blob_sync.blobs.clone(),
+            downloader: blob_sync.downloader(),
+            fetch_config: Some(fetch_config),
+            upload_grace: Some(TEST_UPLOAD_GRACE),
+        },
         relay.iroh_endpoint().await.unwrap(),
-        Some(fetch_config),
-        Some(TEST_UPLOAD_GRACE),
         peer_addr_tx,
         relay.config.local_hub_registry.clone(),
     )
@@ -79,9 +81,6 @@ pub async fn spawn_standalone_mailbox() -> StandaloneMailbox {
         if let Err(err) = mailbox_server::spawn_server(
             db_path,
             listener,
-            None,
-            None,
-            None,
             *dashchat_utils::NETWORK_ID,
             None,
             signal,

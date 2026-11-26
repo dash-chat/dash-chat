@@ -82,15 +82,8 @@ impl Client {
             .network_changes
             .get_or_insert_with(network_watch::network_change);
         let mut changed = false;
-        loop {
-            match changes.try_recv() {
-                Ok(()) | Err(broadcast::error::TryRecvError::Lagged(_)) => changed = true,
-                Err(
-                    broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed,
-                ) => {
-                    break;
-                }
-            }
+        while let Ok(()) | Err(broadcast::error::TryRecvError::Lagged(_)) = changes.try_recv() {
+            changed = true;
         }
         if changed {
             match (self.configure)().build() {

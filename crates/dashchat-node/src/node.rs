@@ -239,6 +239,12 @@ impl Default for NodeConfig {
     }
 }
 
+pub struct NodeStorageInputs {
+    pub filesystem: Filesystem,
+    pub db_pool: sqlite_gate::GatedPool,
+    pub local_store: LocalStore,
+}
+
 pub type DashResolver = StrongRemove<VerifyingKey, Hash, Operation, ()>;
 
 #[derive(Clone)]
@@ -306,17 +312,21 @@ impl Node {
         topic_subscribed_tx: Option<mpsc::Sender<TopicId>>,
     ) -> Result<Self> {
         let filesystem = Filesystem::new(data_path);
-        let local_pool =
+        let db_pool =
             crate::stores::create_sqlite_pool(filesystem.local_store_path(), &config.sqlite_gate)
                 .await?;
-        let local_store = LocalStore::new(local_pool.pool().clone()).await?;
-        let projection = OpProjection::new(local_pool.pool().clone()).await?;
+        let local_store = LocalStore::new(db_pool.pool().clone()).await?;
+        let projection = OpProjection::new(db_pool.pool().clone()).await?;
         let node_keys = local_store.node_keys().await?;
 
-        Self::init(
+        let storage = NodeStorageInputs {
             filesystem,
-            local_pool,
+            db_pool,
             local_store,
+        };
+
+        Self::init(
+            storage,
             projection,
             node_keys,
             config,
@@ -328,9 +338,7 @@ impl Node {
 
     #[cfg_attr(feature = "instrument", tracing::instrument(skip_all, fields(me = ?node_keys.device_id().aliased())))]
     pub async fn init(
-        filesystem: Filesystem,
-        local_pool: sqlite_gate::GatedPool,
-        local_store: LocalStore,
+        storage: NodeStorageInputs,
         projection: OpProjection,
         node_keys: NodeKeys,
         config: NodeConfig,
@@ -353,7 +361,10 @@ impl Node {
 
         // === p2panda node === //
 
-        let url = format!("sqlite://{}", filesystem.op_store_path().to_string_lossy());
+        let url = format!(
+            "sqlite://{}",
+            storage.filesystem.op_store_path().to_string_lossy()
+        );
         // Nothing needs the iroh endpoint once p2p and blob sync are both off, so
         // p2panda is spawned with no networking layer at all. `no_p2p` alone is not
         // enough: mailbox media exchange dials the mailbox over iroh.
@@ -418,7 +429,7 @@ impl Node {
         // === mailboxes === //
 
         let mailboxes = Mailboxes::spawn_with_db(
-            filesystem.mailbox_sync_tracker_path(),
+            storage.filesystem.mailbox_sync_tracker_path(),
             &config.sqlite_gate,
             op_store.clone(),
             config.mailboxes_config.clone(),
@@ -457,7 +468,7 @@ impl Node {
             Some(
                 BlobSync::new(
                     endpoint,
-                    filesystem.blobs_store_path(),
+                    storage.filesystem.blobs_store_path(),
                     blob_fetch,
                     source_lookup,
                     mailboxes.blob_tracker().clone(),
@@ -478,10 +489,10 @@ impl Node {
             op_store,
             mailboxes,
             config,
-            filesystem,
-            local_store,
+            filesystem: storage.filesystem,
+            local_store: storage.local_store,
             projection,
-            _local_pool: local_pool,
+            _local_pool: storage.db_pool,
             _op_store_pool: op_store_pool,
             group_store,
             node_keys,

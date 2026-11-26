@@ -241,11 +241,13 @@ async fn mailbox_gains_blob_without_needing_to_fetch_it() {
     let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
-        relay.blobs(),
-        relay.blob_downloader(),
+        mailbox_local_server::BlobSyncConfig {
+            protocol: relay.blobs(),
+            downloader: relay.blob_downloader(),
+            fetch_config: None, // default fetch config: the fetch backstop may run but the upload arrives first
+            upload_grace: Some(common::TEST_UPLOAD_GRACE),
+        },
         relay.iroh_endpoint().await.unwrap(),
-        None, // default fetch config: the fetch backstop may run but the upload arrives first
-        Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
         relay.config.local_hub_registry.clone(),
     )
@@ -472,11 +474,13 @@ async fn push_blob_delivers_to_mailbox_over_iroh() {
     let (peer_addr_tx, _peer_addr_rx) = tokio::sync::mpsc::unbounded_channel();
     let server = mailbox_local_server::spawn_local_mailbox_server(
         db_path,
-        relay.blobs(),
-        relay.blob_downloader(),
+        mailbox_local_server::BlobSyncConfig {
+            protocol: relay.blobs(),
+            downloader: relay.blob_downloader(),
+            fetch_config: None,
+            upload_grace: Some(common::TEST_UPLOAD_GRACE),
+        },
         relay.iroh_endpoint().await.unwrap(),
-        None,
-        Some(common::TEST_UPLOAD_GRACE),
         peer_addr_tx,
         relay.config.local_hub_registry.clone(),
     )

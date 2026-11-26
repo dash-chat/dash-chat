@@ -38,3 +38,6 @@ tokio = { version = "1.43.0", features = ["test-util"] }
 [features]
 e2e-test-ca = []
 testing = []
+
+[lints]
+workspace = true

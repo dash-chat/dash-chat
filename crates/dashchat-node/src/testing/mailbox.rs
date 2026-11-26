@@ -85,9 +85,6 @@ impl TestMailbox {
             if let Err(e) = mailbox_server::spawn_server(
                 db_path,
                 listener,
-                None,
-                None,
-                None,
                 *dashchat_utils::NETWORK_ID,
                 None,
                 signal,

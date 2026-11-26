@@ -11,4 +11,13 @@ tokio = { version = "1", features = ["time", "sync", "rt", "macros"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["time", "sync", "macros", "rt-multi-thread", "test-util"] }
+tokio = { version = "1", features = [
+  "time",
+  "sync",
+  "macros",
+  "rt-multi-thread",
+  "test-util",
+] }
+
+[lints]
+workspace = true

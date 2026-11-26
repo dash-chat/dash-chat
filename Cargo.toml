@@ -74,9 +74,7 @@ p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", rev = "dd80
 p2panda-stream = { git = "https://github.com/dash-chat/p2panda", rev = "dd804b232e1404f755932fb4095ed358511a5cb0" }
 
 # iroh imports must match p2panda iroh dep version
-iroh = { version = "1.4.1", default-features = false, features = [
-  "tls-ring",
-] }
+iroh = { version = "1.4.1", default-features = false, features = ["tls-ring"] }
 iroh-blobs = "0.104.0"
 iroh-relay = "1.4.1"
 
@@ -120,3 +118,34 @@ swarm-discovery = { git = "https://github.com/dash-chat/swarm-discovery", rev = 
 # p2panda-sync = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-discovery = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
 # p2panda-encryption = { git = "https://github.com/dash-chat/p2panda", branch = "dashchat-retry-park" }
+
+[workspace.lints.rust]
+deprecated = "allow"
+deprecated_in_future = "allow"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+clone_on_copy = "allow"
+collapsible_if = "allow"
+derivable_impls = "allow"
+doc_lazy_continuation = "allow"
+empty_line_after_doc_comments = "allow"
+field_reassign_with_default = "allow"
+for_kv_map = "allow"
+incompatible_msrv = "allow"
+large_enum_variant = "allow"
+let_and_return = "allow"
+let_underscore_future = "allow"
+needless_borrow = "allow"
+needless_borrows_for_generic_args = "allow"
+needless_question_mark = "allow"
+new_ret_no_self = "allow"
+new_without_default = "allow"
+ptr_arg = "allow"
+question_mark = "allow"
+redundant_closure = "allow"
+to_string_in_format_args = "allow"
+type_complexity = "allow"
+unnecessary_cast = "allow"
+unwrap_or_default = "allow"
+useless_conversion = "allow"

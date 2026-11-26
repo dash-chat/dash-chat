@@ -41,11 +41,11 @@ bundle:
 
 # cut a new release (e.g. just release 0.11.0)
 release version:
-    ./scripts/release.sh {{version}}
+    ./scripts/release.sh {{ version }}
 
 # update the version in all version files without committing (e.g. just update-version 0.11.0)
 update-version version:
-    ./scripts/update-version.sh {{version}}
+    ./scripts/update-version.sh {{ version }}
 
 # format both UI and rust files
 format:
@@ -53,9 +53,12 @@ format:
     pnpm -r --if-present format
 
 # typecheck every TS package and the rust workspace
-check:
+check: clippy
     cargo check --workspace
     pnpm -r --if-present check
+
+clippy:
+    cargo clippy --workspace
 
 # regenerate paraglide message exports from source translation files
 paraglide:
