@@ -1,0 +1,20 @@
+warning: this function mixes levels of abstraction (2 delegating statements, 1 inline blocks, 4 low-level operations)
+  --> $DIR/main.rs:28:1
+   |
+LL | fn mixed(cutoff: u64) {
+   | ^^^^^^^^^^^^^^^^^^^^^
+   |
+help: consider extracting this into a named function
+  --> $DIR/main.rs:31:5
+   |
+LL | /     for peer in &peers {
+LL | |         if peer.last_seen > cutoff {
+LL | |             by_topic
+LL | |                 .entry(peer.topic)
+...  |
+LL | |     }
+   | |_____^
+   = note: `#[warn(mixed_abstraction)]` on by default
+
+warning: 1 warning emitted
+

@@ -11,3 +11,6 @@ ed25519-dalek = { workspace = true }
 hex = "0.4"
 serde = { workspace = true }
 thiserror = { workspace = true }
+
+[lints]
+workspace = true
