@@ -83,16 +83,7 @@ impl OpStore {
         author: &DeviceId,
         log_id: &LogId,
     ) -> anyhow::Result<Option<SeqNum>> {
-        use p2panda_store::cursors::CursorStore;
-        // The ack cursor is persisted by p2panda under the topic's string
-        // representation (see `StreamSubscription`'s internal `Acked`).
-        let cursor = p2panda_store::tx!(self.store, {
-            CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
-                &self.store,
-                topic.to_string(),
-            )
-            .await?
-        });
+        let cursor = ack_cursor(&self.store, topic).await?;
         Ok(cursor.and_then(|c| c.log_height(author, log_id).copied()))
     }
 
@@ -163,7 +154,7 @@ impl OpStore {
         log_id: &LogId,
         from: Option<SeqNum>,
     ) -> anyhow::Result<Vec<ReadOperation>> {
-        let log = self.log_operations(author, log_id, from).await?;
+        let log = self.log_operations(author, log_id, from, None).await?;
         if log.is_empty()
             && tracing::enabled!(tracing::Level::WARN)
             && !self.log_exists(author, log_id).await?
@@ -193,13 +184,9 @@ impl OpStore {
         author: &DeviceId,
         log_id: &LogId,
         from: Option<SeqNum>,
+        until: Option<SeqNum>,
     ) -> anyhow::Result<Vec<Operation>> {
-        self.store
-            .log_entries(author, log_id, from, None)?
-            .map_err(anyhow::Error::from)
-            .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
-            .try_collect()
-            .await
+        log_operations(&self.store, author, log_id, from, until).await
     }
 
     /// The operations of a log from `from` that are safe to send onward, as
@@ -223,7 +210,7 @@ impl OpStore {
         let Log { author, log_id } = log;
         let log_id: LogId = (*log_id).into();
         let mut segment = self
-            .log_operations(author, &log_id, from.checked_sub(1))
+            .log_operations(author, &log_id, from.checked_sub(1), None)
             .await?;
         if segment.is_empty() && !self.log_exists(author, &log_id).await? {
             return Ok(None);
@@ -424,6 +411,35 @@ fn encrypted_message(op: &Operation) -> Option<(TopicId, EncryptedMessage)> {
     ))
 }
 
+/// The ack cursor of `topic`, which p2panda persists under the topic's string
+/// representation (see `StreamSubscription`'s internal `Acked`).
+pub(super) async fn ack_cursor(
+    store: &SqliteStore,
+    topic: &TopicId,
+) -> anyhow::Result<Option<p2panda_core::Cursor<p2panda::VerifyingKey, LogId>>> {
+    use p2panda_store::cursors::CursorStore;
+    Ok(p2panda_store::tx!(store, {
+        CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(store, topic.to_string()).await?
+    }))
+}
+
+/// `author`'s log after `from` (exclusive) up to `until` (inclusive), each
+/// open-ended when `None`, as it was stored.
+pub(super) async fn log_operations(
+    store: &SqliteStore,
+    author: &DeviceId,
+    log_id: &LogId,
+    from: Option<SeqNum>,
+    until: Option<SeqNum>,
+) -> anyhow::Result<Vec<Operation>> {
+    store
+        .log_entries(author, log_id, from, until)?
+        .map_err(anyhow::Error::from)
+        .and_then(|entry| async move { Ok(Operation::try_from(entry.entry)?) })
+        .try_collect()
+        .await
+}
+
 /// Whether an operation carries an application payload, as opposed to a
 /// space, group or key bundle control message.
 fn is_application(op: &Operation) -> bool {
@@ -436,13 +452,83 @@ fn is_application(op: &Operation) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use mailbox_client::store::MailboxStore;
-    use p2panda::operation::{Extensions, Header, LogId};
+pub(crate) mod test_support {
+    use p2panda::operation::{Extensions, Header};
     use p2panda_core::{Body, Timestamp};
     use p2panda_store::Transaction;
     use p2panda_store::operations::OperationStore;
 
+    use super::*;
+
+    /// An operation of a plain stream topic, as sync stores it before it is processed.
+    pub(crate) fn signed_op(
+        signing_key: &p2panda::SigningKey,
+        log_id: LogId,
+        seq_num: SeqNum,
+        backlink: Option<Hash>,
+        payload: &[u8],
+    ) -> Operation {
+        // Timestamps track seq_num so the tests' expected ordering is deterministic.
+        let extensions = Extensions::builder(log_id)
+            .timestamp(Timestamp::new(seq_num.into()))
+            .build();
+        let header = Header::builder()
+            .body(payload)
+            .seq_num(seq_num)
+            .backlink(backlink)
+            .build(signing_key, extensions);
+        Operation {
+            hash: header.hash(),
+            header,
+            body: Some(Body::from_bytes(payload)),
+        }
+    }
+
+    pub(crate) async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
+        let permit = store.store.begin().await.unwrap();
+        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &op.hash, op, log_id)
+            .await
+            .unwrap();
+        store.store.commit(permit).await.unwrap();
+    }
+
+    /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
+    /// `ProcessedOperation::ack` persists once application-layer processing has
+    /// finished (see `OpStore::acked_log_height`).
+    pub(crate) async fn ack_up_to(
+        store: &OpStore,
+        topic: &TopicId,
+        author: &DeviceId,
+        log_id: LogId,
+        seq: SeqNum,
+    ) {
+        use p2panda_core::Cursor;
+        use p2panda_core::logs::LogHeights;
+        use p2panda_store::cursors::CursorStore;
+
+        let permit = store.store.begin().await.unwrap();
+        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
+            &store.store,
+            topic.to_string(),
+        )
+        .await
+        .unwrap()
+        .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
+        cursor.advance(**author, log_id, seq);
+        CursorStore::set_cursor_tx(&store.store, &cursor)
+            .await
+            .unwrap();
+        store.store.commit(permit).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mailbox_client::store::MailboxStore;
+    use p2panda::operation::{Header, LogId};
+    use p2panda_core::Body;
+
+    use super::test_support::*;
     use super::*;
     use crate::testing::*;
 
@@ -467,7 +553,6 @@ mod tests {
         (alice, bobbi, chat)
     }
 
-    /// An operation of a plain stream topic, as sync stores it before it is processed.
     fn stream_op(
         signing_key: &p2panda::SigningKey,
         log_id: LogId,
@@ -475,58 +560,13 @@ mod tests {
         backlink: Option<Hash>,
         payload: &Payload,
     ) -> Operation {
-        let payload = payload.as_bytes().unwrap();
-        // Timestamps track seq_num so the tests' expected ordering is deterministic.
-        let extensions = Extensions::builder(log_id)
-            .timestamp(Timestamp::new(seq_num.into()))
-            .build();
-        let header = Header::builder()
-            .body(&payload)
-            .seq_num(seq_num)
-            .backlink(backlink)
-            .build(signing_key, extensions);
-        Operation {
-            hash: header.hash(),
-            header,
-            body: Some(Body::from_bytes(&payload)),
-        }
-    }
-
-    async fn insert(store: &OpStore, op: &Operation, log_id: &LogId) {
-        let permit = store.store.begin().await.unwrap();
-        OperationStore::<Operation, Hash>::insert_operation_tx(&store.store, &op.hash, op, log_id)
-            .await
-            .unwrap();
-        store.store.commit(permit).await.unwrap();
-    }
-
-    /// Advance p2panda's ack cursor for `author`'s log to `seq`, mimicking what
-    /// `ProcessedOperation::ack` persists once application-layer processing has
-    /// finished (see `OpStore::acked_log_height`).
-    async fn ack_up_to(
-        store: &OpStore,
-        topic: &TopicId,
-        author: &DeviceId,
-        log_id: LogId,
-        seq: SeqNum,
-    ) {
-        use p2panda_core::Cursor;
-        use p2panda_core::logs::LogHeights;
-        use p2panda_store::cursors::CursorStore;
-
-        let permit = store.store.begin().await.unwrap();
-        let mut cursor = CursorStore::<p2panda::VerifyingKey, LogId>::get_cursor_tx(
-            &store.store,
-            topic.to_string(),
+        signed_op(
+            signing_key,
+            log_id,
+            seq_num,
+            backlink,
+            &payload.as_bytes().unwrap(),
         )
-        .await
-        .unwrap()
-        .unwrap_or_else(|| Cursor::new(topic.to_string(), LogHeights::default()));
-        cursor.advance(**author, log_id, seq);
-        CursorStore::set_cursor_tx(&store.store, &cursor)
-            .await
-            .unwrap();
-        store.store.commit(permit).await.unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

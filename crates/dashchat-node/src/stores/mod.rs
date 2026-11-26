@@ -1,9 +1,13 @@
 mod author_store;
+#[cfg(any(test, feature = "lan-router"))]
+mod lan_router_store;
 mod local_store;
 mod op_projection;
 mod op_store;
 
 pub use author_store::*;
+#[cfg(any(test, feature = "lan-router"))]
+pub(crate) use lan_router_store::*;
 pub use local_store::*;
 pub use op_projection::*;
 pub use op_store::*;

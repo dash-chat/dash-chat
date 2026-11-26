@@ -13,7 +13,9 @@ use crate::AckedOp;
 use crate::Log;
 use crate::forward_edit_closure;
 use crate::node::publish::warn_if_slow;
-use crate::node::streams::{ProcessedTx, ProcessorError, ProcessorEvent, Space, TopicDrain};
+use crate::node::streams::{
+    ImportOrigin, ProcessedTx, ProcessorError, ProcessorEvent, Space, TopicDrain,
+};
 use crate::stores::{BadUseOfNode, ProjectionError, TombstoneReason};
 use crate::topic::AutoRegisteredTopic;
 
@@ -123,6 +125,7 @@ impl Node {
         };
         self.local_store.register_space_as_subscribed(topic).await?;
         self.import_mailbox_stream(*topic).await?;
+        self.follow_with_lan_router(*topic).await;
         self.notify_topic_subscribed(*topic).await;
         Ok(space)
     }
@@ -149,7 +152,19 @@ impl Node {
 
         self.subscribe_to_stream(topic).await?;
         self.import_mailbox_stream(topic).await?;
+        self.follow_with_lan_router(topic).await;
         Ok(())
+    }
+
+    /// The router only accelerates what p2panda and mailboxes already do, so
+    /// failing to follow a topic is logged and skipped.
+    async fn follow_with_lan_router(&self, topic: TopicId) {
+        let Some(router) = &self.lan_router else {
+            return;
+        };
+        if let Err(e) = router.subscribe_topic(topic).await {
+            warn!(topic = ?topic.aliased(), error = %e, "lan router topic subscription failed");
+        }
     }
 
     /// Rejoin a registered space on node startup and import its mailbox stream.
@@ -160,6 +175,7 @@ impl Node {
 
         self.streams.join_space(topic).await?;
         self.import_mailbox_stream(topic).await?;
+        self.follow_with_lan_router(topic).await;
         self.notify_topic_subscribed(topic).await;
         Ok(())
     }
@@ -201,8 +217,30 @@ impl Node {
         topic: TopicId,
         stream: std::pin::Pin<Box<dyn futures::Stream<Item = Operation> + Send>>,
     ) -> anyhow::Result<()> {
-        self.streams.import(topic.into(), stream).await?;
+        self.streams
+            .import(topic.into(), ImportOrigin::Mailbox, stream)
+            .await?;
         Ok(())
+    }
+
+    /// Undo the subscription whose import stream died, on that path only,
+    /// so the next initialization of the topic re-imports it.
+    async fn drop_failed_import(&self, topic: p2panda::Topic, origin: ImportOrigin) {
+        match origin {
+            ImportOrigin::Mailbox => {
+                if let Err(err) = self.mailboxes.unsubscribe(topic).await {
+                    error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
+                }
+            }
+            ImportOrigin::LanRouter => {
+                let Some(router) = &self.lan_router else {
+                    return;
+                };
+                if let Err(err) = router.unsubscribe_topic(topic.into()).await {
+                    warn!(topic = ?topic.aliased(), ?err, "failed to drop lan router topic after import failure");
+                }
+            }
+        }
     }
 
     /// Spawn a task for application layer processing of received operations.
@@ -228,18 +266,18 @@ impl Node {
                             .await;
                         }
                         Some(ProcessorEvent::GroupMembershipOp { topic, header }) => {
+                            node.lan_router_topics_changed();
                             node.notify(SystemNotification::Membership { topic: topic.into(), header }.into());
                         }
                         Some(ProcessorEvent::SpaceMembersChanged { topic }) => {
+                            node.lan_router_topics_changed();
                             if let Err(err) = node.notify_group_members_changed(topic).await {
                                 warn!(topic = ?topic.aliased(), ?err, "failed to announce a membership change");
                             }
                         }
-                        Some(ProcessorEvent::ImportFailed { topic, error }) => {
-                            error!(topic = ?topic.aliased(), ?error, "import failed; unsubscribing topic from mailbox so it can be re-imported on retry");
-                            if let Err(err) = node.mailboxes.unsubscribe(topic).await {
-                                error!(topic = ?topic.aliased(), ?err, "failed to unsubscribe topic after import failure");
-                            }
+                        Some(ProcessorEvent::ImportFailed { topic, origin, error }) => {
+                            error!(topic = ?topic.aliased(), ?origin, ?error, "import failed; dropping that path's subscription so it can be re-imported on retry");
+                            node.drop_failed_import(topic, origin).await;
                         }
                         None => break,
                     },
@@ -360,6 +398,15 @@ impl Node {
                 ?err,
                 "failed to forget an operation the push extension recorded"
             );
+        }
+
+        if let Some(router) = &self.lan_router {
+            let log_id = operation.processed().header().extensions.log_id();
+            if DeviceId::from(operation.author()) == self.device_id() {
+                router.authored(operation);
+            } else {
+                router.hint_changed(operation.author(), log_id);
+            }
         }
 
         if DeviceId::from(operation.author()) == self.device_id() {

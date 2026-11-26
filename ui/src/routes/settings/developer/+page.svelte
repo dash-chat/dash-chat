@@ -2,7 +2,36 @@
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { isWideScreen } from '$lib/stores/screen.svelte';
-	import { Navbar, NavbarBackLink, Page } from 'konsta/svelte';
+	import { useReactivePromise } from '$lib/stores/use-signal';
+	import { showToast } from '$lib/utils/toasts';
+	import {
+		BlockFooter,
+		List,
+		ListItem,
+		Navbar,
+		NavbarBackLink,
+		Page,
+		Toggle,
+		useTheme,
+	} from 'konsta/svelte';
+	import { getContext } from 'svelte';
+	import type { SettingsStore } from 'dash-chat-stores';
+
+	const theme = $derived(useTheme());
+	const settingsStore: SettingsStore = getContext('settings-store');
+	const lanRouterEnabled = useReactivePromise(settingsStore.lanRouterEnabled);
+	let togglingLanRouter = $state(false);
+
+	async function toggleLanRouter(currentEnabled: boolean) {
+		togglingLanRouter = true;
+		try {
+			await settingsStore.setLanRouterEnabled(!currentEnabled);
+		} catch (e) {
+			showToast(m.errorUnexpected(), 'unexpected', e);
+		} finally {
+			togglingLanRouter = false;
+		}
+	}
 </script>
 
 <Page data-testid="developer-page">
@@ -16,4 +45,30 @@
 			{/if}
 		{/snippet}
 	</Navbar>
+
+	<div class="column" style="flex: 1">
+		<div class="column center-in-desktop">
+			<List
+				strongIos
+				class={theme === 'ios' ? '' : 'mt-0'}
+				inset={isWideScreen.value || theme === 'ios'}
+			>
+				<ListItem
+					title={m.enableLanRouter()}
+					data-testid="developer-lan-router-toggle"
+				>
+					{#snippet after()}
+						{#await $lanRouterEnabled then enabled}
+							<Toggle
+								checked={enabled}
+								disabled={togglingLanRouter}
+								onChange={() => toggleLanRouter(enabled)}
+							/>
+						{/await}
+					{/snippet}
+				</ListItem>
+			</List>
+			<BlockFooter class="px-4">{m.lanRouterDescription()}</BlockFooter>
+		</div>
+	</div>
 </Page>

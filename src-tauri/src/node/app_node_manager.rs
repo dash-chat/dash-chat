@@ -73,11 +73,7 @@ impl AppNodeManager {
                 )?,
             ),
         };
-        node_slot::get_or_build_node(
-            &app_node_manager.data_path,
-            app_node_manager.app_context(app),
-        )
-        .await?;
+        app_node_manager.get_or_build_app_node(app).await?;
         Ok(app_node_manager)
     }
 
@@ -105,8 +101,70 @@ impl AppNodeManager {
         }
         crate::settings::save_p2p_enabled(app, enabled);
         node_slot::clear().await;
-        node_slot::get_or_build_node(&self.data_path, self.app_context(app)).await?;
+        self.get_or_build_app_node(app).await?;
         Ok(())
+    }
+
+    /// Persist the LAN router switch and rebuild the node with or without it.
+    /// A no-op when the setting is unchanged. Fails, leaving the switch off,
+    /// when the router cannot start.
+    pub async fn set_lan_router_enabled(
+        &self,
+        app: &AppHandle,
+        enabled: bool,
+    ) -> anyhow::Result<()> {
+        if crate::settings::load_lan_router_enabled(app) == enabled {
+            return Ok(());
+        }
+        // Saved before the node goes, so nothing rebuilding it meanwhile
+        // starts the router again.
+        crate::settings::save_lan_router_enabled(app, enabled);
+        node_slot::clear().await;
+        if !enabled {
+            self.delete_lan_router_relay_store();
+        }
+        self.get_or_build_app_node(app).await?;
+        anyhow::ensure!(
+            crate::settings::load_lan_router_enabled(app) == enabled,
+            "the LAN router could not start"
+        );
+        Ok(())
+    }
+
+    /// The app's node, built if there is none. A node that cannot start with
+    /// the LAN router on but can without it is left running without it, and
+    /// the switch turned off: the app cannot run without a node, and can
+    /// without the router.
+    async fn get_or_build_app_node(
+        &self,
+        app: &AppHandle,
+    ) -> anyhow::Result<node_slot::AcquiredNode> {
+        let with_router =
+            match node_slot::get_or_build_node(&self.data_path, self.app_context(app)).await {
+                Err(err) if crate::settings::load_lan_router_enabled(app) => err,
+                result => return result,
+            };
+        crate::settings::save_lan_router_enabled(app, false);
+        match node_slot::get_or_build_node(&self.data_path, self.app_context(app)).await {
+            Ok(acquired) => {
+                log::error!(
+                    "Turned the LAN router off, the node cannot start with it: {with_router:?}"
+                );
+                self.delete_lan_router_relay_store();
+                Ok(acquired)
+            }
+            Err(_) => {
+                crate::settings::save_lan_router_enabled(app, true);
+                Err(with_router)
+            }
+        }
+    }
+
+    /// Only while no node runs the router: it holds its relay store open.
+    fn delete_lan_router_relay_store(&self) {
+        if let Err(err) = dashchat_node::lan_router::delete_relay_store(&self.data_path) {
+            log::error!("Failed to delete the LAN router's relay store: {err:?}");
+        }
     }
 
     #[cfg(target_os = "ios")]
@@ -120,7 +178,7 @@ impl AppNodeManager {
     #[cfg(target_os = "ios")]
     pub async fn resume(&self, app: &AppHandle) {
         self.sqlite_gate.resume();
-        match node_slot::get_or_build_node(&self.data_path, self.app_context(app)).await {
+        match self.get_or_build_app_node(app).await {
             Ok(acquired) => acquired.node.resume().await,
             Err(err) => log::error!("Failed to build node on foreground: {err:?}"),
         }
