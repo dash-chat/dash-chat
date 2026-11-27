@@ -1,4 +1,5 @@
 import type { Scene } from '$lib/scenes';
+import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import { open, tid, untilAToastShows } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
 import { present, settled, tap } from 'i18n-screenshots/scene';
@@ -6,19 +7,10 @@ import { present, settled, tap } from 'i18n-screenshots/scene';
 /** Hand the upload input a picture with no QR code in it, the way picking
  * one would. */
 async function uploadABlankImage(): Promise<void> {
-	const canvas = document.createElement('canvas');
-	canvas.width = 64;
-	canvas.height = 64;
-	canvas.getContext('2d')?.fillRect(0, 0, 64, 64);
-	const blank = await new Promise<Blob | null>(resolve =>
-		canvas.toBlob(resolve),
-	);
-	const input = await present<HTMLInputElement>(tid('add-contact-file-input'));
-	if (blank === null) return;
-	const picked = new DataTransfer();
-	picked.items.add(new File([blank], 'blank.png', { type: 'image/png' }));
-	input.files = picked.files;
-	input.dispatchEvent(new Event('change', { bubbles: true }));
+	await present(tid('add-contact-file-input'));
+	window.__test.pickFilesInto('add-contact-file-input', [
+		{ name: 'blank.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
+	]);
 }
 
 /** Put the pictures the app saves on the page, where a browser would hand

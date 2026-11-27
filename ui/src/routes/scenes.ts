@@ -4,8 +4,6 @@ import {
 	BOB,
 	CAROL,
 	DAVE,
-	chatOperation,
-	deviceGroupOperation,
 	directChatId,
 	nobodyHasSetUpThisDevice,
 	onlyMyProfile,
@@ -15,9 +13,12 @@ import {
 	MOCK_MAILBOX_DOWN,
 	MOCK_MAILBOX_UNCONFIRMED,
 	MOCK_MAILBOX_UP,
+	chatOperation,
+	deviceGroupOperation,
 	minutesAgo,
 	mockBackend,
 	setMockBackend,
+	textMessage,
 } from 'dash-chat-mock';
 import { tap } from 'i18n-screenshots/scene';
 
@@ -115,10 +116,10 @@ export default [
 				},
 				minutesAgo(3),
 			);
-			const retracted = chatOperation(
+			const retracted = textMessage(
 				CAROL.deviceId,
 				directChatId(CAROL),
-				{ type: 'Message', payload: { message: 'Oops', media: null } },
+				'Oops',
 				minutesAgo(2),
 			);
 			chatOperation(

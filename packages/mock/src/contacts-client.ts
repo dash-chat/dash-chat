@@ -5,11 +5,11 @@ import {
 	type IContactsClient,
 	type Profile,
 	type TopicId,
-	personalTopicFor,
 } from 'dash-chat-stores';
 
 import { failIfTold } from './backend-state';
 import { type LocalStorageLogsClient, chatIdForDevices } from './client';
+import { profileOperation } from './seed-demo-data';
 
 export class MockContactsClient implements IContactsClient {
 	constructor(
@@ -46,10 +46,10 @@ export class MockContactsClient implements IContactsClient {
 
 	async setProfile(profile: Profile): Promise<void> {
 		failIfTold('set_profile');
-		await this.logsClient.create(personalTopicFor(this.agentId), {
-			type: 'Announcements',
-			payload: { type: 'SetProfile', payload: profile },
-		});
+		profileOperation(
+			{ agentId: this.agentId, deviceId: this.deviceId },
+			profile,
+		);
 	}
 
 	async getProfile(_agentId: AgentId): Promise<Profile | undefined> {

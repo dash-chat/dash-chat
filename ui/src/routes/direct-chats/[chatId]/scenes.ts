@@ -1,11 +1,9 @@
 import type { Scene } from '$lib/scenes';
-import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import {
 	ALICE,
 	BOB,
 	STRANGER,
-	chatOperation,
-	deviceGroupOperation,
+	TINY_PNG_BYTES,
 	directChatId,
 	directChatPath,
 	pasteIntoComposer,
@@ -15,8 +13,11 @@ import { takeTheAppsOwnPaths } from '$lib/utils/preview-tauri';
 import {
 	DEMO_CONTACT_REQUESTER,
 	DEMO_IDS,
+	chatOperation,
+	deviceGroupOperation,
 	minutesAgo,
 	setMockBackend,
+	textMessage,
 } from 'dash-chat-mock';
 import { fill, find, present, settled, tap } from 'i18n-screenshots/scene';
 
@@ -122,6 +123,20 @@ function mediaMessages(): void {
 	);
 }
 
+/** The security tips of a contact request, turned to the `tip`th of them. */
+function securityTip(tip: number): Scene {
+	return {
+		name: `security-tips-${tip}`,
+		async setup() {
+			await open(request);
+			await tap('direct-chat-security-tips');
+			for (let turned = 1; turned < tip; turned++) {
+				await tap('security-tips-next');
+			}
+		},
+	};
+}
+
 export default [
 	{
 		name: 'direct-chat',
@@ -131,10 +146,10 @@ export default [
 		name: 'direct-chat-edited-deleted-reacted',
 		async setup() {
 			const chatId = directChatId(ALICE);
-			const mine = chatOperation(
+			const mine = textMessage(
 				DEMO_IDS.MY_DEVICE_ID,
 				chatId,
-				{ type: 'Message', payload: { message: 'See you at 6', media: null } },
+				'See you at 6',
 				minutesAgo(4),
 			);
 			chatOperation(
@@ -152,10 +167,10 @@ export default [
 				{ type: 'Reaction', payload: { emoji: '👍', target: mine } },
 				minutesAgo(2),
 			);
-			const theirs = chatOperation(
+			const theirs = textMessage(
 				ALICE.deviceId,
 				chatId,
-				{ type: 'Message', payload: { message: 'Wrong chat', media: null } },
+				'Wrong chat',
 				minutesAgo(2),
 			);
 			chatOperation(
@@ -164,10 +179,10 @@ export default [
 				{ type: 'DeleteMessage', payload: { hashes: [theirs] } },
 				minutesAgo(1),
 			);
-			const retracted = chatOperation(
+			const retracted = textMessage(
 				DEMO_IDS.MY_DEVICE_ID,
 				chatId,
-				{ type: 'Message', payload: { message: 'Never mind', media: null } },
+				'Never mind',
 				minutesAgo(1),
 			);
 			chatOperation(
@@ -193,13 +208,10 @@ export default [
 		name: 'direct-chat-reply-and-long-message',
 		async setup() {
 			const chatId = directChatId(ALICE);
-			const question = chatOperation(
+			const question = textMessage(
 				ALICE.deviceId,
 				chatId,
-				{
-					type: 'Message',
-					payload: { message: 'What should I bring?', media: null },
-				},
+				'What should I bring?',
 				minutesAgo(4),
 			);
 			chatOperation(
@@ -222,13 +234,10 @@ export default [
 		name: 'message-sending',
 		async setup() {
 			setMockBackend({ operationsReachMailboxes: false });
-			chatOperation(
+			textMessage(
 				DEMO_IDS.MY_DEVICE_ID,
 				directChatId(ALICE),
-				{
-					type: 'Message',
-					payload: { message: 'Are you there?', media: null },
-				},
+				'Are you there?',
 				minutesAgo(5),
 			);
 			await open(chat);
@@ -238,13 +247,10 @@ export default [
 		name: 'message-unsent',
 		async setup() {
 			setMockBackend({ operationsReachMailboxes: false });
-			chatOperation(
+			textMessage(
 				DEMO_IDS.MY_DEVICE_ID,
 				directChatId(ALICE),
-				{
-					type: 'Message',
-					payload: { message: 'Are you there?', media: null },
-				},
+				'Are you there?',
 				minutesAgo(0),
 			);
 			await open(chat);
@@ -261,51 +267,7 @@ export default [
 			await tap('direct-chat-accept-btn');
 		},
 	},
-	{
-		name: 'security-tips-1',
-		async setup() {
-			await open(request);
-			await tap('direct-chat-security-tips');
-		},
-	},
-	{
-		name: 'security-tips-2',
-		async setup() {
-			await open(request);
-			await tap('direct-chat-security-tips');
-			await tap('security-tips-next');
-		},
-	},
-	{
-		name: 'security-tips-3',
-		async setup() {
-			await open(request);
-			await tap('direct-chat-security-tips');
-			await tap('security-tips-next');
-			await tap('security-tips-next');
-		},
-	},
-	{
-		name: 'security-tips-4',
-		async setup() {
-			await open(request);
-			await tap('direct-chat-security-tips');
-			await tap('security-tips-next');
-			await tap('security-tips-next');
-			await tap('security-tips-next');
-		},
-	},
-	{
-		name: 'security-tips-5',
-		async setup() {
-			await open(request);
-			await tap('direct-chat-security-tips');
-			await tap('security-tips-next');
-			await tap('security-tips-next');
-			await tap('security-tips-next');
-			await tap('security-tips-next');
-		},
-	},
+	...[1, 2, 3, 4, 5].map(securityTip),
 	{
 		name: 'message-actions',
 		async setup() {
@@ -355,10 +317,10 @@ export default [
 		name: 'message-reactions',
 		async setup() {
 			const chatId = directChatId(ALICE);
-			const mine = chatOperation(
+			const mine = textMessage(
 				DEMO_IDS.MY_DEVICE_ID,
 				chatId,
-				{ type: 'Message', payload: { message: 'Shall we go?', media: null } },
+				'Shall we go?',
 				minutesAgo(4),
 			);
 			chatOperation(
@@ -593,16 +555,11 @@ export default [
 	{
 		name: 'direct-chat-yesterday',
 		async setup() {
-			chatOperation(
-				ALICE.deviceId,
-				directChatId(BOB),
-				{ type: 'Message', payload: { message: 'unused', media: null } },
-				minutesAgo(0),
-			);
-			chatOperation(
+			textMessage(ALICE.deviceId, directChatId(BOB), 'unused', minutesAgo(0));
+			textMessage(
 				ALICE.deviceId,
 				directChatId(ALICE),
-				{ type: 'Message', payload: { message: 'Good night!', media: null } },
+				'Good night!',
 				minutesAgo(26 * 60),
 			);
 			await open(chat);
@@ -615,10 +572,10 @@ export default [
 				['Hi, we met at the meetup', 9],
 				['Is this the right number?', 8],
 			] as const) {
-				chatOperation(
+				textMessage(
 					DEMO_CONTACT_REQUESTER.deviceId,
 					directChatId(DEMO_CONTACT_REQUESTER),
-					{ type: 'Message', payload: { message, media: null } },
+					message,
 					minutesAgo(age),
 				);
 			}
@@ -629,13 +586,10 @@ export default [
 		name: 'direct-chat-scrolled-up',
 		async setup() {
 			for (let index = 0; index < 40; index++) {
-				chatOperation(
+				textMessage(
 					ALICE.deviceId,
 					directChatId(ALICE),
-					{
-						type: 'Message',
-						payload: { message: `Trail note ${index + 1}`, media: null },
-					},
+					`Trail note ${index + 1}`,
 					minutesAgo(4),
 				);
 			}

@@ -1,16 +1,20 @@
-import { type SceneOutcome, captureScenes } from 'i18n-screenshots/capture';
-import { readFileSync } from 'node:fs';
+import { syncScreenshotsToWeblate } from 'i18n-screenshots-weblate';
+import {
+	type SceneOutcome,
+	type Screenshot,
+	captureScenes,
+} from 'i18n-screenshots/capture';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { devices } from 'playwright-core';
 
-import {
-	saveScreenshotsOfEveryScene,
-	saveScreenshotsOfSomeScenes,
-} from './files.ts';
-import { renderedSourceKeys } from './rendered-keys.ts';
+import { renderedKey, renderedSourceKeys } from './rendered-keys.ts';
 
 const UI = fileURLToPath(new URL('../../ui/', import.meta.url));
+const SCREENSHOTS = fileURLToPath(
+	new URL('../../.dbs/translation-screenshots/', import.meta.url),
+);
 const SOURCE_STRINGS = path.join(UI, 'messages', 'en.json');
 const STRINGS_WITHOUT_SCREENSHOT = path.join(
 	UI,
@@ -106,11 +110,31 @@ function checkEveryStringIsAccountedFor(shownKeys: Set<string>): void {
 	if (unlisted.length > 0 || stale.length > 0) process.exitCode = 1;
 }
 
-const [appUrl] = process.argv.slice(2);
-if (appUrl === undefined) {
+/** Save the screenshots, and the keys each shows, for someone to look at. */
+function save(screenshots: Screenshot[]): void {
+	rmSync(SCREENSHOTS, { recursive: true, force: true });
+	mkdirSync(SCREENSHOTS, { recursive: true });
+	for (const { name, image, keys } of screenshots) {
+		writeFileSync(path.join(SCREENSHOTS, `${name}.png`), image);
+		writeFileSync(
+			path.join(SCREENSHOTS, `${name}.keys.json`),
+			JSON.stringify(keys, null, '\t'),
+		);
+	}
+}
+
+const [appUrl, thenSync] = process.argv.slice(2);
+if (appUrl === undefined || (thenSync !== undefined && thenSync !== 'sync')) {
 	throw new Error(
-		'Usage: capture.ts <the URL the marked preview is served at>; `just i18n screenshots` builds and serves it',
+		'Usage: capture.ts <the URL the marked preview is served at> [sync]; `just i18n screenshots` builds and serves it',
 	);
+}
+const weblateToken = process.env.WEBLATE_TOKEN;
+if (thenSync !== undefined) {
+	// Before minutes are spent taking screenshots that could not be synced.
+	if (!weblateToken) throw new Error('WEBLATE_TOKEN is not set');
+	// Weblate would lose the screenshot of every scene left out.
+	if (only !== undefined) throw new Error('SCENES cannot be synced');
 }
 
 /** Resolves once the preview answers: it is started alongside this. */
@@ -140,15 +164,25 @@ const screenshots = outcomes.flatMap(outcome =>
 		? []
 		: [outcome.screenshot],
 );
-const tookAllItSetOutTo = screenshots.length === outcomes.length;
-const savedTo =
-	only === undefined && tookAllItSetOutTo
-		? saveScreenshotsOfEveryScene(screenshots)
-		: saveScreenshotsOfSomeScenes(screenshots, only === undefined);
-console.log(`Saved to ${savedTo}`);
+save(screenshots);
 if (screenshots.length < outcomes.length) process.exitCode = 1;
 if (only === undefined) {
 	checkEveryStringIsAccountedFor(
 		new Set(screenshots.flatMap(screenshot => screenshot.keys)),
 	);
+}
+
+// Straight from what was just taken, and only when nothing above failed:
+// Weblate deletes the screenshots it is not handed.
+if (weblateToken && thenSync !== undefined && process.exitCode === undefined) {
+	await syncScreenshotsToWeblate({
+		screenshots,
+		url: 'https://nuance.weblate.cloud',
+		token: weblateToken,
+		project: 'dash-chat',
+		component: 'dash-chat-app',
+		sourceLanguage: 'en',
+		renderedKey,
+		log: console.log,
+	});
 }

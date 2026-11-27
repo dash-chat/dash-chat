@@ -8,7 +8,6 @@ import {
 	GROUP_CHAT_PATH,
 	ME,
 	STRANGER,
-	chatOperation,
 	describeGroup,
 	groupOperation,
 	individual,
@@ -19,6 +18,7 @@ import {
 	minutesAgo,
 	mockBackend,
 	setMockBackend,
+	textMessage,
 } from 'dash-chat-mock';
 
 export function groupIAdminister(): void {
@@ -144,10 +144,10 @@ function groupAStrangerAdministers(): void {
 		{ Remove: { member: individual(BOB) } },
 		minutesAgo(30),
 	);
-	chatOperation(
+	textMessage(
 		STRANGER.deviceId,
 		GROUP_CHAT_ID,
-		{ type: 'Message', payload: { message: 'Welcome everyone', media: null } },
+		'Welcome everyone',
 		minutesAgo(20),
 	);
 	describeGroup('Neighbours', [STRANGER, ME], [STRANGER], minutesAgo(59));

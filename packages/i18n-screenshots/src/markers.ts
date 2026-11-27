@@ -7,7 +7,7 @@ const MARKER = new RegExp(
 );
 
 /** `text` followed by an invisible encoding of its message `key`. */
-export function markTranslationKey(key: string, text: string): string {
+function markTranslationKey(key: string, text: string): string {
 	const bits = [...key]
 		.map(char => char.charCodeAt(0).toString(2).padStart(BITS_PER_CHAR, '0'))
 		.join('');

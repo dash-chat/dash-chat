@@ -118,7 +118,7 @@
 	if (isPreview) {
 		installPreviewTauri();
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
-		seedDemoData(mockLogsClient);
+		seedDemoData();
 		playRequestedScene(scenes);
 
 		logsStore = new LogsStore<Payload>(mockLogsClient);

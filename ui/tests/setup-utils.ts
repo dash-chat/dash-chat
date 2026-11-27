@@ -492,6 +492,17 @@ function pasteFiles(specs: TestFileSpec[]) {
  * MediaDropOverlay HTML5 pipeline. See `pasteFiles` for the defineProperty
  * rationale.
  */
+/** Hand the file input with `testId` these files, the way picking them
+ * would. */
+function pickFilesInto(testId: string, specs: TestFileSpec[]) {
+	const input = document.querySelector<HTMLInputElement>(
+		`[data-testid="${testId}"]`,
+	);
+	if (!input) throw new Error(`No file input with the test id ${testId}`);
+	input.files = specsToDataTransfer(specs).files;
+	input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 function dispatchDrag(type: 'dragenter' | 'drop', specs: TestFileSpec[]) {
 	const event = new DragEvent(type, { bubbles: true, cancelable: true });
 	Object.defineProperty(event, 'dataTransfer', {
@@ -767,6 +778,7 @@ export const testUtils = {
 	pasteNoisePhoto,
 	pasteUnreadablePhoto,
 	pasteUnreadableFile,
+	pickFilesInto,
 	dragFilesOver,
 	dropFiles,
 	injectVoiceMessage,

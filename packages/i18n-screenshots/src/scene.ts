@@ -181,10 +181,3 @@ export async function fill(testId: string, text: string): Promise<void> {
 	field.dispatchEvent(new InputEvent('input', { bubbles: true }));
 	await settled();
 }
-
-/** Move the keyboard focus to the element: what shows what a pointer over it
- * would, where the app reveals it for both. */
-export async function focus(testId: string): Promise<void> {
-	(await find(testId)).focus();
-	await settled();
-}

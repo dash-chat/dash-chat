@@ -54,10 +54,11 @@ jobs:
 
       # The runner image's own Chrome, which Playwright finds by channel.
       - name: Take the screenshots
+        if: github.event_name == 'pull_request'
         run: just i18n screenshots
 
-      - name: Upload them to Weblate
+      - name: Take the screenshots and upload them to Weblate
         if: github.event_name != 'pull_request'
         env:
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
-        run: just i18n sync-weblate
+        run: just i18n screenshots sync

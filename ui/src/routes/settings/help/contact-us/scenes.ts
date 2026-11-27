@@ -1,6 +1,5 @@
 import type { Scene } from '$lib/scenes';
-import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
-import { reportingIsUnavailable } from '$lib/scenes/demo-world';
+import { TINY_PNG_BYTES, reportingIsUnavailable } from '$lib/scenes/demo-world';
 import { open, tid } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
 import { fill, present, settled, tap } from 'i18n-screenshots/scene';
@@ -14,69 +13,61 @@ async function chooseAReason(): Promise<void> {
 	reason.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+const contactUs = '/settings/help/contact-us';
+
+/** Open the form and pick `files` as the screenshots to send with it. */
+async function pickAsScreenshots(
+	files: Parameters<typeof window.__test.interceptFilePickers>[0],
+): Promise<void> {
+	await open(contactUs);
+	window.__test.interceptFilePickers(files);
+	await settled();
+	await tap('contact-us-screenshots-add');
+}
+
+async function sendFeedback(): Promise<void> {
+	await open(contactUs);
+	await chooseAReason();
+	await settled();
+	await fill('contact-us-message-input', 'The app is great');
+	await tap('contact-us-send-btn');
+}
+
 export default [
-	{
-		name: 'contact-us',
-		setup: () => open('/settings/help/contact-us'),
-	},
+	{ name: 'contact-us', setup: () => open(contactUs) },
 	{
 		name: 'contact-us-with-screenshots',
-		async setup() {
-			await open('/settings/help/contact-us');
-			window.__test.interceptFilePickers([
+		setup: () =>
+			pickAsScreenshots([
 				{ name: 'crash.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
-			]);
-			await settled();
-			await tap('contact-us-screenshots-add');
-		},
+			]),
 	},
 	{
 		name: 'error-feedback-unsupported-image',
-		async setup() {
-			await open('/settings/help/contact-us');
-			window.__test.interceptFilePickers([
+		setup: () =>
+			pickAsScreenshots([
 				{ name: 'notes.txt', mimeType: 'text/plain', bytes: [104, 105] },
-			]);
-			await settled();
-			await tap('contact-us-screenshots-add');
-		},
+			]),
 	},
 	{
 		name: 'error-feedback-screenshot-too-large',
-		async setup() {
-			await open('/settings/help/contact-us');
-			window.__test.interceptFilePickers([
+		setup: () =>
+			pickAsScreenshots([
 				{ name: 'big.gif', mimeType: 'image/gif', size: 9 * 1024 * 1024 },
-			]);
-			await settled();
-			await tap('contact-us-screenshots-add');
-		},
+			]),
 	},
 	{
 		name: 'error-feedback-too-many-screenshots',
-		async setup() {
-			await open('/settings/help/contact-us');
-			window.__test.interceptFilePickers(
+		setup: () =>
+			pickAsScreenshots(
 				['a', 'b', 'c', 'd', 'e', 'f'].map(name => ({
 					name: `${name}.png`,
 					mimeType: 'image/png',
 					bytes: TINY_PNG_BYTES,
 				})),
-			);
-			await settled();
-			await tap('contact-us-screenshots-add');
-		},
+			),
 	},
-	{
-		name: 'contact-us-sent',
-		async setup() {
-			await open('/settings/help/contact-us');
-			await chooseAReason();
-			await settled();
-			await fill('contact-us-message-input', 'The app is great');
-			await tap('contact-us-send-btn');
-		},
-	},
+	{ name: 'contact-us-sent', setup: sendFeedback },
 	{
 		name: 'contact-us-queued',
 		async setup() {
@@ -85,18 +76,14 @@ export default [
 					'plugin:sentry-reporting|send_feedback': 'queued',
 				},
 			});
-			await open('/settings/help/contact-us');
-			await chooseAReason();
-			await settled();
-			await fill('contact-us-message-input', 'The app is great');
-			await tap('contact-us-send-btn');
+			await sendFeedback();
 		},
 	},
 	{
 		name: 'contact-us-unavailable',
 		async setup() {
 			reportingIsUnavailable();
-			await open('/settings/help/contact-us');
+			await open(contactUs);
 		},
 	},
 ] satisfies Scene[];

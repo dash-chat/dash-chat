@@ -6,12 +6,12 @@ paraglide:
 
 # The scenes are the scenes.ts files next to the routes. Set CHROME_BIN where
 # Chrome is not installed where Playwright looks for it; SCENES=a,b takes only
-# those scenes. Only a run that takes every scene saves to
-# .dbs/translation-screenshots, which is what gets synced; any other saves to
-# .dbs/translation-screenshots-partial.
+# those scenes. `just i18n screenshots sync` then uploads them to Weblate,
+# attached to the strings each one shows, as the token in WEBLATE_TOKEN: it
+# syncs what it just took, and only when it took every scene.
 #
 # take the screenshots translators see, one per scene, failing when a source string has none
-screenshots:
+screenshots sync="":
     #!/usr/bin/env bash
     set -euo pipefail
     pnpm -F dash-chat-stores -F dash-chat-mock build
@@ -35,11 +35,4 @@ screenshots:
     # how this ends.
     pnpm exec concurrently --kill-others --success first --names preview,capture \
         "pnpm -F ui exec vite preview --port 4173 --strictPort" \
-        "node scripts/i18n-screenshots/capture.ts http://localhost:4173"
-
-# Needs WEBLATE_TOKEN; which Weblate component is in
-# scripts/i18n-screenshots/sync-weblate.ts.
-#
-# upload those screenshots to Weblate, attached to the strings each one shows
-sync-weblate:
-    node scripts/i18n-screenshots/sync-weblate.ts
+        "node scripts/i18n-screenshots/capture.ts http://localhost:4173 {{sync}}"

@@ -66,7 +66,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 		return this.createSync(topicId, body, timestamp);
 	}
 
-	/** Synchronous version of create — used by seedDemoData to write all data before stores read. */
+	/** Synchronous version of create, for writing data before the stores read it. */
 	createSync<T>(
 		topicId: TopicId,
 		body: T,

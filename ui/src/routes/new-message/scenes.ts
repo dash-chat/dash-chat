@@ -1,6 +1,6 @@
 import type { Scene } from '$lib/scenes';
 import { open } from '$lib/scenes/steps';
-import { fill, focus } from 'i18n-screenshots/scene';
+import { fill, find } from 'i18n-screenshots/scene';
 
 export default [
 	{
@@ -20,7 +20,7 @@ export default [
 		async setup() {
 			await open('/new-message');
 			// Focus on a contact's menu button shows it as a pointer over the contact does.
-			await focus('contact-menu-button');
+			(await find('contact-menu-button')).focus();
 		},
 	},
 ] satisfies Scene[];

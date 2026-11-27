@@ -1,11 +1,11 @@
 import type { Scene } from '$lib/scenes';
-import {
-	ALICE,
-	deviceGroupOperation,
-	directChatPath,
-} from '$lib/scenes/demo-world';
+import { ALICE, directChatPath } from '$lib/scenes/demo-world';
 import { open } from '$lib/scenes/steps';
-import { minutesAgo, setMockBackend } from 'dash-chat-mock';
+import {
+	deviceGroupOperation,
+	minutesAgo,
+	setMockBackend,
+} from 'dash-chat-mock';
 import { tap } from 'i18n-screenshots/scene';
 
 const settings = `${directChatPath(ALICE)}/chat-settings`;
