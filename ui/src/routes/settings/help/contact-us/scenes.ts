@@ -1,19 +1,13 @@
+import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import { reportingIsUnavailable } from '$lib/scenes/demo-world';
 import type { Scene } from '$lib/scenes/scene';
-import { open } from '$lib/scenes/steps';
+import { open, tid } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
 import { fill, present, settled, tap } from 'i18n-screenshots/scene';
 
-const TINY_PNG = [
-	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
-	0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120,
-	156, 99, 248, 207, 192, 240, 31, 0, 5, 0, 1, 255, 137, 153, 61, 29, 0, 0, 0,
-	0, 73, 69, 78, 68, 174, 66, 96, 130,
-];
-
 async function chooseAReason(): Promise<void> {
 	const reason = await present<HTMLSelectElement>(
-		'[data-testid="contact-us-reason-select"] select',
+		`${tid('contact-us-reason-select')} select`,
 	);
 	reason.selectedIndex = 1;
 	reason.dispatchEvent(new Event('input', { bubbles: true }));
@@ -30,7 +24,7 @@ export default [
 		async setup() {
 			await open('/settings/help/contact-us');
 			window.__test.interceptFilePickers([
-				{ name: 'crash.png', mimeType: 'image/png', bytes: TINY_PNG },
+				{ name: 'crash.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
 			]);
 			await settled();
 			await tap('contact-us-screenshots-add');
@@ -66,7 +60,7 @@ export default [
 				['a', 'b', 'c', 'd', 'e', 'f'].map(name => ({
 					name: `${name}.png`,
 					mimeType: 'image/png',
-					bytes: TINY_PNG,
+					bytes: TINY_PNG_BYTES,
 				})),
 			);
 			await settled();

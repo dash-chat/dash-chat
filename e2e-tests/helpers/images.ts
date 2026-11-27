@@ -7,14 +7,7 @@ import { crc32, deflateSync } from 'node:zlib';
  * derive from it.
  */
 
-/** A 1×1 transparent PNG as a data URL, encoded as RGBA (colour type 6).
- *  Not greyscale+alpha (colour type 4): `createImageBitmap` rejects those on
- *  the Android WebView, so the app's send path can't measure them. */
-export const TINY_PNG_DATA_URL =
-	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=';
-
-/** The same 1×1 PNG as a byte array, for APIs that take raw bytes. */
-export const TINY_PNG_BYTES = dataUrlToBytes(TINY_PNG_DATA_URL);
+export { TINY_PNG_BYTES, TINY_PNG_DATA_URL } from '../../ui/tests/fixtures';
 
 /**
  * A 2×2 PNG of one solid colour, for tests that follow one specific image

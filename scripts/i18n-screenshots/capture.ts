@@ -1,8 +1,6 @@
 import { type SceneOutcome, captureScenes } from 'i18n-screenshots/capture';
 import { stringsNotAccountedFor } from 'i18n-screenshots/coverage';
-import { existsSync, readFileSync } from 'node:fs';
-import { type Server, createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { devices } from 'playwright-core';
@@ -11,7 +9,6 @@ import { saveScreenshots } from './files.ts';
 import { renderedSourceKeys } from './rendered-keys.ts';
 
 const UI = fileURLToPath(new URL('../../ui/', import.meta.url));
-const UI_BUILD = path.join(UI, '.build-stage');
 const SOURCE_STRINGS = path.join(UI, 'messages', 'en.json');
 const STRINGS_WITHOUT_SCREENSHOT = path.join(
 	UI,
@@ -20,18 +17,6 @@ const STRINGS_WITHOUT_SCREENSHOT = path.join(
 	'scenes',
 	'strings-without-screenshot.json',
 );
-
-const CONTENT_TYPES: Record<string, string> = {
-	'.html': 'text/html',
-	'.js': 'text/javascript',
-	'.css': 'text/css',
-	'.json': 'application/json',
-	'.svg': 'image/svg+xml',
-	'.png': 'image/png',
-	'.jpg': 'image/jpeg',
-	'.woff2': 'font/woff2',
-	'.wasm': 'application/wasm',
-};
 
 const DESKTOP = {
 	viewport: { width: 1100, height: 750 },
@@ -53,28 +38,6 @@ const DEVICES = {
 			'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
 	},
 };
-
-/** Serve the built preview as the single-page app it is. */
-function servePreview(): Promise<Server> {
-	const server = createServer((request, response) => {
-		const pathname = decodeURIComponent(
-			new URL(request.url ?? '/', 'http://localhost').pathname,
-		);
-		const file = path.join(UI_BUILD, pathname);
-		const isAsset = file.startsWith(UI_BUILD) && path.extname(file) !== '';
-		if (isAsset && !existsSync(file)) {
-			response.writeHead(404).end();
-			return;
-		}
-		const served = isAsset ? file : path.join(UI_BUILD, 'index.html');
-		response.writeHead(200, {
-			'Content-Type':
-				CONTENT_TYPES[path.extname(served)] ?? 'application/octet-stream',
-		});
-		response.end(readFileSync(served));
-	});
-	return new Promise(resolve => server.listen(0, () => resolve(server)));
-}
 
 // SCENES=a,b takes only those, to work on them without the rest.
 const named = (process.env.SCENES ?? '')
@@ -125,28 +88,43 @@ function checkEveryStringIsAccountedFor(shownKeys: Set<string>): void {
 	if (unlisted.length > 0 || stale.length > 0) process.exitCode = 1;
 }
 
-const server = await servePreview();
-try {
-	const { sceneNames, outcomes } = await captureScenes({
-		appUrl: `http://localhost:${(server.address() as AddressInfo).port}`,
-		devices: DEVICES,
-		defaultDevice: 'phone',
-		unexpectedErrorKey: 'errorUnexpected',
-		// CHROME_BIN where the machine's Chrome is not where Playwright looks for it.
-		chrome: process.env.CHROME_BIN,
-		only,
-		onOutcome: report,
-	});
-	const screenshots = outcomes.flatMap(({ screenshot }) =>
-		screenshot === undefined ? [] : [screenshot],
+const [appUrl] = process.argv.slice(2);
+if (appUrl === undefined) {
+	throw new Error(
+		'Usage: capture.ts <the URL the marked preview is served at>; `just i18n screenshots` builds and serves it',
 	);
-	saveScreenshots(sceneNames, screenshots);
-	if (screenshots.length < outcomes.length) process.exitCode = 1;
-	if (only === undefined) {
-		checkEveryStringIsAccountedFor(
-			new Set(screenshots.flatMap(screenshot => screenshot.keys)),
+}
+
+/** Resolves once the preview answers: it is started alongside this. */
+async function untilItIsServed(url: string): Promise<void> {
+	for (;;) {
+		const served = await fetch(url).then(
+			response => response.ok,
+			() => false,
 		);
+		if (served) return;
+		await new Promise(resolve => setTimeout(resolve, 200));
 	}
-} finally {
-	server.close();
+}
+
+await untilItIsServed(appUrl);
+const { sceneNames, outcomes } = await captureScenes({
+	appUrl,
+	devices: DEVICES,
+	defaultDevice: 'phone',
+	unexpectedErrorKey: 'errorUnexpected',
+	// CHROME_BIN where the machine's Chrome is not where Playwright looks for it.
+	chrome: process.env.CHROME_BIN,
+	only,
+	onOutcome: report,
+});
+const screenshots = outcomes.flatMap(({ screenshot }) =>
+	screenshot === undefined ? [] : [screenshot],
+);
+saveScreenshots(sceneNames, screenshots);
+if (screenshots.length < outcomes.length) process.exitCode = 1;
+if (only === undefined) {
+	checkEveryStringIsAccountedFor(
+		new Set(screenshots.flatMap(screenshot => screenshot.keys)),
+	);
 }

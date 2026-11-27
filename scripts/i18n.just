@@ -35,7 +35,11 @@ screenshots:
     trap 'pnpm -F ui paraglide' EXIT
     VITE_TRANSLATION_KEY_MARKERS=true pnpm -F ui exec vite build
 
-    node scripts/i18n-screenshots/capture.ts
+    # Serve that build for as long as the screenshots take; how they went is
+    # how this ends.
+    pnpm exec concurrently --kill-others --success first --names preview,capture \
+        "pnpm -F ui exec vite preview --port 4173 --strictPort" \
+        "node scripts/i18n-screenshots/capture.ts http://localhost:4173"
 
 # Needs WEBLATE_TOKEN; which Weblate component is in
 # scripts/i18n-screenshots/sync-weblate.ts.

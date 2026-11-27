@@ -169,35 +169,6 @@ export async function tap(testId: string): Promise<void> {
 	await settled();
 }
 
-/** Comfortably past the threshold of a long-press. */
-const LONG_PRESS_MS = 700;
-
-/** Keep a finger on the element, as a long-press does. */
-export async function hold(testId: string): Promise<void> {
-	const held = await find(testId);
-	const box = held.getBoundingClientRect();
-	const finger = new Touch({
-		identifier: 1,
-		target: held,
-		clientX: box.x + box.width / 2,
-		clientY: box.y + box.height / 2,
-	});
-	const bubbling = { bubbles: true, cancelable: true, composed: true };
-	held.dispatchEvent(
-		new TouchEvent('touchstart', {
-			...bubbling,
-			touches: [finger],
-			targetTouches: [finger],
-			changedTouches: [finger],
-		}),
-	);
-	await new Promise(resolve => setTimeout(resolve, LONG_PRESS_MS));
-	held.dispatchEvent(
-		new TouchEvent('touchend', { ...bubbling, changedTouches: [finger] }),
-	);
-	await settled();
-}
-
 /** Replace what the field with `testId`, or the one inside it, holds. */
 export async function fill(testId: string, text: string): Promise<void> {
 	const named = await find(testId);

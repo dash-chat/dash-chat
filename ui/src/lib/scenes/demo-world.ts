@@ -19,6 +19,8 @@ import {
 } from 'dash-chat-stores';
 import { find } from 'i18n-screenshots/scene';
 
+export { TINY_PNG_BYTES } from '../../../tests/fixtures';
+
 export const [ALICE, BOB, CAROL, DAVE] = DEMO_CONTACTS;
 
 export function directChatId(contact: { deviceId: DeviceId }): ChatId {

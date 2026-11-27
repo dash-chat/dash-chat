@@ -1,1 +1,1 @@
-export const tid = (id: string) => `[data-testid="${id}"]`;
+export { tid } from '../../ui/tests/selectors';

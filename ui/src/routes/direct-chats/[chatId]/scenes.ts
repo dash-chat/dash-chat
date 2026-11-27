@@ -1,3 +1,4 @@
+import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import {
 	ALICE,
 	BOB,
@@ -9,7 +10,7 @@ import {
 	pasteIntoComposer,
 } from '$lib/scenes/demo-world';
 import type { Scene } from '$lib/scenes/scene';
-import { open, untilAToastShows } from '$lib/scenes/steps';
+import { hold, open, tid, untilAToastShows } from '$lib/scenes/steps';
 import { takeTheAppsOwnPaths } from '$lib/utils/preview-tauri';
 import {
 	DEMO_CONTACT_REQUESTER,
@@ -17,21 +18,7 @@ import {
 	minutesAgo,
 	setMockBackend,
 } from 'dash-chat-mock';
-import {
-	fill,
-	find,
-	hold,
-	present,
-	settled,
-	tap,
-} from 'i18n-screenshots/scene';
-
-const TINY_PNG = [
-	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
-	0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120,
-	156, 99, 248, 207, 192, 240, 31, 0, 5, 0, 1, 255, 137, 153, 61, 29, 0, 0, 0,
-	0, 73, 69, 78, 68, 174, 66, 96, 130,
-];
+import { fill, find, present, settled, tap } from 'i18n-screenshots/scene';
 
 const chat = directChatPath(ALICE);
 const request = directChatPath(DEMO_CONTACT_REQUESTER);
@@ -54,7 +41,7 @@ async function pressAndHoldRecord(): Promise<void> {
 
 async function openFirstPhoto(): Promise<void> {
 	const firstPhoto = await present(
-		'[data-testid="message-attachment-photos"] button',
+		`${tid('message-attachment-photos')} button`,
 	);
 	firstPhoto.click();
 }
@@ -451,7 +438,7 @@ export default [
 			await open(chat);
 			// Focus inside the message shows the toolbar a pointer over it does.
 			const react = await present(
-				'[data-testid="message-from-me"] [data-testid="message-hover-react"]',
+				`${tid('message-from-me')} ${tid('message-hover-react')}`,
 			);
 			react.focus();
 		},
@@ -477,7 +464,7 @@ export default [
 		async setup() {
 			await open(chat);
 			await pasteIntoComposer([
-				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
+				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
 			]);
 		},
 	},
@@ -503,7 +490,7 @@ export default [
 			]);
 			// The composer's own send button is under the page the file is staged on.
 			const send = await present(
-				'[data-testid="staged-media-page"] [data-testid="message-input-send"]',
+				`${tid('staged-media-page')} ${tid('message-input-send')}`,
 			);
 			send.click();
 			await untilAToastShows();
@@ -525,7 +512,7 @@ export default [
 			await open(chat);
 			await pasteIntoComposer([
 				{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
-				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
+				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
 			]);
 		},
 	},
@@ -537,7 +524,7 @@ export default [
 				Array.from({ length: 40 }, (_, index) => ({
 					name: `photo-${index}.png`,
 					mimeType: 'image/png',
-					bytes: TINY_PNG,
+					bytes: TINY_PNG_BYTES,
 				})),
 			);
 			await untilAToastShows();
@@ -681,8 +668,8 @@ export default [
 		async setup() {
 			await open(chat);
 			await pasteIntoComposer([
-				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
-				{ name: 'lake.png', mimeType: 'image/png', bytes: TINY_PNG },
+				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
+				{ name: 'lake.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
 			]);
 			await find('message-input-clear-attachments');
 		},
@@ -734,11 +721,9 @@ export default [
 		device: 'desktop',
 		async setup() {
 			await open(chat);
-			const dragged = new DataTransfer();
-			dragged.items.add(new File(['map'], 'trail-map.pdf'));
-			window.dispatchEvent(
-				new DragEvent('dragenter', { dataTransfer: dragged, bubbles: true }),
-			);
+			window.__test.dragFilesOver([
+				{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
+			]);
 		},
 	},
 	{

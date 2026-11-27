@@ -1,5 +1,5 @@
 import type { Scene } from '$lib/scenes/scene';
-import { open } from '$lib/scenes/steps';
+import { open, tid } from '$lib/scenes/steps';
 import { present, settled, tap } from 'i18n-screenshots/scene';
 
 export default [
@@ -25,9 +25,7 @@ export default [
 				},
 			});
 			await settled();
-			const toggle = await present(
-				'[data-testid="notifications-toggle"] input',
-			);
+			const toggle = await present(`${tid('notifications-toggle')} input`);
 			toggle.click();
 		},
 	},

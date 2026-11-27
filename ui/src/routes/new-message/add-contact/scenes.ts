@@ -1,5 +1,5 @@
 import type { Scene } from '$lib/scenes/scene';
-import { open, untilAToastShows } from '$lib/scenes/steps';
+import { open, tid, untilAToastShows } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
 import { present, settled, tap } from 'i18n-screenshots/scene';
 
@@ -13,9 +13,7 @@ async function uploadABlankImage(): Promise<void> {
 	const blank = await new Promise<Blob | null>(resolve =>
 		canvas.toBlob(resolve),
 	);
-	const input = await present<HTMLInputElement>(
-		'[data-testid="add-contact-file-input"]',
-	);
+	const input = await present<HTMLInputElement>(tid('add-contact-file-input'));
 	if (blank === null) return;
 	const picked = new DataTransfer();
 	picked.items.add(new File([blank], 'blank.png', { type: 'image/png' }));
