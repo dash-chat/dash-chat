@@ -66,7 +66,7 @@ jobs:
         run: pnpm install --reporter=append-only
 
       - name: Build UI packages
-        run: pnpm -F ./packages/stores build
+        run: pnpm -F ./packages/stores -F ./packages/mock build
 
       # dbus-run-session gives the apps a working session bus. Without it,
       # GLib falls back to the runner's systemd user bus, where activating

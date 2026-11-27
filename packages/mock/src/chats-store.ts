@@ -1,13 +1,16 @@
-import { type IChatsClient } from '../chats/chats-client';
-import { ChatsStore } from '../chats/chats-store';
-import { type IMessagesClient } from '../chats/messages-client';
-import { ContactsStore } from '../contacts/contacts-store';
-import { type IGroupChatClient } from '../group-chats/group-chat-client';
-import { MessageAckStore } from '../message-acks/message-ack-store';
-import { LogsStore } from '../p2panda/logs-store';
-import { TopicId } from '../p2panda/types';
-import { TombstoneStore } from '../tombstones/tombstone-store';
-import { Payload } from '../types';
+import {
+	ChatsStore,
+	ContactsStore,
+	type IChatsClient,
+	type IGroupChatClient,
+	type IMessagesClient,
+	LogsStore,
+	MessageAckStore,
+	Payload,
+	TombstoneStore,
+	TopicId,
+} from 'dash-chat-stores';
+
 import { type LocalStorageLogsClient } from './client';
 import { MockGroupChatClient } from './group-chat-client';
 import { MockMessagesClient } from './messages-client';

@@ -1,9 +1,15 @@
+import type {
+	ChatId,
+	Hash,
+	ITombstoneClient,
+	Payload,
+	SimplifiedOperation,
+	Tombstone,
+	Tombstones,
+	TopicId,
+} from 'dash-chat-stores';
 import type { UnsubscribeFunction } from 'emittery';
 
-import type { SimplifiedOperation } from '../p2panda/simplified-types';
-import type { Hash, TopicId } from '../p2panda/types';
-import type { ITombstoneClient } from '../tombstones/tombstone-client';
-import type { ChatId, Payload, Tombstone, Tombstones } from '../types';
 import { type LocalStorageLogsClient } from './client';
 
 type Op = SimplifiedOperation<Payload>;

@@ -13,7 +13,13 @@ import {
 	individual,
 } from '$lib/scenes/demo-world';
 import type { Scene } from '$lib/scenes/scene';
-import { MOCK_MAILBOX_DOWN, minutesAgo, mockBackend } from 'dash-chat-stores';
+import { open } from '$lib/scenes/steps';
+import {
+	MOCK_MAILBOX_DOWN,
+	minutesAgo,
+	mockBackend,
+	setMockBackend,
+} from 'dash-chat-mock';
 
 export function groupIAdminister(): void {
 	groupOperation(
@@ -150,52 +156,62 @@ function groupAStrangerAdministers(): void {
 export default [
 	{
 		name: 'group-chat-with-strangers',
-		path: GROUP_CHAT_PATH,
-		seed: groupAStrangerAdministers,
+		async setup() {
+			groupAStrangerAdministers();
+			await open(GROUP_CHAT_PATH);
+		},
 	},
 	{
 		name: 'group-chat-removed-by-a-stranger',
-		path: GROUP_CHAT_PATH,
-		seed() {
+		async setup() {
 			groupAStrangerAdministers();
 			groupOperation(
 				STRANGER,
 				{ Remove: { member: individual(ME) } },
 				minutesAgo(5),
 			);
+			await open(GROUP_CHAT_PATH);
 		},
 	},
 	{
 		name: 'group-chat-i-left',
-		path: GROUP_CHAT_PATH,
-		seed() {
+		async setup() {
 			groupAliceAdministers();
 			groupOperation(ME, { Remove: { member: individual(ME) } }, minutesAgo(5));
+			await open(GROUP_CHAT_PATH);
 		},
 	},
 	{
 		name: 'group-chat-peers-online',
-		path: GROUP_CHAT_PATH,
-		seed() {
+		async setup() {
 			groupIAdminister();
-			mockBackend.mailboxes.cloudMailbox = MOCK_MAILBOX_DOWN;
-			mockBackend.onlinePeers = [ALICE.agentId, DAVE.agentId];
+			setMockBackend({
+				mailboxes: {
+					...mockBackend.mailboxes,
+					cloudMailbox: MOCK_MAILBOX_DOWN,
+				},
+				onlinePeers: [ALICE.agentId, DAVE.agentId],
+			});
+			await open(GROUP_CHAT_PATH);
 		},
 	},
 	{
 		name: 'group-chat-as-admin',
-		path: GROUP_CHAT_PATH,
-		seed: groupIAdminister,
+		async setup() {
+			groupIAdminister();
+			await open(GROUP_CHAT_PATH);
+		},
 	},
 	{
 		name: 'group-chat-as-member',
-		path: GROUP_CHAT_PATH,
-		seed: groupAliceAdministers,
+		async setup() {
+			groupAliceAdministers();
+			await open(GROUP_CHAT_PATH);
+		},
 	},
 	{
 		name: 'group-chat-removed',
-		path: GROUP_CHAT_PATH,
-		seed() {
+		async setup() {
 			groupAliceAdministers();
 			groupOperation(
 				ALICE,
@@ -203,12 +219,12 @@ export default [
 				minutesAgo(5),
 			);
 			describeGroup('Book club', [ALICE], [ALICE], minutesAgo(59));
+			await open(GROUP_CHAT_PATH);
 		},
 	},
 	{
 		name: 'group-chat-nobody-known',
-		path: GROUP_CHAT_PATH,
-		seed() {
+		async setup() {
 			const otherStranger = {
 				agentId: '0a'.repeat(32),
 				deviceId: '1a'.repeat(32),
@@ -224,6 +240,7 @@ export default [
 				{ Remove: { member: individual(otherStranger) } },
 				minutesAgo(8),
 			);
+			await open(GROUP_CHAT_PATH);
 		},
 	},
 ] satisfies Scene[];

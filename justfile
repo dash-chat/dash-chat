@@ -65,10 +65,11 @@ paraglide:
 # next to the routes), failing when a source string has none. Set CHROME_BIN
 # where Chrome is not installed where Playwright looks for it.
 translation-screenshots:
-    pnpm -F dash-chat-stores build
-    node ui/scripts/translation-screenshots.ts
+    pnpm -F dash-chat-stores -F dash-chat-mock build
+    node packages/translation-screenshots/src/cli.ts capture ui/translation-screenshots.config.ts
 
 # upload those screenshots to Weblate, attached to the strings each one shows.
-# Needs WEBLATE_URL, WEBLATE_TOKEN, WEBLATE_PROJECT and WEBLATE_COMPONENT.
+# Needs WEBLATE_TOKEN; which Weblate component is in
+# ui/translation-screenshots.config.ts.
 sync-weblate-screenshots:
-    node ui/scripts/sync-weblate-screenshots.ts
+    node packages/translation-screenshots/src/cli.ts sync-weblate ui/translation-screenshots.config.ts

@@ -1,14 +1,8 @@
-import path from 'node:path';
 import type { Plugin } from 'vite';
-
-const MARKERS_MODULE = path.resolve(
-	import.meta.dirname,
-	'tests/translation-key-markers.ts',
-);
 
 /** Routes every compiled paraglide message through `markTranslationKey`, so the
  * translation screenshots can read which message keys are on screen. */
-export function translationKeyMarkers(): Plugin {
+export function paraglideKeyMarkers(): Plugin {
 	return {
 		name: 'translation-key-markers',
 		transform(code, id) {
@@ -35,7 +29,7 @@ export function translationKeyMarkers(): Plugin {
 				},
 			);
 			if (marked === code) return;
-			return `import { markTranslationKey } from ${JSON.stringify(MARKERS_MODULE)};\n${marked}`;
+			return `import { markTranslationKey } from 'translation-screenshots/markers';\n${marked}`;
 		},
 	};
 }

@@ -1,5 +1,4 @@
-import type { IDevicesClient } from '../devices/devices-client';
-import type { TopicId } from '../p2panda/types';
+import type { IDevicesClient, TopicId } from 'dash-chat-stores';
 
 export class MockDevicesClient implements IDevicesClient {
 	constructor(private deviceGroupTopicId: TopicId) {}

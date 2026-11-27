@@ -1,6 +1,7 @@
 import type { Scene } from '$lib/scenes/scene';
-import { untilAToastShows } from '$lib/scenes/steps';
-import { mockBackend } from 'dash-chat-stores';
+import { open, untilAToastShows } from '$lib/scenes/steps';
+import { setMockBackend } from 'dash-chat-mock';
+import { settled, tap } from 'translation-screenshots/scene';
 
 /** Hand the upload input a picture with no QR code in it, the way picking
  * one would. */
@@ -41,80 +42,106 @@ function openMyOwnLink(): void {
 	if (myCode !== null) window.__test.handleDeepLink(myCode.value);
 }
 
-function addingFailsWith(kind: string): () => void {
-	return () => {
-		mockBackend.failingCommands = [`add_contact:${kind}`];
-	};
+function addingFailsWith(kind: string): void {
+	setMockBackend({ failingCommands: [`add_contact:${kind}`] });
 }
 
 export default [
 	{
 		name: 'error-adding-yourself',
-		path: '/new-message/add-contact',
-		seed: addingFailsWith('CannotAddSelf'),
-		steps: [openMyOwnLink],
+		async setup() {
+			addingFailsWith('CannotAddSelf');
+			await open('/new-message/add-contact');
+			openMyOwnLink();
+		},
 	},
 	{
 		name: 'error-invalid-contact-link',
-		path: '/new-message/add-contact',
-		seed: addingFailsWith('InvalidContactCode'),
-		steps: [openMyOwnLink],
+		async setup() {
+			addingFailsWith('InvalidContactCode');
+			await open('/new-message/add-contact');
+			openMyOwnLink();
+		},
 	},
 	{
 		name: 'error-adding-contact-without-profile',
-		path: '/new-message/add-contact',
-		seed: addingFailsWith('ProfileNotCreated'),
-		steps: [openMyOwnLink],
+		async setup() {
+			addingFailsWith('ProfileNotCreated');
+			await open('/new-message/add-contact');
+			openMyOwnLink();
+		},
 	},
 	{
 		name: 'error-adding-contact',
-		path: '/new-message/add-contact',
-		seed: addingFailsWith('StoreContact'),
-		steps: [openMyOwnLink],
+		async setup() {
+			addingFailsWith('StoreContact');
+			await open('/new-message/add-contact');
+			openMyOwnLink();
+		},
 	},
-	{ name: 'new-message-add-contact', path: '/new-message/add-contact' },
+	{
+		name: 'new-message-add-contact',
+		setup: () => open('/new-message/add-contact'),
+	},
 	{
 		name: 'add-contact-link-sheet',
-		path: '/new-message/add-contact',
-		steps: [{ tap: 'add-contact-link-btn' }],
+		async setup() {
+			await open('/new-message/add-contact');
+			await tap('add-contact-link-btn');
+		},
 	},
 	{
 		name: 'add-contact-link-copied',
-		path: '/new-message/add-contact',
-		steps: [{ tap: 'add-contact-link-btn' }, { tap: 'qr-link-sheet-copy' }],
+		async setup() {
+			await open('/new-message/add-contact');
+			await tap('add-contact-link-btn');
+			await tap('qr-link-sheet-copy');
+		},
 	},
 	{
 		name: 'add-contact-scan',
-		path: '/new-message/add-contact',
-		steps: [{ tap: 'add-contact-scan-tab' }],
+		async setup() {
+			await open('/new-message/add-contact');
+			await tap('add-contact-scan-tab');
+		},
 	},
 	{
 		name: 'error-creating-contact-code',
-		path: '/new-message/add-contact',
-		seed() {
-			mockBackend.failingCommands = ['create_contact_code'];
+		async setup() {
+			setMockBackend({ failingCommands: ['create_contact_code'] });
+			await open('/new-message/add-contact');
 		},
 	},
 	{
 		name: 'error-unrecognized-link',
-		path: '/new-message/add-contact',
-		steps: [() => window.__test.handleDeepLink('https://dashchat.org/nowhere')],
+		async setup() {
+			await open('/new-message/add-contact');
+			window.__test.handleDeepLink('https://dashchat.org/nowhere');
+		},
 	},
 	{
 		name: 'desktop-add-contact',
-		path: '/new-message/add-contact',
 		device: 'desktop',
+		setup: () => open('/new-message/add-contact'),
 	},
 	{
 		name: 'error-no-qr-code-in-image',
-		path: '/new-message/add-contact',
-		steps: [uploadABlankImage, untilAToastShows],
+		async setup() {
+			await open('/new-message/add-contact');
+			await uploadABlankImage();
+			await settled();
+			await untilAToastShows();
+		},
 	},
 	{
 		name: 'desktop-saved-qr-code-picture',
-		path: '/new-message/add-contact',
 		device: 'desktop',
-		steps: [showDownloadsOnThePage, { tap: 'add-contact-save-btn' }],
 		drawn: ['shareQrCodeSubtitle'],
+		async setup() {
+			await open('/new-message/add-contact');
+			showDownloadsOnThePage();
+			await settled();
+			await tap('add-contact-save-btn');
+		},
 	},
 ] satisfies Scene[];

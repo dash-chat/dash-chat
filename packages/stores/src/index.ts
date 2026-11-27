@@ -6,7 +6,6 @@ export * from './p2panda/types.js';
 
 export * from './topics.js';
 
-export * from './mock/index.js';
 export * from './types.js';
 
 export * from './contacts/contacts-store.js';

@@ -1,0 +1,40 @@
+{
+	"name": "translation-screenshots",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "Screenshots of an app's scenes for translators, each with the keys of the strings it shows, synced to Weblate",
+	"exports": {
+		"./scene": "./src/scene.ts",
+		"./markers": "./src/markers.ts",
+		"./paraglide": "./src/paraglide-key-markers.ts",
+		"./config": "./src/config.ts"
+	},
+	"bin": {
+		"translation-screenshots": "./src/cli.ts"
+	},
+	"scripts": {
+		"format": "prettier --write 'src/**/*.ts'",
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
+	},
+	"dependencies": {
+		"weblate-client": "workspace:*"
+	},
+	"peerDependencies": {
+		"playwright-core": "^1.65.1",
+		"vite": "^8.3.4"
+	},
+	"peerDependenciesMeta": {
+		"playwright-core": {
+			"optional": true
+		},
+		"vite": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.0",
+		"playwright-core": "^1.65.1",
+		"typescript": "^5.9.3",
+		"vite": "^8.3.4"
+	}
+}

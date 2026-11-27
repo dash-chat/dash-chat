@@ -1,4 +1,4 @@
-import { failIfTold, mockBackend } from 'dash-chat-stores';
+import { failIfTold, mockBackend } from 'dash-chat-mock';
 
 const MISSING_MEDIA = '/missing-media.bin';
 

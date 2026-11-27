@@ -1,6 +1,12 @@
-import type { IMessagesClient } from '../chats/messages-client';
-import type { Hash, TopicId } from '../p2panda/types';
-import type { ChatId, ChatReaction, OutgoingMedia } from '../types';
+import type {
+	ChatId,
+	ChatReaction,
+	Hash,
+	IMessagesClient,
+	OutgoingMedia,
+	TopicId,
+} from 'dash-chat-stores';
+
 import { failIfTold } from './backend-state';
 import { type LocalStorageLogsClient } from './client';
 

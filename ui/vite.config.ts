@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
-import { translationKeyMarkers } from './translation-key-markers-plugin.ts';
+import { paraglideKeyMarkers } from 'translation-screenshots/paraglide';
 
 // Resolve signalium's development ESM build for production builds
 const require = createRequire(import.meta.url);
@@ -37,7 +37,7 @@ export default defineConfig(async () => ({
 				: JSON.stringify(sentryEnabled),
 	},
 	optimizeDeps: {
-		exclude: ['dash-chat-stores'],
+		exclude: ['dash-chat-stores', 'dash-chat-mock'],
 		// Pre-include dash-chat-stores' transitive deps so Vite doesn't discover
 		// them at runtime and re-optimize, which causes duplicate module instances
 		include: ['blakejs', 'emittery'],
@@ -64,7 +64,7 @@ export default defineConfig(async () => ({
 			strategy: ['preferredLanguage', 'cookie', 'globalVariable', 'baseLocale'],
 		}),
 		...(process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
-			? [translationKeyMarkers()]
+			? [paraglideKeyMarkers()]
 			: []),
 	],
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

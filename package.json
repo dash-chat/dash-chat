@@ -3,7 +3,7 @@
 	"private": true,
 	"scripts": {
 		"start": "mprocs",
-		"dev": "concurrently --kill-others-on-fail \"pnpm -F dash-chat-stores dev\" \"pnpm -F ui dev\"",
+		"dev": "concurrently --kill-others-on-fail \"pnpm -F dash-chat-stores dev\" \"pnpm -F dash-chat-mock dev\" \"pnpm -F ui dev\"",
 		"tauri": "tauri"
 	},
 	"devDependencies": {

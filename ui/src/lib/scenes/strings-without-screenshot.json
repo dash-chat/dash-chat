@@ -27,32 +27,7 @@
 	"labelsAnInvisibleControl": [
 		"avatarText"
 	],
-	"notUsedByTheUi": [
-		"preview",
-		"surname",
-		"yourName",
-		"addPhoto",
-		"chatColor",
-		"contactRequests",
-		"myContacts",
-		"contactAlreadyExists",
-		"contactAdded",
-		"someoneRemovedYouFromTheGroupNoName",
-		"someoneRevokedAdminFromYou",
-		"someoneRevokedAdminFromYouNoName",
-		"profileNamesNotVerified",
-		"createGroup",
-		"groupInfo",
-		"promoteToAdministrator",
-		"areYouSurePromote",
-		"enableNotifications",
-		"deleteAccountWarning",
-		"accountDeleted",
-		"errorAddContactDeviceLinkingNotSupported",
-		"whatsThis",
-		"debugLogExplanation",
-		"haveYouReadOurFaq"
-	],
+	"notUsedByTheUi": [],
 	"behindSwitchedOffUi": [
 		"mute",
 		"chatColorAndWallpaper",

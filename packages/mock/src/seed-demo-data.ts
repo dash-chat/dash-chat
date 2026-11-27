@@ -1,4 +1,5 @@
-import { personalTopicFor } from '../topics';
+import { personalTopicFor } from 'dash-chat-stores';
+
 import { LocalStorageLogsClient, chatIdForDevices } from './client';
 
 export const DEMO_IDS = {

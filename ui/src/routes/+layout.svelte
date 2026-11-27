@@ -12,7 +12,6 @@
 		ChatsStore,
 		LogsStore,
 		TauriLogsClient,
-		LocalStorageLogsClient,
 		type Payload,
 		ContactsClient,
 		ContactsStore,
@@ -24,6 +23,13 @@
 		type IMailboxTrackerStore,
 		OnlinePeersStore,
 		type IOnlinePeersStore,
+		TombstoneClient,
+		TombstoneStore,
+		MessageAckClient,
+		MessageAckStore,
+	} from 'dash-chat-stores';
+	import {
+		LocalStorageLogsClient,
 		MockContactsClient,
 		MockDevicesClient,
 		MockChatsClient,
@@ -33,15 +39,11 @@
 		MockSettingsClient,
 		MockSettingsStore,
 		MockTombstoneClient,
-		TombstoneClient,
-		TombstoneStore,
-		MessageAckClient,
-		MessageAckStore,
 		MockMessageAckClient,
 		seedDemoData,
 		DEMO_IDS,
 		DEMO_CONTACT_DEVICES,
-	} from 'dash-chat-stores';
+	} from 'dash-chat-mock';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
@@ -69,11 +71,11 @@
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
 	import { installPreviewTauri } from '$lib/utils/preview-tauri';
+	import { scenes } from '$lib/scenes';
 	import {
-		requestedScene,
-		runRequestedSceneStep,
-		scenesToCapture,
-	} from '$lib/scenes';
+		playRequestedScene,
+		requestedSceneName,
+	} from 'translation-screenshots/scene';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -94,8 +96,6 @@
 			m,
 			() => previewFeatures.enable(),
 			url => handleUrls([url], contactsStore),
-			scenesToCapture(),
-			runRequestedSceneStep,
 		),
 	);
 
@@ -121,11 +121,10 @@
 	if (isPreview) {
 		installPreviewTauri();
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
-		const scene = requestedScene();
 		// A scene starts from the demo data alone, whatever an earlier one left.
-		if (scene) localStorage.clear();
-		if (!scene?.firstLaunch) seedDemoData(mockLogsClient);
-		scene?.seed?.(mockLogsClient);
+		if (requestedSceneName() !== null) localStorage.clear();
+		seedDemoData(mockLogsClient);
+		playRequestedScene(scenes);
 
 		logsStore = new LogsStore<Payload>(mockLogsClient);
 		settingsStore = new MockSettingsStore(new MockSettingsClient());

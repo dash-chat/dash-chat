@@ -1,16 +1,15 @@
-import { ReactivePromise, reactive, relay } from 'signalium';
-
 import type {
 	AllMailboxesConnectionState,
+	DeviceId,
 	IMailboxTrackerStore,
-} from '../mailbox-tracker/mailbox-tracker-store';
-import {
-	type MailboxConnectionHealth,
-	type MailboxId,
-	type OperationSyncState,
-} from '../mailbox-tracker/types';
-import type { DeviceId, TopicId } from '../p2panda/types';
-import { mockBackend } from './backend-state';
+	MailboxConnectionHealth,
+	MailboxId,
+	OperationSyncState,
+	TopicId,
+} from 'dash-chat-stores';
+import { ReactivePromise, reactive, relay } from 'signalium';
+
+import { followingTheMockBackend, mockBackend } from './backend-state';
 
 const MOCK_MAILBOX_ID: MailboxId = 'mock-mailbox';
 
@@ -67,14 +66,17 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 		): Promise<MailboxId[]> => [MOCK_MAILBOX_ID],
 	);
 
-	connectionStatusForAllMailboxes = reactive(
-		async (): Promise<AllMailboxesConnectionState> => mockBackend.mailboxes,
+	connectionStatusForAllMailboxes = reactive(() =>
+		followingTheMockBackend<AllMailboxesConnectionState>(
+			() => mockBackend.mailboxes,
+		),
 	);
 
 	syncStatusForOp = reactive(
-		async (_topicId: TopicId, _author: DeviceId, _seq: number) => ({
-			syncedWithCloudMailbox: mockBackend.operationsReachMailboxes,
-			syncedWithAnyLocalMailbox: false,
-		}),
+		(_topicId: TopicId, _author: DeviceId, _seq: number) =>
+			followingTheMockBackend(() => ({
+				syncedWithCloudMailbox: mockBackend.operationsReachMailboxes,
+				syncedWithAnyLocalMailbox: false,
+			})),
 	);
 }

@@ -9,6 +9,7 @@ on:
     paths:
       - 'ui/**'
       - 'packages/stores/**'
+      - 'packages/mock/**'
   schedule:
     - cron: '0 3 * * *'
   push:
@@ -51,8 +52,5 @@ jobs:
       - name: Upload them to Weblate
         if: github.event_name != 'pull_request'
         env:
-          WEBLATE_URL: ${{ vars.WEBLATE_URL }}
-          WEBLATE_PROJECT: ${{ vars.WEBLATE_PROJECT }}
-          WEBLATE_COMPONENT: ${{ vars.WEBLATE_COMPONENT }}
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
         run: just sync-weblate-screenshots

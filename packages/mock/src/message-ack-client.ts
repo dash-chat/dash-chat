@@ -1,8 +1,7 @@
+import type { ChatId, IMessageAckClient, MessageAcks } from 'dash-chat-stores';
 import type { UnsubscribeFunction } from 'emittery';
 
-import type { IMessageAckClient } from '../message-acks/message-ack-client';
-import type { ChatId, MessageAcks } from '../types';
-import { mockBackend } from './backend-state';
+import { mockBackend, onMockBackendChanged } from './backend-state';
 
 export class MockMessageAckClient implements IMessageAckClient {
 	async getMessageAcks(_chatId: ChatId): Promise<MessageAcks> {
@@ -11,8 +10,8 @@ export class MockMessageAckClient implements IMessageAckClient {
 
 	onNewMessageAcks(
 		_chatId: ChatId,
-		_handler: (acks: MessageAcks) => void,
+		handler: (acks: MessageAcks) => void,
 	): UnsubscribeFunction {
-		return () => {};
+		return onMockBackendChanged(() => handler(mockBackend.messageAcks));
 	}
 }

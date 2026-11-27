@@ -1,7 +1,11 @@
-import type { AllMailboxesConnectionState } from '../mailbox-tracker/mailbox-tracker-store';
-import type { MailboxConnectionHealth } from '../mailbox-tracker/types';
-import type { AgentId } from '../p2panda/types';
-import type { MessageAcks } from '../types';
+import type {
+	AgentId,
+	AllMailboxesConnectionState,
+	MailboxConnectionHealth,
+	MessageAcks,
+} from 'dash-chat-stores';
+import Emittery, { type UnsubscribeFunction } from 'emittery';
+import { type ReactivePromise, relay } from 'signalium';
 
 // Far future: a success or failure before the page's last resume would read
 // as unproven rather than as the state it stands for.
@@ -28,9 +32,7 @@ export const MOCK_MAILBOX_DOWN: MailboxConnectionHealth = {
 	last_error: { at: AFTER_ANY_RESUME, message: 'unreachable' },
 };
 
-/** What the mock backend reports about the world outside the device. Set it
- * before the stores are created. */
-export const mockBackend: {
+export interface MockBackend {
 	mailboxes: AllMailboxesConnectionState;
 	onlinePeers: AgentId[];
 	operationsReachMailboxes: boolean;
@@ -46,7 +48,9 @@ export const mockBackend: {
 	mediaIsMissing: boolean;
 	/** Whether the local hub is kept off the LAN. */
 	localHubBlocked: boolean;
-} = {
+}
+
+const backend: MockBackend = {
 	mailboxes: { cloudMailbox: MOCK_MAILBOX_UP, localMailboxes: [] },
 	onlinePeers: [],
 	operationsReachMailboxes: true,
@@ -56,6 +60,31 @@ export const mockBackend: {
 	mediaIsMissing: false,
 	localHubBlocked: false,
 };
+
+const backendChanges = new Emittery<{ changed: undefined }>();
+
+/** What the mock backend reports about the world outside the device. Change
+ * it with `setMockBackend`, which is what tells the stores. */
+export const mockBackend: Readonly<MockBackend> = backend;
+
+export function setMockBackend(changes: Partial<MockBackend>): void {
+	Object.assign(backend, changes);
+	void backendChanges.emit('changed');
+}
+
+export function onMockBackendChanged(handler: () => void): UnsubscribeFunction {
+	return backendChanges.on('changed', handler);
+}
+
+/** What `read` finds in the mock backend, kept up with its changes. */
+export function followingTheMockBackend<T>(read: () => T): ReactivePromise<T> {
+	return relay<T>(state => {
+		state.value = read();
+		return onMockBackendChanged(() => {
+			state.value = read();
+		});
+	});
+}
 
 /** Throws when `command` is one the mock backend was told fails. */
 export function failIfTold(command: string): void {

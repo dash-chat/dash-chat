@@ -1,19 +1,27 @@
 import type { Scene } from '$lib/scenes/scene';
-import { mockBackend } from 'dash-chat-stores';
+import { open } from '$lib/scenes/steps';
+import { setMockBackend } from 'dash-chat-mock';
+import { tap } from 'translation-screenshots/scene';
 
 export default [
-	{ name: 'account', path: '/settings/account' },
+	{
+		name: 'account',
+		setup: () => open('/settings/account'),
+	},
 	{
 		name: 'delete-account-dialog',
-		path: '/settings/account',
-		steps: [{ tap: 'account-delete' }],
+		async setup() {
+			await open('/settings/account');
+			await tap('account-delete');
+		},
 	},
 	{
 		name: 'error-deleting-account',
-		path: '/settings/account',
-		seed() {
-			mockBackend.failingCommands = ['delete_account'];
+		async setup() {
+			setMockBackend({ failingCommands: ['delete_account'] });
+			await open('/settings/account');
+			await tap('account-delete');
+			await tap('account-delete-confirm');
 		},
-		steps: [{ tap: 'account-delete' }, { tap: 'account-delete-confirm' }],
 	},
 ] satisfies Scene[];

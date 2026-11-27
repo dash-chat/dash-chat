@@ -1,13 +1,12 @@
-import Emittery from 'emittery';
-import { type ReactivePromise, reactive, signal } from 'signalium';
-import { colorScheme as appliedColorScheme } from 'tauri-plugin-system-theme';
-
 import type {
 	ColorScheme,
 	ColorSchemePreference,
 	ISettingsClient,
 	Settings,
-} from '../settings/settings-client';
+} from 'dash-chat-stores';
+import Emittery from 'emittery';
+import { type ReactivePromise, reactive, signal } from 'signalium';
+import { colorScheme as appliedColorScheme } from 'tauri-plugin-system-theme';
 
 export class MockSettingsClient implements ISettingsClient {
 	private colorSchemePreferenceSignal = signal<ColorSchemePreference>('system');

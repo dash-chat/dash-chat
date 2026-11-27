@@ -1,28 +1,45 @@
 import { onlyMyProfile } from '$lib/scenes/demo-world';
 import type { Scene } from '$lib/scenes/scene';
+import { open } from '$lib/scenes/steps';
+import { tap } from 'translation-screenshots/scene';
 
 export default [
-	{ name: 'new-group-members', path: '/new-group' },
+	{
+		name: 'new-group-members',
+		setup: () => open('/new-group'),
+	},
 	{
 		name: 'new-group-info',
-		path: '/new-group',
-		steps: [{ tap: 'selectable-contact-item' }, { tap: 'new-group-next' }],
+		async setup() {
+			await open('/new-group');
+			await tap('selectable-contact-item');
+			await tap('new-group-next');
+		},
 	},
-	{ name: 'ios-new-group-members', path: '/new-group', device: 'iphone' },
+	{
+		name: 'ios-new-group-members',
+		device: 'iphone',
+		setup: () => open('/new-group'),
+	},
 	{
 		name: 'new-group-no-contacts',
-		path: '/new-group',
-		firstLaunch: true,
-		seed: onlyMyProfile,
+		async setup() {
+			onlyMyProfile();
+			await open('/new-group');
+		},
 	},
 	{
 		name: 'new-group-member-selected',
-		path: '/new-group',
-		steps: [{ tap: 'selectable-contact-item' }],
+		async setup() {
+			await open('/new-group');
+			await tap('selectable-contact-item');
+		},
 	},
 	{
 		name: 'new-group-info-without-members',
-		path: '/new-group',
-		steps: [{ tap: 'new-group-next' }],
+		async setup() {
+			await open('/new-group');
+			await tap('new-group-next');
+		},
 	},
 ] satisfies Scene[];

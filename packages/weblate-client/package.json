@@ -1,0 +1,17 @@
+{
+	"name": "weblate-client",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "A client for the parts of Weblate's REST API that manage screenshots",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"format": "prettier --write 'src/**/*.ts'",
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.0",
+		"typescript": "^5.9.3"
+	}
+}

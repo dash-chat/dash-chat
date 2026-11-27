@@ -1,20 +1,17 @@
 import { blake2b, blake2bHex } from 'blakejs';
-import Emittery, { type UnsubscribeFunction } from 'emittery';
-
-import type { LogsClient } from './../p2panda/logs-client';
 import type {
 	GroupsArgs,
-	SimplifiedHeader,
-	SimplifiedOperation,
-} from './../p2panda/simplified-types';
-import type {
 	Hash,
 	Header,
 	LogId,
+	LogsClient,
 	Operation,
+	SimplifiedHeader,
+	SimplifiedOperation,
 	TopicId,
 	VerifyingKey,
-} from './../p2panda/types';
+} from 'dash-chat-stores';
+import Emittery, { type UnsubscribeFunction } from 'emittery';
 
 export function hash<T>(obj: T): Hash {
 	return blake2bHex(JSON.stringify(obj));
@@ -24,9 +21,11 @@ export function chatIdForDevices(deviceA: string, deviceB: string): string {
 	return `mock-chat:${[deviceA, deviceB].sort().join(':')}`;
 }
 
-export class LocalStorageLogsClient implements LogsClient<any> {
-	emitter = new Emittery();
+// One for every client: an operation written as any author reaches whoever
+// listens, the way the backend reports the ones it syncs from other devices.
+const operationsWritten = new Emittery();
 
+export class LocalStorageLogsClient implements LogsClient<any> {
 	constructor(protected _myPubKey: VerifyingKey) {}
 
 	async myPubKey() {
@@ -108,7 +107,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 		const authorsLogKey = `${topicId}/authors/${this._myPubKey}`;
 		localStorage.setItem(authorsLogKey, this._myPubKey);
 
-		this.emitter.emit('new-operation', {
+		operationsWritten.emit('new-operation', {
 			topicId,
 			author: this._myPubKey,
 			operation,
@@ -120,7 +119,7 @@ export class LocalStorageLogsClient implements LogsClient<any> {
 	onNewOperation(
 		handler: (topicId: TopicId, operation: SimplifiedOperation<any>) => void,
 	): UnsubscribeFunction {
-		return this.emitter.on('new-operation', event => {
+		return operationsWritten.on('new-operation', event => {
 			handler(event.topicId, event.operation);
 		});
 	}

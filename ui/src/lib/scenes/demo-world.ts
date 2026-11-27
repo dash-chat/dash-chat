@@ -1,19 +1,21 @@
 import {
+	DEMO_CONTACTS,
+	DEMO_IDS,
+	LocalStorageLogsClient,
+	chatIdForDevices,
+	setMockGroupMembers,
+} from 'dash-chat-mock';
+import {
 	type AgentId,
 	type AuthGroupMember,
 	type ChatId,
 	type ChatPayload,
-	DEMO_CONTACTS,
-	DEMO_IDS,
 	type DeviceGroupPayload,
 	type DeviceId,
 	type GroupAction,
 	type Hash,
-	LocalStorageLogsClient,
 	type Payload,
-	chatIdForDevices,
 	personalTopicFor,
-	setMockGroupMembers,
 } from 'dash-chat-stores';
 
 export const [ALICE, BOB, CAROL, DAVE] = DEMO_CONTACTS;
@@ -63,8 +65,14 @@ export function pasteIntoComposer(
 	window.__test.pasteFiles(files);
 }
 
+/** Start from a device nobody has set up, not from the demo data. */
+export function nobodyHasSetUpThisDevice(): void {
+	localStorage.clear();
+}
+
 /** The only thing on the device: my own profile, as right after onboarding. */
 export function onlyMyProfile(): void {
+	nobodyHasSetUpThisDevice();
 	const profile: Payload = {
 		type: 'Announcements',
 		payload: {

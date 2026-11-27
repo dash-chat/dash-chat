@@ -1,25 +1,41 @@
 import type { Scene } from '$lib/scenes/scene';
-import { mockBackend } from 'dash-chat-stores';
+import { open } from '$lib/scenes/steps';
+import { setMockBackend } from 'dash-chat-mock';
 
 export default [
-	{ name: 'offline', path: '/settings/offline' },
-	{ name: 'desktop-offline', path: '/settings/offline', device: 'desktop' },
-	{ name: 'ios-settings', path: '/settings', device: 'iphone' },
-	{ name: 'desktop-settings', path: '/settings', device: 'desktop' },
+	{
+		name: 'offline',
+		setup: () => open('/settings/offline'),
+	},
+	{
+		name: 'desktop-offline',
+		device: 'desktop',
+		setup: () => open('/settings/offline'),
+	},
+	{
+		name: 'ios-settings',
+		device: 'iphone',
+		setup: () => open('/settings'),
+	},
+	{
+		name: 'desktop-settings',
+		device: 'desktop',
+		setup: () => open('/settings'),
+	},
 	{
 		name: 'desktop-offline-hub-blocked',
-		path: '/settings/offline',
 		device: 'desktop',
-		seed() {
-			mockBackend.localHubBlocked = true;
+		async setup() {
+			setMockBackend({ localHubBlocked: true });
+			await open('/settings/offline');
 		},
 	},
 	{
 		name: 'linux-desktop-offline-hub-blocked',
-		path: '/settings/offline',
 		device: 'linux-desktop',
-		seed() {
-			mockBackend.localHubBlocked = true;
+		async setup() {
+			setMockBackend({ localHubBlocked: true });
+			await open('/settings/offline');
 		},
 	},
 ] satisfies Scene[];

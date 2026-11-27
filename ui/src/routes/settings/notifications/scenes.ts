@@ -1,31 +1,35 @@
 import type { Scene } from '$lib/scenes/scene';
+import { open } from '$lib/scenes/steps';
+import { settled, tap } from 'translation-screenshots/scene';
 
 export default [
-	{ name: 'notifications', path: '/settings/notifications' },
+	{
+		name: 'notifications',
+		setup: () => open('/settings/notifications'),
+	},
 	{
 		name: 'notifications-turned-on',
-		path: '/settings/notifications',
-		steps: [{ tap: 'notifications-toggle' }],
+		async setup() {
+			await open('/settings/notifications');
+			await tap('notifications-toggle');
+		},
 	},
 	{
 		name: 'error-notifications-not-allowed',
-		path: '/settings/notifications',
-		steps: [
-			() => {
-				Object.defineProperty(window, 'Notification', {
-					value: {
-						permission: 'denied',
-						requestPermission: async () => 'denied',
-					},
-				});
-			},
-			() => {
-				document
-					.querySelector<HTMLElement>(
-						'[data-testid="notifications-toggle"] input',
-					)
-					?.click();
-			},
-		],
+		async setup() {
+			await open('/settings/notifications');
+			Object.defineProperty(window, 'Notification', {
+				value: {
+					permission: 'denied',
+					requestPermission: async () => 'denied',
+				},
+			});
+			await settled();
+			document
+				.querySelector<HTMLElement>(
+					'[data-testid="notifications-toggle"] input',
+				)
+				?.click();
+		},
 	},
 ] satisfies Scene[];

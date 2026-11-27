@@ -1,4 +1,6 @@
 import type { Scene } from '$lib/scenes/scene';
+import { open } from '$lib/scenes/steps';
+import { settled, tap } from 'translation-screenshots/scene';
 
 const TINY_PNG = [
 	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
@@ -8,21 +10,26 @@ const TINY_PNG = [
 ];
 
 export default [
-	{ name: 'edit-photo', path: '/settings/profile/edit-photo' },
+	{
+		name: 'edit-photo',
+		setup: () => open('/settings/profile/edit-photo'),
+	},
 	{
 		name: 'edit-photo-text',
-		path: '/settings/profile/edit-photo',
-		steps: [{ tap: 'edit-photo-text' }],
+		async setup() {
+			await open('/settings/profile/edit-photo');
+			await tap('edit-photo-text');
+		},
 	},
 	{
 		name: 'edit-photo-chosen',
-		path: '/settings/profile/edit-photo',
-		steps: [
-			() =>
-				window.__test.interceptFilePickers([
-					{ name: 'me.png', mimeType: 'image/png', bytes: TINY_PNG },
-				]),
-			{ tap: 'edit-photo-gallery' },
-		],
+		async setup() {
+			await open('/settings/profile/edit-photo');
+			window.__test.interceptFilePickers([
+				{ name: 'me.png', mimeType: 'image/png', bytes: TINY_PNG },
+			]);
+			await settled();
+			await tap('edit-photo-gallery');
+		},
 	},
 ] satisfies Scene[];

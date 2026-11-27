@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "module": "es2020",
+    "moduleResolution": "bundler",
+    "lib": ["ES2019", "DOM"],
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // Ensure that Babel can safely transpile files in the TypeScript project
+    "isolatedModules": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "incremental":false
+  },
+  "include": ["src/**/*.ts"]
+}

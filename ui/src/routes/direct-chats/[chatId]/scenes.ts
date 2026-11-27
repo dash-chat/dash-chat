@@ -9,14 +9,15 @@ import {
 	pasteIntoComposer,
 } from '$lib/scenes/demo-world';
 import type { Scene } from '$lib/scenes/scene';
-import { untilAToastShows } from '$lib/scenes/steps';
+import { open, untilAToastShows } from '$lib/scenes/steps';
 import { takeTheAppsOwnPaths } from '$lib/utils/preview-tauri';
 import {
 	DEMO_CONTACT_REQUESTER,
 	DEMO_IDS,
 	minutesAgo,
-	mockBackend,
-} from 'dash-chat-stores';
+	setMockBackend,
+} from 'dash-chat-mock';
+import { fill, find, hold, settled, tap } from 'translation-screenshots/scene';
 
 const TINY_PNG = [
 	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
@@ -133,11 +134,13 @@ function mediaMessages(): void {
 }
 
 export default [
-	{ name: 'direct-chat', path: chat },
+	{
+		name: 'direct-chat',
+		setup: () => open(chat),
+	},
 	{
 		name: 'direct-chat-edited-deleted-reacted',
-		path: chat,
-		seed() {
+		async setup() {
 			const chatId = directChatId(ALICE);
 			const mine = chatOperation(
 				DEMO_IDS.MY_DEVICE_ID,
@@ -184,22 +187,22 @@ export default [
 				{ type: 'DeleteMessage', payload: { hashes: [retracted] } },
 				minutesAgo(0),
 			);
+			await open(chat);
 		},
 	},
 	{
 		name: 'direct-chat-blocked',
-		path: chat,
-		seed() {
+		async setup() {
 			deviceGroupOperation(
 				{ type: 'BlockAgent', payload: ALICE.agentId },
 				minutesAgo(1),
 			);
+			await open(chat);
 		},
 	},
 	{
 		name: 'direct-chat-reply-and-long-message',
-		path: chat,
-		seed() {
+		async setup() {
 			const chatId = directChatId(ALICE);
 			const question = chatOperation(
 				ALICE.deviceId,
@@ -223,13 +226,13 @@ export default [
 				},
 				minutesAgo(3),
 			);
+			await open(chat);
 		},
 	},
 	{
 		name: 'message-sending',
-		path: chat,
-		seed() {
-			mockBackend.operationsReachMailboxes = false;
+		async setup() {
+			setMockBackend({ operationsReachMailboxes: false });
 			chatOperation(
 				DEMO_IDS.MY_DEVICE_ID,
 				directChatId(ALICE),
@@ -239,13 +242,13 @@ export default [
 				},
 				minutesAgo(5),
 			);
+			await open(chat);
 		},
 	},
 	{
 		name: 'message-unsent',
-		path: chat,
-		seed() {
-			mockBackend.operationsReachMailboxes = false;
+		async setup() {
+			setMockBackend({ operationsReachMailboxes: false });
 			chatOperation(
 				DEMO_IDS.MY_DEVICE_ID,
 				directChatId(ALICE),
@@ -255,87 +258,113 @@ export default [
 				},
 				minutesAgo(0),
 			);
+			await open(chat);
 		},
 	},
-	{ name: 'contact-request', path: request },
+	{
+		name: 'contact-request',
+		setup: () => open(request),
+	},
 	{
 		name: 'accept-contact-request-dialog',
-		path: request,
-		steps: [{ tap: 'direct-chat-accept-btn' }],
+		async setup() {
+			await open(request);
+			await tap('direct-chat-accept-btn');
+		},
 	},
 	{
 		name: 'security-tips-1',
-		path: request,
-		steps: [{ tap: 'direct-chat-security-tips' }],
+		async setup() {
+			await open(request);
+			await tap('direct-chat-security-tips');
+		},
 	},
 	{
 		name: 'security-tips-2',
-		path: request,
-		steps: [
-			{ tap: 'direct-chat-security-tips' },
-			{ tap: 'security-tips-next' },
-		],
+		async setup() {
+			await open(request);
+			await tap('direct-chat-security-tips');
+			await tap('security-tips-next');
+		},
 	},
 	{
 		name: 'security-tips-3',
-		path: request,
-		steps: [
-			{ tap: 'direct-chat-security-tips' },
-			{ tap: 'security-tips-next' },
-			{ tap: 'security-tips-next' },
-		],
+		async setup() {
+			await open(request);
+			await tap('direct-chat-security-tips');
+			await tap('security-tips-next');
+			await tap('security-tips-next');
+		},
 	},
 	{
 		name: 'security-tips-4',
-		path: request,
-		steps: [
-			{ tap: 'direct-chat-security-tips' },
-			{ tap: 'security-tips-next' },
-			{ tap: 'security-tips-next' },
-			{ tap: 'security-tips-next' },
-		],
+		async setup() {
+			await open(request);
+			await tap('direct-chat-security-tips');
+			await tap('security-tips-next');
+			await tap('security-tips-next');
+			await tap('security-tips-next');
+		},
 	},
 	{
 		name: 'security-tips-5',
-		path: request,
-		steps: [
-			{ tap: 'direct-chat-security-tips' },
-			{ tap: 'security-tips-next' },
-			{ tap: 'security-tips-next' },
-			{ tap: 'security-tips-next' },
-			{ tap: 'security-tips-next' },
-		],
+		async setup() {
+			await open(request);
+			await tap('direct-chat-security-tips');
+			await tap('security-tips-next');
+			await tap('security-tips-next');
+			await tap('security-tips-next');
+			await tap('security-tips-next');
+		},
 	},
-	{ name: 'message-actions', path: chat, steps: [{ hold: 'message-from-me' }] },
+	{
+		name: 'message-actions',
+		async setup() {
+			await open(chat);
+			await hold('message-from-me');
+		},
+	},
 	{
 		name: 'delete-message-dialog',
-		path: chat,
-		steps: [{ hold: 'message-from-me' }, { tap: 'message-action-delete' }],
+		async setup() {
+			await open(chat);
+			await hold('message-from-me');
+			await tap('message-action-delete');
+		},
 	},
-	{ name: 'ios-direct-chat', path: chat, device: 'iphone' },
+	{
+		name: 'ios-direct-chat',
+		device: 'iphone',
+		setup: () => open(chat),
+	},
 	{
 		name: 'message-editing',
-		path: chat,
-		steps: [{ hold: 'message-from-me' }, { tap: 'message-action-edit' }],
+		async setup() {
+			await open(chat);
+			await hold('message-from-me');
+			await tap('message-action-edit');
+		},
 	},
 	{
 		name: 'discard-draft-dialog',
-		path: chat,
-		steps: [
-			{ type: 'Draft in progress', into: 'message-input-textarea' },
-			{ hold: 'message-from-me' },
-			{ tap: 'message-action-edit' },
-		],
+		async setup() {
+			await open(chat);
+			await fill('message-input-textarea', 'Draft in progress');
+			await hold('message-from-me');
+			await tap('message-action-edit');
+		},
 	},
 	{
 		name: 'message-replying',
-		path: chat,
-		steps: [{ hold: 'message-from-me' }, { tap: 'message-action-reply' }],
+		async setup() {
+			await open(chat);
+			await hold('message-from-me');
+			await tap('message-action-reply');
+		},
 	},
 	{
 		name: 'message-reactions',
-		path: chat,
-		seed() {
+		async setup() {
 			const chatId = directChatId(ALICE);
 			const mine = chatOperation(
 				DEMO_IDS.MY_DEVICE_ID,
@@ -355,29 +384,41 @@ export default [
 				{ type: 'Reaction', payload: { emoji: '👍', target: mine } },
 				minutesAgo(2),
 			);
+			await open(chat);
+			await tap('reaction-chip-👍');
 		},
-		steps: [{ tap: 'reaction-chip-👍' }],
 	},
-	{ name: 'direct-chat-media', path: chat, seed: mediaMessages },
+	{
+		name: 'direct-chat-media',
+		async setup() {
+			mediaMessages();
+			await open(chat);
+		},
+	},
 	{
 		name: 'attach-panel',
-		path: chat,
-		steps: [{ tap: 'message-input-attach' }],
+		async setup() {
+			await open(chat);
+			await tap('message-input-attach');
+		},
 	},
 	{
 		name: 'search-results',
-		path: `${chat}?search=true`,
-		steps: [{ type: 'offline', into: 'direct-chat-search-input' }],
+		async setup() {
+			await open(`${chat}?search=true`);
+			await fill('direct-chat-search-input', 'offline');
+		},
 	},
 	{
 		name: 'search-no-results',
-		path: `${chat}?search=true`,
-		steps: [{ type: 'zzzz', into: 'direct-chat-search-input' }],
+		async setup() {
+			await open(`${chat}?search=true`);
+			await fill('direct-chat-search-input', 'zzzz');
+		},
 	},
 	{
 		name: 'direct-chat-reported',
-		path: chat,
-		seed() {
+		async setup() {
 			deviceGroupOperation(
 				{ type: 'BlockAgent', payload: ALICE.agentId },
 				minutesAgo(3),
@@ -393,163 +434,173 @@ export default [
 				},
 				minutesAgo(1),
 			);
+			await open(chat);
 		},
 	},
-	{ name: 'desktop-direct-chat', path: chat, device: 'desktop' },
+	{
+		name: 'desktop-direct-chat',
+		device: 'desktop',
+		setup: () => open(chat),
+	},
 	{
 		name: 'desktop-message-toolbar',
-		path: chat,
 		device: 'desktop',
-		steps: [{ hover: 'message-from-me' }],
+		async setup() {
+			await open(chat);
+			const mine = await find('message-from-me');
+			// Focus inside the message shows the toolbar a pointer over it does.
+			mine
+				.querySelector<HTMLElement>('[data-testid="message-hover-react"]')
+				?.focus();
+		},
 	},
 	{
 		name: 'photo-lightbox',
-		path: chat,
-		seed: mediaMessages,
-		steps: [{ tap: 'message-attachment-photos' }],
+		async setup() {
+			mediaMessages();
+			await open(chat);
+			openFirstPhoto();
+		},
 	},
 	{
 		name: 'error-voice-play',
-		path: chat,
-		seed: mediaMessages,
-		steps: [{ tap: 'voice-play-button' }],
+		async setup() {
+			mediaMessages();
+			await open(chat);
+			await tap('voice-play-button');
+		},
 	},
 	{
 		name: 'staged-photo',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
+			]);
+		},
 	},
 	{
 		name: 'staged-file',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
+			]);
+		},
 	},
 	{
 		name: 'error-attachment-too-large',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{
-						name: 'film.bin',
-						mimeType: 'application/octet-stream',
-						size: 17 * 1024 * 1024,
-					},
-				]),
-			() => {
-				const sends = document.querySelectorAll<HTMLElement>(
-					'[data-testid="message-input-send"]',
-				);
-				sends[sends.length - 1]?.click();
-			},
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{
+					name: 'film.bin',
+					mimeType: 'application/octet-stream',
+					size: 17 * 1024 * 1024,
+				},
+			]);
+			await settled();
+			const sends = document.querySelectorAll<HTMLElement>(
+				'[data-testid="message-input-send"]',
+			);
+			sends[sends.length - 1]?.click();
+		},
 	},
 	{
 		name: 'error-one-file-at-a-time',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
-					{ name: 'b.pdf', mimeType: 'application/pdf', size: 2048 },
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
+				{ name: 'b.pdf', mimeType: 'application/pdf', size: 2048 },
+			]);
+		},
 	},
 	{
 		name: 'error-files-with-photos',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
-					{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
+				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
+			]);
+		},
 	},
 	{
 		name: 'error-too-many-attachments',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer(
-					Array.from({ length: 40 }, (_, index) => ({
-						name: `photo-${index}.png`,
-						mimeType: 'image/png',
-						bytes: TINY_PNG,
-					})),
-				),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer(
+				Array.from({ length: 40 }, (_, index) => ({
+					name: `photo-${index}.png`,
+					mimeType: 'image/png',
+					bytes: TINY_PNG,
+				})),
+			);
+			await untilAToastShows();
+		},
 	},
 	{
 		name: 'error-damaged-photo',
-		path: chat,
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{
-						name: 'damaged.jpg',
-						mimeType: 'image/jpeg',
-						bytes: [255, 216, 255],
-					},
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{
+					name: 'damaged.jpg',
+					mimeType: 'image/jpeg',
+					bytes: [255, 216, 255],
+				},
+			]);
+			await untilAToastShows();
+		},
 	},
 	{
 		name: 'error-unreadable-photo',
-		path: chat,
-		steps: [() => window.__test.pasteUnreadablePhoto('withdrawn')],
+		async setup() {
+			await open(chat);
+			window.__test.pasteUnreadablePhoto('withdrawn');
+			await untilAToastShows();
+		},
 	},
 	{
 		name: 'error-unreadable-file',
-		path: chat,
-		steps: [() => window.__test.pasteUnreadableFile('withdrawn.txt')],
+		async setup() {
+			await open(chat);
+			window.__test.pasteUnreadableFile('withdrawn.txt');
+			await untilAToastShows();
+		},
 	},
 	{
 		name: 'error-sending-message',
-		path: chat,
-		seed() {
-			mockBackend.failingCommands = ['send_message'];
+		async setup() {
+			setMockBackend({ failingCommands: ['send_message'] });
+			await open(chat);
+			await fill('message-input-textarea', 'On my way');
+			await tap('message-input-send');
 		},
-		steps: [
-			{ type: 'On my way', into: 'message-input-textarea' },
-			{ tap: 'message-input-send' },
-		],
 	},
 	{
 		name: 'recent-photos-permission',
-		path: chat,
-		steps: [
-			() => {
-				window.__test.recentPhotos = { permission: 'prompt', photos: [] };
-			},
-			{ tap: 'message-input-attach' },
-		],
+		async setup() {
+			await open(chat);
+			window.__test.recentPhotos = { permission: 'prompt', photos: [] };
+			await settled();
+			await tap('message-input-attach');
+		},
 	},
 	{
 		name: 'ios-recent-photos-no-access',
-		path: chat,
 		device: 'iphone',
-		steps: [
-			() => {
-				window.__test.recentPhotos = { permission: 'denied', photos: [] };
-			},
-			{ tap: 'message-input-attach' },
-		],
+		async setup() {
+			await open(chat);
+			window.__test.recentPhotos = { permission: 'denied', photos: [] };
+			await settled();
+			await tap('message-input-attach');
+		},
 	},
 	{
 		name: 'direct-chat-yesterday',
-		path: chat,
-		seed() {
+		async setup() {
 			chatOperation(
 				ALICE.deviceId,
 				directChatId(BOB),
@@ -562,12 +613,12 @@ export default [
 				{ type: 'Message', payload: { message: 'Good night!', media: null } },
 				minutesAgo(26 * 60),
 			);
+			await open(chat);
 		},
 	},
 	{
 		name: 'contact-request-with-messages',
-		path: request,
-		seed() {
+		async setup() {
 			for (const [message, age] of [
 				['Hi, we met at the meetup', 9],
 				['Is this the right number?', 8],
@@ -579,12 +630,12 @@ export default [
 					minutesAgo(age),
 				);
 			}
+			await open(request);
 		},
 	},
 	{
 		name: 'direct-chat-scrolled-up',
-		path: chat,
-		seed() {
+		async setup() {
 			for (let index = 0; index < 40; index++) {
 				chatOperation(
 					ALICE.deviceId,
@@ -596,49 +647,46 @@ export default [
 					minutesAgo(4),
 				);
 			}
+			await open(chat);
+			document
+				.querySelector('[data-testid="direct-chat-scroll"]')
+				?.scrollTo({ top: -100_000 });
 		},
-		steps: [
-			() => {
-				document
-					.querySelector('[data-testid="direct-chat-scroll"]')
-					?.scrollTo({ top: -100_000 });
-			},
-		],
 	},
 	{
 		name: 'desktop-photo-lightbox',
-		path: chat,
 		device: 'desktop',
-		seed: mediaMessages,
-		steps: [openFirstPhoto],
+		async setup() {
+			mediaMessages();
+			await open(chat);
+			openFirstPhoto();
+		},
 	},
 	{
 		name: 'desktop-staged-file',
-		path: chat,
 		device: 'desktop',
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
+			]);
+		},
 	},
 	{
 		name: 'desktop-staged-photos',
-		path: chat,
 		device: 'desktop',
-		steps: [
-			() =>
-				pasteIntoComposer([
-					{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
-					{ name: 'lake.png', mimeType: 'image/png', bytes: TINY_PNG },
-				]),
-		],
+		async setup() {
+			await open(chat);
+			pasteIntoComposer([
+				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
+				{ name: 'lake.png', mimeType: 'image/png', bytes: TINY_PNG },
+			]);
+			await find('message-input-clear-attachments');
+		},
 	},
 	{
 		name: 'direct-chat-waiting-for-profile',
-		path: directChatPath(STRANGER),
-		seed() {
+		async setup() {
 			deviceGroupOperation(
 				{
 					type: 'AddContact',
@@ -649,202 +697,219 @@ export default [
 				},
 				minutesAgo(1),
 			);
+			await open(directChatPath(STRANGER));
 		},
 	},
 	{
 		name: 'profile-names',
-		path: chat,
-		steps: [{ tap: 'direct-chat-name-not-verified' }],
+		async setup() {
+			await open(chat);
+			await tap('direct-chat-name-not-verified');
+		},
 	},
 	{
 		name: 'message-delivered',
-		path: chat,
-		seed() {
-			mockBackend.messageAcks = {
-				[DEMO_IDS.MY_DEVICE_ID]: { hash: '', seq: Number.MAX_SAFE_INTEGER },
-			};
+		async setup() {
+			setMockBackend({
+				messageAcks: {
+					[DEMO_IDS.MY_DEVICE_ID]: { hash: '', seq: Number.MAX_SAFE_INTEGER },
+				},
+			});
+			await open(chat);
 		},
 	},
 	{
 		name: 'desktop-attach-menu',
-		path: chat,
 		device: 'desktop',
-		steps: [{ tap: 'message-input-attach' }],
+		async setup() {
+			await open(chat);
+			await tap('message-input-attach');
+		},
 	},
 	{
 		name: 'desktop-drop-files',
-		path: chat,
 		device: 'desktop',
-		steps: [
-			() => {
-				const dragged = new DataTransfer();
-				dragged.items.add(new File(['map'], 'trail-map.pdf'));
-				window.dispatchEvent(
-					new DragEvent('dragenter', { dataTransfer: dragged, bubbles: true }),
-				);
-			},
-		],
+		async setup() {
+			await open(chat);
+			const dragged = new DataTransfer();
+			dragged.items.add(new File(['map'], 'trail-map.pdf'));
+			window.dispatchEvent(
+				new DragEvent('dragenter', { dataTransfer: dragged, bubbles: true }),
+			);
+		},
 	},
 	{
 		name: 'desktop-photo-lightbox-second',
-		path: chat,
 		device: 'desktop',
-		seed: mediaMessages,
-		steps: [openFirstPhoto, { tap: 'lightbox-next' }],
+		async setup() {
+			mediaMessages();
+			await open(chat);
+			openFirstPhoto();
+			await settled();
+			await tap('lightbox-next');
+		},
 	},
 	{
 		name: 'direct-chat-media-missing',
-		path: chat,
-		seed() {
+		async setup() {
 			mediaMessages();
-			mockBackend.mediaIsMissing = true;
+			setMockBackend({ mediaIsMissing: true });
+			await open(chat);
 		},
 	},
 	{
 		name: 'voice-message-playing',
-		path: chat,
-		seed: mediaMessages,
-		steps: [
-			() => {
-				HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-					this.dispatchEvent(new Event('play'));
-					return Promise.resolve();
-				};
-			},
-			{ tap: 'voice-play-button' },
-		],
+		async setup() {
+			mediaMessages();
+			await open(chat);
+			HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+				this.dispatchEvent(new Event('play'));
+				return Promise.resolve();
+			};
+			await settled();
+			await tap('voice-play-button');
+		},
 	},
 	{
 		name: 'recent-photos-denied',
-		path: chat,
-		steps: [
-			() => {
-				window.__test.recentPhotos = { permission: 'prompt', photos: [] };
-			},
-			{ tap: 'message-input-attach' },
-			{ tap: 'message-input-recent-photos-allow' },
-		],
+		async setup() {
+			await open(chat);
+			window.__test.recentPhotos = { permission: 'prompt', photos: [] };
+			await settled();
+			await tap('message-input-attach');
+			await tap('message-input-recent-photos-allow');
+		},
 	},
 	{
 		name: 'recent-photos-settings',
-		path: chat,
-		steps: [
-			() => {
-				window.__test.recentPhotos = { permission: 'prompt', photos: [] };
-			},
-			{ tap: 'message-input-attach' },
-			{ tap: 'message-input-recent-photos-allow' },
-			{ tap: 'message-input-recent-photos-allow' },
-		],
+		async setup() {
+			await open(chat);
+			window.__test.recentPhotos = { permission: 'prompt', photos: [] };
+			await settled();
+			await tap('message-input-attach');
+			await tap('message-input-recent-photos-allow');
+			await tap('message-input-recent-photos-allow');
+		},
 	},
 	{
 		name: 'error-downloading-file',
-		path: chat,
-		seed() {
+		async setup() {
 			mediaMessages();
-			mockBackend.mediaIsMissing = true;
+			setMockBackend({ mediaIsMissing: true });
+			await open(chat);
+			await tap('message-attachment-file');
 		},
-		steps: [{ tap: 'message-attachment-file' }],
 	},
 	{
 		name: 'error-loading-recent-photos',
-		path: chat,
-		steps: [
-			() => {
-				window.__test.recentPhotos = {
-					permission: 'granted',
-					get photos(): never {
-						throw new Error('the photo library cannot be read');
-					},
-				};
-			},
-			{ tap: 'message-input-attach' },
-		],
+		async setup() {
+			await open(chat);
+			window.__test.recentPhotos = {
+				permission: 'granted',
+				get photos(): never {
+					throw new Error('the photo library cannot be read');
+				},
+			};
+			await settled();
+			await tap('message-input-attach');
+		},
 	},
 	{
 		name: 'error-adding-recent-photo',
-		path: chat,
-		steps: [
-			() => {
-				window.__test.recentPhotos = {
-					permission: 'granted',
-					photos: [
-						{
-							id: 'gone',
-							name: 'gone.png',
-							mimeType: 'image/png',
-							dataUrl: 'http://localhost:1/gone.png',
-						},
-					],
-				};
-			},
-			{ tap: 'message-input-attach' },
-			{ tap: 'message-input-recent-photo-0' },
-			untilAToastShows,
-		],
+		async setup() {
+			await open(chat);
+			window.__test.recentPhotos = {
+				permission: 'granted',
+				photos: [
+					{
+						id: 'gone',
+						name: 'gone.png',
+						mimeType: 'image/png',
+						dataUrl: 'http://localhost:1/gone.png',
+					},
+				],
+			};
+			await settled();
+			await tap('message-input-attach');
+			await tap('message-input-recent-photo-0');
+			await untilAToastShows();
+		},
 	},
 	{
 		name: 'voice-recording',
-		path: chat,
-		seed() {
-			mockBackend.commandAnswers = {
-				'plugin:audio-recorder|check_permission': { granted: true },
-			};
+		async setup() {
+			setMockBackend({
+				commandAnswers: {
+					'plugin:audio-recorder|check_permission': { granted: true },
+				},
+			});
+			await open(chat);
+			pressAndHoldRecord();
 		},
-		steps: [pressAndHoldRecord],
 	},
 	{
 		name: 'error-microphone-not-allowed',
-		path: chat,
-		seed() {
-			mockBackend.commandAnswers = {
-				'plugin:audio-recorder|check_permission': { granted: false },
-			};
+		async setup() {
+			setMockBackend({
+				commandAnswers: {
+					'plugin:audio-recorder|check_permission': { granted: false },
+				},
+			});
+			await open(chat);
+			pressAndHoldRecord();
+			await settled();
+			await untilAToastShows();
 		},
-		steps: [pressAndHoldRecord, untilAToastShows],
 	},
 	{
 		name: 'error-recording-voice',
-		path: chat,
-		seed() {
-			mockBackend.commandAnswers = {
-				'plugin:audio-recorder|check_permission': { granted: true },
-			};
-			mockBackend.failingCommands = ['plugin:audio-recorder|start_recording'];
+		async setup() {
+			setMockBackend({
+				commandAnswers: {
+					'plugin:audio-recorder|check_permission': { granted: true },
+				},
+				failingCommands: ['plugin:audio-recorder|start_recording'],
+			});
+			await open(chat);
+			pressAndHoldRecord();
+			await settled();
+			await untilAToastShows();
 		},
-		steps: [pressAndHoldRecord, untilAToastShows],
 	},
 	{
 		name: 'desktop-file-saved',
-		path: chat,
 		device: 'desktop',
-		seed() {
+		async setup() {
 			mediaMessages();
-			mockBackend.commandAnswers = {
-				'plugin:dialog|save': '/home/me/trail-map.pdf',
-			};
+			setMockBackend({
+				commandAnswers: {
+					'plugin:dialog|save': '/home/me/trail-map.pdf',
+				},
+			});
+			await open(chat);
+			takeTheAppsOwnPaths();
+			await settled();
+			await tap('message-attachment-file');
+			await untilAToastShows();
 		},
-		steps: [
-			takeTheAppsOwnPaths,
-			{ tap: 'message-attachment-file' },
-			untilAToastShows,
-		],
 	},
 	{
 		name: 'desktop-photo-saved',
-		path: chat,
 		device: 'desktop',
-		seed() {
+		async setup() {
 			mediaMessages();
-			mockBackend.commandAnswers = {
-				'plugin:dialog|save': '/home/me/summit.jpg',
-			};
+			setMockBackend({
+				commandAnswers: {
+					'plugin:dialog|save': '/home/me/summit.jpg',
+				},
+			});
+			await open(chat);
+			openFirstPhoto();
+			await settled();
+			takeTheAppsOwnPaths();
+			await settled();
+			await tap('lightbox-save');
+			await untilAToastShows();
 		},
-		steps: [
-			openFirstPhoto,
-			takeTheAppsOwnPaths,
-			{ tap: 'lightbox-save' },
-			untilAToastShows,
-		],
 	},
 ] satisfies Scene[];

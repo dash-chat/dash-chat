@@ -1,10 +1,13 @@
-import type {
-	AddContactResult,
-	IContactsClient,
-	Profile,
-} from '../contacts/contacts-client';
-import type { AgentId, DeviceId, TopicId } from '../p2panda/types';
-import { personalTopicFor } from '../topics';
+import {
+	type AddContactResult,
+	type AgentId,
+	type DeviceId,
+	type IContactsClient,
+	type Profile,
+	type TopicId,
+	personalTopicFor,
+} from 'dash-chat-stores';
+
 import { failIfTold } from './backend-state';
 import { type LocalStorageLogsClient, chatIdForDevices } from './client';
 

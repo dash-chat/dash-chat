@@ -1,16 +1,26 @@
 import type { Scene } from '$lib/scenes/scene';
+import { open } from '$lib/scenes/steps';
+import { fill, focus } from 'translation-screenshots/scene';
 
 export default [
-	{ name: 'new-message', path: '/new-message' },
+	{
+		name: 'new-message',
+		setup: () => open('/new-message'),
+	},
 	{
 		name: 'new-message-no-match',
-		path: '/new-message',
-		steps: [{ type: 'zzzz', into: 'new-message-search' }],
+		async setup() {
+			await open('/new-message');
+			await fill('new-message-search', 'zzzz');
+		},
 	},
 	{
 		name: 'desktop-new-message-contact-menu',
-		path: '/new-message',
 		device: 'desktop',
-		steps: [{ hover: 'new-message-contact-item' }],
+		async setup() {
+			await open('/new-message');
+			// Focus on a contact's menu button shows it as a pointer over the contact does.
+			await focus('contact-menu-button');
+		},
 	},
 ] satisfies Scene[];

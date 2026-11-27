@@ -1,17 +1,20 @@
 import type { Scene } from '$lib/scenes/scene';
-import { mockBackend } from 'dash-chat-stores';
+import { open } from '$lib/scenes/steps';
+import { setMockBackend } from 'dash-chat-mock';
+import { fill, tap } from 'translation-screenshots/scene';
 
 export default [
-	{ name: 'edit-name', path: '/settings/profile/edit-name' },
+	{
+		name: 'edit-name',
+		setup: () => open('/settings/profile/edit-name'),
+	},
 	{
 		name: 'error-saving-profile',
-		path: '/settings/profile/edit-name',
-		seed() {
-			mockBackend.failingCommands = ['set_profile:AuthorOperation'];
+		async setup() {
+			setMockBackend({ failingCommands: ['set_profile:AuthorOperation'] });
+			await open('/settings/profile/edit-name');
+			await fill('edit-name-name', 'Robin');
+			await tap('edit-name-save-btn');
 		},
-		steps: [
-			{ type: 'Robin', into: 'edit-name-name' },
-			{ tap: 'edit-name-save-btn' },
-		],
 	},
 ] satisfies Scene[];

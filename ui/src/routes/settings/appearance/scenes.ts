@@ -1,5 +1,9 @@
 import type { Scene } from '$lib/scenes/scene';
+import { open } from '$lib/scenes/steps';
 
 export default [
-	{ name: 'appearance', path: '/settings/appearance' },
+	{
+		name: 'appearance',
+		setup: () => open('/settings/appearance'),
+	},
 ] satisfies Scene[];
