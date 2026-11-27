@@ -22,6 +22,9 @@ importers:
       '@trivago/prettier-plugin-sort-imports':
         specifier: ^4.3.0
         version: 4.3.0(prettier@3.6.2)(supports-color@8.1.1)
+      '@types/node':
+        specifier: ^24.10.0
+        version: 24.10.0
       concurrently:
         specifier: ^9.2.1
         version: 9.2.1
@@ -34,9 +37,18 @@ importers:
       get-port-cli:
         specifier: ^3.0.0
         version: 3.0.0
+      i18n-screenshots:
+        specifier: workspace:*
+        version: link:packages/i18n-screenshots
+      i18n-screenshots-weblate:
+        specifier: workspace:*
+        version: link:packages/i18n-screenshots-weblate
       mprocs:
         specifier: ^0.8.3
         version: 0.8.3
+      playwright-core:
+        specifier: ^1.65.1
+        version: 1.65.1
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
@@ -123,6 +135,31 @@ importers:
         specifier: ^9.29.1
         version: 9.29.1(supports-color@8.1.1)
 
+  packages/i18n-screenshots:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.0
+        version: 24.10.0
+      playwright-core:
+        specifier: ^1.65.1
+        version: 1.65.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/i18n-screenshots-weblate:
+    dependencies:
+      i18n-screenshots:
+        specifier: workspace:*
+        version: link:../i18n-screenshots
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.0
+        version: 24.10.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/mock:
     dependencies:
       blakejs:
@@ -202,34 +239,6 @@ importers:
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-
-  packages/translation-screenshots:
-    dependencies:
-      weblate-client:
-        specifier: workspace:*
-        version: link:../weblate-client
-    devDependencies:
-      '@types/node':
-        specifier: ^24.10.0
-        version: 24.10.0
-      playwright-core:
-        specifier: ^1.65.1
-        version: 1.65.1
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vite:
-        specifier: ^8.3.4
-        version: 8.3.4(@types/node@24.10.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
-
-  packages/weblate-client:
-    devDependencies:
-      '@types/node':
-        specifier: ^24.10.0
-        version: 24.10.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -375,18 +384,15 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@24.10.0)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
-      playwright-core:
-        specifier: ^1.65.1
-        version: 1.65.1
+      i18n-screenshots:
+        specifier: workspace:*
+        version: link:../packages/i18n-screenshots
       svelte:
         specifier: ^5.57.2
         version: 5.57.2(@typescript-eslint/types@8.45.0)
       svelte-check:
         specifier: ^4.3.6
         version: 4.3.6(picomatch@4.0.3)(svelte@5.57.2(@typescript-eslint/types@8.45.0))(typescript@5.6.3)
-      translation-screenshots:
-        specifier: workspace:*
-        version: link:../packages/translation-screenshots
       typescript:
         specifier: ~5.6.2
         version: 5.6.3

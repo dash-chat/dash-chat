@@ -24,6 +24,9 @@ mod ios 'scripts/ios.just'
 # build server docker images and create the droplets that run them
 mod infra 'scripts/infra.just'
 
+# compile the messages, take the screenshots translators see and sync them to weblate
+mod i18n 'scripts/i18n.just'
+
 # Show available recipes.
 _default:
     @just --list --list-submodules
@@ -51,25 +54,11 @@ update-version version:
 format:
     cargo fmt
     pnpm -r --if-present format
+    pnpm exec prettier --write 'scripts/i18n-screenshots/*.ts'
 
 # typecheck every TS package and the rust workspace
 check:
     cargo check --workspace
     pnpm -r --if-present check
-
-# regenerate paraglide message exports from source translation files
-paraglide:
-    pnpm --filter ui paraglide
-
-# take the screenshots translators see, one per scene (the scenes.ts files
-# next to the routes), failing when a source string has none. Set CHROME_BIN
-# where Chrome is not installed where Playwright looks for it.
-translation-screenshots:
-    pnpm -F dash-chat-stores -F dash-chat-mock build
-    node packages/translation-screenshots/src/cli.ts capture ui/translation-screenshots.config.ts
-
-# upload those screenshots to Weblate, attached to the strings each one shows.
-# Needs WEBLATE_TOKEN; which Weblate component is in
-# ui/translation-screenshots.config.ts.
-sync-weblate-screenshots:
-    node packages/translation-screenshots/src/cli.ts sync-weblate ui/translation-screenshots.config.ts
+    pnpm exec tsc --noEmit -p scripts/i18n-screenshots
+    pnpm exec prettier --check 'scripts/i18n-screenshots/*.ts'

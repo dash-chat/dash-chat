@@ -8,8 +8,11 @@ on:
     branches: [main, 'main-**', develop]
     paths:
       - 'ui/**'
-      - 'packages/stores/**'
-      - 'packages/mock/**'
+      - 'packages/**'
+      - 'scripts/i18n-screenshots/**'
+      - 'scripts/i18n.just'
+      - 'justfile'
+      - '.github/workflows/translation-screenshots.yaml'
   schedule:
     - cron: '0 3 * * *'
   push:
@@ -47,10 +50,10 @@ jobs:
 
       # The runner image's own Chrome, which Playwright finds by channel.
       - name: Take the screenshots
-        run: just translation-screenshots
+        run: just i18n screenshots
 
       - name: Upload them to Weblate
         if: github.event_name != 'pull_request'
         env:
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
-        run: just sync-weblate-screenshots
+        run: just i18n sync-weblate

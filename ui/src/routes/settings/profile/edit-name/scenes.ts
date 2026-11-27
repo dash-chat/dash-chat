@@ -1,7 +1,7 @@
 import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
-import { fill, tap } from 'translation-screenshots/scene';
+import { fill, tap } from 'i18n-screenshots/scene';
 
 export default [
 	{

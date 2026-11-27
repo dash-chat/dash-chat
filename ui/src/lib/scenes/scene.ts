@@ -1,4 +1,4 @@
-import type { Scene as SceneOfAnyDevice } from 'translation-screenshots/scene';
+import type { Scene as SceneOfAnyDevice } from 'i18n-screenshots/scene';
 
 /** One state of the UI worth showing a translator: its `setup` brings the
  * browser preview there, writing to the mock backend what it needs on top of

@@ -1,7 +1,7 @@
 import type { Scene } from '$lib/scenes/scene';
 import { open, untilAToastShows } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
-import { settled, tap } from 'translation-screenshots/scene';
+import { present, settled, tap } from 'i18n-screenshots/scene';
 
 /** Hand the upload input a picture with no QR code in it, the way picking
  * one would. */
@@ -13,10 +13,10 @@ async function uploadABlankImage(): Promise<void> {
 	const blank = await new Promise<Blob | null>(resolve =>
 		canvas.toBlob(resolve),
 	);
-	const input = document.querySelector<HTMLInputElement>(
+	const input = await present<HTMLInputElement>(
 		'[data-testid="add-contact-file-input"]',
 	);
-	if (blank === null || input === null) return;
+	if (blank === null) return;
 	const picked = new DataTransfer();
 	picked.items.add(new File([blank], 'blank.png', { type: 'image/png' }));
 	input.files = picked.files;
@@ -35,11 +35,9 @@ function showDownloadsOnThePage(): void {
 	};
 }
 
-function openMyOwnLink(): void {
-	const myCode = document.querySelector<HTMLElement & { value: string }>(
-		'wa-qr-code',
-	);
-	if (myCode !== null) window.__test.handleDeepLink(myCode.value);
+async function openMyOwnLink(): Promise<void> {
+	const myCode = await present<HTMLElement & { value: string }>('wa-qr-code');
+	window.__test.handleDeepLink(myCode.value);
 }
 
 function addingFailsWith(kind: string): void {
@@ -52,7 +50,7 @@ export default [
 		async setup() {
 			addingFailsWith('CannotAddSelf');
 			await open('/new-message/add-contact');
-			openMyOwnLink();
+			await openMyOwnLink();
 		},
 	},
 	{
@@ -60,7 +58,7 @@ export default [
 		async setup() {
 			addingFailsWith('InvalidContactCode');
 			await open('/new-message/add-contact');
-			openMyOwnLink();
+			await openMyOwnLink();
 		},
 	},
 	{
@@ -68,7 +66,7 @@ export default [
 		async setup() {
 			addingFailsWith('ProfileNotCreated');
 			await open('/new-message/add-contact');
-			openMyOwnLink();
+			await openMyOwnLink();
 		},
 	},
 	{
@@ -76,7 +74,7 @@ export default [
 		async setup() {
 			addingFailsWith('StoreContact');
 			await open('/new-message/add-contact');
-			openMyOwnLink();
+			await openMyOwnLink();
 		},
 	},
 	{

@@ -2,7 +2,7 @@ import { reportingIsUnavailable } from '$lib/scenes/demo-world';
 import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
-import { fill, settled, tap } from 'translation-screenshots/scene';
+import { fill, present, settled, tap } from 'i18n-screenshots/scene';
 
 const TINY_PNG = [
 	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
@@ -11,11 +11,10 @@ const TINY_PNG = [
 	0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 
-function chooseAReason(): void {
-	const reason = document.querySelector<HTMLSelectElement>(
+async function chooseAReason(): Promise<void> {
+	const reason = await present<HTMLSelectElement>(
 		'[data-testid="contact-us-reason-select"] select',
 	);
-	if (reason === null) return;
 	reason.selectedIndex = 1;
 	reason.dispatchEvent(new Event('input', { bubbles: true }));
 	reason.dispatchEvent(new Event('change', { bubbles: true }));
@@ -78,7 +77,7 @@ export default [
 		name: 'contact-us-sent',
 		async setup() {
 			await open('/settings/help/contact-us');
-			chooseAReason();
+			await chooseAReason();
 			await settled();
 			await fill('contact-us-message-input', 'The app is great');
 			await tap('contact-us-send-btn');
@@ -93,7 +92,7 @@ export default [
 				},
 			});
 			await open('/settings/help/contact-us');
-			chooseAReason();
+			await chooseAReason();
 			await settled();
 			await fill('contact-us-message-input', 'The app is great');
 			await tap('contact-us-send-btn');

@@ -75,7 +75,7 @@
 	import {
 		playRequestedScene,
 		requestedSceneName,
-	} from 'translation-screenshots/scene';
+	} from 'i18n-screenshots/scene';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`

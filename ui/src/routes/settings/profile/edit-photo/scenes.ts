@@ -1,6 +1,6 @@
 import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
-import { settled, tap } from 'translation-screenshots/scene';
+import { settled, tap } from 'i18n-screenshots/scene';
 
 const TINY_PNG = [
 	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,

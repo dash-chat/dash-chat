@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation';
-import { settled } from 'translation-screenshots/scene';
+import { settled } from 'i18n-screenshots/scene';
 
 function nextFrame(): Promise<void> {
 	return new Promise(resolve => requestAnimationFrame(() => resolve()));

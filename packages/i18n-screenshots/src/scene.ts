@@ -23,7 +23,7 @@ interface ScenesOnThePage {
 
 declare global {
 	interface Window {
-		__translationScreenshots?: ScenesOnThePage;
+		__i18nScreenshots?: ScenesOnThePage;
 	}
 }
 
@@ -40,7 +40,7 @@ export function playRequestedScene(scenes: Scene[]): void {
 	const played = (async () => requested?.setup?.())();
 	// Nobody may be waiting for it: a scene opened by hand in a browser.
 	played.catch(error => console.error(`scene ${requested?.name}:`, error));
-	window.__translationScreenshots = {
+	window.__i18nScreenshots = {
 		scenes: scenes.map(({ name, device }) => ({ name, device })),
 		shown: async () => {
 			await played;
@@ -107,38 +107,65 @@ export async function settled(): Promise<void> {
 
 const NOTHING_TO_ACT_ON_AFTER_MS = 10_000;
 
-/** The element with `testId` once there is one to see. */
-export async function find(testId: string): Promise<HTMLElement> {
+/** What `look` finds once it finds something, for what a scene acts on:
+ * the page gets to it some frames after what leads there. */
+async function eventually<E>(
+	look: () => E | null | undefined,
+	lookedFor: string,
+): Promise<E> {
 	const givenUpAt = Date.now() + NOTHING_TO_ACT_ON_AFTER_MS;
 	for (;;) {
-		const found = Array.from(
-			document.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`),
-		).find(el => el.checkVisibility({ visibilityProperty: true }));
-		if (found !== undefined) return found;
-		if (Date.now() > givenUpAt) {
-			throw new Error(`nothing with the test id ${testId} showed up`);
-		}
+		const found = look();
+		if (found !== null && found !== undefined) return found;
+		if (Date.now() > givenUpAt) throw new Error(`${lookedFor} never showed up`);
 		await twoFramesOn();
 	}
 }
 
-/** What a finger on the middle of `el` touches: the innermost thing there,
- * which is where a handler inside `el` expects the tap to land. */
-function innermostAtTheCentreOf(el: HTMLElement): HTMLElement {
-	const box = el.getBoundingClientRect();
-	const atTheCentre = document.elementFromPoint(
-		box.x + box.width / 2,
-		box.y + box.height / 2,
+/** The element with `testId` once there is one to see. */
+export function find(testId: string): Promise<HTMLElement> {
+	return eventually(
+		() =>
+			Array.from(
+				document.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`),
+			).find(el => el.checkVisibility({ visibilityProperty: true })),
+		`the test id ${testId}`,
 	);
-	return atTheCentre instanceof HTMLElement && el.contains(atTheCentre)
-		? atTheCentre
-		: el;
 }
 
+/** The first element matching `selector` once the page has one, seen or
+ * not: for what has no test id, or is never shown, like a file input. */
+export function present<E extends Element = HTMLElement>(
+	selector: string,
+): Promise<E> {
+	return eventually(() => document.querySelector<E>(selector), selector);
+}
+
+/** Tap the middle of the element as a finger or a pointer would: on the
+ * innermost thing there, which is where a handler inside it expects the tap
+ * to land, and not at all when something else covers it. */
 export async function tap(testId: string): Promise<void> {
 	const tapped = await find(testId);
 	tapped.scrollIntoView({ block: 'nearest' });
-	innermostAtTheCentreOf(tapped).click();
+	const box = tapped.getBoundingClientRect();
+	const at = {
+		clientX: box.x + box.width / 2,
+		clientY: box.y + box.height / 2,
+	};
+	const touched = document.elementFromPoint(at.clientX, at.clientY);
+	if (touched === null || !tapped.contains(touched)) {
+		throw new Error(`${testId} is covered: a tap on it lands elsewhere`);
+	}
+	const landing = { ...at, bubbles: true, cancelable: true, composed: true };
+	const pointer = {
+		...landing,
+		pointerId: 1,
+		pointerType: matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse',
+	};
+	touched.dispatchEvent(new PointerEvent('pointerdown', pointer));
+	touched.dispatchEvent(new PointerEvent('pointerup', pointer));
+	// Not `click()`: what is touched may be a drawing inside the element.
+	touched.dispatchEvent(new MouseEvent('click', landing));
 	await settled();
 }
 

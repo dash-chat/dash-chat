@@ -17,7 +17,14 @@ import {
 	minutesAgo,
 	setMockBackend,
 } from 'dash-chat-mock';
-import { fill, find, hold, settled, tap } from 'translation-screenshots/scene';
+import {
+	fill,
+	find,
+	hold,
+	present,
+	settled,
+	tap,
+} from 'i18n-screenshots/scene';
 
 const TINY_PNG = [
 	137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0,
@@ -30,15 +37,11 @@ const chat = directChatPath(ALICE);
 const request = directChatPath(DEMO_CONTACT_REQUESTER);
 
 /** Press the record button and keep it down, as a thumb does. */
-function pressAndHoldRecord(): void {
+async function pressAndHoldRecord(): Promise<void> {
 	// A synthetic pointer is not one the browser can capture.
 	Element.prototype.setPointerCapture = () => {};
-	const record = Array.from(
-		document.querySelectorAll<HTMLElement>(
-			'[data-testid="message-input-voice-record"]',
-		),
-	).find(button => button.offsetParent !== null);
-	record?.dispatchEvent(
+	const record = await find('message-input-voice-record');
+	record.dispatchEvent(
 		new PointerEvent('pointerdown', {
 			pointerId: 1,
 			pointerType: 'touch',
@@ -49,12 +52,11 @@ function pressAndHoldRecord(): void {
 	);
 }
 
-function openFirstPhoto(): void {
-	document
-		.querySelector<HTMLElement>(
-			'[data-testid="message-attachment-photos"] button',
-		)
-		?.click();
+async function openFirstPhoto(): Promise<void> {
+	const firstPhoto = await present(
+		'[data-testid="message-attachment-photos"] button',
+	);
+	firstPhoto.click();
 }
 
 function mediaMessages(): void {
@@ -447,11 +449,11 @@ export default [
 		device: 'desktop',
 		async setup() {
 			await open(chat);
-			const mine = await find('message-from-me');
 			// Focus inside the message shows the toolbar a pointer over it does.
-			mine
-				.querySelector<HTMLElement>('[data-testid="message-hover-react"]')
-				?.focus();
+			const react = await present(
+				'[data-testid="message-from-me"] [data-testid="message-hover-react"]',
+			);
+			react.focus();
 		},
 	},
 	{
@@ -459,7 +461,7 @@ export default [
 		async setup() {
 			mediaMessages();
 			await open(chat);
-			openFirstPhoto();
+			await openFirstPhoto();
 		},
 	},
 	{
@@ -474,7 +476,7 @@ export default [
 		name: 'staged-photo',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
 			]);
 		},
@@ -483,7 +485,7 @@ export default [
 		name: 'staged-file',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
 			]);
 		},
@@ -492,25 +494,26 @@ export default [
 		name: 'error-attachment-too-large',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{
 					name: 'film.bin',
 					mimeType: 'application/octet-stream',
 					size: 17 * 1024 * 1024,
 				},
 			]);
-			await settled();
-			const sends = document.querySelectorAll<HTMLElement>(
-				'[data-testid="message-input-send"]',
+			// The composer's own send button is under the page the file is staged on.
+			const send = await present(
+				'[data-testid="staged-media-page"] [data-testid="message-input-send"]',
 			);
-			sends[sends.length - 1]?.click();
+			send.click();
+			await untilAToastShows();
 		},
 	},
 	{
 		name: 'error-one-file-at-a-time',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
 				{ name: 'b.pdf', mimeType: 'application/pdf', size: 2048 },
 			]);
@@ -520,7 +523,7 @@ export default [
 		name: 'error-files-with-photos',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{ name: 'a.pdf', mimeType: 'application/pdf', size: 2048 },
 				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
 			]);
@@ -530,7 +533,7 @@ export default [
 		name: 'error-too-many-attachments',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer(
+			await pasteIntoComposer(
 				Array.from({ length: 40 }, (_, index) => ({
 					name: `photo-${index}.png`,
 					mimeType: 'image/png',
@@ -544,7 +547,7 @@ export default [
 		name: 'error-damaged-photo',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{
 					name: 'damaged.jpg',
 					mimeType: 'image/jpeg',
@@ -558,6 +561,7 @@ export default [
 		name: 'error-unreadable-photo',
 		async setup() {
 			await open(chat);
+			await find('message-input-textarea');
 			window.__test.pasteUnreadablePhoto('withdrawn');
 			await untilAToastShows();
 		},
@@ -566,6 +570,7 @@ export default [
 		name: 'error-unreadable-file',
 		async setup() {
 			await open(chat);
+			await find('message-input-textarea');
 			window.__test.pasteUnreadableFile('withdrawn.txt');
 			await untilAToastShows();
 		},
@@ -648,9 +653,7 @@ export default [
 				);
 			}
 			await open(chat);
-			document
-				.querySelector('[data-testid="direct-chat-scroll"]')
-				?.scrollTo({ top: -100_000 });
+			(await find('direct-chat-scroll')).scrollTo({ top: -100_000 });
 		},
 	},
 	{
@@ -659,7 +662,7 @@ export default [
 		async setup() {
 			mediaMessages();
 			await open(chat);
-			openFirstPhoto();
+			await openFirstPhoto();
 		},
 	},
 	{
@@ -667,7 +670,7 @@ export default [
 		device: 'desktop',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{ name: 'trail-map.pdf', mimeType: 'application/pdf', size: 2048 },
 			]);
 		},
@@ -677,7 +680,7 @@ export default [
 		device: 'desktop',
 		async setup() {
 			await open(chat);
-			pasteIntoComposer([
+			await pasteIntoComposer([
 				{ name: 'summit.png', mimeType: 'image/png', bytes: TINY_PNG },
 				{ name: 'lake.png', mimeType: 'image/png', bytes: TINY_PNG },
 			]);
@@ -744,7 +747,7 @@ export default [
 		async setup() {
 			mediaMessages();
 			await open(chat);
-			openFirstPhoto();
+			await openFirstPhoto();
 			await settled();
 			await tap('lightbox-next');
 		},
@@ -844,7 +847,7 @@ export default [
 				},
 			});
 			await open(chat);
-			pressAndHoldRecord();
+			await pressAndHoldRecord();
 		},
 	},
 	{
@@ -856,7 +859,7 @@ export default [
 				},
 			});
 			await open(chat);
-			pressAndHoldRecord();
+			await pressAndHoldRecord();
 			await settled();
 			await untilAToastShows();
 		},
@@ -871,7 +874,7 @@ export default [
 				failingCommands: ['plugin:audio-recorder|start_recording'],
 			});
 			await open(chat);
-			pressAndHoldRecord();
+			await pressAndHoldRecord();
 			await settled();
 			await untilAToastShows();
 		},
@@ -904,7 +907,7 @@ export default [
 				},
 			});
 			await open(chat);
-			openFirstPhoto();
+			await openFirstPhoto();
 			await settled();
 			takeTheAppsOwnPaths();
 			await settled();

@@ -15,7 +15,7 @@ import {
 	mockBackend,
 	setMockBackend,
 } from 'dash-chat-mock';
-import { tap } from 'translation-screenshots/scene';
+import { tap } from 'i18n-screenshots/scene';
 
 import { groupIAdminister } from '../scenes';
 

@@ -1,6 +1,6 @@
 import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
-import { fill, focus } from 'translation-screenshots/scene';
+import { fill, focus } from 'i18n-screenshots/scene';
 
 export default [
 	{

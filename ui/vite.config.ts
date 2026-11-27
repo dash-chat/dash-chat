@@ -5,8 +5,6 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
-import { paraglideKeyMarkers } from 'translation-screenshots/paraglide';
-
 // Resolve signalium's development ESM build for production builds
 const require = createRequire(import.meta.url);
 const signaliumPkgDir = path.dirname(require.resolve('signalium/package.json'));
@@ -59,13 +57,16 @@ export default defineConfig(async () => ({
 		sveltekit(),
 		tailwindcss(),
 		paraglideVitePlugin({
-			project: './project.inlang',
+			// The translation screenshots are of a build whose messages each
+			// carry their key, compiled from a marked copy of the messages
+			// (`scripts/i18n-screenshots/capture.ts` at the root).
+			project:
+				process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
+					? './.marked-messages/project.inlang'
+					: './project.inlang',
 			outdir: './src/lib/paraglide',
 			strategy: ['preferredLanguage', 'cookie', 'globalVariable', 'baseLocale'],
 		}),
-		...(process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
-			? [paraglideKeyMarkers()]
-			: []),
 	],
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

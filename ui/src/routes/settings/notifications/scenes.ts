@@ -1,6 +1,6 @@
 import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
-import { settled, tap } from 'translation-screenshots/scene';
+import { present, settled, tap } from 'i18n-screenshots/scene';
 
 export default [
 	{
@@ -25,11 +25,10 @@ export default [
 				},
 			});
 			await settled();
-			document
-				.querySelector<HTMLElement>(
-					'[data-testid="notifications-toggle"] input',
-				)
-				?.click();
+			const toggle = await present(
+				'[data-testid="notifications-toggle"] input',
+			);
+			toggle.click();
 		},
 	},
 ] satisfies Scene[];

@@ -17,6 +17,7 @@ import {
 	type Payload,
 	personalTopicFor,
 } from 'dash-chat-stores';
+import { find } from 'i18n-screenshots/scene';
 
 export const [ALICE, BOB, CAROL, DAVE] = DEMO_CONTACTS;
 
@@ -59,9 +60,10 @@ export function deviceGroupOperation(
 export const STRANGER = { agentId: '09'.repeat(32), deviceId: '19'.repeat(32) };
 
 /** Stage `files` in the composer the way a paste does. */
-export function pasteIntoComposer(
+export async function pasteIntoComposer(
 	files: { name: string; mimeType: string; bytes?: number[]; size?: number }[],
-): void {
+): Promise<void> {
+	await find('message-input-textarea');
 	window.__test.pasteFiles(files);
 }
 

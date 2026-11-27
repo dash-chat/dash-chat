@@ -23,3 +23,19 @@ export function markedTranslationKeys(text: string): string[] {
 		return chars.map(char => String.fromCharCode(parseInt(char, 2))).join('');
 	});
 }
+
+/** `sourceStrings` with each one followed by the marker of the key the app
+ * renders it under, for an app to be built from in place of the originals:
+ * whatever it then shows says which string it is. `renderedKey` gives that
+ * key where it is not the one the string is filed under. */
+export function markedSourceStrings(
+	sourceStrings: Record<string, string>,
+	renderedKey: (sourceKey: string) => string = sourceKey => sourceKey,
+): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries(sourceStrings).map(([sourceKey, text]) => [
+			sourceKey,
+			markTranslationKey(renderedKey(sourceKey), text),
+		]),
+	);
+}
