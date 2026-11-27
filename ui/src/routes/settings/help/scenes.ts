@@ -1,4 +1,4 @@
-import type { Scene } from '$lib/scenes/scene';
+import type { Scene } from '$lib/scenes';
 import { open } from '$lib/scenes/steps';
 import { find, tap } from 'i18n-screenshots/scene';
 

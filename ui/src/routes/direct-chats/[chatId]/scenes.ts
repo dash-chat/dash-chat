@@ -1,3 +1,4 @@
+import type { Scene } from '$lib/scenes';
 import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import {
 	ALICE,
@@ -9,7 +10,6 @@ import {
 	directChatPath,
 	pasteIntoComposer,
 } from '$lib/scenes/demo-world';
-import type { Scene } from '$lib/scenes/scene';
 import { hold, open, tid, untilAToastShows } from '$lib/scenes/steps';
 import { takeTheAppsOwnPaths } from '$lib/utils/preview-tauri';
 import {

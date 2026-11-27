@@ -1,11 +1,13 @@
 import { type SceneOutcome, captureScenes } from 'i18n-screenshots/capture';
-import { stringsNotAccountedFor } from 'i18n-screenshots/coverage';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { devices } from 'playwright-core';
 
-import { saveScreenshots } from './files.ts';
+import {
+	saveScreenshotsOfEveryScene,
+	saveScreenshotsOfSomeScenes,
+} from './files.ts';
 import { renderedSourceKeys } from './rendered-keys.ts';
 
 const UI = fileURLToPath(new URL('../../ui/', import.meta.url));
@@ -46,10 +48,28 @@ const named = (process.env.SCENES ?? '')
 	.filter(name => name !== '');
 const only = named.length > 0 ? named : undefined;
 
-function report({ name, screenshot, error, pageErrors }: SceneOutcome): void {
-	if (screenshot === undefined) console.error(`${name}: ${error}`);
-	else console.log(`${name}: ${screenshot.keys.length} strings`);
-	if (screenshot === undefined || only !== undefined) {
+function whyUnusable({
+	name,
+	screenshot,
+	error,
+}: SceneOutcome): string | undefined {
+	if (screenshot === undefined) return error;
+	// The app's catch-all error means the scene broke, unless the scene is of it.
+	if (
+		screenshot.keys.includes('errorUnexpected') &&
+		!name.startsWith('error-')
+	) {
+		return 'the app reported an unexpected error';
+	}
+	return undefined;
+}
+
+function report(outcome: SceneOutcome): void {
+	const { name, screenshot, pageErrors } = outcome;
+	const failure = whyUnusable(outcome);
+	if (failure !== undefined) console.error(`${name}: ${failure}`);
+	else console.log(`${name}: ${screenshot?.keys.length} strings`);
+	if (failure !== undefined || only !== undefined) {
 		for (const pageError of pageErrors) {
 			console.error(`  ${pageError.split('\n')[0]}`);
 		}
@@ -57,7 +77,8 @@ function report({ name, screenshot, error, pageErrors }: SceneOutcome): void {
 }
 
 /** Fail the run when a source string no scene shows is not listed as such, or
- *  a listed one is shown after all. */
+ *  a listed one is shown after all: the list is how a new string without a
+ *  screenshot gets noticed. */
 function checkEveryStringIsAccountedFor(shownKeys: Set<string>): void {
 	const sourceKeys = renderedSourceKeys(
 		JSON.parse(readFileSync(SOURCE_STRINGS, 'utf8')) as Record<string, string>,
@@ -65,16 +86,13 @@ function checkEveryStringIsAccountedFor(shownKeys: Set<string>): void {
 	const listed = JSON.parse(
 		readFileSync(STRINGS_WITHOUT_SCREENSHOT, 'utf8'),
 	) as string[];
-	const shown = sourceKeys.filter(key => shownKeys.has(key));
+	const notShown = sourceKeys.filter(key => !shownKeys.has(key));
 	console.log(
-		`${shown.length}/${sourceKeys.length} source strings have a screenshot`,
+		`${sourceKeys.length - notShown.length}/${sourceKeys.length} source strings have a screenshot`,
 	);
 
-	const { unlisted, stale } = stringsNotAccountedFor(
-		shownKeys,
-		sourceKeys,
-		listed,
-	);
+	const unlisted = notShown.filter(key => !listed.includes(key));
+	const stale = listed.filter(key => !notShown.includes(key));
 	if (unlisted.length > 0) {
 		console.error(
 			`No scene shows these strings; add a scene, or list them in ${STRINGS_WITHOUT_SCREENSHOT}: ${unlisted.join(', ')}`,
@@ -108,20 +126,26 @@ async function untilItIsServed(url: string): Promise<void> {
 }
 
 await untilItIsServed(appUrl);
-const { sceneNames, outcomes } = await captureScenes({
+const outcomes = await captureScenes({
 	appUrl,
 	devices: DEVICES,
 	defaultDevice: 'phone',
-	unexpectedErrorKey: 'errorUnexpected',
 	// CHROME_BIN where the machine's Chrome is not where Playwright looks for it.
 	chrome: process.env.CHROME_BIN,
 	only,
 	onOutcome: report,
 });
-const screenshots = outcomes.flatMap(({ screenshot }) =>
-	screenshot === undefined ? [] : [screenshot],
+const screenshots = outcomes.flatMap(outcome =>
+	outcome.screenshot === undefined || whyUnusable(outcome) !== undefined
+		? []
+		: [outcome.screenshot],
 );
-saveScreenshots(sceneNames, screenshots);
+const tookAllItSetOutTo = screenshots.length === outcomes.length;
+const savedTo =
+	only === undefined && tookAllItSetOutTo
+		? saveScreenshotsOfEveryScene(screenshots)
+		: saveScreenshotsOfSomeScenes(screenshots, only === undefined);
+console.log(`Saved to ${savedTo}`);
 if (screenshots.length < outcomes.length) process.exitCode = 1;
 if (only === undefined) {
 	checkEveryStringIsAccountedFor(

@@ -59,7 +59,7 @@ export default defineConfig(async () => ({
 		paraglideVitePlugin({
 			// The translation screenshots are of a build whose messages each
 			// carry their key, compiled from a marked copy of the messages
-			// (`scripts/i18n-screenshots/capture.ts` at the root).
+			// (`just i18n screenshots`).
 			project:
 				process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
 					? './.marked-messages/project.inlang'

@@ -2,7 +2,8 @@ name: Translation Screenshots
 
 # Takes the screenshots translators see (one per scene, see the scenes.ts files
 # next to the routes) and fails when a source string has none. Off pull
-# requests it also uploads them to Weblate, attached to the strings each shows.
+# requests, that is on every push to develop that can change them, it also
+# uploads them to Weblate, attached to the strings each shows.
 on:
   pull_request:
     branches: [main, 'main-**', develop]
@@ -13,12 +14,15 @@ on:
       - 'scripts/i18n.just'
       - 'justfile'
       - '.github/workflows/translation-screenshots.yaml'
-  schedule:
-    - cron: '0 3 * * *'
   push:
     branches: [develop]
     paths:
-      - 'ui/messages/en.json'
+      - 'ui/**'
+      - 'packages/**'
+      - 'scripts/i18n-screenshots/**'
+      - 'scripts/i18n.just'
+      - 'justfile'
+      - '.github/workflows/translation-screenshots.yaml'
   workflow_dispatch:
 
 concurrency:

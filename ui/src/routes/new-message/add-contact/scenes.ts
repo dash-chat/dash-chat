@@ -1,4 +1,4 @@
-import type { Scene } from '$lib/scenes/scene';
+import type { Scene } from '$lib/scenes';
 import { open, tid, untilAToastShows } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
 import { present, settled, tap } from 'i18n-screenshots/scene';

@@ -7,7 +7,16 @@ import {
 
 // For what it declares on `window`.
 import type {} from './scene.ts';
-import type { Screenshot } from './screenshot.ts';
+
+/** The picture of one scene and what it shows. */
+export interface Screenshot {
+	/** The name of the scene it is of. */
+	name: string;
+	/** The picture, as PNG. */
+	image: Uint8Array;
+	/** The keys of the strings it shows. */
+	keys: string[];
+}
 
 export interface CaptureOptions {
 	/** Where the app is served, built with every message carrying its key. */
@@ -16,9 +25,6 @@ export interface CaptureOptions {
 	devices: Record<string, BrowserContextOptions>;
 	/** The device of a scene that names none. */
 	defaultDevice: string;
-	/** The key of the app's catch-all error message: a scene that shows it
-	 * broke, unless its name starts with `error-`. */
-	unexpectedErrorKey?: string;
 	/** The Chrome to drive, where it is not where Playwright looks for it. */
 	chrome?: string;
 	/** The names of the only scenes to take, to work on them without the
@@ -35,12 +41,6 @@ export interface SceneOutcome {
 	error?: string;
 	/** What the page reported as errors while the scene played. */
 	pageErrors: string[];
-}
-
-export interface Capture {
-	/** The names of every scene the app has, taken or not. */
-	sceneNames: string[];
-	outcomes: SceneOutcome[];
 }
 
 interface SceneToCapture {
@@ -93,15 +93,7 @@ async function capture(
 	url.searchParams.set('scene', sceneName);
 	await page.goto(url.href);
 	await waitForTheScenes(page);
-	const { image, keys } = await pictureWithItsKeys(page);
-	if (
-		options.unexpectedErrorKey !== undefined &&
-		keys.includes(options.unexpectedErrorKey) &&
-		!sceneName.startsWith('error-')
-	) {
-		throw new Error('the app reported an unexpected error');
-	}
-	return { name: sceneName, image, keys };
+	return { name: sceneName, ...(await pictureWithItsKeys(page)) };
 }
 
 const NEVER_SETTLED_AFTER_MS = 30_000;
@@ -180,7 +172,9 @@ function refuseUnknownScenes(only: string[], scenes: SceneToCapture[]): void {
 
 /** Take a screenshot of each scene of the app served at `appUrl`, with the
  * keys of the strings each one shows. */
-export async function captureScenes(options: CaptureOptions): Promise<Capture> {
+export async function captureScenes(
+	options: CaptureOptions,
+): Promise<SceneOutcome[]> {
 	const { only } = options;
 	const browser = await chromium.launch(
 		options.chrome === undefined
@@ -202,7 +196,7 @@ export async function captureScenes(options: CaptureOptions): Promise<Capture> {
 			options.onOutcome?.(outcome);
 			outcomes.push(outcome);
 		}
-		return { sceneNames: scenes.map(scene => scene.name), outcomes };
+		return outcomes;
 	} finally {
 		await browser.close();
 	}

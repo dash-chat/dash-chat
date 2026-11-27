@@ -1,9 +1,9 @@
+import type { Scene } from '$lib/scenes';
 import {
 	ALICE,
 	deviceGroupOperation,
 	directChatPath,
 } from '$lib/scenes/demo-world';
-import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
 import { minutesAgo, setMockBackend } from 'dash-chat-mock';
 import { tap } from 'i18n-screenshots/scene';

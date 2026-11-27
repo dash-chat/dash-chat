@@ -1,6 +1,6 @@
+import type { Scene } from '$lib/scenes';
 import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import { reportingIsUnavailable } from '$lib/scenes/demo-world';
-import type { Scene } from '$lib/scenes/scene';
 import { open, tid } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
 import { fill, present, settled, tap } from 'i18n-screenshots/scene';

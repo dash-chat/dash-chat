@@ -6,9 +6,7 @@
 	"exports": {
 		"./scene": "./src/scene.ts",
 		"./markers": "./src/markers.ts",
-		"./capture": "./src/capture.ts",
-		"./coverage": "./src/coverage.ts",
-		"./screenshot": "./src/screenshot.ts"
+		"./capture": "./src/capture.ts"
 	},
 	"scripts": {
 		"format": "prettier --write 'src/**/*.ts'",

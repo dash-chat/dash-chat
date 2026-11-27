@@ -6,7 +6,9 @@ paraglide:
 
 # The scenes are the scenes.ts files next to the routes. Set CHROME_BIN where
 # Chrome is not installed where Playwright looks for it; SCENES=a,b takes only
-# those scenes.
+# those scenes. Only a run that takes every scene saves to
+# .dbs/translation-screenshots, which is what gets synced; any other saves to
+# .dbs/translation-screenshots-partial.
 #
 # take the screenshots translators see, one per scene, failing when a source string has none
 screenshots:
@@ -18,14 +20,8 @@ screenshots:
     # every English message ends in the invisible marker of its key:
     # ui/vite.config.ts has paraglide compile from it for this build.
     rm -rf ui/.marked-messages
-    mkdir -p ui/.marked-messages/project.inlang
-    cp ui/project.inlang/settings.json ui/.marked-messages/project.inlang/
-    # The plugins the project already fetched, which the build would
-    # otherwise have to fetch again.
-    if [ -d ui/project.inlang/cache ]; then
-        cp -r ui/project.inlang/cache ui/.marked-messages/project.inlang/cache
-    fi
-    cp -r ui/messages ui/.marked-messages/messages
+    mkdir ui/.marked-messages
+    cp -r ui/project.inlang ui/messages ui/.marked-messages/
     node scripts/i18n-screenshots/mark-messages.ts ui/messages/en.json ui/.marked-messages/messages/en.json
 
     # `vite build` alone stops at the staging directory, so the build the app

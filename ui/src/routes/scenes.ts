@@ -1,3 +1,4 @@
+import type { Scene } from '$lib/scenes';
 import {
 	ALICE,
 	BOB,
@@ -9,7 +10,6 @@ import {
 	nobodyHasSetUpThisDevice,
 	onlyMyProfile,
 } from '$lib/scenes/demo-world';
-import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
 import {
 	MOCK_MAILBOX_DOWN,

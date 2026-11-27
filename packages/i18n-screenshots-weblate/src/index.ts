@@ -1,4 +1,4 @@
-import type { Screenshot } from 'i18n-screenshots/screenshot';
+import type { Screenshot } from 'i18n-screenshots/capture';
 
 import {
 	type Screenshot as RemoteScreenshot,
@@ -10,10 +10,9 @@ import {
 const MANAGED_NAME_PREFIX = 'scene: ';
 
 export interface WeblateSyncOptions {
-	/** One screenshot of every scene the app has. */
+	/** One screenshot of every scene the app has: a managed screenshot in
+	 * Weblate that is not among them is deleted as no longer existing. */
 	screenshots: Screenshot[];
-	/** The names of every scene the app has, to tell a partial set by. */
-	sceneNames: string[];
 	/** The address of the Weblate instance. */
 	url: string;
 	/** A token allowed to manage the component's screenshots. */
@@ -32,22 +31,6 @@ export interface WeblateSyncOptions {
 interface ScreenshotToSync extends Screenshot {
 	managedName: string;
 	unitIds: number[];
-}
-
-/** Throws unless there is a screenshot of every scene: what is missing would
- * be deleted from Weblate as no longer existing. */
-function refuseAPartialSet(
-	screenshots: Screenshot[],
-	sceneNames: string[],
-): void {
-	const missing = sceneNames.filter(
-		name => !screenshots.some(screenshot => screenshot.name === name),
-	);
-	if (missing.length > 0) {
-		throw new Error(
-			`Not syncing: there is no screenshot of ${missing.length} scenes, which would be deleted from Weblate. Take them all first. Missing: ${missing.join(', ')}`,
-		);
-	}
 }
 
 /** Attach `screenshot` to exactly the units in `wantedUnitIds`. */
@@ -70,7 +53,6 @@ async function attachToUnits(
  * longer among them. */
 export async function syncScreenshotsToWeblate({
 	screenshots,
-	sceneNames,
 	url,
 	token,
 	project,
@@ -79,8 +61,6 @@ export async function syncScreenshotsToWeblate({
 	renderedKey = weblateKey => weblateKey,
 	log = () => {},
 }: WeblateSyncOptions): Promise<void> {
-	refuseAPartialSet(screenshots, sceneNames);
-
 	const weblate = new WeblateClient(url, token);
 	const units = await weblate.units(project, component, sourceLanguage);
 	if (units.length === 0) {

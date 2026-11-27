@@ -1,5 +1,5 @@
+import type { Scene } from '$lib/scenes';
 import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
-import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
 import { settled, tap } from 'i18n-screenshots/scene';
 

@@ -72,10 +72,7 @@
 	import { registerSetLocale } from '$lib/utils/locale';
 	import { installPreviewTauri } from '$lib/utils/preview-tauri';
 	import { scenes } from '$lib/scenes';
-	import {
-		playRequestedScene,
-		requestedSceneName,
-	} from 'i18n-screenshots/scene';
+	import { playRequestedScene } from 'i18n-screenshots/scene';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -121,8 +118,6 @@
 	if (isPreview) {
 		installPreviewTauri();
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
-		// A scene starts from the demo data alone, whatever an earlier one left.
-		if (requestedSceneName() !== null) localStorage.clear();
 		seedDemoData(mockLogsClient);
 		playRequestedScene(scenes);
 

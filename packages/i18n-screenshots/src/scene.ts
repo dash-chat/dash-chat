@@ -27,15 +27,12 @@ declare global {
 	}
 }
 
-/** The scene the `?scene=` query parameter asks for. */
-export function requestedSceneName(): string | null {
-	return new URLSearchParams(location.search).get('scene');
-}
-
 /** Tell whoever takes the screenshots which `scenes` there are, and play the
- * requested one. Call it where the app starts, before it renders. */
+ * one the `?scene=` query parameter asks for. Call it where the app starts,
+ * before it renders. */
 export function playRequestedScene(scenes: Scene[]): void {
-	const requested = scenes.find(scene => scene.name === requestedSceneName());
+	const requestedName = new URLSearchParams(location.search).get('scene');
+	const requested = scenes.find(scene => scene.name === requestedName);
 	if (requested !== undefined) stopAllMotion();
 	const played = (async () => requested?.setup?.())();
 	// Nobody may be waiting for it: a scene opened by hand in a browser.
@@ -63,8 +60,8 @@ function twoFramesOn(): Promise<void> {
 	);
 }
 
-// One look alike can fall between two steps of the same change: a sheet that
-// closes, then what it was covering updates.
+// One look alike can fall between two steps of the same change: a dialog
+// that mounts, then moves into place under what is to be tapped next.
 const LOOKS_UNCHANGED_TO_BE_SETTLED = 3;
 
 function sameStringsInTheSamePlaces(
@@ -109,7 +106,7 @@ const NOTHING_TO_ACT_ON_AFTER_MS = 10_000;
 
 /** What `look` finds once it finds something, for what a scene acts on:
  * the page gets to it some frames after what leads there. */
-async function eventually<E>(
+export async function eventually<E>(
 	look: () => E | null | undefined,
 	lookedFor: string,
 ): Promise<E> {
@@ -141,9 +138,10 @@ export function present<E extends Element = HTMLElement>(
 	return eventually(() => document.querySelector<E>(selector), selector);
 }
 
-/** Tap the middle of the element as a finger or a pointer would: on the
- * innermost thing there, which is where a handler inside it expects the tap
- * to land, and not at all when something else covers it. */
+/** Click the middle of the element: on the innermost thing there, which is
+ * where a handler inside it expects the click to land, and not at all when
+ * something else covers it. Only a click: what reacts to the pointer going
+ * down or up gets nothing. */
 export async function tap(testId: string): Promise<void> {
 	const tapped = await find(testId);
 	tapped.scrollIntoView({ block: 'nearest' });
@@ -156,16 +154,15 @@ export async function tap(testId: string): Promise<void> {
 	if (touched === null || !tapped.contains(touched)) {
 		throw new Error(`${testId} is covered: a tap on it lands elsewhere`);
 	}
-	const landing = { ...at, bubbles: true, cancelable: true, composed: true };
-	const pointer = {
-		...landing,
-		pointerId: 1,
-		pointerType: matchMedia('(pointer: coarse)').matches ? 'touch' : 'mouse',
-	};
-	touched.dispatchEvent(new PointerEvent('pointerdown', pointer));
-	touched.dispatchEvent(new PointerEvent('pointerup', pointer));
 	// Not `click()`: what is touched may be a drawing inside the element.
-	touched.dispatchEvent(new MouseEvent('click', landing));
+	touched.dispatchEvent(
+		new MouseEvent('click', {
+			...at,
+			bubbles: true,
+			cancelable: true,
+			composed: true,
+		}),
+	);
 	await settled();
 }
 

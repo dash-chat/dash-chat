@@ -1,5 +1,5 @@
+import type { Scene } from '$lib/scenes';
 import { onlyMyProfile } from '$lib/scenes/demo-world';
-import type { Scene } from '$lib/scenes/scene';
 import { open } from '$lib/scenes/steps';
 import { tap } from 'i18n-screenshots/scene';
 
