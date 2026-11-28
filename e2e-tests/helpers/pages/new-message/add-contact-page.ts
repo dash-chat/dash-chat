@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 
+import { TINY_PNG_BYTES } from '../../images';
 import { tid } from '../../selectors';
 import { TestHelper } from '../test-helper';
 
@@ -67,54 +68,27 @@ export class AddContactPage extends TestHelper {
 
 	/** Generate a QR PNG for the given string and inject it into the file input. */
 	async uploadQrCodeImage(value: string): Promise<void> {
-		const pngBase64 = (
-			await QRCode.toBuffer(value, { type: 'png', errorCorrectionLevel: 'L' })
-		).toString('base64');
-		await this.agent.execute(
-			(base64: string, testid: string) => {
-				const binary = atob(base64);
-				const bytes = new Uint8Array(binary.length);
-				for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-				const file = new File([bytes], 'qr.png', { type: 'image/png' });
-				const dt = new DataTransfer();
-				dt.items.add(file);
-				const input = document.querySelector(
-					`[data-testid="${testid}"]`,
-				) as HTMLInputElement | null;
-				if (!input) throw new Error('file input not found');
-				input.files = dt.files;
-				input.dispatchEvent(new Event('change', { bubbles: true }));
-			},
-			pngBase64,
-			FILE_INPUT_TESTID,
-		);
+		const png = await QRCode.toBuffer(value, {
+			type: 'png',
+			errorCorrectionLevel: 'L',
+		});
+		await this.pickImage('qr.png', Array.from(png));
 	}
 
-	/** Inject a blank PNG (no QR code) into the file input. */
+	/** Inject a PNG with no QR code in it into the file input. */
 	async uploadEmptyImage(): Promise<void> {
-		await this.agent.execute(async (testid: string) => {
-			const canvas = document.createElement('canvas');
-			canvas.width = 64;
-			canvas.height = 64;
-			const ctx = canvas.getContext('2d');
-			if (!ctx) throw new Error('canvas context failed');
-			ctx.fillStyle = '#ffffff';
-			ctx.fillRect(0, 0, 64, 64);
-			const blob = await new Promise<Blob>((resolve, reject) => {
-				canvas.toBlob(
-					b => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))),
-					'image/png',
-				);
-			});
-			const file = new File([blob], 'blank.png', { type: 'image/png' });
-			const dt = new DataTransfer();
-			dt.items.add(file);
-			const input = document.querySelector(
-				`[data-testid="${testid}"]`,
-			) as HTMLInputElement | null;
-			if (!input) throw new Error('file input not found');
-			input.files = dt.files;
-			input.dispatchEvent(new Event('change', { bubbles: true }));
-		}, FILE_INPUT_TESTID);
+		await this.pickImage('blank.png', TINY_PNG_BYTES);
+	}
+
+	private async pickImage(name: string, bytes: number[]): Promise<void> {
+		await this.agent.execute(
+			(testid: string, fileName: string, pngBytes: number[]) =>
+				window.__test.pickFilesInto(testid, [
+					{ name: fileName, mimeType: 'image/png', bytes: pngBytes },
+				]),
+			FILE_INPUT_TESTID,
+			name,
+			bytes,
+		);
 	}
 }

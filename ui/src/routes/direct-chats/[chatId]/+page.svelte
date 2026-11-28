@@ -486,6 +486,7 @@
 														rounded
 														tonal
 														small
+														data-testid="direct-chat-security-tips"
 														onClick={() => (showSecurityTips = true)}
 													>
 														{m.securityTips()}

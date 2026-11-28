@@ -43,7 +43,9 @@ function testData() {
 }
 
 /** Whether reading recent photos is even possible in this environment. */
-export const recentPhotosSupported = isTauriEnv() && (isIos || isAndroid);
+export function recentPhotosSupported(): boolean {
+	return testData() !== undefined || (isTauriEnv() && (isIos || isAndroid));
+}
 
 /**
  * Current photo-library permission without triggering a system prompt where
@@ -52,7 +54,7 @@ export const recentPhotosSupported = isTauriEnv() && (isIos || isAndroid);
 export async function getRecentPhotosPermission(): Promise<RecentPhotosPermission> {
 	const test = testData();
 	if (test) return test.permission;
-	if (!recentPhotosSupported) return 'denied';
+	if (!recentPhotosSupported()) return 'denied';
 	if (isIos) return ios.getPermission();
 	if (isAndroid) return android.getPermission();
 	return 'denied';

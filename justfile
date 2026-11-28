@@ -24,6 +24,9 @@ mod ios 'scripts/ios.just'
 # build server docker images and create the droplets that run them
 mod infra 'scripts/infra.just'
 
+# compile the messages, take the screenshots translators see and sync them to weblate
+mod i18n 'scripts/i18n.just'
+
 # Show available recipes.
 _default:
     @just --list --list-submodules
@@ -51,12 +54,11 @@ update-version version:
 format:
     cargo fmt
     pnpm -r --if-present format
+    pnpm exec prettier --write 'scripts/i18n-screenshots/*.ts'
 
 # typecheck every TS package and the rust workspace
 check:
     cargo check --workspace
     pnpm -r --if-present check
-
-# regenerate paraglide message exports from source translation files
-paraglide:
-    pnpm --filter ui paraglide
+    pnpm exec tsc --noEmit -p scripts/i18n-screenshots
+    pnpm exec prettier --check 'scripts/i18n-screenshots/*.ts'

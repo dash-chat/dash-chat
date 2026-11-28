@@ -12,7 +12,6 @@
 		ChatsStore,
 		LogsStore,
 		TauriLogsClient,
-		LocalStorageLogsClient,
 		type Payload,
 		ContactsClient,
 		ContactsStore,
@@ -24,22 +23,10 @@
 		type IMailboxTrackerStore,
 		OnlinePeersStore,
 		type IOnlinePeersStore,
-		MockContactsClient,
-		MockDevicesClient,
-		MockChatsClient,
-		MockChatsStore,
-		MockMailboxTrackerStore,
-		MockOnlinePeersStore,
-		MockSettingsClient,
-		MockTombstoneClient,
 		TombstoneClient,
 		TombstoneStore,
 		MessageAckClient,
 		MessageAckStore,
-		MockMessageAckClient,
-		seedDemoData,
-		DEMO_IDS,
-		DEMO_CONTACT_DEVICES,
 	} from 'dash-chat-stores';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
@@ -67,6 +54,7 @@
 	import { useKeepAlive } from '$lib/stores/keep-alive-scope.svelte';
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
+	import { installPreviewTauri } from '$lib/utils/preview-tauri';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -96,97 +84,42 @@
 
 	let { children } = $props();
 
-	const isPreview = !isTauriEnv();
+	if (!isTauriEnv()) installPreviewTauri();
 
-	// --- Store initialization ---
-	let settingsStore: SettingsStore;
-	let logsStore: LogsStore<Payload>;
-	let devicesStore: DevicesStore;
-	let contactsStore: ContactsStore;
-	let tombstoneStore: TombstoneStore;
-	let messageAckStore: MessageAckStore;
-	let chatsStore: ChatsStore;
-	let mailboxTrackerStore: IMailboxTrackerStore;
-	let onlinePeersStore: IOnlinePeersStore;
+	const logsClient = new TauriLogsClient<Payload>();
+	const logsStore = new LogsStore<Payload>(logsClient);
+	const settingsStore = new SettingsStore(new SettingsClient());
 
-	if (isPreview) {
-		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
-		seedDemoData(mockLogsClient);
+	const devicesClient = new DevicesClient();
+	const devicesStore = new DevicesStore(logsStore, devicesClient);
 
-		logsStore = new LogsStore<Payload>(mockLogsClient);
-		settingsStore = new SettingsStore(new MockSettingsClient());
+	const contactsClient = new ContactsClient(logsClient);
+	const contactsStore = new ContactsStore(
+		logsStore,
+		devicesStore,
+		contactsClient,
+	);
 
-		const mockDevicesClient = new MockDevicesClient(
-			DEMO_IDS.DEVICE_GROUP_TOPIC,
-		);
-		devicesStore = new DevicesStore(logsStore, mockDevicesClient);
+	const tombstoneStore = new TombstoneStore(new TombstoneClient());
+	const mailboxTrackerStore = new MailboxTrackerStore();
+	const messageAckStore = new MessageAckStore(
+		new MessageAckClient(),
+		mailboxTrackerStore,
+	);
 
-		const mockContactsClient = new MockContactsClient(
-			mockLogsClient,
-			DEMO_IDS.MY_AGENT_ID,
-			DEMO_IDS.MY_DEVICE_ID,
-			DEMO_IDS.DEVICE_GROUP_TOPIC,
-			[DEMO_IDS.INBOX_TOPIC],
-			DEMO_CONTACT_DEVICES,
-		);
-		contactsStore = new ContactsStore(
-			logsStore,
-			devicesStore,
-			mockContactsClient,
-		);
+	const chatsClient = new ChatsClient();
+	const chatsStore = new ChatsStore(
+		logsStore,
+		contactsStore,
+		tombstoneStore,
+		messageAckStore,
+		chatsClient,
+	);
+	const onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
 
-		tombstoneStore = new TombstoneStore(
-			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
-		);
-		mailboxTrackerStore = new MockMailboxTrackerStore();
-		onlinePeersStore = new MockOnlinePeersStore();
-		messageAckStore = new MessageAckStore(
-			new MockMessageAckClient(),
-			mailboxTrackerStore,
-		);
-
-		const mockChatsClient = new MockChatsClient();
-		chatsStore = new MockChatsStore(
-			logsStore,
-			contactsStore,
-			tombstoneStore,
-			messageAckStore,
-			mockChatsClient,
-			mockLogsClient,
-			DEMO_IDS.DEVICE_GROUP_TOPIC,
-		);
-	} else {
-		const logsClient = new TauriLogsClient<Payload>();
-		logsStore = new LogsStore<Payload>(logsClient);
-		settingsStore = new SettingsStore(new SettingsClient());
-
-		const devicesClient = new DevicesClient();
-		devicesStore = new DevicesStore(logsStore, devicesClient);
-
-		const contactsClient = new ContactsClient(logsClient);
-		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
-
-		tombstoneStore = new TombstoneStore(new TombstoneClient());
-		mailboxTrackerStore = new MailboxTrackerStore();
-		messageAckStore = new MessageAckStore(
-			new MessageAckClient(),
-			mailboxTrackerStore,
-		);
-
-		const chatsClient = new ChatsClient();
-		chatsStore = new ChatsStore(
-			logsStore,
-			contactsStore,
-			tombstoneStore,
-			messageAckStore,
-			chatsClient,
-		);
-		onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
-
-		invokeAfterSetup('log_webview_info', {
-			userAgent: navigator.userAgent,
-		}).catch(() => {});
-	}
+	invokeAfterSetup('log_webview_info', {
+		userAgent: navigator.userAgent,
+	}).catch(() => {});
 
 	setContext('settings-store', settingsStore);
 	setContext('devices-store', devicesStore);

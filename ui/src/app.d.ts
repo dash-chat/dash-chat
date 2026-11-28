@@ -19,3 +19,22 @@ interface ImportMetaEnv {
 interface ImportMeta {
 	readonly env: ImportMetaEnv;
 }
+
+interface Window {
+	/** What `@tauri-apps/api` talks to: Tauri's own in the app, a stand-in in
+	 * the browser preview, which says so with `preview`. */
+	__TAURI_INTERNALS__?: {
+		preview?: boolean;
+		convertFileSrc?: () => string;
+		invoke?: (
+			command: string,
+			args: Record<string, unknown>,
+		) => Promise<unknown>;
+		runCallback?: (id: number, data: unknown) => void;
+	};
+	/** The fake backend of the browser preview, when it is not in the page. */
+	__fakeBackend?: (
+		command: string,
+		args: Record<string, unknown>,
+	) => Promise<unknown>;
+}

@@ -1,0 +1,20 @@
+{
+	"name": "dash-chat-mock",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "A fake backend for the app: it answers the Tauri commands, streams and events the app's clients use",
+	"scripts": {
+		"format": "prettier --write 'src/**/*.ts'",
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
+	},
+	"dependencies": {
+		"blakejs": "^1.2.1",
+		"dash-chat-stores": "workspace:*"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3"
+	},
+	"exports": {
+		".": "./src/index.ts"
+	}
+}

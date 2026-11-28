@@ -20,7 +20,7 @@ Help translate Dash Chat! We use Weblate to crowdsource translations.
 
 Please contact the Dash Chat team at hello [at] dashchat [dot] org if you're interested in becoming a reviewer for translation(s) in your language(s).
 
-[Join the Dash Chat Weblate](https://hosted.weblate.org/projects/dash-chat).
+[Join the Dash Chat Weblate](https://nuance.weblate.cloud/projects/dash-chat).
 
 ## Developer setup
 

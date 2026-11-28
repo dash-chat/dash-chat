@@ -27,10 +27,15 @@ const sentryEnabled = !!process.env.SENTRY_DSN;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
 	define: {
-		'import.meta.env.VITE_SENTRY_ENABLED': JSON.stringify(sentryEnabled),
+		// The translation screenshots show both kinds of build from one, so there
+		// a scene decides (`reportingIsUnavailable` in demo-world.ts).
+		'import.meta.env.VITE_SENTRY_ENABLED':
+			process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
+				? '(globalThis.__reportingIsUnavailable !== true)'
+				: JSON.stringify(sentryEnabled),
 	},
 	optimizeDeps: {
-		exclude: ['dash-chat-stores'],
+		exclude: ['dash-chat-stores', 'dash-chat-mock'],
 		// Pre-include dash-chat-stores' transitive deps so Vite doesn't discover
 		// them at runtime and re-optimize, which causes duplicate module instances
 		include: ['blakejs', 'emittery'],
@@ -52,7 +57,13 @@ export default defineConfig(async () => ({
 		sveltekit(),
 		tailwindcss(),
 		paraglideVitePlugin({
-			project: './project.inlang',
+			// The translation screenshots are of a build whose messages each
+			// carry their key, compiled from a marked copy of the messages
+			// (`just i18n screenshots`).
+			project:
+				process.env.VITE_TRANSLATION_KEY_MARKERS === 'true'
+					? './.marked-messages/project.inlang'
+					: './project.inlang',
 			outdir: './src/lib/paraglide',
 			strategy: ['preferredLanguage', 'cookie', 'globalVariable', 'baseLocale'],
 		}),

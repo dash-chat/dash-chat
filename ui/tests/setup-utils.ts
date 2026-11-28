@@ -492,13 +492,33 @@ function pasteFiles(specs: TestFileSpec[]) {
  * MediaDropOverlay HTML5 pipeline. See `pasteFiles` for the defineProperty
  * rationale.
  */
+/** Hand the file input with `testId` these files, the way picking them
+ * would. */
+function pickFilesInto(testId: string, specs: TestFileSpec[]) {
+	const input = document.querySelector<HTMLInputElement>(
+		`[data-testid="${testId}"]`,
+	);
+	if (!input) throw new Error(`No file input with the test id ${testId}`);
+	input.files = specsToDataTransfer(specs).files;
+	input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function dispatchDrag(type: 'dragenter' | 'drop', specs: TestFileSpec[]) {
+	const event = new DragEvent(type, { bubbles: true, cancelable: true });
+	Object.defineProperty(event, 'dataTransfer', {
+		value: specsToDataTransfer(specs),
+	});
+	window.dispatchEvent(event);
+}
+
+/** Drag files over the window without letting go of them. */
+function dragFilesOver(specs: TestFileSpec[]) {
+	dispatchDrag('dragenter', specs);
+}
+
 function dropFiles(specs: TestFileSpec[]) {
-	const dt = specsToDataTransfer(specs);
-	for (const type of ['dragenter', 'drop'] as const) {
-		const event = new DragEvent(type, { bubbles: true, cancelable: true });
-		Object.defineProperty(event, 'dataTransfer', { value: dt });
-		window.dispatchEvent(event);
-	}
+	dragFilesOver(specs);
+	dispatchDrag('drop', specs);
 }
 
 function buildSilentWav(durationMs: number): Uint8Array {
@@ -708,7 +728,46 @@ function swipeToReply(messageHash: string): boolean {
 	return claimed;
 }
 
+/** Comfortably past the 500ms threshold in the app's `longpress` action. */
+const LONG_PRESS_MS = 700;
+
+/** Dispatch one touch event at the centre of the element matching `selector`. */
+function dispatchTouch(selector: string, gesture: 'touchstart' | 'touchend') {
+	const element = document.querySelector<HTMLElement>(selector);
+	if (!element) throw new Error(`No element matching ${selector}`);
+	const rect = element.getBoundingClientRect();
+	const touch = new Touch({
+		identifier: 1,
+		target: element,
+		clientX: rect.left + rect.width / 2,
+		clientY: rect.top + rect.height / 2,
+	});
+	const down = gesture === 'touchstart';
+	element.dispatchEvent(
+		new TouchEvent(gesture, {
+			bubbles: true,
+			cancelable: true,
+			touches: down ? [touch] : [],
+			targetTouches: down ? [touch] : [],
+			changedTouches: [touch],
+		}),
+	);
+}
+
+/** Hold a touch on the element matching `selector` past the app's long-press
+ * threshold, then lift it — the gesture a mobile user makes to open a context
+ * menu. The app starts its own timer off `touchstart`, so the hold has to
+ * happen between the two events. A selector rather than an element: the page
+ * can re-render during the hold, and the gesture fails when what it pressed
+ * is gone by the time it lifts. */
+async function longPress(selector: string): Promise<void> {
+	dispatchTouch(selector, 'touchstart');
+	await new Promise(resolve => setTimeout(resolve, LONG_PRESS_MS));
+	dispatchTouch(selector, 'touchend');
+}
+
 export const testUtils = {
+	longPress,
 	simulateUpdate,
 	hasText,
 	disableP2p,
@@ -719,6 +778,8 @@ export const testUtils = {
 	pasteNoisePhoto,
 	pasteUnreadablePhoto,
 	pasteUnreadableFile,
+	pickFilesInto,
+	dragFilesOver,
 	dropFiles,
 	injectVoiceMessage,
 	injectRecordedVoiceMessage,

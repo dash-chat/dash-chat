@@ -1,0 +1,20 @@
+{
+	"name": "i18n-screenshots-weblate",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "Syncs a set of translation screenshots to Weblate, each attached to the strings it shows",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"format": "prettier --write 'src/**/*.ts'",
+		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
+	},
+	"dependencies": {
+		"i18n-screenshots": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^24.10.0",
+		"typescript": "^5.9.3"
+	}
+}

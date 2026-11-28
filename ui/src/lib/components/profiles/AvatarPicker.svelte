@@ -188,6 +188,7 @@
 				<div class="column" style="align-items: center; gap: 8px;">
 					<Button
 						tonal
+						data-testid="edit-photo-text"
 						onClick={openTextEditor}
 						class="icon-only"
 						style="font-size: 20px; font-weight: 600"
