@@ -10,15 +10,9 @@ export interface Screenshot {
 	keys: string[];
 }
 
-interface OnThePage {
-	/** Each marked string on screen, with where it is. */
-	strings: string[];
-	fontsLoaded: boolean;
-}
-
 /** Runs in the page, so it can use nothing from outside itself but
  * `marker`. */
-function whatIsOnThePage(marker: typeof MARKER): OnThePage {
+function keysOnThePage(marker: typeof MARKER): string[] {
 	const marked = new RegExp(
 		`${marker.edge}([${marker.bits.join('')}]+)${marker.edge}`,
 		'g',
@@ -57,52 +51,13 @@ function whatIsOnThePage(marker: typeof MARKER): OnThePage {
 			el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
 		);
 	};
-	const strings = Array.from(document.body.querySelectorAll('*')).flatMap(
-		el => {
-			const keys = keysIn(ownTranslatedText(el));
-			if (keys.length === 0 || !isPaintedInViewport(el)) return [];
-			const { left, top } = el.getBoundingClientRect();
-			return keys.map(key => `${key}@${left},${top}`);
-		},
-	);
-	return { strings, fontsLoaded: document.fonts.status === 'loaded' };
+	return Array.from(document.body.querySelectorAll('*'))
+		.filter(isPaintedInViewport)
+		.flatMap(el => keysIn(ownTranslatedText(el)));
 }
 
-const BETWEEN_LOOKS_MS = 100;
-
-/** The marked strings on a page that has rendered and stopped changing:
- * while it loads, a page holds still with nothing on it, and what scrolls or
- * slides into place is not there yet. */
-async function settledStrings(page: Page): Promise<string[]> {
-	let before = await page.evaluate(whatIsOnThePage, MARKER);
-	for (;;) {
-		await page.waitForTimeout(BETWEEN_LOOKS_MS);
-		const now = await page.evaluate(whatIsOnThePage, MARKER);
-		const settled =
-			now.fontsLoaded &&
-			now.strings.length > 0 &&
-			now.strings.join() === before.strings.join();
-		if (settled) return now.strings;
-		before = now;
-	}
-}
-
-/** Take a picture of the page once it has settled, with the keys of the
- * marked strings on it. The page may still change between the two being
- * taken, so a picture counts only when the strings were the same right
- * before and right after it. */
-export async function takeScreenshot(page: Page): Promise<Screenshot> {
-	let strings = await settledStrings(page);
-	for (;;) {
-		// A screenshot taken mid-transition shows neither state.
-		const image = await page.screenshot({ animations: 'disabled' });
-		const stringsAfter = await settledStrings(page);
-		if (stringsAfter.join() === strings.join()) {
-			const keys = strings.map(string =>
-				string.slice(0, string.lastIndexOf('@')),
-			);
-			return { image, keys: [...new Set(keys)].sort() };
-		}
-		strings = stringsAfter;
-	}
+/** The keys of the marked strings the page shows. */
+export async function shownKeys(page: Page): Promise<string[]> {
+	const keys = await page.evaluate(keysOnThePage, MARKER);
+	return [...new Set(keys)].sort();
 }

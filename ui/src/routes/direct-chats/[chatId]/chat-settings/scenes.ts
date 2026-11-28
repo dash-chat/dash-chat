@@ -1,10 +1,6 @@
 import { scene } from '$lib/scenes';
 import { ALICE, directChatPath } from '$lib/scenes/demo-world';
-import {
-	deviceGroupOperation,
-	minutesAgo,
-	setMockBackend,
-} from 'dash-chat-mock';
+import { backend, deviceGroupOperation, minutesAgo } from 'dash-chat-mock';
 
 const settings = `${directChatPath(ALICE)}/chat-settings`;
 
@@ -60,7 +56,7 @@ scene('report-contact-result', async ({ page, open }) => {
 });
 
 scene('report-contact-failed', async ({ page, open }) => {
-	setMockBackend({ failingCommands: ['report_contact'] });
+	backend.fails('report_contact');
 	await open(settings);
 	await page.getByTestId('chat-settings-report-btn').first().click();
 	await page.getByTestId('report-contact-confirm').first().click();

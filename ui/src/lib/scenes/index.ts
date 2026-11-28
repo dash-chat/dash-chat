@@ -1,10 +1,8 @@
 import { type Page, devices, expect, test } from '@playwright/test';
-import { seedDemoData } from 'dash-chat-mock';
-import { takeScreenshot } from 'i18n-screenshots/capture';
+import { backend, seedDemoData } from 'dash-chat-mock';
+import { shownKeys } from 'i18n-screenshots/capture';
 
 import { tid } from '../../../tests/selectors';
-import './node-storage';
-import { clearStorage, storedEntries } from './node-storage';
 
 const DESKTOP = {
 	viewport: { width: 1100, height: 750 },
@@ -29,8 +27,7 @@ const DEVICES = {
 
 interface Stage {
 	page: Page;
-	/** Start the app at `path`, on what the scene has written to the mock
-	 * backend so far. */
+	/** Start the app at `path`. */
 	open: (path: string) => Promise<void>;
 }
 
@@ -43,25 +40,44 @@ interface SceneOptions {
 }
 
 /** One state of the UI worth showing a translator, named `name`: `play`
- * brings the browser preview there, writing to the mock backend what it needs
- * on top of the demo data, opening the app, and doing to the page what a user
- * would. The screenshot is taken when it is done. */
+ * brings the browser preview there, writing to its fake backend, which this
+ * process holds, what it needs on top of the demo data, opening the app, and
+ * doing to the page what a user would. The screenshot is taken when it is done. */
 export function scene(
 	name: string,
 	play: (stage: Stage) => void | Promise<void> = () => {},
 	{ device = 'phone', drawn = [] }: SceneOptions = {},
 ): void {
 	test(name, async ({ browser, baseURL }, testInfo) => {
-		clearStorage();
+		backend.reset();
 		seedDemoData();
 		const context = await browser.newContext({ ...DEVICES[device], baseURL });
 		const page = await context.newPage();
+		await page.exposeFunction(
+			'__fakeBackend',
+			(command: string, args: Record<string, unknown>) =>
+				backend.handle(command, args),
+		);
+		// The page may be gone, or not there yet, by the time something is sent.
+		backend.outbox = {
+			event: (event, payload) =>
+				void page
+					.evaluate(
+						sent =>
+							window.__TAURI_INTERNALS__?.invoke?.('plugin:event|emit', sent),
+						{ event, payload },
+					)
+					.catch(() => {}),
+			stream: (channel, index, message) =>
+				void page
+					.evaluate(
+						([id, data]) => window.__TAURI_INTERNALS__?.runCallback?.(id, data),
+						[channel, { index, message }] as const,
+					)
+					.catch(() => {}),
+		};
 		let opened = false;
 		const open = async (path: string) => {
-			await page.addInitScript(({ local, session }) => {
-				for (const [key, value] of local) localStorage.setItem(key, value);
-				for (const [key, value] of session) sessionStorage.setItem(key, value);
-			}, storedEntries());
 			await page.goto(path);
 			// What scenes reach into the app through is registered after it starts.
 			await page.waitForFunction(() => window.__test !== undefined);
@@ -75,16 +91,16 @@ export function scene(
 		await play({ page, open });
 		if (!opened) await open('/');
 
-		const { image, keys } = await takeScreenshot(page);
+		// A page that is still loading holds as still as one that is done.
+		await expect.poll(() => shownKeys(page)).not.toHaveLength(0);
+		// Taken once two in a row come out the same, and saved under the name.
+		await expect(page).toHaveScreenshot(`${name}.png`);
+		const keys = await shownKeys(page);
 		// The app's catch-all error means the scene broke, unless the scene is of it.
 		if (!name.startsWith('error-'))
 			expect(keys).not.toContain('errorUnexpected');
-		await testInfo.attach('screenshot', {
-			body: Buffer.from(image),
-			contentType: 'image/png',
-		});
 		await testInfo.attach('keys', {
-			body: JSON.stringify([...keys, ...drawn]),
+			body: JSON.stringify([...keys, ...drawn], null, '\t'),
 			contentType: 'application/json',
 		});
 		await context.close();

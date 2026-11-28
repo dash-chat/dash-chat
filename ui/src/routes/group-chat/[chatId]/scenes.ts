@@ -15,9 +15,8 @@ import {
 } from '$lib/scenes/demo-world';
 import {
 	MOCK_MAILBOX_DOWN,
+	backend,
 	minutesAgo,
-	mockBackend,
-	setMockBackend,
 	textMessage,
 } from 'dash-chat-mock';
 
@@ -142,9 +141,9 @@ scene('group-chat-i-left', async ({ open }) => {
 
 scene('group-chat-peers-online', async ({ open }) => {
 	groupIAdminister();
-	setMockBackend({
+	backend.setWorld({
 		mailboxes: {
-			...mockBackend().mailboxes,
+			...backend.world.mailboxes,
 			cloudMailbox: MOCK_MAILBOX_DOWN,
 		},
 		onlinePeers: [ALICE.agentId, DAVE.agentId],

@@ -28,22 +28,6 @@
 		MessageAckClient,
 		MessageAckStore,
 	} from 'dash-chat-stores';
-	import {
-		LocalStorageLogsClient,
-		MockContactsClient,
-		MockDevicesClient,
-		MockChatsClient,
-		MockChatsStore,
-		MockMailboxTrackerStore,
-		MockOnlinePeersStore,
-		MockSettingsClient,
-		MockSettingsStore,
-		MockTombstoneClient,
-		MockMessageAckClient,
-		seedDemoData,
-		DEMO_IDS,
-		DEMO_CONTACT_DEVICES,
-	} from 'dash-chat-mock';
 	import { App, KonstaProvider, Preloader } from 'konsta/svelte';
 
 	import OnboardingWrapper from '$lib/components/onboarding/OnboardingWrapper.svelte';
@@ -100,98 +84,42 @@
 
 	let { children } = $props();
 
-	const isPreview = !isTauriEnv();
+	if (!isTauriEnv()) installPreviewTauri();
 
-	// --- Store initialization ---
-	let settingsStore: SettingsStore;
-	let logsStore: LogsStore<Payload>;
-	let devicesStore: DevicesStore;
-	let contactsStore: ContactsStore;
-	let tombstoneStore: TombstoneStore;
-	let messageAckStore: MessageAckStore;
-	let chatsStore: ChatsStore;
-	let mailboxTrackerStore: IMailboxTrackerStore;
-	let onlinePeersStore: IOnlinePeersStore;
+	const logsClient = new TauriLogsClient<Payload>();
+	const logsStore = new LogsStore<Payload>(logsClient);
+	const settingsStore = new SettingsStore(new SettingsClient());
 
-	if (isPreview) {
-		installPreviewTauri();
-		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
-		seedDemoData();
+	const devicesClient = new DevicesClient();
+	const devicesStore = new DevicesStore(logsStore, devicesClient);
 
-		logsStore = new LogsStore<Payload>(mockLogsClient);
-		settingsStore = new MockSettingsStore(new MockSettingsClient());
+	const contactsClient = new ContactsClient(logsClient);
+	const contactsStore = new ContactsStore(
+		logsStore,
+		devicesStore,
+		contactsClient,
+	);
 
-		const mockDevicesClient = new MockDevicesClient(
-			DEMO_IDS.DEVICE_GROUP_TOPIC,
-		);
-		devicesStore = new DevicesStore(logsStore, mockDevicesClient);
+	const tombstoneStore = new TombstoneStore(new TombstoneClient());
+	const mailboxTrackerStore = new MailboxTrackerStore();
+	const messageAckStore = new MessageAckStore(
+		new MessageAckClient(),
+		mailboxTrackerStore,
+	);
 
-		const mockContactsClient = new MockContactsClient(
-			mockLogsClient,
-			DEMO_IDS.MY_AGENT_ID,
-			DEMO_IDS.MY_DEVICE_ID,
-			DEMO_IDS.DEVICE_GROUP_TOPIC,
-			[DEMO_IDS.INBOX_TOPIC],
-			DEMO_CONTACT_DEVICES,
-		);
-		contactsStore = new ContactsStore(
-			logsStore,
-			devicesStore,
-			mockContactsClient,
-		);
+	const chatsClient = new ChatsClient();
+	const chatsStore = new ChatsStore(
+		logsStore,
+		contactsStore,
+		tombstoneStore,
+		messageAckStore,
+		chatsClient,
+	);
+	const onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
 
-		tombstoneStore = new TombstoneStore(
-			new MockTombstoneClient(mockLogsClient, DEMO_IDS.DEVICE_GROUP_TOPIC),
-		);
-		mailboxTrackerStore = new MockMailboxTrackerStore();
-		onlinePeersStore = new MockOnlinePeersStore();
-		messageAckStore = new MessageAckStore(
-			new MockMessageAckClient(),
-			mailboxTrackerStore,
-		);
-
-		const mockChatsClient = new MockChatsClient();
-		chatsStore = new MockChatsStore(
-			logsStore,
-			contactsStore,
-			tombstoneStore,
-			messageAckStore,
-			mockChatsClient,
-			mockLogsClient,
-			DEMO_IDS.DEVICE_GROUP_TOPIC,
-		);
-	} else {
-		const logsClient = new TauriLogsClient<Payload>();
-		logsStore = new LogsStore<Payload>(logsClient);
-		settingsStore = new SettingsStore(new SettingsClient());
-
-		const devicesClient = new DevicesClient();
-		devicesStore = new DevicesStore(logsStore, devicesClient);
-
-		const contactsClient = new ContactsClient(logsClient);
-		contactsStore = new ContactsStore(logsStore, devicesStore, contactsClient);
-
-		tombstoneStore = new TombstoneStore(new TombstoneClient());
-		mailboxTrackerStore = new MailboxTrackerStore();
-		messageAckStore = new MessageAckStore(
-			new MessageAckClient(),
-			mailboxTrackerStore,
-		);
-
-		const chatsClient = new ChatsClient();
-		chatsStore = new ChatsStore(
-			logsStore,
-			contactsStore,
-			tombstoneStore,
-			messageAckStore,
-			chatsClient,
-		);
-		onlinePeersStore = new OnlinePeersStore(contactsStore, chatsStore);
-
-		invokeAfterSetup('log_webview_info', {
-			userAgent: navigator.userAgent,
-		}).catch(() => {});
-	}
+	invokeAfterSetup('log_webview_info', {
+		userAgent: navigator.userAgent,
+	}).catch(() => {});
 
 	setContext('settings-store', settingsStore);
 	setContext('devices-store', devicesStore);

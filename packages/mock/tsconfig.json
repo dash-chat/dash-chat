@@ -1,23 +1,16 @@
 {
-  "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "sourceMap": true,
-    "strict": true,
-    "module": "es2020",
-    "moduleResolution": "bundler",
-    "lib": ["ES2019", "DOM"],
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    // Ensure that Babel can safely transpile files in the TypeScript project
-    "isolatedModules": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "incremental":false
-  },
-  "include": ["src/**/*.ts"]
+	"compilerOptions": {
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"target": "es2022",
+		"module": "es2022",
+		"moduleResolution": "bundler",
+		"lib": ["ES2022", "DOM"],
+		// The sources run as they are: Node strips their types, Vite compiles them.
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true
+	},
+	"include": ["src/**/*.ts"]
 }

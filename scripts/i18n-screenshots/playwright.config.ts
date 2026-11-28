@@ -13,6 +13,10 @@ export default defineConfig({
 	testMatch: '**/scenes.ts',
 	outputDir: '../../.dbs/translation-screenshots-traces',
 	fullyParallel: true,
+	// Each run takes the screenshots anew: there is nothing to compare them to.
+	updateSnapshots: 'all',
+	snapshotPathTemplate: '../../.dbs/translation-screenshots/{arg}{ext}',
+	expect: { timeout: 15_000, toHaveScreenshot: { scale: 'device' } },
 	grep: only.length > 0 ? new RegExp(`(^| )(${only.join('|')})$`) : undefined,
 	reporter: [['list'], ['./reporter.ts']],
 	use: {

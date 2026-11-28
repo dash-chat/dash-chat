@@ -26,5 +26,15 @@ interface Window {
 	__TAURI_INTERNALS__?: {
 		preview?: boolean;
 		convertFileSrc?: () => string;
+		invoke?: (
+			command: string,
+			args: Record<string, unknown>,
+		) => Promise<unknown>;
+		runCallback?: (id: number, data: unknown) => void;
 	};
+	/** The fake backend of the browser preview, when it is not in the page. */
+	__fakeBackend?: (
+		command: string,
+		args: Record<string, unknown>,
+	) => Promise<unknown>;
 }

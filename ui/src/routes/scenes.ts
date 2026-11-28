@@ -12,31 +12,30 @@ import {
 	MOCK_MAILBOX_DOWN,
 	MOCK_MAILBOX_UNCONFIRMED,
 	MOCK_MAILBOX_UP,
+	backend,
 	chatOperation,
 	deviceGroupOperation,
 	minutesAgo,
-	mockBackend,
-	setMockBackend,
 	textMessage,
 } from 'dash-chat-mock';
 
 function connecting(): void {
-	setMockBackend({
+	backend.setWorld({
 		mailboxes: {
-			...mockBackend().mailboxes,
+			...backend.world.mailboxes,
 			cloudMailbox: MOCK_MAILBOX_UNCONFIRMED,
 		},
 	});
 }
 
 function isolated(): void {
-	setMockBackend({
-		mailboxes: { ...mockBackend().mailboxes, cloudMailbox: MOCK_MAILBOX_DOWN },
+	backend.setWorld({
+		mailboxes: { ...backend.world.mailboxes, cloudMailbox: MOCK_MAILBOX_DOWN },
 	});
 }
 
 function onALocalHub(): void {
-	setMockBackend({
+	backend.setWorld({
 		mailboxes: {
 			cloudMailbox: MOCK_MAILBOX_DOWN,
 			localMailboxes: [MOCK_MAILBOX_UP],
@@ -45,8 +44,8 @@ function onALocalHub(): void {
 }
 
 function phoneToPhone(): void {
-	setMockBackend({
-		mailboxes: { ...mockBackend().mailboxes, cloudMailbox: MOCK_MAILBOX_DOWN },
+	backend.setWorld({
+		mailboxes: { ...backend.world.mailboxes, cloudMailbox: MOCK_MAILBOX_DOWN },
 		onlinePeers: [ALICE.agentId],
 	});
 }
@@ -248,31 +247,23 @@ scene(
 );
 
 scene('error-loading-chats', () => {
-	setMockBackend({ failingCommands: ['get_group_chats'] });
+	backend.fails('get_group_chats');
 });
 
 scene('error-report-dialog', async ({ page, open }) => {
-	setMockBackend({ failingCommands: ['get_group_chats'] });
+	backend.fails('get_group_chats');
 	await open('/');
 	await page.getByTestId('error-placeholder-send-report').first().click();
 });
 
 scene('error-sending-error-report', async ({ page, open }) => {
-	setMockBackend({
-		failingCommands: [
-			'get_group_chats',
-			'plugin:sentry-reporting|send_error_report',
-		],
-	});
+	backend.fails('get_group_chats');
+	backend.fails('plugin:sentry-reporting|send_error_report');
 	await open('/');
 	await page.getByTestId('error-placeholder-send-report').first().click();
 	await page.getByTestId('send-error-report-confirm').first().click();
 });
 
 scene('crash-report-dialog', () => {
-	setMockBackend({
-		commandAnswers: {
-			'plugin:sentry-reporting|pending_crash_report': true,
-		},
-	});
+	backend.answers('plugin:sentry-reporting|pending_crash_report', true);
 });

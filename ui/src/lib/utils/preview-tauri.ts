@@ -1,39 +1,37 @@
+import { emit } from '@tauri-apps/api/event';
 import { mockIPC } from '@tauri-apps/api/mocks';
-import { failIfTold, mockBackend } from 'dash-chat-mock';
+import { backend, seedDemoData } from 'dash-chat-mock';
 
-const MISSING_MEDIA = '/missing-media.bin';
-
-const PLACEHOLDER_PHOTO = `data:image/svg+xml,${encodeURIComponent(
-	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">' +
-		'<defs><linearGradient id="sky" x2="0" y2="1"><stop offset="0" stop-color="#8fb8e8"/><stop offset="1" stop-color="#e8d9b8"/></linearGradient></defs>' +
-		'<rect width="400" height="300" fill="url(#sky)"/>' +
-		'<path d="M0 300 L120 130 L200 220 L280 100 L400 300 Z" fill="#5d7a5a"/>' +
-		'<circle cx="320" cy="70" r="28" fill="#fff6d8"/></svg>',
-)}`;
-
-/** Have the preview take the paths the app itself takes, for what the app
- * only does there: a native save dialog, say. Its answers still come from the
- * stand-in. */
-export function takeTheAppsOwnPaths(): void {
-	if (window.__TAURI_INTERNALS__ !== undefined) {
-		window.__TAURI_INTERNALS__.preview = false;
-	}
-}
-
-/** Answer the UI's direct calls to Tauri — plugins, asset URLs — in the
- * browser preview, where there is no Tauri: left unanswered, each one throws
- * wherever the UI happens to make it. Data comes from the mock clients; this
- * only keeps what goes around them from breaking the page. */
+/** Give the browser preview, where there is no Tauri, a fake backend to talk
+ * to: the one in this page, on the demo data, unless whoever drives the page
+ * holds one and has put it at `__fakeBackend`. */
 export function installPreviewTauri(): void {
 	window.__TAURI_INTERNALS__ = {
 		preview: true,
-		convertFileSrc: () =>
-			mockBackend().mediaIsMissing ? MISSING_MEDIA : PLACEHOLDER_PHOTO,
+		convertFileSrc: () => '/preview-photo.svg',
 	};
-	mockIPC(command => {
-		failIfTold(command);
-		const { commandAnswers } = mockBackend();
-		if (command in commandAnswers) return commandAnswers[command];
-		return command === 'plugin:app|version' ? 'preview' : undefined;
-	});
+	const elsewhere = window.__fakeBackend;
+	if (elsewhere === undefined) {
+		seedDemoData();
+		backend.outbox = {
+			// Copies, as what a real backend sends is: the page must not end up
+			// holding the backend's own logs.
+			event: (name, payload) => void emit(name, structuredClone(payload)),
+			stream: (channel, index, message) =>
+				window.__TAURI_INTERNALS__?.runCallback?.(channel, { index, message }),
+		};
+	}
+	mockIPC(
+		(command, args) => {
+			// As they cross to a real backend: channels become their ids.
+			const sent = JSON.parse(JSON.stringify(args ?? {})) as Record<
+				string,
+				unknown
+			>;
+			return elsewhere === undefined
+				? structuredClone(backend.handle(command, sent))
+				: elsewhere(command, sent);
+		},
+		{ shouldMockEvents: true },
+	);
 }

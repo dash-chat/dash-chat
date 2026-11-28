@@ -2,28 +2,19 @@
 	"name": "dash-chat-mock",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "",
-	"main": "dist/index.js",
-	"module": "dist/index.js",
-	"types": "dist/index.d.ts",
+	"description": "A fake backend for the app: it answers the Tauri commands, streams and events the app's clients use",
 	"scripts": {
-		"build": "rimraf dist && tsc && babel ./src --extensions \".ts\" --out-dir ./dist",
-		"dev": "concurrently -k \"tsc -w --preserveWatchOutput\" \"babel --watch ./src --extensions \".ts\" --out-dir ./dist\"",
 		"format": "prettier --write 'src/**/*.ts'",
 		"check": "tsc --noEmit && prettier --check 'src/**/*.ts'"
 	},
 	"dependencies": {
 		"blakejs": "^1.2.1",
-		"dash-chat-stores": "workspace:*",
-		"emittery": "^1.2.0",
-		"signalium": "^3.0.1",
-		"tauri-plugin-system-theme": "github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d"
+		"dash-chat-stores": "workspace:*"
 	},
 	"devDependencies": {
-		"@babel/cli": "^7.28.3",
-		"@babel/preset-typescript": "^7.28.5",
-		"concurrently": "^9.2.1",
-		"rimraf": "^6.1.0",
 		"typescript": "^5.9.3"
+	},
+	"exports": {
+		".": "./src/index.ts"
 	}
 }

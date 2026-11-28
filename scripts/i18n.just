@@ -16,7 +16,7 @@ paraglide:
 screenshots *playwright_args:
     #!/usr/bin/env bash
     set -euo pipefail
-    pnpm -F dash-chat-stores -F dash-chat-mock build
+    pnpm -F dash-chat-stores build
 
     # A copy of the messages and of the inlang project that reads them, where
     # every English message ends in the invisible marker of its key:
@@ -24,7 +24,7 @@ screenshots *playwright_args:
     rm -rf ui/.marked-messages
     mkdir ui/.marked-messages
     cp -r ui/project.inlang ui/messages ui/.marked-messages/
-    node scripts/i18n-screenshots/mark-messages.ts ui/messages/en.json ui/.marked-messages/messages/en.json
+    node scripts/i18n-screenshots/messages.ts ui/messages/en.json ui/.marked-messages/messages/en.json
 
     # `vite build` alone stops at the staging directory, so the build the app
     # embeds is left as it was. It compiles the marked messages into the

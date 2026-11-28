@@ -6,16 +6,17 @@ import {
 	TINY_PNG_BYTES,
 	directChatId,
 	directChatPath,
+	mediaIsMissing,
 	pasteIntoComposer,
 } from '$lib/scenes/demo-world';
 import type { Page } from '@playwright/test';
 import {
 	DEMO_CONTACT_REQUESTER,
 	DEMO_IDS,
+	backend,
 	chatOperation,
 	deviceGroupOperation,
 	minutesAgo,
-	setMockBackend,
 	textMessage,
 } from 'dash-chat-mock';
 
@@ -213,7 +214,7 @@ scene('direct-chat-reply-and-long-message', async ({ open }) => {
 });
 
 scene('message-sending', async ({ open }) => {
-	setMockBackend({ operationsReachMailboxes: false });
+	backend.setWorld({ operationsReachMailboxes: false });
 	textMessage(
 		DEMO_IDS.MY_DEVICE_ID,
 		directChatId(ALICE),
@@ -224,7 +225,7 @@ scene('message-sending', async ({ open }) => {
 });
 
 scene('message-unsent', async ({ open }) => {
-	setMockBackend({ operationsReachMailboxes: false });
+	backend.setWorld({ operationsReachMailboxes: false });
 	textMessage(
 		DEMO_IDS.MY_DEVICE_ID,
 		directChatId(ALICE),
@@ -330,6 +331,7 @@ scene('attach-panel', async ({ page, open }) => {
 
 scene('search-results', async ({ page, open }) => {
 	await open(`${chat}?search=true`);
+	await page.getByTestId('message-from-me').first().waitFor();
 	await field(page, 'direct-chat-search-input').fill('offline');
 });
 
@@ -473,7 +475,7 @@ scene('error-unreadable-file', async ({ page, open }) => {
 });
 
 scene('error-sending-message', async ({ page, open }) => {
-	setMockBackend({ failingCommands: ['send_message'] });
+	backend.fails('send_message');
 	await open(chat);
 	await field(page, 'message-input-textarea').fill('On my way');
 	await page.getByTestId('message-input-send').first().click();
@@ -541,6 +543,7 @@ scene('direct-chat-scrolled-up', async ({ page, open }) => {
 		);
 	}
 	await open(chat);
+	await page.getByText('Trail note 40').waitFor();
 	await page
 		.getByTestId('direct-chat-scroll')
 		.evaluate(scroll => scroll.scrollTo({ top: -100_000 }));
@@ -600,7 +603,7 @@ scene('profile-names', async ({ page, open }) => {
 });
 
 scene('message-delivered', async ({ open }) => {
-	setMockBackend({
+	backend.setWorld({
 		messageAcks: {
 			[DEMO_IDS.MY_DEVICE_ID]: { hash: '', seq: Number.MAX_SAFE_INTEGER },
 		},
@@ -644,9 +647,9 @@ scene(
 	{ device: 'desktop' },
 );
 
-scene('direct-chat-media-missing', async ({ open }) => {
+scene('direct-chat-media-missing', async ({ page, open }) => {
 	mediaMessages();
-	setMockBackend({ mediaIsMissing: true });
+	await mediaIsMissing(page);
 	await open(chat);
 });
 
@@ -689,7 +692,7 @@ scene('recent-photos-settings', async ({ page, open }) => {
 
 scene('error-downloading-file', async ({ page, open }) => {
 	mediaMessages();
-	setMockBackend({ mediaIsMissing: true });
+	await mediaIsMissing(page);
 	await open(chat);
 	await page.getByTestId('message-attachment-file').first().click();
 });
@@ -734,33 +737,21 @@ scene('error-adding-recent-photo', async ({ page, open }) => {
 });
 
 scene('voice-recording', async ({ page, open }) => {
-	setMockBackend({
-		commandAnswers: {
-			'plugin:audio-recorder|check_permission': { granted: true },
-		},
-	});
+	backend.answers('plugin:audio-recorder|check_permission', { granted: true });
 	await open(chat);
 	await pressAndHoldRecord(page);
 });
 
 scene('error-microphone-not-allowed', async ({ page, open }) => {
-	setMockBackend({
-		commandAnswers: {
-			'plugin:audio-recorder|check_permission': { granted: false },
-		},
-	});
+	backend.answers('plugin:audio-recorder|check_permission', { granted: false });
 	await open(chat);
 	await pressAndHoldRecord(page);
 	await untilAToastShows(page);
 });
 
 scene('error-recording-voice', async ({ page, open }) => {
-	setMockBackend({
-		commandAnswers: {
-			'plugin:audio-recorder|check_permission': { granted: true },
-		},
-		failingCommands: ['plugin:audio-recorder|start_recording'],
-	});
+	backend.answers('plugin:audio-recorder|check_permission', { granted: true });
+	backend.fails('plugin:audio-recorder|start_recording');
 	await open(chat);
 	await pressAndHoldRecord(page);
 	await untilAToastShows(page);
@@ -770,11 +761,7 @@ scene(
 	'desktop-file-saved',
 	async ({ page, open }) => {
 		mediaMessages();
-		setMockBackend({
-			commandAnswers: {
-				'plugin:dialog|save': '/home/me/trail-map.pdf',
-			},
-		});
+		backend.answers('plugin:dialog|save', '/home/me/trail-map.pdf');
 		await open(chat);
 		await page.evaluate(() => {
 			window.__TAURI_INTERNALS__!.preview = false;
@@ -789,11 +776,7 @@ scene(
 	'desktop-photo-saved',
 	async ({ page, open }) => {
 		mediaMessages();
-		setMockBackend({
-			commandAnswers: {
-				'plugin:dialog|save': '/home/me/summit.jpg',
-			},
-		});
+		backend.answers('plugin:dialog|save', '/home/me/summit.jpg');
 		await open(chat);
 		await openFirstPhoto(page);
 		await page.evaluate(() => {

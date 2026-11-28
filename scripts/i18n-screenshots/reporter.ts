@@ -12,7 +12,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { renderedKey, renderedSourceKeys } from './rendered-keys.ts';
+import { renderedKey, renderedSourceKeys } from './messages.ts';
 
 const UI = fileURLToPath(new URL('../../ui/', import.meta.url));
 const SCREENSHOTS = fileURLToPath(
@@ -26,19 +26,6 @@ const STRINGS_WITHOUT_SCREENSHOT = path.join(
 	'scenes',
 	'strings-without-screenshot.json',
 );
-
-/** Save the screenshots, and the keys each shows, for someone to look at. */
-function save(screenshots: NamedScreenshot[]): void {
-	rmSync(SCREENSHOTS, { recursive: true, force: true });
-	mkdirSync(SCREENSHOTS, { recursive: true });
-	for (const { name, image, keys } of screenshots) {
-		writeFileSync(path.join(SCREENSHOTS, `${name}.png`), image);
-		writeFileSync(
-			path.join(SCREENSHOTS, `${name}.keys.json`),
-			JSON.stringify(keys, null, '\t'),
-		);
-	}
-}
 
 /** Whether every source string is shown by a scene or listed as one no scene
  *  can show, and none is listed for nothing: the list is how a new string
@@ -75,27 +62,31 @@ function everyStringIsAccountedFor(shownKeys: Set<string>): boolean {
 	return unlisted.size === 0 && stale.size === 0;
 }
 
-/** Collects the screenshot each scene attaches, and once they are all taken
- * saves them, checks that they cover the source strings, and syncs them to
+/** Collects the screenshot each scene saves and the keys it attaches, and once
+ * they are all taken checks that they cover the source strings, and syncs them to
  * Weblate when `I18N_SCREENSHOTS_SYNC` asks for it. */
 export default class ScreenshotsReporter implements Reporter {
 	private screenshots: NamedScreenshot[] = [];
 
+	onBegin(): void {
+		rmSync(SCREENSHOTS, { recursive: true, force: true });
+		mkdirSync(SCREENSHOTS, { recursive: true });
+	}
+
 	onTestEnd(test: TestCase, result: TestResult): void {
-		const attached = (name: string) =>
-			result.attachments.find(attachment => attachment.name === name)?.body;
-		const image = attached('screenshot');
-		const keys = attached('keys');
-		if (result.status !== 'passed' || !image || !keys) return;
+		const keys = result.attachments.find(
+			attachment => attachment.name === 'keys',
+		)?.body;
+		if (result.status !== 'passed' || !keys) return;
+		writeFileSync(path.join(SCREENSHOTS, `${test.title}.keys.json`), keys);
 		this.screenshots.push({
 			name: test.title,
-			image,
+			image: readFileSync(path.join(SCREENSHOTS, `${test.title}.png`)),
 			keys: JSON.parse(keys.toString()) as string[],
 		});
 	}
 
 	async onEnd(result: FullResult): Promise<{ status: FullResult['status'] }> {
-		save(this.screenshots);
 		// A run of some scenes neither covers every string nor may be synced:
 		// Weblate deletes the screenshots it is not handed.
 		if (process.env.SCENES || result.status !== 'passed') return result;

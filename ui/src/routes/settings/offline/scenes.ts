@@ -1,5 +1,5 @@
 import { scene } from '$lib/scenes';
-import { setMockBackend } from 'dash-chat-mock';
+import { backend } from 'dash-chat-mock';
 
 scene('offline', async ({ open }) => {
 	await open('/settings/offline');
@@ -32,7 +32,8 @@ scene(
 scene(
 	'desktop-offline-hub-blocked',
 	async ({ open }) => {
-		setMockBackend({ localHubBlocked: true });
+		backend.setSettings({ local_mailbox_enabled: true });
+		backend.setWorld({ localHubBlocked: true });
 		await open('/settings/offline');
 	},
 	{ device: 'desktop' },
@@ -41,7 +42,8 @@ scene(
 scene(
 	'linux-desktop-offline-hub-blocked',
 	async ({ open }) => {
-		setMockBackend({ localHubBlocked: true });
+		backend.setSettings({ local_mailbox_enabled: true });
+		backend.setWorld({ localHubBlocked: true });
 		await open('/settings/offline');
 	},
 	{ device: 'linux-desktop' },

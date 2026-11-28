@@ -1,6 +1,6 @@
 import { field, scene } from '$lib/scenes';
 import { TINY_PNG_BYTES, reportingIsUnavailable } from '$lib/scenes/demo-world';
-import { setMockBackend } from 'dash-chat-mock';
+import { backend } from 'dash-chat-mock';
 
 const contactUs = '/settings/help/contact-us';
 
@@ -65,11 +65,7 @@ scene('error-feedback-too-many-screenshots', async stage => {
 scene('contact-us-sent', sendFeedback);
 
 scene('contact-us-queued', async stage => {
-	setMockBackend({
-		commandAnswers: {
-			'plugin:sentry-reporting|send_feedback': 'queued',
-		},
-	});
+	backend.answers('plugin:sentry-reporting|send_feedback', 'queued');
 	await sendFeedback(stage);
 });
 

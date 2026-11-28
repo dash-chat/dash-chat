@@ -9,12 +9,7 @@ import {
 	describeGroup,
 	groupIAdminister,
 } from '$lib/scenes/demo-world';
-import {
-	MOCK_MAILBOX_DOWN,
-	minutesAgo,
-	mockBackend,
-	setMockBackend,
-} from 'dash-chat-mock';
+import { MOCK_MAILBOX_DOWN, backend, minutesAgo } from 'dash-chat-mock';
 
 const info = `${GROUP_CHAT_PATH}/info`;
 
@@ -65,7 +60,7 @@ scene('home-with-group', () => {
 
 scene('error-leaving-group-as-only-admin', async ({ page, open }) => {
 	groupIAdminister();
-	setMockBackend({ failingCommands: ['leave_group:LastAdmin'] });
+	backend.fails('leave_group', 'LastAdmin');
 	await open(info);
 	await page.getByTestId('group-info-leave').first().click();
 	await page.getByTestId('group-info-leave-confirm').first().click();
@@ -73,7 +68,7 @@ scene('error-leaving-group-as-only-admin', async ({ page, open }) => {
 
 scene('error-leaving-group', async ({ page, open }) => {
 	groupIAdminister();
-	setMockBackend({ failingCommands: ['leave_group'] });
+	backend.fails('leave_group');
 	await open(info);
 	await page.getByTestId('group-info-leave').first().click();
 	await page.getByTestId('group-info-leave-confirm').first().click();
@@ -81,9 +76,9 @@ scene('error-leaving-group', async ({ page, open }) => {
 
 scene('group-info-peers-online', async ({ open }) => {
 	groupIAdminister();
-	setMockBackend({
+	backend.setWorld({
 		mailboxes: {
-			...mockBackend().mailboxes,
+			...backend.world.mailboxes,
 			cloudMailbox: MOCK_MAILBOX_DOWN,
 		},
 		onlinePeers: [ALICE.agentId],

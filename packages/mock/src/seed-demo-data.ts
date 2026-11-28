@@ -5,65 +5,12 @@ import {
 	type DeviceGroupPayload,
 	type DeviceId,
 	type Hash,
-	type Payload,
 	type Profile,
 	personalTopicFor,
 } from 'dash-chat-stores';
 
-import { LocalStorageLogsClient, chatIdForDevices } from './client';
-
-export const DEMO_IDS = {
-	MY_AGENT_ID: 'aa'.repeat(32),
-	MY_DEVICE_ID: 'bb'.repeat(32),
-	DEVICE_GROUP_TOPIC: 'cc'.repeat(32),
-	INBOX_TOPIC: 'dd'.repeat(32),
-};
-
-export const DEMO_CONTACTS = [
-	{
-		agentId: '01'.repeat(32),
-		deviceId: '11'.repeat(32),
-		name: 'Alice',
-		surname: 'Johnson',
-		about: 'Signal enthusiast',
-	},
-	{
-		agentId: '02'.repeat(32),
-		deviceId: '12'.repeat(32),
-		name: 'Bob',
-		surname: 'Smith',
-		about: 'Privacy advocate',
-	},
-	{
-		agentId: '03'.repeat(32),
-		deviceId: '13'.repeat(32),
-		name: 'Carol',
-		surname: undefined,
-		about: 'Encrypted by default',
-	},
-	{
-		agentId: '04'.repeat(32),
-		deviceId: '14'.repeat(32),
-		name: 'Dave',
-		surname: 'Wilson',
-		about: undefined,
-	},
-];
-
-export const DEMO_CONTACT_REQUESTER = {
-	agentId: '05'.repeat(32),
-	deviceId: '15'.repeat(32),
-	name: 'Eve',
-	surname: 'Taylor',
-};
-
-/** The device pubkey of each demo identity, for agent → device lookups. */
-export const DEMO_CONTACT_DEVICES: Record<string, string> = Object.fromEntries(
-	[...DEMO_CONTACTS, DEMO_CONTACT_REQUESTER].map(contact => [
-		contact.agentId,
-		contact.deviceId,
-	]),
-);
+import { backend, chatIdForDevices } from './backend.ts';
+import { DEMO_CONTACTS, DEMO_CONTACT_REQUESTER, DEMO_IDS } from './demo-ids.ts';
 
 export function minutesAgo(minutes: number): number {
 	return Date.now() - minutes * 60_000;
@@ -81,12 +28,7 @@ export function chatOperation(
 	payload: ChatPayload,
 	timestamp: number,
 ): Hash {
-	const operation: Payload = { type: 'Chat', payload };
-	return new LocalStorageLogsClient(author).createSync(
-		chatId,
-		operation,
-		timestamp,
-	);
+	return backend.write(author, chatId, { type: 'Chat', payload }, timestamp);
 }
 
 /** Write a message of nothing but text as `author`'s device, resolving to
@@ -110,10 +52,10 @@ export function deviceGroupOperation(
 	payload: DeviceGroupPayload,
 	timestamp: number,
 ): Hash {
-	const operation: Payload = { type: 'DeviceGroupPayload', payload };
-	return new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID).createSync(
+	return backend.write(
+		DEMO_IDS.MY_DEVICE_ID,
 		DEMO_IDS.DEVICE_GROUP_TOPIC,
-		operation,
+		{ type: 'DeviceGroupPayload', payload },
 		timestamp,
 	);
 }
@@ -124,20 +66,18 @@ export function profileOperation(
 	profile: Profile,
 	timestamp?: number,
 ): Hash {
-	const operation: Payload = {
-		type: 'Announcements',
-		payload: { type: 'SetProfile', payload: profile },
-	};
-	return new LocalStorageLogsClient(person.deviceId).createSync(
+	return backend.write(
+		person.deviceId,
 		personalTopicFor(person.agentId),
-		operation,
+		{
+			type: 'Announcements',
+			payload: { type: 'SetProfile', payload: profile },
+		},
 		timestamp,
 	);
 }
 
 export function seedDemoData() {
-	if (localStorage.getItem('__preview_seeded')) return;
-
 	const me = DEMO_IDS.MY_DEVICE_ID;
 	profileOperation(
 		{ agentId: DEMO_IDS.MY_AGENT_ID, deviceId: me },
@@ -216,7 +156,8 @@ export function seedDemoData() {
 	);
 
 	// A contact request from Eve, not accepted yet.
-	new LocalStorageLogsClient(DEMO_CONTACT_REQUESTER.deviceId).createSync(
+	backend.write(
+		DEMO_CONTACT_REQUESTER.deviceId,
 		DEMO_IDS.INBOX_TOPIC,
 		{
 			type: 'Inbox',
@@ -236,13 +177,4 @@ export function seedDemoData() {
 		},
 		minutesAgo(10),
 	);
-
-	localStorage.setItem('__preview_seeded', 'true');
-}
-
-/** Leave the device with nothing on it, and keep the demo data from being
- * written when the app starts. */
-export function removeDemoData(): void {
-	localStorage.clear();
-	localStorage.setItem('__preview_seeded', 'true');
 }

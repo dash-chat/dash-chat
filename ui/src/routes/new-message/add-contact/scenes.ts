@@ -1,7 +1,7 @@
 import { scene, untilAToastShows } from '$lib/scenes';
 import { TINY_PNG_BYTES } from '$lib/scenes/demo-world';
 import { type Page, expect } from '@playwright/test';
-import { setMockBackend } from 'dash-chat-mock';
+import { backend } from 'dash-chat-mock';
 
 /** Put the pictures the app saves on the page, where a browser would hand
  * them to its downloads. */
@@ -31,7 +31,7 @@ async function openMyOwnLink(page: Page): Promise<void> {
 }
 
 function addingFailsWith(kind: string): void {
-	setMockBackend({ failingCommands: [`add_contact:${kind}`] });
+	backend.fails('add_contact', kind);
 }
 
 scene('error-adding-yourself', async ({ page, open }) => {
@@ -79,7 +79,7 @@ scene('add-contact-scan', async ({ page, open }) => {
 });
 
 scene('error-creating-contact-code', async ({ open }) => {
-	setMockBackend({ failingCommands: ['create_contact_code'] });
+	backend.fails('create_contact_code');
 	await open('/new-message/add-contact');
 });
 

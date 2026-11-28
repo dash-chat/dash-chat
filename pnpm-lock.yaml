@@ -168,28 +168,7 @@ importers:
       dash-chat-stores:
         specifier: workspace:*
         version: link:../stores
-      emittery:
-        specifier: ^1.2.0
-        version: 1.2.0
-      signalium:
-        specifier: ^3.0.1
-        version: 3.0.1(patch_hash=808ef432df9e2754631f72ae80c4712f77bd513bb9e8adf12ce1b1fd4feb2421)
-      tauri-plugin-system-theme:
-        specifier: github:dash-chat/tauri-plugin-system-theme#6f1b63c2a831b291bed936237a1ef9c850de3b0d
-        version: https://codeload.github.com/dash-chat/tauri-plugin-system-theme/tar.gz/6f1b63c2a831b291bed936237a1ef9c850de3b0d(signalium@3.0.1(patch_hash=808ef432df9e2754631f72ae80c4712f77bd513bb9e8adf12ce1b1fd4feb2421))
     devDependencies:
-      '@babel/cli':
-        specifier: ^7.28.3
-        version: 7.28.3(@babel/core@7.28.5(supports-color@8.1.1))
-      '@babel/preset-typescript':
-        specifier: ^7.28.5
-        version: 7.28.5(@babel/core@7.28.5(supports-color@8.1.1))(supports-color@8.1.1)
-      concurrently:
-        specifier: ^9.2.1
-        version: 9.2.1
-      rimraf:
-        specifier: ^6.1.0
-        version: 6.1.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

@@ -2,13 +2,11 @@ import type { Page } from '@playwright/test';
 import {
 	DEMO_CONTACTS,
 	DEMO_IDS,
-	LocalStorageLogsClient,
+	backend,
 	chatIdForDevices,
 	chatOperation,
 	minutesAgo,
 	profileOperation,
-	removeDemoData,
-	setMockGroupMembers,
 } from 'dash-chat-mock';
 import {
 	type AgentId,
@@ -44,7 +42,7 @@ export async function pasteIntoComposer(
 
 /** Start from a device nobody has set up, not from the demo data. */
 export function nobodyHasSetUpThisDevice(): void {
-	removeDemoData();
+	backend.reset();
 }
 
 /** The only thing on the device: my own profile, as right after onboarding. */
@@ -62,6 +60,13 @@ export function onlyMyProfile(): void {
 export async function reportingIsUnavailable(page: Page): Promise<void> {
 	await page.addInitScript(() =>
 		Object.assign(globalThis, { __reportingIsUnavailable: true }),
+	);
+}
+
+/** Have photos, files and voice notes fail to load. */
+export async function mediaIsMissing(page: Page): Promise<void> {
+	await page.route('**/preview-photo.svg', route =>
+		route.fulfill({ status: 404 }),
 	);
 }
 
@@ -89,12 +94,11 @@ export function groupOperation(
 	action: GroupAction,
 	timestamp: number,
 ): Hash {
-	return new LocalStorageLogsClient(author.deviceId).createSync(
-		GROUP_CHAT_ID,
-		undefined,
-		timestamp,
-		{ group_id: GROUP_CHAT_ID, action, dependencies: [] },
-	);
+	return backend.write(author.deviceId, GROUP_CHAT_ID, undefined, timestamp, {
+		group_id: GROUP_CHAT_ID,
+		action,
+		dependencies: [],
+	});
 }
 
 /** Name the demo group and say who is in it now. */
@@ -113,7 +117,7 @@ export function describeGroup(
 		},
 		timestamp,
 	);
-	setMockGroupMembers(
+	backend.setGroupMembers(
 		GROUP_CHAT_ID,
 		members.map(member => ({
 			agentId: member.agentId,
