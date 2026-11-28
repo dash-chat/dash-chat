@@ -50,7 +50,7 @@ export interface MockBackend {
 	localHubBlocked: boolean;
 }
 
-const backend: MockBackend = {
+const AS_THE_APP_STARTS: MockBackend = {
 	mailboxes: { cloudMailbox: MOCK_MAILBOX_UP, localMailboxes: [] },
 	onlinePeers: [],
 	operationsReachMailboxes: true,
@@ -63,12 +63,25 @@ const backend: MockBackend = {
 
 const backendChanges = new Emittery<{ changed: undefined }>();
 
-/** What the mock backend reports about the world outside the device. Change
- * it with `setMockBackend`, which is what tells the stores. */
-export const mockBackend: Readonly<MockBackend> = backend;
+const STORED_AS = 'mock-backend';
+
+/** What the mock backend reports about the world outside the device. It is
+ * kept in storage so that it can be in place before the app starts, and in
+ * the session's, which the app does not clear when an account is deleted.
+ * Change it with `setMockBackend`, which is what tells the stores. */
+export function mockBackend(): MockBackend {
+	const stored = sessionStorage.getItem(STORED_AS);
+	return {
+		...AS_THE_APP_STARTS,
+		...(stored === null ? {} : (JSON.parse(stored) as Partial<MockBackend>)),
+	};
+}
 
 export function setMockBackend(changes: Partial<MockBackend>): void {
-	Object.assign(backend, changes);
+	sessionStorage.setItem(
+		STORED_AS,
+		JSON.stringify({ ...mockBackend(), ...changes }),
+	);
 	void backendChanges.emit('changed');
 }
 
@@ -88,10 +101,11 @@ export function followingTheMockBackend<T>(read: () => T): ReactivePromise<T> {
 
 /** Throws when `command` is one the mock backend was told fails. */
 export function failIfTold(command: string): void {
-	if (mockBackend.failingCommands.includes(command)) {
+	const { failingCommands } = mockBackend();
+	if (failingCommands.includes(command)) {
 		throw new Error('mock failure');
 	}
-	const withKind = mockBackend.failingCommands.find(failing =>
+	const withKind = failingCommands.find(failing =>
 		failing.startsWith(`${command}:`),
 	);
 	if (withKind !== undefined) {

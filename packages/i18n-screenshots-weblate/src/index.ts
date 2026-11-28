@@ -9,10 +9,15 @@ import {
 // are never replaced or deleted.
 const MANAGED_NAME_PREFIX = 'scene: ';
 
+export interface NamedScreenshot extends Screenshot {
+	/** What Weblate knows it by from one sync to the next. */
+	name: string;
+}
+
 export interface WeblateSyncOptions {
-	/** One screenshot of every scene the app has: a managed screenshot in
-	 * Weblate that is not among them is deleted as no longer existing. */
-	screenshots: Screenshot[];
+	/** Every screenshot there is: a managed screenshot in Weblate that is not
+	 * among them is deleted as no longer existing. */
+	screenshots: NamedScreenshot[];
 	/** The address of the Weblate instance. */
 	url: string;
 	/** A token allowed to manage the component's screenshots. */
@@ -28,7 +33,7 @@ export interface WeblateSyncOptions {
 }
 
 /** A screenshot and the Weblate strings it shows. */
-interface ScreenshotToSync extends Screenshot {
+interface ScreenshotToSync extends NamedScreenshot {
 	managedName: string;
 	unitIds: number[];
 }

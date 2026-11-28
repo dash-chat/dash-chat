@@ -1,89 +1,79 @@
-import type { Scene } from '$lib/scenes';
+import { field, scene } from '$lib/scenes';
 import { TINY_PNG_BYTES, reportingIsUnavailable } from '$lib/scenes/demo-world';
-import { open, tid } from '$lib/scenes/steps';
 import { setMockBackend } from 'dash-chat-mock';
-import { fill, present, settled, tap } from 'i18n-screenshots/scene';
-
-async function chooseAReason(): Promise<void> {
-	const reason = await present<HTMLSelectElement>(
-		`${tid('contact-us-reason-select')} select`,
-	);
-	reason.selectedIndex = 1;
-	reason.dispatchEvent(new Event('input', { bubbles: true }));
-	reason.dispatchEvent(new Event('change', { bubbles: true }));
-}
 
 const contactUs = '/settings/help/contact-us';
 
+type Stage = Parameters<NonNullable<Parameters<typeof scene>[1]>>[0];
+
 /** Open the form and pick `files` as the screenshots to send with it. */
 async function pickAsScreenshots(
+	{ page, open }: Stage,
 	files: Parameters<typeof window.__test.interceptFilePickers>[0],
 ): Promise<void> {
 	await open(contactUs);
-	window.__test.interceptFilePickers(files);
-	await settled();
-	await tap('contact-us-screenshots-add');
+	await page.evaluate(
+		picked => window.__test.interceptFilePickers(picked),
+		files,
+	);
+	await page.getByTestId('contact-us-screenshots-add').first().click();
 }
 
-async function sendFeedback(): Promise<void> {
+async function sendFeedback({ page, open }: Stage): Promise<void> {
 	await open(contactUs);
-	await chooseAReason();
-	await settled();
-	await fill('contact-us-message-input', 'The app is great');
-	await tap('contact-us-send-btn');
+	await page
+		.getByTestId('contact-us-reason-select')
+		.locator('select')
+		.selectOption({ index: 1 });
+	await field(page, 'contact-us-message-input').fill('The app is great');
+	await page.getByTestId('contact-us-send-btn').first().click();
 }
 
-export default [
-	{ name: 'contact-us', setup: () => open(contactUs) },
-	{
-		name: 'contact-us-with-screenshots',
-		setup: () =>
-			pickAsScreenshots([
-				{ name: 'crash.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
-			]),
-	},
-	{
-		name: 'error-feedback-unsupported-image',
-		setup: () =>
-			pickAsScreenshots([
-				{ name: 'notes.txt', mimeType: 'text/plain', bytes: [104, 105] },
-			]),
-	},
-	{
-		name: 'error-feedback-screenshot-too-large',
-		setup: () =>
-			pickAsScreenshots([
-				{ name: 'big.gif', mimeType: 'image/gif', size: 9 * 1024 * 1024 },
-			]),
-	},
-	{
-		name: 'error-feedback-too-many-screenshots',
-		setup: () =>
-			pickAsScreenshots(
-				['a', 'b', 'c', 'd', 'e', 'f'].map(name => ({
-					name: `${name}.png`,
-					mimeType: 'image/png',
-					bytes: TINY_PNG_BYTES,
-				})),
-			),
-	},
-	{ name: 'contact-us-sent', setup: sendFeedback },
-	{
-		name: 'contact-us-queued',
-		async setup() {
-			setMockBackend({
-				commandAnswers: {
-					'plugin:sentry-reporting|send_feedback': 'queued',
-				},
-			});
-			await sendFeedback();
+scene('contact-us', async ({ open }) => {
+	await open(contactUs);
+});
+
+scene('contact-us-with-screenshots', async stage => {
+	await pickAsScreenshots(stage, [
+		{ name: 'crash.png', mimeType: 'image/png', bytes: TINY_PNG_BYTES },
+	]);
+});
+
+scene('error-feedback-unsupported-image', async stage => {
+	await pickAsScreenshots(stage, [
+		{ name: 'notes.txt', mimeType: 'text/plain', bytes: [104, 105] },
+	]);
+});
+
+scene('error-feedback-screenshot-too-large', async stage => {
+	await pickAsScreenshots(stage, [
+		{ name: 'big.gif', mimeType: 'image/gif', size: 9 * 1024 * 1024 },
+	]);
+});
+
+scene('error-feedback-too-many-screenshots', async stage => {
+	await pickAsScreenshots(
+		stage,
+		['a', 'b', 'c', 'd', 'e', 'f'].map(name => ({
+			name: `${name}.png`,
+			mimeType: 'image/png',
+			bytes: TINY_PNG_BYTES,
+		})),
+	);
+});
+
+scene('contact-us-sent', sendFeedback);
+
+scene('contact-us-queued', async stage => {
+	setMockBackend({
+		commandAnswers: {
+			'plugin:sentry-reporting|send_feedback': 'queued',
 		},
-	},
-	{
-		name: 'contact-us-unavailable',
-		async setup() {
-			reportingIsUnavailable();
-			await open(contactUs);
-		},
-	},
-] satisfies Scene[];
+	});
+	await sendFeedback(stage);
+});
+
+scene('contact-us-unavailable', async ({ page, open }) => {
+	await reportingIsUnavailable(page);
+	await open(contactUs);
+});

@@ -1,9 +1,5 @@
-import type { Scene } from '$lib/scenes';
-import { open } from '$lib/scenes/steps';
+import { scene } from '$lib/scenes';
 
-export default [
-	{
-		name: 'settings',
-		setup: () => open('/settings'),
-	},
-] satisfies Scene[];
+scene('settings', async ({ open }) => {
+	await open('/settings');
+});

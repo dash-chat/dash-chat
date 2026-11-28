@@ -60,5 +60,6 @@ jobs:
       - name: Take the screenshots and upload them to Weblate
         if: github.event_name != 'pull_request'
         env:
+          I18N_SCREENSHOTS_SYNC: 1
           WEBLATE_TOKEN: ${{ secrets.WEBLATE_TOKEN }}
-        run: just i18n screenshots sync
+        run: just i18n screenshots

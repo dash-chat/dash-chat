@@ -71,8 +71,6 @@
 	import { previewFeatures } from '$lib/stores/preview-features.svelte';
 	import { registerSetLocale } from '$lib/utils/locale';
 	import { installPreviewTauri } from '$lib/utils/preview-tauri';
-	import { scenes } from '$lib/scenes';
-	import { playRequestedScene } from 'i18n-screenshots/scene';
 
 	// TODO: once the language-selector setting lands, make that setting the
 	// source of truth for this state (read it via `useSignal(settingsStore.locale)`
@@ -119,7 +117,6 @@
 		installPreviewTauri();
 		const mockLogsClient = new LocalStorageLogsClient(DEMO_IDS.MY_DEVICE_ID);
 		seedDemoData();
-		playRequestedScene(scenes);
 
 		logsStore = new LogsStore<Payload>(mockLogsClient);
 		settingsStore = new MockSettingsStore(new MockSettingsClient());

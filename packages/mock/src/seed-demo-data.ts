@@ -239,3 +239,10 @@ export function seedDemoData() {
 
 	localStorage.setItem('__preview_seeded', 'true');
 }
+
+/** Leave the device with nothing on it, and keep the demo data from being
+ * written when the app starts. */
+export function removeDemoData(): void {
+	localStorage.clear();
+	localStorage.setItem('__preview_seeded', 'true');
+}

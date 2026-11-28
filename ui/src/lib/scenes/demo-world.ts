@@ -1,10 +1,13 @@
+import type { Page } from '@playwright/test';
 import {
 	DEMO_CONTACTS,
 	DEMO_IDS,
 	LocalStorageLogsClient,
 	chatIdForDevices,
 	chatOperation,
+	minutesAgo,
 	profileOperation,
+	removeDemoData,
 	setMockGroupMembers,
 } from 'dash-chat-mock';
 import {
@@ -15,7 +18,6 @@ import {
 	type GroupAction,
 	type Hash,
 } from 'dash-chat-stores';
-import { find } from 'i18n-screenshots/scene';
 
 export { TINY_PNG_BYTES } from '../../../tests/fixtures';
 
@@ -33,15 +35,16 @@ export const STRANGER = { agentId: '09'.repeat(32), deviceId: '19'.repeat(32) };
 
 /** Stage `files` in the composer the way a paste does. */
 export async function pasteIntoComposer(
+	page: Page,
 	files: { name: string; mimeType: string; bytes?: number[]; size?: number }[],
 ): Promise<void> {
-	await find('message-input-textarea');
-	window.__test.pasteFiles(files);
+	await page.getByTestId('message-input-textarea').first().waitFor();
+	await page.evaluate(pasted => window.__test.pasteFiles(pasted), files);
 }
 
 /** Start from a device nobody has set up, not from the demo data. */
 export function nobodyHasSetUpThisDevice(): void {
-	localStorage.clear();
+	removeDemoData();
 }
 
 /** The only thing on the device: my own profile, as right after onboarding. */
@@ -56,8 +59,10 @@ export function onlyMyProfile(): void {
 }
 
 /** Make this a build with nowhere to send error reports to. */
-export function reportingIsUnavailable(): void {
-	Object.assign(globalThis, { __reportingIsUnavailable: true });
+export async function reportingIsUnavailable(page: Page): Promise<void> {
+	await page.addInitScript(() =>
+		Object.assign(globalThis, { __reportingIsUnavailable: true }),
+	);
 }
 
 export const ME = {
@@ -116,4 +121,38 @@ export function describeGroup(
 			isAdmin: admins.includes(member),
 		})),
 	);
+}
+
+export function groupIAdminister(): void {
+	groupOperation(
+		ME,
+		{
+			Create: {
+				initial_members: [
+					[individual(ME), null],
+					[individual(ALICE), null],
+					[individual(BOB), null],
+				],
+			},
+		},
+		minutesAgo(50),
+	);
+	groupOperation(
+		ME,
+		{ Add: { member: individual(CAROL), access: null } },
+		minutesAgo(40),
+	);
+	groupOperation(
+		ME,
+		{ Promote: { member: individual(ALICE), access: null } },
+		minutesAgo(30),
+	);
+	groupOperation(BOB, { Remove: { member: individual(BOB) } }, minutesAgo(20));
+	groupOperation(
+		ME,
+		{ Demote: { member: individual(ALICE), access: null } },
+		minutesAgo(15),
+	);
+	groupOperation(ME, { Remove: { member: individual(CAROL) } }, minutesAgo(10));
+	describeGroup('Hiking club', [ME, ALICE, DAVE], [ME], minutesAgo(49));
 }

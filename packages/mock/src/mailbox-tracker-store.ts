@@ -68,14 +68,14 @@ export class MockMailboxTrackerStore implements IMailboxTrackerStore {
 
 	connectionStatusForAllMailboxes = reactive(() =>
 		followingTheMockBackend<AllMailboxesConnectionState>(
-			() => mockBackend.mailboxes,
+			() => mockBackend().mailboxes,
 		),
 	);
 
 	syncStatusForOp = reactive(
 		(_topicId: TopicId, _author: DeviceId, _seq: number) =>
 			followingTheMockBackend(() => ({
-				syncedWithCloudMailbox: mockBackend.operationsReachMailboxes,
+				syncedWithCloudMailbox: mockBackend().operationsReachMailboxes,
 				syncedWithAnyLocalMailbox: false,
 			})),
 	);

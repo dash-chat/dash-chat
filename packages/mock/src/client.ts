@@ -1,4 +1,4 @@
-import { blake2b, blake2bHex } from 'blakejs';
+import blakejs from 'blakejs';
 import type {
 	GroupsArgs,
 	Hash,
@@ -14,7 +14,7 @@ import type {
 import Emittery, { type UnsubscribeFunction } from 'emittery';
 
 export function hash<T>(obj: T): Hash {
-	return blake2bHex(JSON.stringify(obj));
+	return blakejs.blake2bHex(JSON.stringify(obj));
 }
 
 export function chatIdForDevices(deviceA: string, deviceB: string): string {

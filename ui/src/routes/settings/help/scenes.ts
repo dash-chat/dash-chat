@@ -1,18 +1,12 @@
-import type { Scene } from '$lib/scenes';
-import { open } from '$lib/scenes/steps';
-import { find, tap } from 'i18n-screenshots/scene';
+import { scene } from '$lib/scenes';
 
-export default [
-	{
-		name: 'help',
-		setup: () => open('/settings/help'),
-	},
-	{
-		name: 'help-developer-mode-enabled',
-		async setup() {
-			await open('/settings/help');
-			const version = await find('help-version');
-			for (let tap = 0; tap < 7; tap++) version.click();
-		},
-	},
-] satisfies Scene[];
+scene('help', async ({ open }) => {
+	await open('/settings/help');
+});
+
+scene('help-developer-mode-enabled', async ({ page, open }) => {
+	await open('/settings/help');
+	for (let tap = 0; tap < 7; tap++) {
+		await page.getByTestId('help-version').click();
+	}
+});

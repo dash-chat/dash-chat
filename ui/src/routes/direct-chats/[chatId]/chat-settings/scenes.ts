@@ -1,12 +1,10 @@
-import type { Scene } from '$lib/scenes';
+import { scene } from '$lib/scenes';
 import { ALICE, directChatPath } from '$lib/scenes/demo-world';
-import { open } from '$lib/scenes/steps';
 import {
 	deviceGroupOperation,
 	minutesAgo,
 	setMockBackend,
 } from 'dash-chat-mock';
-import { tap } from 'i18n-screenshots/scene';
 
 const settings = `${directChatPath(ALICE)}/chat-settings`;
 
@@ -17,72 +15,53 @@ function blockAlice(): void {
 	);
 }
 
-export default [
-	{
-		name: 'chat-settings',
-		setup: () => open(settings),
-	},
-	{
-		name: 'block-contact-dialog',
-		async setup() {
-			await open(settings);
-			await tap('chat-settings-block-btn');
-		},
-	},
-	{
-		name: 'report-contact-dialog',
-		async setup() {
-			await open(settings);
-			await tap('chat-settings-report-btn');
-		},
-	},
-	{
-		name: 'chat-settings-blocked',
-		async setup() {
-			blockAlice();
-			await open(settings);
-		},
-	},
-	{
-		name: 'unblock-contact-dialog',
-		async setup() {
-			blockAlice();
-			await open(settings);
-			await tap('chat-settings-unblock-btn');
-		},
-	},
-	{
-		name: 'block-contact-result',
-		async setup() {
-			await open(settings);
-			await tap('chat-settings-block-btn');
-			await tap('block-contact-confirm');
-		},
-	},
-	{
-		name: 'unblock-contact-result',
-		async setup() {
-			blockAlice();
-			await open(settings);
-			await tap('chat-settings-unblock-btn');
-			await tap('unblock-contact-confirm');
-		},
-	},
-	{
-		name: 'report-contact-result',
-		async setup() {
-			await open(settings);
-			await tap('chat-settings-report-btn');
-			await tap('report-contact-confirm');
-		},
-	},
-	{
-		name: 'report-contact-failed',
-		async setup() {
-			setMockBackend({ failingCommands: ['report_contact'] });
-			await open(settings);
-			await tap('chat-settings-report-btn');
-			await tap('report-contact-confirm');
-		},
-	},
-] satisfies Scene[];
+scene('chat-settings', async ({ open }) => {
+	await open(settings);
+});
+
+scene('block-contact-dialog', async ({ page, open }) => {
+	await open(settings);
+	await page.getByTestId('chat-settings-block-btn').first().click();
+});
+
+scene('report-contact-dialog', async ({ page, open }) => {
+	await open(settings);
+	await page.getByTestId('chat-settings-report-btn').first().click();
+});
+
+scene('chat-settings-blocked', async ({ open }) => {
+	blockAlice();
+	await open(settings);
+});
+
+scene('unblock-contact-dialog', async ({ page, open }) => {
+	blockAlice();
+	await open(settings);
+	await page.getByTestId('chat-settings-unblock-btn').first().click();
+});
+
+scene('block-contact-result', async ({ page, open }) => {
+	await open(settings);
+	await page.getByTestId('chat-settings-block-btn').first().click();
+	await page.getByTestId('block-contact-confirm').first().click();
+});
+
+scene('unblock-contact-result', async ({ page, open }) => {
+	blockAlice();
+	await open(settings);
+	await page.getByTestId('chat-settings-unblock-btn').first().click();
+	await page.getByTestId('unblock-contact-confirm').first().click();
+});
+
+scene('report-contact-result', async ({ page, open }) => {
+	await open(settings);
+	await page.getByTestId('chat-settings-report-btn').first().click();
+	await page.getByTestId('report-contact-confirm').first().click();
+});
+
+scene('report-contact-failed', async ({ page, open }) => {
+	setMockBackend({ failingCommands: ['report_contact'] });
+	await open(settings);
+	await page.getByTestId('chat-settings-report-btn').first().click();
+	await page.getByTestId('report-contact-confirm').first().click();
+});

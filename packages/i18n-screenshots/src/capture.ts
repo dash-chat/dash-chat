@@ -1,203 +1,108 @@
-import {
-	type Browser,
-	type BrowserContextOptions,
-	type Page,
-	chromium,
-} from 'playwright-core';
+import type { Page } from 'playwright-core';
 
-// For what it declares on `window`.
-import type {} from './scene.ts';
+import { MARKER } from './markers.ts';
 
-/** The picture of one scene and what it shows. */
+/** The picture of a page and what it shows. */
 export interface Screenshot {
-	/** The name of the scene it is of. */
-	name: string;
 	/** The picture, as PNG. */
 	image: Uint8Array;
-	/** The keys of the strings it shows. */
+	/** The keys of the marked strings it shows. */
 	keys: string[];
 }
 
-export interface CaptureOptions {
-	/** Where the app is served, built with every message carrying its key. */
-	appUrl: string;
-	/** What a scene can be rendered as, by the name scenes call it. */
-	devices: Record<string, BrowserContextOptions>;
-	/** The device of a scene that names none. */
-	defaultDevice: string;
-	/** The Chrome to drive, where it is not where Playwright looks for it. */
-	chrome?: string;
-	/** The names of the only scenes to take, to work on them without the
-	 * rest. */
-	only?: string[];
-	/** Told of each scene as it is done with, to follow a long run. */
-	onOutcome?: (outcome: SceneOutcome) => void;
+interface OnThePage {
+	/** Each marked string on screen, with where it is. */
+	strings: string[];
+	fontsLoaded: boolean;
 }
 
-export interface SceneOutcome {
-	name: string;
-	/** Absent when the scene could not be taken, which `error` explains. */
-	screenshot?: Screenshot;
-	error?: string;
-	/** What the page reported as errors while the scene played. */
-	pageErrors: string[];
-}
-
-interface SceneToCapture {
-	name: string;
-	device?: string;
-}
-
-async function waitForTheScenes(page: Page): Promise<void> {
-	await page.waitForFunction(() => window.__i18nScreenshots !== undefined);
-}
-
-async function scenesOfTheApp(
-	page: Page,
-	appUrl: string,
-): Promise<SceneToCapture[]> {
-	await page.goto(appUrl);
-	await waitForTheScenes(page);
-	const scenes = await page.evaluate(
-		() => window.__i18nScreenshots?.scenes ?? [],
+/** Runs in the page, so it can use nothing from outside itself but
+ * `marker`. */
+function whatIsOnThePage(marker: typeof MARKER): OnThePage {
+	const marked = new RegExp(
+		`${marker.edge}([${marker.bits.join('')}]+)${marker.edge}`,
+		'g',
 	);
-	await page.close();
-	return scenes;
+	const keysIn = (text: string) =>
+		[...text.matchAll(marked)].map(([, written]) => {
+			const bits = [...written].map(char => marker.bits.indexOf(char)).join('');
+			const chars =
+				bits.match(new RegExp(`.{${marker.bitsPerChar}}`, 'g')) ?? [];
+			return chars.map(char => String.fromCharCode(parseInt(char, 2))).join('');
+		});
+	/** The text and translated attributes `el` itself holds, without its
+	 * descendants'. */
+	const ownTranslatedText = (el: Element) =>
+		[
+			...Array.from(el.childNodes)
+				.filter(node => node.nodeType === Node.TEXT_NODE)
+				.map(node => node.textContent),
+			...['placeholder', 'aria-label', 'title', 'alt'].map(name =>
+				el.getAttribute(name),
+			),
+			// A closed <select> paints none of its options, yet they are what it offers.
+			...(el instanceof HTMLSelectElement
+				? Array.from(el.options).map(option => option.textContent)
+				: []),
+		].join('');
+	const isPaintedInViewport = (el: Element) => {
+		const box = el.getBoundingClientRect();
+		return (
+			box.width > 0 &&
+			box.height > 0 &&
+			box.bottom > 0 &&
+			box.right > 0 &&
+			box.top < window.innerHeight &&
+			box.left < window.innerWidth &&
+			el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+		);
+	};
+	const strings = Array.from(document.body.querySelectorAll('*')).flatMap(
+		el => {
+			const keys = keysIn(ownTranslatedText(el));
+			if (keys.length === 0 || !isPaintedInViewport(el)) return [];
+			const { left, top } = el.getBoundingClientRect();
+			return keys.map(key => `${key}@${left},${top}`);
+		},
+	);
+	return { strings, fontsLoaded: document.fonts.status === 'loaded' };
 }
 
-function keysShown(page: Page): Promise<string[]> {
-	return page.evaluate(() => window.__i18nScreenshots?.shown() ?? []);
-}
+const BETWEEN_LOOKS_MS = 100;
 
-/** The picture of the page with the keys it shows. The page may still change
- * between the two being taken, so the picture counts only when the keys were
- * the same right before and right after it. */
-async function pictureWithItsKeys(
-	page: Page,
-): Promise<{ image: Uint8Array; keys: string[] }> {
-	let keys = await keysShown(page);
+/** The marked strings on a page that has rendered and stopped changing:
+ * while it loads, a page holds still with nothing on it, and what scrolls or
+ * slides into place is not there yet. */
+async function settledStrings(page: Page): Promise<string[]> {
+	let before = await page.evaluate(whatIsOnThePage, MARKER);
 	for (;;) {
-		const image = await page.screenshot();
-		const keysAfter = await keysShown(page);
-		if (keysAfter.join() === keys.join()) return { image, keys };
-		keys = keysAfter;
+		await page.waitForTimeout(BETWEEN_LOOKS_MS);
+		const now = await page.evaluate(whatIsOnThePage, MARKER);
+		const settled =
+			now.fontsLoaded &&
+			now.strings.length > 0 &&
+			now.strings.join() === before.strings.join();
+		if (settled) return now.strings;
+		before = now;
 	}
 }
 
-async function capture(
-	page: Page,
-	sceneName: string,
-	options: CaptureOptions,
-): Promise<Screenshot> {
-	const url = new URL(options.appUrl);
-	url.searchParams.set('scene', sceneName);
-	await page.goto(url.href);
-	await waitForTheScenes(page);
-	return { name: sceneName, ...(await pictureWithItsKeys(page)) };
-}
-
-const NEVER_SETTLED_AFTER_MS = 30_000;
-
-/** What `taking` resolves to, unless it takes too long to be going anywhere. */
-async function unlessItNeverSettles<T>(taking: Promise<T>): Promise<T> {
-	let givingUp: NodeJS.Timeout | undefined;
-	try {
-		return await Promise.race([
-			taking,
-			new Promise<never>((_, reject) => {
-				givingUp = setTimeout(
-					() => reject(new Error('never settled')),
-					NEVER_SETTLED_AFTER_MS,
-				);
-			}),
-		]);
-	} finally {
-		clearTimeout(givingUp);
-	}
-}
-
-/** Take one scene. One that cannot be taken says so in its outcome, not by
- * rejecting: it must not hide what the others show. */
-async function captureOnItsDevice(
-	browser: Browser,
-	scene: SceneToCapture,
-	options: CaptureOptions,
-): Promise<SceneOutcome> {
-	// A context of its own, so that a scene starts from nothing an earlier
-	// one stored, and has no history but its own to go back in.
-	const context = await browser.newContext(
-		options.devices[scene.device ?? options.defaultDevice],
-	);
-	const page = await context.newPage();
-	const outcome: SceneOutcome = { name: scene.name, pageErrors: [] };
-	page.on('pageerror', error => outcome.pageErrors.push(String(error)));
-	page.on('console', message => {
-		if (message.type() === 'error') outcome.pageErrors.push(message.text());
-	});
-	try {
-		outcome.screenshot = await unlessItNeverSettles(
-			capture(page, scene.name, options),
-		);
-	} catch (error) {
-		outcome.error = String(error).split('\n')[0];
-	}
-	await context.close();
-	return outcome;
-}
-
-/** Before any scene is taken: found halfway through, a scene without a
- * device would throw away the ones taken before it. */
-function refuseUnknownDevices(
-	scenes: SceneToCapture[],
-	options: CaptureOptions,
-): void {
-	for (const scene of scenes) {
-		const deviceName = scene.device ?? options.defaultDevice;
-		if (options.devices[deviceName] === undefined) {
-			throw new Error(
-				`${scene.name} is to be rendered as "${deviceName}", which there is no device for`,
+/** Take a picture of the page once it has settled, with the keys of the
+ * marked strings on it. The page may still change between the two being
+ * taken, so a picture counts only when the strings were the same right
+ * before and right after it. */
+export async function takeScreenshot(page: Page): Promise<Screenshot> {
+	let strings = await settledStrings(page);
+	for (;;) {
+		// A screenshot taken mid-transition shows neither state.
+		const image = await page.screenshot({ animations: 'disabled' });
+		const stringsAfter = await settledStrings(page);
+		if (stringsAfter.join() === strings.join()) {
+			const keys = strings.map(string =>
+				string.slice(0, string.lastIndexOf('@')),
 			);
+			return { image, keys: [...new Set(keys)].sort() };
 		}
-	}
-}
-
-function refuseUnknownScenes(only: string[], scenes: SceneToCapture[]): void {
-	const unknown = only.filter(
-		name => !scenes.some(scene => scene.name === name),
-	);
-	if (unknown.length > 0) {
-		throw new Error(`The app has no scene named ${unknown.join(', ')}`);
-	}
-}
-
-/** Take a screenshot of each scene of the app served at `appUrl`, with the
- * keys of the strings each one shows. */
-export async function captureScenes(
-	options: CaptureOptions,
-): Promise<SceneOutcome[]> {
-	const { only } = options;
-	const browser = await chromium.launch(
-		options.chrome === undefined
-			? { channel: 'chrome' }
-			: { executablePath: options.chrome },
-	);
-	try {
-		const scenes = await scenesOfTheApp(
-			await browser.newPage(),
-			options.appUrl,
-		);
-		if (only !== undefined) refuseUnknownScenes(only, scenes);
-		refuseUnknownDevices(scenes, options);
-		const outcomes: SceneOutcome[] = [];
-		for (const scene of scenes.filter(
-			scene => only === undefined || only.includes(scene.name),
-		)) {
-			const outcome = await captureOnItsDevice(browser, scene, options);
-			options.onOutcome?.(outcome);
-			outcomes.push(outcome);
-		}
-		return outcomes;
-	} finally {
-		await browser.close();
+		strings = stringsAfter;
 	}
 }

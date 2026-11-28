@@ -4,14 +4,16 @@ set working-directory := '..'
 paraglide:
     pnpm --filter ui paraglide
 
-# The scenes are the scenes.ts files next to the routes. Set CHROME_BIN where
-# Chrome is not installed where Playwright looks for it; SCENES=a,b takes only
-# those scenes. `just i18n screenshots sync` then uploads them to Weblate,
-# attached to the strings each one shows, as the token in WEBLATE_TOKEN: it
-# syncs what it just took, and only when it took every scene.
+# The scenes are the scenes.ts files next to the routes, run by Playwright,
+# which what follows the recipe's name is passed to: --ui to watch them play,
+# --debug to step through one. Set CHROME_BIN where Chrome is not installed
+# where Playwright looks for it; SCENES=a,b takes only those scenes. With
+# I18N_SCREENSHOTS_SYNC=1 it then uploads them to Weblate, attached to the
+# strings each one shows, as the token in WEBLATE_TOKEN: it syncs what it just
+# took, and only when it took every scene.
 #
 # take the screenshots translators see, one per scene, failing when a source string has none
-screenshots sync="":
+screenshots *playwright_args:
     #!/usr/bin/env bash
     set -euo pipefail
     pnpm -F dash-chat-stores -F dash-chat-mock build
@@ -31,8 +33,4 @@ screenshots sync="":
     trap 'pnpm -F ui paraglide' EXIT
     VITE_TRANSLATION_KEY_MARKERS=true pnpm -F ui exec vite build
 
-    # Serve that build for as long as the screenshots take; how they went is
-    # how this ends.
-    pnpm exec concurrently --kill-others --success first --names preview,capture \
-        "pnpm -F ui exec vite preview --port 4173 --strictPort" \
-        "node scripts/i18n-screenshots/capture.ts http://localhost:4173 {{sync}}"
+    pnpm exec playwright test --config scripts/i18n-screenshots {{playwright_args}}

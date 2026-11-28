@@ -1,26 +1,19 @@
-import type { Scene } from '$lib/scenes';
-import { open } from '$lib/scenes/steps';
-import { fill, find } from 'i18n-screenshots/scene';
+import { field, scene } from '$lib/scenes';
 
-export default [
-	{
-		name: 'new-message',
-		setup: () => open('/new-message'),
+scene('new-message', async ({ open }) => {
+	await open('/new-message');
+});
+
+scene('new-message-no-match', async ({ page, open }) => {
+	await open('/new-message');
+	await field(page, 'new-message-search').fill('zzzz');
+});
+
+scene(
+	'desktop-new-message-contact-menu',
+	async ({ page, open }) => {
+		await open('/new-message');
+		await page.getByTestId('new-message-contact-item').first().hover();
 	},
-	{
-		name: 'new-message-no-match',
-		async setup() {
-			await open('/new-message');
-			await fill('new-message-search', 'zzzz');
-		},
-	},
-	{
-		name: 'desktop-new-message-contact-menu',
-		device: 'desktop',
-		async setup() {
-			await open('/new-message');
-			// Focus on a contact's menu button shows it as a pointer over the contact does.
-			(await find('contact-menu-button')).focus();
-		},
-	},
-] satisfies Scene[];
+	{ device: 'desktop' },
+);

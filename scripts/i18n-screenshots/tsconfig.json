@@ -6,7 +6,7 @@
 		"target": "es2022",
 		"module": "nodenext",
 		"moduleResolution": "nodenext",
-		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"types": ["node"],
 		// The scripts run as they are: Node strips their types.
 		"allowImportingTsExtensions": true,

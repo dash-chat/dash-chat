@@ -1,4 +1,4 @@
-import type { Scene } from '$lib/scenes';
+import { scene } from '$lib/scenes';
 import {
 	ALICE,
 	BOB,
@@ -9,10 +9,10 @@ import {
 	ME,
 	STRANGER,
 	describeGroup,
+	groupIAdminister,
 	groupOperation,
 	individual,
 } from '$lib/scenes/demo-world';
-import { open } from '$lib/scenes/steps';
 import {
 	MOCK_MAILBOX_DOWN,
 	minutesAgo,
@@ -20,40 +20,6 @@ import {
 	setMockBackend,
 	textMessage,
 } from 'dash-chat-mock';
-
-export function groupIAdminister(): void {
-	groupOperation(
-		ME,
-		{
-			Create: {
-				initial_members: [
-					[individual(ME), null],
-					[individual(ALICE), null],
-					[individual(BOB), null],
-				],
-			},
-		},
-		minutesAgo(50),
-	);
-	groupOperation(
-		ME,
-		{ Add: { member: individual(CAROL), access: null } },
-		minutesAgo(40),
-	);
-	groupOperation(
-		ME,
-		{ Promote: { member: individual(ALICE), access: null } },
-		minutesAgo(30),
-	);
-	groupOperation(BOB, { Remove: { member: individual(BOB) } }, minutesAgo(20));
-	groupOperation(
-		ME,
-		{ Demote: { member: individual(ALICE), access: null } },
-		minutesAgo(15),
-	);
-	groupOperation(ME, { Remove: { member: individual(CAROL) } }, minutesAgo(10));
-	describeGroup('Hiking club', [ME, ALICE, DAVE], [ME], minutesAgo(49));
-}
 
 function groupAliceAdministers(): void {
 	groupOperation(
@@ -153,94 +119,71 @@ function groupAStrangerAdministers(): void {
 	describeGroup('Neighbours', [STRANGER, ME], [STRANGER], minutesAgo(59));
 }
 
-export default [
-	{
-		name: 'group-chat-with-strangers',
-		async setup() {
-			groupAStrangerAdministers();
-			await open(GROUP_CHAT_PATH);
+scene('group-chat-with-strangers', async ({ open }) => {
+	groupAStrangerAdministers();
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-removed-by-a-stranger', async ({ open }) => {
+	groupAStrangerAdministers();
+	groupOperation(
+		STRANGER,
+		{ Remove: { member: individual(ME) } },
+		minutesAgo(5),
+	);
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-i-left', async ({ open }) => {
+	groupAliceAdministers();
+	groupOperation(ME, { Remove: { member: individual(ME) } }, minutesAgo(5));
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-peers-online', async ({ open }) => {
+	groupIAdminister();
+	setMockBackend({
+		mailboxes: {
+			...mockBackend().mailboxes,
+			cloudMailbox: MOCK_MAILBOX_DOWN,
 		},
-	},
-	{
-		name: 'group-chat-removed-by-a-stranger',
-		async setup() {
-			groupAStrangerAdministers();
-			groupOperation(
-				STRANGER,
-				{ Remove: { member: individual(ME) } },
-				minutesAgo(5),
-			);
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-	{
-		name: 'group-chat-i-left',
-		async setup() {
-			groupAliceAdministers();
-			groupOperation(ME, { Remove: { member: individual(ME) } }, minutesAgo(5));
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-	{
-		name: 'group-chat-peers-online',
-		async setup() {
-			groupIAdminister();
-			setMockBackend({
-				mailboxes: {
-					...mockBackend.mailboxes,
-					cloudMailbox: MOCK_MAILBOX_DOWN,
-				},
-				onlinePeers: [ALICE.agentId, DAVE.agentId],
-			});
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-	{
-		name: 'group-chat-as-admin',
-		async setup() {
-			groupIAdminister();
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-	{
-		name: 'group-chat-as-member',
-		async setup() {
-			groupAliceAdministers();
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-	{
-		name: 'group-chat-removed',
-		async setup() {
-			groupAliceAdministers();
-			groupOperation(
-				ALICE,
-				{ Remove: { member: individual(ME) } },
-				minutesAgo(5),
-			);
-			describeGroup('Book club', [ALICE], [ALICE], minutesAgo(59));
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-	{
-		name: 'group-chat-nobody-known',
-		async setup() {
-			const otherStranger = {
-				agentId: '0a'.repeat(32),
-				deviceId: '1a'.repeat(32),
-			};
-			groupAStrangerAdministers();
-			groupOperation(
-				STRANGER,
-				{ Remove: { member: individual(otherStranger) } },
-				minutesAgo(10),
-			);
-			groupOperation(
-				otherStranger,
-				{ Remove: { member: individual(otherStranger) } },
-				minutesAgo(8),
-			);
-			await open(GROUP_CHAT_PATH);
-		},
-	},
-] satisfies Scene[];
+		onlinePeers: [ALICE.agentId, DAVE.agentId],
+	});
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-as-admin', async ({ open }) => {
+	groupIAdminister();
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-as-member', async ({ open }) => {
+	groupAliceAdministers();
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-removed', async ({ open }) => {
+	groupAliceAdministers();
+	groupOperation(ALICE, { Remove: { member: individual(ME) } }, minutesAgo(5));
+	describeGroup('Book club', [ALICE], [ALICE], minutesAgo(59));
+	await open(GROUP_CHAT_PATH);
+});
+
+scene('group-chat-nobody-known', async ({ open }) => {
+	const otherStranger = {
+		agentId: '0a'.repeat(32),
+		deviceId: '1a'.repeat(32),
+	};
+	groupAStrangerAdministers();
+	groupOperation(
+		STRANGER,
+		{ Remove: { member: individual(otherStranger) } },
+		minutesAgo(10),
+	);
+	groupOperation(
+		otherStranger,
+		{ Remove: { member: individual(otherStranger) } },
+		minutesAgo(8),
+	);
+	await open(GROUP_CHAT_PATH);
+});

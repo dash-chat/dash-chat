@@ -5,13 +5,13 @@ import { mockBackend, onMockBackendChanged } from './backend-state';
 
 export class MockMessageAckClient implements IMessageAckClient {
 	async getMessageAcks(_chatId: ChatId): Promise<MessageAcks> {
-		return mockBackend.messageAcks;
+		return mockBackend().messageAcks;
 	}
 
 	onNewMessageAcks(
 		_chatId: ChatId,
 		handler: (acks: MessageAcks) => void,
 	): UnsubscribeFunction {
-		return onMockBackendChanged(() => handler(mockBackend.messageAcks));
+		return onMockBackendChanged(() => handler(mockBackend().messageAcks));
 	}
 }

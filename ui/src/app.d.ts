@@ -19,3 +19,12 @@ interface ImportMetaEnv {
 interface ImportMeta {
 	readonly env: ImportMetaEnv;
 }
+
+interface Window {
+	/** What `@tauri-apps/api` talks to: Tauri's own in the app, a stand-in in
+	 * the browser preview, which says so with `preview`. */
+	__TAURI_INTERNALS__?: {
+		preview?: boolean;
+		convertFileSrc?: () => string;
+	};
+}

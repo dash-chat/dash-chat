@@ -1,45 +1,35 @@
-import type { Scene } from '$lib/scenes';
+import { scene } from '$lib/scenes';
 import { onlyMyProfile } from '$lib/scenes/demo-world';
-import { open } from '$lib/scenes/steps';
-import { tap } from 'i18n-screenshots/scene';
 
-export default [
-	{
-		name: 'new-group-members',
-		setup: () => open('/new-group'),
+scene('new-group-members', async ({ open }) => {
+	await open('/new-group');
+});
+
+scene('new-group-info', async ({ page, open }) => {
+	await open('/new-group');
+	await page.getByTestId('selectable-contact-item').first().click();
+	await page.getByTestId('new-group-next').first().click();
+});
+
+scene(
+	'ios-new-group-members',
+	async ({ open }) => {
+		await open('/new-group');
 	},
-	{
-		name: 'new-group-info',
-		async setup() {
-			await open('/new-group');
-			await tap('selectable-contact-item');
-			await tap('new-group-next');
-		},
-	},
-	{
-		name: 'ios-new-group-members',
-		device: 'iphone',
-		setup: () => open('/new-group'),
-	},
-	{
-		name: 'new-group-no-contacts',
-		async setup() {
-			onlyMyProfile();
-			await open('/new-group');
-		},
-	},
-	{
-		name: 'new-group-member-selected',
-		async setup() {
-			await open('/new-group');
-			await tap('selectable-contact-item');
-		},
-	},
-	{
-		name: 'new-group-info-without-members',
-		async setup() {
-			await open('/new-group');
-			await tap('new-group-next');
-		},
-	},
-] satisfies Scene[];
+	{ device: 'iphone' },
+);
+
+scene('new-group-no-contacts', async ({ open }) => {
+	onlyMyProfile();
+	await open('/new-group');
+});
+
+scene('new-group-member-selected', async ({ page, open }) => {
+	await open('/new-group');
+	await page.getByTestId('selectable-contact-item').first().click();
+});
+
+scene('new-group-info-without-members', async ({ page, open }) => {
+	await open('/new-group');
+	await page.getByTestId('new-group-next').first().click();
+});

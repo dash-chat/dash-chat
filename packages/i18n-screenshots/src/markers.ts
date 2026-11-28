@@ -1,27 +1,16 @@
-const MARKER_EDGE = '⁠';
-const MARKER_BITS = ['‌', '‍'];
-const BITS_PER_CHAR = 7;
-const MARKER = new RegExp(
-	`${MARKER_EDGE}([${MARKER_BITS.join('')}]+)${MARKER_EDGE}`,
-	'g',
-);
+/** The invisible characters a key is written in after its string: an edge on
+ * each side of a run of the two bits. */
+export const MARKER = { edge: '⁠', bits: ['‌', '‍'], bitsPerChar: 7 };
 
 /** `text` followed by an invisible encoding of its message `key`. */
 function markTranslationKey(key: string, text: string): string {
 	const bits = [...key]
-		.map(char => char.charCodeAt(0).toString(2).padStart(BITS_PER_CHAR, '0'))
+		.map(char =>
+			char.charCodeAt(0).toString(2).padStart(MARKER.bitsPerChar, '0'),
+		)
 		.join('');
-	const marker = [...bits].map(bit => MARKER_BITS[Number(bit)]).join('');
-	return `${text}${MARKER_EDGE}${marker}${MARKER_EDGE}`;
-}
-
-/** The message keys whose markers `text` carries. */
-export function markedTranslationKeys(text: string): string[] {
-	return [...text.matchAll(MARKER)].map(([, marker]) => {
-		const bits = [...marker].map(char => MARKER_BITS.indexOf(char)).join('');
-		const chars = bits.match(new RegExp(`.{${BITS_PER_CHAR}}`, 'g')) ?? [];
-		return chars.map(char => String.fromCharCode(parseInt(char, 2))).join('');
-	});
+	const marker = [...bits].map(bit => MARKER.bits[Number(bit)]).join('');
+	return `${text}${MARKER.edge}${marker}${MARKER.edge}`;
 }
 
 /** `sourceStrings` with each one followed by the marker of the key the app

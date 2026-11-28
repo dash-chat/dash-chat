@@ -1,3 +1,4 @@
+import { mockIPC } from '@tauri-apps/api/mocks';
 import { failIfTold, mockBackend } from 'dash-chat-mock';
 
 const MISSING_MEDIA = '/missing-media.bin';
@@ -14,8 +15,9 @@ const PLACEHOLDER_PHOTO = `data:image/svg+xml,${encodeURIComponent(
  * only does there: a native save dialog, say. Its answers still come from the
  * stand-in. */
 export function takeTheAppsOwnPaths(): void {
-	// eslint-disable-next-line
-	(window as any).__TAURI_INTERNALS__.preview = false;
+	if (window.__TAURI_INTERNALS__ !== undefined) {
+		window.__TAURI_INTERNALS__.preview = false;
+	}
 }
 
 /** Answer the UI's direct calls to Tauri — plugins, asset URLs — in the
@@ -23,18 +25,15 @@ export function takeTheAppsOwnPaths(): void {
  * wherever the UI happens to make it. Data comes from the mock clients; this
  * only keeps what goes around them from breaking the page. */
 export function installPreviewTauri(): void {
-	// eslint-disable-next-line
-	(window as any).__TAURI_INTERNALS__ = {
+	window.__TAURI_INTERNALS__ = {
 		preview: true,
-		invoke: async (command: string) => {
-			failIfTold(command);
-			if (command in mockBackend.commandAnswers) {
-				return mockBackend.commandAnswers[command];
-			}
-			return command === 'plugin:app|version' ? 'preview' : undefined;
-		},
 		convertFileSrc: () =>
-			mockBackend.mediaIsMissing ? MISSING_MEDIA : PLACEHOLDER_PHOTO,
-		transformCallback: () => 0,
+			mockBackend().mediaIsMissing ? MISSING_MEDIA : PLACEHOLDER_PHOTO,
 	};
+	mockIPC(command => {
+		failIfTold(command);
+		const { commandAnswers } = mockBackend();
+		if (command in commandAnswers) return commandAnswers[command];
+		return command === 'plugin:app|version' ? 'preview' : undefined;
+	});
 }

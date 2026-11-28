@@ -1,32 +1,24 @@
-import type { Scene } from '$lib/scenes';
-import { open, tid } from '$lib/scenes/steps';
-import { present, settled, tap } from 'i18n-screenshots/scene';
+import { scene, untilAToastShows } from '$lib/scenes';
 
-export default [
-	{
-		name: 'notifications',
-		setup: () => open('/settings/notifications'),
-	},
-	{
-		name: 'notifications-turned-on',
-		async setup() {
-			await open('/settings/notifications');
-			await tap('notifications-toggle');
-		},
-	},
-	{
-		name: 'error-notifications-not-allowed',
-		async setup() {
-			await open('/settings/notifications');
-			Object.defineProperty(window, 'Notification', {
-				value: {
-					permission: 'denied',
-					requestPermission: async () => 'denied',
-				},
-			});
-			await settled();
-			const toggle = await present(`${tid('notifications-toggle')} input`);
-			toggle.click();
-		},
-	},
-] satisfies Scene[];
+scene('notifications', async ({ open }) => {
+	await open('/settings/notifications');
+});
+
+scene('notifications-turned-on', async ({ page, open }) => {
+	await open('/settings/notifications');
+	await page.getByTestId('notifications-toggle').locator('label').click();
+});
+
+scene('error-notifications-not-allowed', async ({ page, open }) => {
+	await open('/settings/notifications');
+	await page.evaluate(() =>
+		Object.defineProperty(window, 'Notification', {
+			value: {
+				permission: 'denied',
+				requestPermission: async () => 'denied',
+			},
+		}),
+	);
+	await page.getByTestId('notifications-toggle').locator('label').click();
+	await untilAToastShows(page);
+});

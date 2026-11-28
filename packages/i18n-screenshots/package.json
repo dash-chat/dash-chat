@@ -2,9 +2,8 @@
 	"name": "i18n-screenshots",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "Screenshots of an app's scenes for translators, each with the keys of the strings it shows",
+	"description": "Screenshots of an app for translators, each with the keys of the strings it shows",
 	"exports": {
-		"./scene": "./src/scene.ts",
 		"./markers": "./src/markers.ts",
 		"./capture": "./src/capture.ts"
 	},
